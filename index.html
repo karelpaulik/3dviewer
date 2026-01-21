@@ -16,27 +16,39 @@
 		
 
 		<script type="module">
-			import * as THREE from './web3d/three.module.js';
-			// import * as THREE from "{{ url_for('static', filename='web3d/three.module.js') }}";
+			// import * as THREE from './web3d/three.module.js';
+			// // import * as THREE from "{{ url_for('static', filename='web3d/three.module.js') }}";
 
-			import { STLLoader } from './web3d/STLLoader.js';
-			// import { STLLoader } from "{{ url_for('static', filename='web3d/STLLoader.js') }}";
+			// import { STLLoader } from './web3d/STLLoader.js';
+			// // import { STLLoader } from "{{ url_for('static', filename='web3d/STLLoader.js') }}";
 
-			import { OrbitControls } from './web3d/OrbitControls.js';
-			// import { OrbitControls } from "{{ url_for('static', filename='web3d/OrbitControls.js') }}";
+			// import { OrbitControls } from './web3d/OrbitControls.js';
+			// // import { OrbitControls } from "{{ url_for('static', filename='web3d/OrbitControls.js') }}";
 
-			import { TransformControls } from './web3d/TransformControls.js';
-			// import { TransformControls } from "{{ url_for('static', filename='web3d/TransformControls.js') }}";
+			// import { TransformControls } from './web3d/TransformControls.js';
+			// // import { TransformControls } from "{{ url_for('static', filename='web3d/TransformControls.js') }}";
 
-			import { DragControls } from './web3d/DragControls.js';
-			// import { DragControls } from "{{ url_for('static', filename='web3d/DragControls.js') }}";
+			// import { DragControls } from './web3d/DragControls.js';
+			// // import { DragControls } from "{{ url_for('static', filename='web3d/DragControls.js') }}";
 
 
-			import { GUI } from './web3d/dat.gui.module.js';
-			// import { GUI } from "{{ url_for('static', filename='web3d/dat.gui.module.js') }}";
+			// import { GUI } from './web3d/dat.gui.module.js';
+			// // import { GUI } from "{{ url_for('static', filename='web3d/dat.gui.module.js') }}";
 
-			import { ZipLoader } from './web3d/zip-loader.module.js';
-			// import { ZipLoader } from "{{ url_for('static', filename='web3d/zip-loader.module.js') }}";
+			// import { ZipLoader } from './web3d/zip-loader.module.js';
+			// // import { ZipLoader } from "{{ url_for('static', filename='web3d/zip-loader.module.js') }}";
+
+			
+			import * as THREE from 'three';
+			import { STLLoader } from 'three/addons/loaders/STLLoader.js';
+			//import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+			import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+			import { TransformControls } from 'three/addons/controls/TransformControls.js';
+			import { DragControls } from 'three/addons/controls/DragControls.js';
+
+			//import { GUI } from 'dat.gui';
+			import { GUI } from 'lil-gui';
+			import ZipLoader from 'zip-loader';
 
 			var container, stats;
 			var camera, cameraTarget, scene, renderer;			
@@ -197,6 +209,17 @@
 				renderer.outputEncoding = THREE.sRGBEncoding;
 				//renderer.shadowMap.enabled = true;
 				renderer.localClippingEnabled = false;
+
+				renderer.outputColorSpace = THREE.SRGBColorSpace;
+				renderer.toneMapping = THREE.ACESFilmicToneMapping;
+				renderer.toneMappingExposure = 2;
+
+				renderer.setAnimationLoop(() => {
+					// Vaše logika rotace a posunu
+					//model.rotation.y += 0.01;
+					renderer.render(scene, currentCamera);
+				});
+
 				container.appendChild( renderer.domElement );
 				
 				//currentCamera
@@ -222,6 +245,11 @@
 				addShadowedLight( 1, 1, 1, 0xffffff, 1.35 );
 				addShadowedLight( 0.5, 1, - 1, 0xffaa00, 1 );
 
+				// headlight - světlo z pohledu kamery
+				const headlight = new THREE.DirectionalLight(0xffffff, 0.5);
+				currentCamera.add(headlight); // Světlo bude svítit ze stejného místa jako oči uživatele
+				scene.add(currentCamera); // BEZ TOHOTO ŘÁDKU SVĚTLO NEBUDE SVÍTIT
+
 				var mouseDown = 0;
 				document.body.onmousedown = function() { 
 					mouseDown = 1;
@@ -241,8 +269,8 @@
 				orbitControls.addEventListener( 'change', render ); // use if there is no animation loop
 
 				transformControls = new TransformControls( currentCamera, renderer.domElement );
-				transformControls.setSize( 0.5 );
-				scene.add( transformControls );	
+				transformControls.setSize( 0.5 );	
+				scene.add( transformControls.getHelper() );	//Nutno v novém three.js. Dříve bylo: scene.add( transformControls );
 				
 				transformControls.addEventListener( 'change', render );
 
@@ -428,9 +456,9 @@
 				//Loading
 				//var folder1 = gui.addFolder( 'Load / Remove' );
 				//folder1.open();
-				folder1.add(part, 'partNr').name('Part nr.');
-				folder1.add(part, 'load').name('Load');
-				folder1.add(part, 'remove').name('Remove');						
+				// folder1.add(part, 'partNr').name('Part nr.');
+				// folder1.add(part, 'load').name('Load');
+				// folder1.add(part, 'remove').name('Remove');						
 			}	
 			//addMainGui();
 
@@ -647,10 +675,11 @@
 				render();
 			}
 
-			function animate() {
-				requestAnimationFrame( animate );
-				render();
-			}
+			//Toto se používalo ve starém threejs
+			// function animate() {
+			// 	requestAnimationFrame( animate );
+			// 	render();
+			// }
 
 			function render() {
 			
