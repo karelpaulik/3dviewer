@@ -78,13 +78,13 @@
 				const fileUrl = urlParams.get('model'); 
 				const fileName = urlParams.get('name'); 
 
-				document.getElementById('fileNameLabel').textContent = fileName;
-				document.getElementById('pageTitle').textContent = fileName;
-
 				// 3. Načtení modelu
 				if (fileUrl && fileName) {
 					console.log(`fileUrl: ${fileUrl}`);
 					console.log(`fileName: ${fileName}`);
+
+					document.getElementById('fileNameLabel').textContent = fileName;
+					document.getElementById('pageTitle').textContent = fileName;
 					
 					// Použití proměnné modelToLoad v tvé funkci
 					loadModel(fileUrl, fileName, 0.001, true).then( (result) => {
@@ -96,7 +96,8 @@
 					});
 
 				} else {
-					console.error("Chyba: Nebyl nalezen žádný model k načtení.");
+					//console.error("Chyba: Nebyl nalezen žádný model k načtení.");
+					loadModel('./models/1011364_c.zip','1011364_c.zip', 0.001, true).then( (result)=>{helperObjects.push( result )} );	
 				}
 				//--------------------------------------------------------------------------------------	
 
