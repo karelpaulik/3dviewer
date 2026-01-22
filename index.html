@@ -4,7 +4,8 @@
 		<title id="pageTitle">STL viewer</title>
 		<meta charset="utf-8">
 		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
-		<link type="text/css" rel="stylesheet" href="web3d/main.css">
+		<link type="text/css" rel="stylesheet" href="src/main.css">
+		<link rel="icon" type="image/png" href="/favicon-32x32.png">
 	</head>
 	<body id="body">
 		
@@ -17,27 +18,12 @@
 
 		<script type="module">
 			// import * as THREE from './web3d/three.module.js';
-			// // import * as THREE from "{{ url_for('static', filename='web3d/three.module.js') }}";
-
 			// import { STLLoader } from './web3d/STLLoader.js';
-			// // import { STLLoader } from "{{ url_for('static', filename='web3d/STLLoader.js') }}";
-
 			// import { OrbitControls } from './web3d/OrbitControls.js';
-			// // import { OrbitControls } from "{{ url_for('static', filename='web3d/OrbitControls.js') }}";
-
 			// import { TransformControls } from './web3d/TransformControls.js';
-			// // import { TransformControls } from "{{ url_for('static', filename='web3d/TransformControls.js') }}";
-
 			// import { DragControls } from './web3d/DragControls.js';
-			// // import { DragControls } from "{{ url_for('static', filename='web3d/DragControls.js') }}";
-
-
 			// import { GUI } from './web3d/dat.gui.module.js';
-			// // import { GUI } from "{{ url_for('static', filename='web3d/dat.gui.module.js') }}";
-
 			// import { ZipLoader } from './web3d/zip-loader.module.js';
-			// // import { ZipLoader } from "{{ url_for('static', filename='web3d/zip-loader.module.js') }}";
-
 			
 			import * as THREE from 'three';
 			import { STLLoader } from 'three/addons/loaders/STLLoader.js';
@@ -206,7 +192,7 @@
 				renderer = new THREE.WebGLRenderer( { antialias: true } );
 				renderer.setPixelRatio( window.devicePixelRatio );
 				renderer.setSize( window.innerWidth, window.innerHeight );
-				renderer.outputEncoding = THREE.sRGBEncoding;
+				//renderer.outputEncoding = THREE.sRGBEncoding;	Toto bylo pro starší threejs
 				//renderer.shadowMap.enabled = true;
 				renderer.localClippingEnabled = false;
 
@@ -214,11 +200,12 @@
 				renderer.toneMapping = THREE.ACESFilmicToneMapping;
 				renderer.toneMappingExposure = 2;
 
-				renderer.setAnimationLoop(() => {
-					// Vaše logika rotace a posunu
-					//model.rotation.y += 0.01;
-					renderer.render(scene, currentCamera);
-				});
+				// // nutno jen pro animaci
+				// renderer.setAnimationLoop(() => {
+				// 	// Vaše logika rotace a posunu
+				// 	//model.rotation.y += 0.01;
+				// 	renderer.render(scene, currentCamera);
+				// });
 
 				container.appendChild( renderer.domElement );
 				

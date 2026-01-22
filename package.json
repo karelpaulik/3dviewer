@@ -1,0 +1,28 @@
+{
+  "name": "3dviewer",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/karelpaulik/3dviewer.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/karelpaulik/3dviewer/issues"
+  },
+  "homepage": "https://github.com/karelpaulik/3dviewer#readme",
+  "dependencies": {
+    "lil-gui": "^0.21.0",
+    "three": "^0.182.0",
+    "zip-loader": "^1.3.0"
+  },
+  "devDependencies": {
+    "vite": "^7.3.1"
+  }
+}
