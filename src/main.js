@@ -3,7 +3,6 @@ import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
-import { DragControls } from 'three/addons/controls/DragControls.js';
 
 //import { GUI } from 'dat.gui';
 import { GUI } from 'lil-gui';
@@ -11,9 +10,7 @@ import ZipLoader from 'zip-loader';
 
 var container, stats;
 var camera, cameraTarget, scene, renderer;			
-//var controls;
 
-var motor1;
 var clipPlanes = [];		
 
 var cameraPersp, cameraOrtho, currentCamera;
@@ -29,13 +26,17 @@ var INTERSECTED;
 
 var isTouchScreen;
 
+setupPrototypes();
+
 init();
-//animate();
 render();
 
-window.onload = function ()
-{
-    //initLoad();		
+isTouchScreen = isTouchDevice();
+//console.log(isTouchScreen);
+
+initLoad();
+
+function initLoad() {		
     //loadModel("{{ url_for('static', filename=filename_compl) }}", 0.001, true).then( (result)=>{helperObjects.push( result ); } );	
     //loadModel('1011364_c.zip', 0.001, true).then( (result)=>{helperObjects.push( result )} );	
     
@@ -73,13 +74,13 @@ window.onload = function ()
     }
     //--------------------------------------------------------------------------------------	
 
-    isTouchScreen = isTouchDevice();//Toto by asi mohlo být i v: init()
-    //console.log(isTouchScreen);
+
 }
 
-function init() {
-
-    //classes modification
+function setupPrototypes() {
+    THREE.Mesh.prototype.initPosition = { x: 0, y: 0, z: 0 };
+    THREE.Mesh.prototype.initRotation = { x: -Math.PI/2, y: 0, z: 0 };
+    THREE.Mesh.prototype.initScale = { x: 1, y: 1, z: 1 };
 
     THREE.Mesh.prototype.changeColor = function (color) {
         for (var i=0; i<this.material.length ; i++) {
@@ -99,24 +100,6 @@ function init() {
         this.rotation.set(this.initRotation.x, this.initRotation.y, this.initRotation.z);
         this.scale.set(this.initScale.x, this.initScale.y, this.initScale.z);
         render();
-    };
-    
-    THREE.Mesh.prototype.initPosition = {
-        x: 0,
-        y: 0,
-        z: 0
-    };
-
-    THREE.Mesh.prototype.initRotation = {
-        x: -Math.PI/2,
-        y: 0,
-        z: 0
-    };
-
-    THREE.Mesh.prototype.initScale = {
-        x: 1,
-        y: 1,
-        z: 1
     };
 
     THREE.Mesh.prototype.setPolygonOffsetFactor = function (value) {			
@@ -157,7 +140,9 @@ function init() {
                 
         meshObject.add(sectionMesh);			
     }
-    
+}
+
+function init() {    
     //container
     container = document.createElement( 'div' );
     document.body.appendChild( container );
@@ -196,10 +181,7 @@ function init() {
     
     //scene
     scene = new THREE.Scene();
-    scene.background = new THREE.Color( 0x72645b );
-    
-    //load model	
-    //loadModel('./models/gltf/paulik/1012053_i_ch05_a225_text.stl', 0.001, true).then( (result)=>{motor1=result} );						
+    scene.background = new THREE.Color( 0x72645b );						
 
     //lights
     scene.add( new THREE.HemisphereLight( 0x443333, 0x111122 ) );
@@ -661,12 +643,6 @@ function onWindowResize() {
     renderer.setSize( window.innerWidth, window.innerHeight );
     render();
 }
-
-//Toto se používalo ve starém threejs
-// function animate() {
-// 	requestAnimationFrame( animate );
-// 	render();
-// }
 
 function render() {
 
