@@ -85,3 +85,11 @@ a, button, input, select {
 	color: #777777;
 	font-size: 12px;
 }
+
+.lil-gui.lil-root > .lil-children > .lil-gui > .lil-title {
+    background-color: black !important;
+    font-weight: 800 !important;
+    text-transform: uppercase !important;
+    font-size: 12px !important;
+    color: red !important;
+}

@@ -18,8 +18,9 @@ var cameraPersp, cameraOrtho, currentCamera;
 var transformControls, orbitControls;
 var helperObjects = [];	
 
-var gui = null;				
+var gui = new GUI();				
 var lastSelectedObject = null;
+var selectedFolder = null;
 
 var raycaster = new THREE.Raycaster();
 var mouse = new THREE.Vector2( 1, 1 ); //udání hodnoty 1,1 je kvůli inicializaci. Jinak může vybrat objekt i když není na vybrání.
@@ -229,6 +230,22 @@ function init() {
 
         switch ( event.key ) {
 
+            case 'Escape':
+                // 1. Odpojíme transformační prvky od objektu
+                if (transformControls.object) {
+                    transformControls.detach();
+                }                
+                // 2. Zničíme složku v lil-gui, pokud existuje
+                if (selectedFolder) {
+                    selectedFolder.destroy();
+                    selectedFolder = null;
+                }                
+                // 3. Volitelné: vynulování pomocných proměnných
+                lastSelectedObject = null;
+                
+                render(); // Překreslíme scénu, aby zmizely transformátory
+                break;
+
             case 'q':
             case 'Q':
                 transformControls.setSpace( transformControls.space === 'local' ? 'world' : 'local' );
@@ -382,7 +399,6 @@ var params = {
 }
 
 function addMainGui() {
-    var gui = new GUI();
     //View
     var folderProp = gui.addFolder( 'View' );
     folderProp.addColor(params, 'backgroundColor').name('Background').onChange(function(value){ console.log(value); scene.background = new THREE.Color(value); render(); });
@@ -405,16 +421,20 @@ function addMainGui() {
 }	
 //addMainGui();
 
-function addGui(obj) {
-    var gui = new GUI();					
-    var folder1 = gui.addFolder( 'Selected part' );
-    folder1.open();
-    folder1.add(obj, 'name').name('Name').listen();
-    folder1.add(obj, 'changeColor').name('Random color');
-    folder1.addColor(part, 'color').name('Specif. color').onChange(function(value){ obj.changeColor(value); });
-    folder1.add(part, 'remove').name('Remove');	
-    folder1.add(part, 'separate').name('Separate Part');				
-    var folder2 = gui.addFolder("Location");
+function refreshSelectedObjGui(obj) {
+    if (selectedFolder) {
+        selectedFolder.destroy();
+        selectedFolder = null;
+    }
+				
+    selectedFolder = gui.addFolder( 'Selected part: ' + (obj.name || 'Unnamed') );
+    selectedFolder.add(obj, 'name').name('Name').listen();
+    selectedFolder.add(obj, 'changeColor').name('Random color');
+    selectedFolder.addColor(part, 'color').name('Specif. color').onChange(function(value){ obj.changeColor(value); });
+    selectedFolder.add(part, 'remove').name('Remove');	
+    selectedFolder.add(part, 'separate').name('Separate Part');
+
+    var folder2 = selectedFolder.addFolder("Location");
     folder2.add(obj.position, 'x', extent.pn, extent.pp, extent.pStep)
         .name('Px')
         .onChange(function(value){obj.position.x=value; render(); })
@@ -444,12 +464,15 @@ function addGui(obj) {
         .onChange(function(value){obj.scale.x=value; obj.scale.y=value; obj.scale.z=value; render(); })
         .listen();
     folder2.add(obj, 'setDefPosRotScale').name('Reset init. location');
-    var folder3 = gui.addFolder("Section view");
+    folder2.close();
+    
+    var folder3 = selectedFolder.addFolder("Section view");
     folder3.add(obj.children[0], 'visible').name('Fullfiled section').onChange(function(value){obj.children[0].visible = value; render(); });
     folder3.add(obj.children[0].material[0], 'polygonOffsetFactor', -4, 0, 0.1)
         .name('OffsetFactor')
         .onChange(function(value){obj.setPolygonOffsetFactor(value); render(); });
-    return gui;
+
+    selectedFolder.open();
 }
 
 function resetSection() {					
@@ -699,12 +722,12 @@ function onMouseMove( event ) {
 
 function onClick( event ) {		
     if (INTERSECTED) {
-        console.log(INTERSECTED);
         transformControls.attach(INTERSECTED);					
         lastSelectedObject=INTERSECTED;					
-        if (gui!=undefined) { //Podmínka: jestliže gui neexistuje, pak ...
-            gui.destroy();
-        }
-        gui = addGui(lastSelectedObject);
+        // if (gui!=undefined) { //Podmínka: jestliže gui neexistuje, pak ...
+        //     gui.destroy();
+        // }
+        // gui = addGui(lastSelectedObject);
+        refreshSelectedObjGui(lastSelectedObject);
     }
 }
