@@ -8,6 +8,7 @@ import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { GUI } from 'lil-gui';
 import ZipLoader from 'zip-loader';
 
+// Proměnné globálního rozsahu----------------------------------------------------------------------------------------
 var container, stats;
 var camera, cameraTarget, scene, renderer;			
 
@@ -26,16 +27,15 @@ var INTERSECTED;
 
 var isTouchScreen;
 
+// Inicializace--------------------------------------------------------------------------------------------------------
 setupPrototypes();
+isTouchScreen = isTouchDevice();
 
 init();
 render();
-
-isTouchScreen = isTouchDevice();
-//console.log(isTouchScreen);
-
 initLoad();
 
+// Funkce----------------------------------------------------------------------------------------------------------------
 function initLoad() {		
     //loadModel("{{ url_for('static', filename=filename_compl) }}", 0.001, true).then( (result)=>{helperObjects.push( result ); } );	
     //loadModel('1011364_c.zip', 0.001, true).then( (result)=>{helperObjects.push( result )} );	
