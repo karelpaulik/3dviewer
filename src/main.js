@@ -84,14 +84,20 @@ function setupPrototypes() {
     THREE.Mesh.prototype.initScale = { x: 1, y: 1, z: 1 };
 
     THREE.Mesh.prototype.changeColor = function (color) {
+        let newColor = color || undefined;
         for (var i=0; i<this.material.length ; i++) {
-            if (color==undefined) {
-                var randomColor = new THREE.Color( Math.random() * 0xffffff );
+            if (color===undefined) {
+                newColor = new THREE.Color( Math.random() * 0xffffff );
+                //newColor = new THREE.Color();
+                //newColor.setHSL(Math.random(), 0.6, 0.5); // Náhodný odstín, daná sytost i jas
+
             } else {
-                var randomColor = new THREE.Color( color );						
+                newColor = new THREE.Color( color );						
             }
-            this.material[i].color = randomColor;
-            this.children[0].material[i].color = randomColor;
+            this.material[i].color = newColor;
+            if (this.children[0]) {
+                this.children[0].material[i].color = newColor;
+            }
         };
         render();
     };
@@ -114,20 +120,21 @@ function setupPrototypes() {
     //this object mesh has: group and material as array
     THREE.Mesh.prototype.createSectionMesh = function (meshObject) {
         var sectionMesh = meshObject.clone();				
-        var clonedMaterial = [];
-        for (var j=0; j < meshObject.material.length; j++) {
-            clonedMaterial.push(meshObject.material[j].clone());
-        }							
-        sectionMesh.material = clonedMaterial;
-                
+        // var clonedMaterial = [];
+        // for (var j=0; j < meshObject.material.length; j++) {
+        //     clonedMaterial.push(meshObject.material[j].clone());
+        // }							
+        // sectionMesh.material = clonedMaterial;
+
+        let parentMaterialColor;        
         for (var j=0; j < sectionMesh.material.length; j++) {
-            var parentMaterial = sectionMesh.material[j].color;
-            //console.log(parentMaterial);
+            parentMaterialColor = sectionMesh.material[j].color;
+            console.log(parentMaterialColor);
             var material = new THREE.MeshBasicMaterial({
                 side: THREE.BackSide,
                 clippingPlanes: clipPlanes,
                 clipIntersection: true,								
-                color: parentMaterial, //Math.random() * 0xffffff,
+                color: parentMaterialColor,
                 polygonOffset: true,
                 polygonOffsetFactor: -1,
                 wireframe: false
