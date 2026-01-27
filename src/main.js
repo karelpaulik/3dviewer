@@ -16,7 +16,7 @@ var clipPlanes = [];
 
 var cameraPersp, cameraOrtho, currentCamera;
 var transformControls, orbitControls;
-var helperObjects = [];	
+var helperObjects = [];
 
 var gui = new GUI();				
 var lastSelectedObject = null;
@@ -27,6 +27,17 @@ var mouse = new THREE.Vector2( 1, 1 ); //udání hodnoty 1,1 je kvůli inicializ
 var INTERSECTED;
 
 var isTouchScreen;
+
+// Možnost zobrazení následujících objektů v konzoli pouze v režimu "npx vite"
+if (import.meta.env.DEV) {
+    //OK, reference na objekty jsou dostupné v konzoli pro ladění
+    window.helperObjects = helperObjects;
+    window.clipPlanes = clipPlanes;
+
+    //NOK - toto není reference
+    window.transformControls=transformControls;
+    window.lastSelectedObject= lastSelectedObject;
+}
 
 // Inicializace--------------------------------------------------------------------------------------------------------
 setupPrototypes();
@@ -437,11 +448,13 @@ function refreshSelectedObjGui(obj) {
     folder2.add(obj, 'setDefPosRotScale').name('Reset init. location');
     folder2.close();
     
-    var folder3 = selectedFolder.addFolder("Section view");
-    folder3.add(obj.children[0], 'visible').name('Fullfiled section').onChange(function(value){obj.children[0].visible = value; render(); });
-    folder3.add(obj.children[0].material[0], 'polygonOffsetFactor', -4, 0, 0.1)
-        .name('OffsetFactor')
-        .onChange(function(value){obj.setPolygonOffsetFactor(value); render(); });
+    if (obj.children[0]) {   
+        var folder3 = selectedFolder.addFolder("Section view");
+        folder3.add(obj.children[0], 'visible').name('Fullfiled section').onChange(function(value){obj.children[0].visible = value; render(); });
+        folder3.add(obj.children[0].material[0], 'polygonOffsetFactor', -4, 0, 0.1)
+            .name('OffsetFactor')
+            .onChange(function(value){obj.setPolygonOffsetFactor(value); render(); });
+    }
 
     selectedFolder.open();
 }
@@ -552,17 +565,18 @@ function loadGlbModel(model, name, scale, colored) {
             scene.add( gltf.scene );
             console.log(gltf.scene);
 
-            render();
-            resolve(gltf.scene);
-            //---------------------------------------------
             const meshes = [];
 
             gltf.scene.traverse( function ( child ) {
                 if ( child.isMesh ) {
                     meshes.push( child );
                     //console.log("child: ", child);
+                    helperObjects.push(child);
                 }
             } );
+
+            render();
+            resolve(gltf.scene);
         } );
     });
 }			
@@ -642,47 +656,100 @@ function onWindowResize() {
     render();
 }
 
+// function render() {
+
+//     //------------------------------------------------------------
+    
+//     if ( !isTouchScreen ) {		
+//         raycaster.setFromCamera( mouse, currentCamera );
+//         var intersects = raycaster.intersectObjects( helperObjects );				
+
+//         if ( intersects.length > 0 ) { //jestliže existuje výběr
+//             if ( INTERSECTED != intersects[ 0 ].object ) { //jestliže současný vybraný prvek je jiný, než předchozí vybraný prvek
+//                 if ( INTERSECTED ) {
+//                     //INTERSECTED.material[11].emissive.setHex( INTERSECTED.currentHex );
+//                     for (var i=0; i<INTERSECTED.material.length; i++) {
+//                         INTERSECTED.material[i].emissive.setHex( 0x000000 );
+//                         //INTERSECTED.children[0].material[i].colorWrite = true;
+//                     }							
+//                 }	
+                
+//                 INTERSECTED = intersects[ 0 ].object;
+//                 //INTERSECTED.currentHex = INTERSECTED.material[11].emissive.getHex();
+//                 //INTERSECTED.material[11].emissive.setHex( 0xff0000 );						
+//                 for (var i=0; i<INTERSECTED.material.length; i++) {
+//                     INTERSECTED.material[i].emissive.setHex( 0xff0000 );
+//                     //INTERSECTED.children[0].material[i].colorWrite = false;
+//                 }						
+//             }
+//         } else { // jestliže neexistuje žádný výběr
+//             if ( INTERSECTED ) { // Okamžik přechodu z myši nad objektem na prázdné místo
+//                 //INTERSECTED.material[11].emissive.setHex( INTERSECTED.currentHex );
+//                 for (var i=0; i<INTERSECTED.material.length; i++) {
+//                     INTERSECTED.material[i].emissive.setHex( 0x000000 );
+//                     //INTERSECTED.children[0].material[i].colorWrite = true;
+//                 }
+//                 INTERSECTED = null;
+//             }
+//         }
+//     }
+//     //------------------------------------------------------------
+
+
+//     renderer.render( scene, currentCamera );
+// }
+
 function render() {
+    // Pomocná funkce pro bezpečné nastavení emissive barvy
+    const setEmissiveColor = (object, colorHex) => {
+        if (!object || !object.material) return;
+
+        if (Array.isArray(object.material)) {
+            // Pokud je materiál pole, projdeme všechny prvky
+            for (var i = 0; i < object.material.length; i++) {
+                if (object.material[i].emissive) {
+                    object.material[i].emissive.setHex(colorHex);
+                }
+            }
+        } else {
+            // Pokud je to jeden objekt, nastavíme přímo
+            if (object.material.emissive) {
+                object.material.emissive.setHex(colorHex);
+            }
+        }
+    };
 
     //------------------------------------------------------------
     
-    if ( !isTouchScreen ) {		
-        raycaster.setFromCamera( mouse, currentCamera );
-        var intersects = raycaster.intersectObjects( helperObjects );				
+    if (!isTouchScreen) {     
+        raycaster.setFromCamera(mouse, currentCamera);
+        var intersects = raycaster.intersectObjects(helperObjects);               
 
-        if ( intersects.length > 0 ) { //jestliže existuje výběr
-            if ( INTERSECTED != intersects[ 0 ].object ) { //jestliže současný vybraný prvek je jiný, než předchozí vybraný prvek
-                if ( INTERSECTED ) {
-                    //INTERSECTED.material[11].emissive.setHex( INTERSECTED.currentHex );
-                    for (var i=0; i<INTERSECTED.material.length; i++) {
-                        INTERSECTED.material[i].emissive.setHex( 0x000000 );
-                        //INTERSECTED.children[0].material[i].colorWrite = true;
-                    }							
-                }	
+        if (intersects.length > 0) { // Myš je nad objektem
+            if (INTERSECTED != intersects[0].object) { //jestliže současný vybraný prvek je jiný, než předchozí vybraný prvek
                 
-                INTERSECTED = intersects[ 0 ].object;
-                //INTERSECTED.currentHex = INTERSECTED.material[11].emissive.getHex();
-                //INTERSECTED.material[11].emissive.setHex( 0xff0000 );						
-                for (var i=0; i<INTERSECTED.material.length; i++) {
-                    INTERSECTED.material[i].emissive.setHex( 0xff0000 );
-                    //INTERSECTED.children[0].material[i].colorWrite = false;
-                }						
+                // 1. Předchozímu objektu vypneme záři
+                if (INTERSECTED) {
+                    setEmissiveColor(INTERSECTED, 0x000000);
+                }   
+                
+                // 2. Nastavíme nový objekt
+                INTERSECTED = intersects[0].object;
+                
+                // 3. Novému objektu zapneme záři
+                setEmissiveColor(INTERSECTED, 0xff0000);
             }
-        } else { // jestliže neexistuje žádný výběr
-            if ( INTERSECTED ) { // Okamžik přechodu z myši nad objektem na prázdné místo
-                //INTERSECTED.material[11].emissive.setHex( INTERSECTED.currentHex );
-                for (var i=0; i<INTERSECTED.material.length; i++) {
-                    INTERSECTED.material[i].emissive.setHex( 0x000000 );
-                    //INTERSECTED.children[0].material[i].colorWrite = true;
-                }
+        } else { 
+            // Přechod z vybraného objektu na prázdné místo
+            if (INTERSECTED) {
+                setEmissiveColor(INTERSECTED, 0x000000);
                 INTERSECTED = null;
             }
         }
     }
     //------------------------------------------------------------
 
-
-    renderer.render( scene, currentCamera );
+    renderer.render(scene, currentCamera);
 }
 
 
