@@ -48,10 +48,7 @@ render();
 initLoad();
 
 // Funkce----------------------------------------------------------------------------------------------------------------
-function initLoad() {		
-    //loadModel("{{ url_for('static', filename=filename_compl) }}", 0.001, true).then( (result)=>{helperObjects.push( result ); } );	
-    //loadModel('1011364_c.zip', 0.001, true).then( (result)=>{helperObjects.push( result )} );	
-    
+function initLoad() {		   
     // Načtení modelu z URL parametru---------------------------------------------------------
     // 1. Získání celého řetězce dotazu (query string) z aktuální URL
     // Např. získá '?model=https%3A%2F%2Ffirebase.zip&name=muj_dil.zip'
@@ -84,9 +81,6 @@ function initLoad() {
         loadModel('/models/1011364_c.zip','1011364_c.zip', 0.001, true).then( (result)=>{helperObjects.push( result )} );	
         //loadGlbModel('./models/1011364_c.zip','1011364_c.zip', 0.001, true).then( (result)=>{helperObjects.push( result )} );
     }
-    //--------------------------------------------------------------------------------------	
-
-
 }
 
 function setupPrototypes() {
@@ -101,7 +95,6 @@ function setupPrototypes() {
                 newColor = new THREE.Color( Math.random() * 0xffffff );
                 //newColor = new THREE.Color();
                 //newColor.setHSL(Math.random(), 0.6, 0.5); // Náhodný odstín, daná sytost i jas
-
             } else {
                 newColor = new THREE.Color( color );						
             }
@@ -126,16 +119,8 @@ function setupPrototypes() {
         };
     };
 
-    //precondition:
-    //exist object: mesh
-    //this object mesh has: group and material as array
     THREE.Mesh.prototype.createSectionMesh = function () {
         var sectionMesh = this.clone();	
-        // var clonedMaterial = [];
-        // for (var j=0; j < meshObject.material.length; j++) {
-        //     clonedMaterial.push(meshObject.material[j].clone());
-        // }							
-        // sectionMesh.material = clonedMaterial;
 
         let parentMaterialColor;        
         for (var j=0; j < sectionMesh.material.length; j++) {
@@ -233,9 +218,7 @@ function init() {
     transformControls = new TransformControls( currentCamera, renderer.domElement );
     transformControls.setSize( 0.5 );	
     scene.add( transformControls.getHelper() );	//Nutno v novém three.js. Dříve bylo: scene.add( transformControls );
-    
     transformControls.addEventListener( 'change', render );
-
     transformControls.addEventListener( 'dragging-changed', function ( event ) {
         orbitControls.enabled = ! event.value;
     } );			
@@ -245,9 +228,7 @@ function init() {
     window.addEventListener( 'click', onClick, false );
     
     window.addEventListener( 'keydown', function ( event ) {
-
         switch ( event.key ) {
-
             case 'Escape':
                 // 1. Odpojíme transformační prvky od objektu
                 if (transformControls.object) {
@@ -263,7 +244,6 @@ function init() {
                 
                 render(); // Překreslíme scénu, aby zmizely transformátory
                 break;
-
             case 'q':
             case 'Q':
                 transformControls.setSpace( transformControls.space === 'local' ? 'world' : 'local' );
@@ -326,26 +306,18 @@ function init() {
                     Math.random() * 400 - 200
                 );
                 break;
-
         }
-
     } );
 
     window.addEventListener( 'keyup', function ( event ) {
-
         switch ( event.key ) {
-
             case 'Shift':
                 transformControls.setTranslationSnap( null );
                 transformControls.setRotationSnap( null );
                 transformControls.setScaleSnap( null );
                 break;
-
         }
-
     } );
-
-
 } //End init ------------------------------------------------------------------------------------------------------------------------------	
 
 //GUI----------------------------------------------------------------------------------------------------------------
@@ -492,8 +464,6 @@ function setCamera() {
     onWindowResize();
 }	
 //GUI----------------------------------------------------------------------------------------------------------------
-
-
 function isTouchDevice() {
     return (('ontouchstart' in window) ||
         (navigator.maxTouchPoints > 0) ||
@@ -501,11 +471,9 @@ function isTouchDevice() {
 }
 
 function addShadowedLight( x, y, z, color, intensity ) {
-
     var directionalLight = new THREE.DirectionalLight( color, intensity );
     directionalLight.position.set( x, y, z );
     scene.add( directionalLight );
-
     directionalLight.castShadow = true;
 }
 
@@ -551,9 +519,6 @@ function loadModel(model, name, scale, colored) {
         } );					
     });
 }
-//Volání funkce:
-//loadModel('./models/gltf/paulik/1012053_i_ch05_a225_text.stl', 0.001).then( (result)=>{console.log(result)} );	
-
 
 function loadGlbModel(model, name, scale, colored) {
     return new Promise( (resolve, reject) => {	
@@ -593,13 +558,11 @@ function removeModel(part) {
         transformControls.detach( part );
         scene.remove( part );
         var partIndex = helperObjects.indexOf(part);
-        helperObjects.splice(partIndex, 1);					
-        
+        helperObjects.splice(partIndex, 1);			
         render();
     } catch(err) {
         console.log("Error: removeModel " + err.message);
     }
-
 }
 
 function separateGroups( bufGeom ) {
@@ -656,49 +619,6 @@ function onWindowResize() {
     render();
 }
 
-// function render() {
-
-//     //------------------------------------------------------------
-    
-//     if ( !isTouchScreen ) {		
-//         raycaster.setFromCamera( mouse, currentCamera );
-//         var intersects = raycaster.intersectObjects( helperObjects );				
-
-//         if ( intersects.length > 0 ) { //jestliže existuje výběr
-//             if ( INTERSECTED != intersects[ 0 ].object ) { //jestliže současný vybraný prvek je jiný, než předchozí vybraný prvek
-//                 if ( INTERSECTED ) {
-//                     //INTERSECTED.material[11].emissive.setHex( INTERSECTED.currentHex );
-//                     for (var i=0; i<INTERSECTED.material.length; i++) {
-//                         INTERSECTED.material[i].emissive.setHex( 0x000000 );
-//                         //INTERSECTED.children[0].material[i].colorWrite = true;
-//                     }							
-//                 }	
-                
-//                 INTERSECTED = intersects[ 0 ].object;
-//                 //INTERSECTED.currentHex = INTERSECTED.material[11].emissive.getHex();
-//                 //INTERSECTED.material[11].emissive.setHex( 0xff0000 );						
-//                 for (var i=0; i<INTERSECTED.material.length; i++) {
-//                     INTERSECTED.material[i].emissive.setHex( 0xff0000 );
-//                     //INTERSECTED.children[0].material[i].colorWrite = false;
-//                 }						
-//             }
-//         } else { // jestliže neexistuje žádný výběr
-//             if ( INTERSECTED ) { // Okamžik přechodu z myši nad objektem na prázdné místo
-//                 //INTERSECTED.material[11].emissive.setHex( INTERSECTED.currentHex );
-//                 for (var i=0; i<INTERSECTED.material.length; i++) {
-//                     INTERSECTED.material[i].emissive.setHex( 0x000000 );
-//                     //INTERSECTED.children[0].material[i].colorWrite = true;
-//                 }
-//                 INTERSECTED = null;
-//             }
-//         }
-//     }
-//     //------------------------------------------------------------
-
-
-//     renderer.render( scene, currentCamera );
-// }
-
 function render() {
     // Pomocná funkce pro bezpečné nastavení emissive barvy
     const setEmissiveColor = (object, colorHex) => {
@@ -718,9 +638,7 @@ function render() {
             }
         }
     };
-
-    //------------------------------------------------------------
-    
+    //------------------------------------------------------------    
     if (!isTouchScreen) {     
         raycaster.setFromCamera(mouse, currentCamera);
         var intersects = raycaster.intersectObjects(helperObjects);               
@@ -748,7 +666,6 @@ function render() {
         }
     }
     //------------------------------------------------------------
-
     renderer.render(scene, currentCamera);
 }
 
@@ -767,10 +684,6 @@ function onClick( event ) {
         transformControls.attach(INTERSECTED);					
         lastSelectedObject=INTERSECTED;	
         console.log("Selected object: ", lastSelectedObject);				
-        // if (gui!=undefined) { //Podmínka: jestliže gui neexistuje, pak ...
-        //     gui.destroy();
-        // }
-        // gui = addGui(lastSelectedObject);
         refreshSelectedObjGui(lastSelectedObject);
     }
 }
