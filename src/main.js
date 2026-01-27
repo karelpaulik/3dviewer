@@ -118,8 +118,8 @@ function setupPrototypes() {
     //precondition:
     //exist object: mesh
     //this object mesh has: group and material as array
-    THREE.Mesh.prototype.createSectionMesh = function (meshObject) {
-        var sectionMesh = meshObject.clone();				
+    THREE.Mesh.prototype.createSectionMesh = function () {
+        var sectionMesh = this.clone();	
         // var clonedMaterial = [];
         // for (var j=0; j < meshObject.material.length; j++) {
         //     clonedMaterial.push(meshObject.material[j].clone());
@@ -146,7 +146,7 @@ function setupPrototypes() {
         sectionMesh.rotation.set( 0, 0, 0);							
         sectionMesh.scale.set( 1, 1, 1 );
                 
-        meshObject.add(sectionMesh);			
+        this.add(sectionMesh);			
     }
 }
 
@@ -363,41 +363,12 @@ var viewProp = {
 }
     
 var part = {
-    partNr: "1011388_b",
-    //load: function() { loadModel('./models/' + part.partNr + '.zip', 0.001, true).then( (result)=>{helperObjects.push( result ); } );},
-    //load: function() { loadModel("{{ url_for('static', filename='1011388_b.zip') }}", 0.001, true).then( (result)=>{helperObjects.push( result ); } );},			
-    load: function() { loadModel('1011364_c.zip', 0.001, true).then( (result)=>{helperObjects.push( result ); } );},
     remove: function() { removeModel(lastSelectedObject); },
     color: "#888888",
     separate: function() { 
-        
-        var geometris = [];
-        geometris = separateGroups(lastSelectedObject.geometry);
-        removeModel(lastSelectedObject);				
-            
-        for (var i=0; i<geometris.length; i++) {
-
-            //1.moznost (Toto nefunguje, protože materiál je pole.)----------------------
-            //var mesh = new THREE.Mesh(geometris[i], lastSelectedObject.material[i]);
-            //---------------------------------------------------------------------------
-                
-            //2.moznost------------------------------------------------------------------
-            //geometris[i].addGroup(0, geometris[i].attributes.position.count, 0);
-            var materials = [];  // Vytvoření pole materiálů - pole o jednom prvku (očekává se pole, protože Mesh používá groups)
-            materials.push(lastSelectedObject.material[i]);
-            var mesh = new THREE.Mesh(geometris[i], materials);
-            //---------------------------------------------------------------------------
-                
-            mesh.setDefPosRotScale();
-            mesh.name = fileNameWithoutExtension("sep dil");						
-            scene.add( mesh );
-            console.log(mesh);
-                
-            mesh.createSectionMesh(mesh);
-                
-            render();
-            helperObjects.push( mesh );						
-        }										
+        if (lastSelectedObject) {
+            separateMesh(lastSelectedObject); 
+        }									
     }
 };	
 
@@ -418,15 +389,8 @@ function addMainGui() {
     folderProp.add(viewProp, 'viewx').name('View from X');
     folderProp.add(viewProp, 'viewy').name('View from Y');
     folderProp.add(viewProp, 'viewz').name('View from Z');
-    folderProp.add(lastSelectedObject, 'changeColor').name('Random color');	
-    //Loading
-    //var folder1 = gui.addFolder( 'Load / Remove' );
-    //folder1.open();
-    // folder1.add(part, 'partNr').name('Part nr.');
-    // folder1.add(part, 'load').name('Load');
-    // folder1.add(part, 'remove').name('Remove');						
+    folderProp.add(lastSelectedObject, 'changeColor').name('Random color');						
 }	
-//addMainGui();
 
 function refreshSelectedObjGui(obj) {
     if (selectedFolder) {
@@ -567,7 +531,7 @@ function loadModel(model, name, scale, colored) {
                 render();
                 resolve(mesh);	
 
-                mesh.createSectionMesh(mesh);
+                mesh.createSectionMesh();
                 lastSelectedObject=mesh;  
                 addMainGui();
             } );
@@ -742,4 +706,34 @@ function onClick( event ) {
         // gui = addGui(lastSelectedObject);
         refreshSelectedObjGui(lastSelectedObject);
     }
+}
+
+function separateMesh(meshToSeparate) {
+    if (!meshToSeparate || !meshToSeparate.geometry) return;
+
+    // 1. Získání nových geometrií pomocí vaší existující logiky - goemetries je array.
+    const geometries = separateGroups(meshToSeparate.geometry);
+    
+    // 2. Odstranění původního modelu
+    removeModel(meshToSeparate);
+
+    // 3. Vytvoření nových meshů
+    geometries.forEach((geom, i) => {
+        const materials = [];
+        materials.push(meshToSeparate.material[i]);
+        const newMesh = new THREE.Mesh(geom, materials);
+        
+        // Použití prototypových metod, které už máte (např. setDefPosRotScale)
+        newMesh.setDefPosRotScale();
+        newMesh.name = `Part_${i}_${meshToSeparate.name || 'sep'}`;
+        //newMesh.name = fileNameWithoutExtension("sep dil");	
+        
+        scene.add(newMesh);
+        
+        // Inicializace sekcí a registrace
+        newMesh.createSectionMesh();
+        helperObjects.push(newMesh);
+    });
+
+    render();
 }
