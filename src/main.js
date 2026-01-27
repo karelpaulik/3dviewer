@@ -129,7 +129,7 @@ function setupPrototypes() {
         let parentMaterialColor;        
         for (var j=0; j < sectionMesh.material.length; j++) {
             parentMaterialColor = sectionMesh.material[j].color;
-            console.log(parentMaterialColor);
+            //console.log(parentMaterialColor);
             var material = new THREE.MeshBasicMaterial({
                 side: THREE.BackSide,
                 clippingPlanes: clipPlanes,
@@ -377,13 +377,13 @@ var part = {
             
         for (var i=0; i<geometris.length; i++) {
 
-            //1.moznost------------------------------------------------------------------
+            //1.moznost (Toto nefunguje, protože materiál je pole.)----------------------
             //var mesh = new THREE.Mesh(geometris[i], lastSelectedObject.material[i]);
             //---------------------------------------------------------------------------
                 
             //2.moznost------------------------------------------------------------------
-            geometris[i].addGroup(0, geometris[i].attributes.position.count, 0);
-            var materials = [];
+            //geometris[i].addGroup(0, geometris[i].attributes.position.count, 0);
+            var materials = [];  // Vytvoření pole materiálů - pole o jednom prvku (očekává se pole, protože Mesh používá groups)
             materials.push(lastSelectedObject.material[i]);
             var mesh = new THREE.Mesh(geometris[i], materials);
             //---------------------------------------------------------------------------
@@ -626,28 +626,32 @@ function removeModel(part) {
 
 function separateGroups( bufGeom ) {
     var outGeometries = [];
-    var groups = bufGeom.groups;					
+    var groups = bufGeom.groups;                    
     var origPositions = bufGeom.getAttribute( 'position' ).array;
     var origNormals = bufGeom.getAttribute( 'normal' ).array;
-    var origNumVerts = Math.floor( origPositions.length / 3 );	
-    for ( var ig = 0, ng = groups.length; ig < ng; ig ++ ) {				
+    var origNumVerts = Math.floor( origPositions.length / 3 );    
+    for ( var ig = 0, ng = groups.length; ig < ng; ig ++ ) {                
         var group = groups[ ig ];
         var destNumVerts = group.count;
         var newBufGeom = new THREE.BufferGeometry();
         var newPositions = new Float32Array( destNumVerts * 3 );
         var newNormals = new Float32Array( destNumVerts * 3 );
-        for ( var iv = 0; iv < destNumVerts; iv ++ ) {					
+        for ( var iv = 0; iv < destNumVerts; iv ++ ) {                    
             var indexOrig = 3 * ( group.start + iv );
-            var indexDest = 3 * iv;						
+            var indexDest = 3 * iv;                        
             newPositions[ indexDest + 0 ] = origPositions[ indexOrig + 0 ];
             newPositions[ indexDest + 1 ] = origPositions[ indexOrig + 1 ];
             newPositions[ indexDest + 2 ] = origPositions[ indexOrig + 2 ];
             newNormals[ indexDest + 0 ] = origNormals[ indexOrig + 0 ];
             newNormals[ indexDest + 1 ] = origNormals[ indexOrig + 1 ];
-            newNormals[ indexDest + 2 ] = origNormals[ indexOrig + 2 ];				
-        }						
+            newNormals[ indexDest + 2 ] = origNormals[ indexOrig + 2 ];                
+        }                       
         newBufGeom.setAttribute( 'position', new THREE.BufferAttribute( newPositions, 3 ) );
         newBufGeom.setAttribute( 'normal', new THREE.BufferAttribute( newNormals, 3 ) );
+        
+        // PŘESUNUTO SEM: Nastavení skupiny pro novou geometrii
+        newBufGeom.addGroup(0, destNumVerts, 0);
+
         outGeometries.push( newBufGeom );
     }
     return outGeometries;
@@ -730,7 +734,8 @@ function onMouseMove( event ) {
 function onClick( event ) {		
     if (INTERSECTED) {
         transformControls.attach(INTERSECTED);					
-        lastSelectedObject=INTERSECTED;					
+        lastSelectedObject=INTERSECTED;	
+        console.log("Selected object: ", lastSelectedObject);				
         // if (gui!=undefined) { //Podmínka: jestliže gui neexistuje, pak ...
         //     gui.destroy();
         // }
