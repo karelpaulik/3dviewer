@@ -1,3 +1,4 @@
+//main.js
 import * as THREE from 'three';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -83,28 +84,31 @@ function initLoad() {
     }
 }
 
+// Převedeno na běžnou funkci (původně THREE.Mesh.prototype.changeColor)
+function changeColor(obj, color) {
+    if (!obj) return;
+    let newColor = color || undefined;
+    for (var i = 0; i < obj.material.length; i++) {
+        if (color === undefined) {
+            newColor = new THREE.Color(Math.random() * 0xffffff);
+            //newColor = new THREE.Color();
+            //newColor.setHSL(Math.random(), 0.6, 0.5); // Náhodný odstín, daná sytost i jas
+        } else {
+            newColor = new THREE.Color(color);
+        }
+        obj.material[i].color = newColor;
+        if (obj.children[0]) {
+            obj.children[0].material[i].color = newColor;
+        }
+    };
+    render();
+}
+
 function setupPrototypes() {
     THREE.Mesh.prototype.initPosition = { x: 0, y: 0, z: 0 };
     THREE.Mesh.prototype.initRotation = { x: -Math.PI/2, y: 0, z: 0 };
     THREE.Mesh.prototype.initScale = { x: 1, y: 1, z: 1 };
 
-    THREE.Mesh.prototype.changeColor = function (color) {
-        let newColor = color || undefined;
-        for (var i=0; i<this.material.length ; i++) {
-            if (color===undefined) {
-                newColor = new THREE.Color( Math.random() * 0xffffff );
-                //newColor = new THREE.Color();
-                //newColor.setHSL(Math.random(), 0.6, 0.5); // Náhodný odstín, daná sytost i jas
-            } else {
-                newColor = new THREE.Color( color );						
-            }
-            this.material[i].color = newColor;
-            if (this.children[0]) {
-                this.children[0].material[i].color = newColor;
-            }
-        };
-        render();
-    };
     
     THREE.Mesh.prototype.setDefPosRotScale = function () {			
         this.position.set(this.initPosition.x, this.initPosition.y, this.initPosition.z);
@@ -163,7 +167,7 @@ function init() {
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 2;
 
-    // // nutno jen pro animaci
+        // // nutno jen pro animaci
     // renderer.setAnimationLoop(() => {
     // 	// Vaše logika rotace a posunu
     // 	//model.rotation.y += 0.01;
@@ -240,8 +244,7 @@ function init() {
                     selectedFolder = null;
                 }                
                 // 3. Volitelné: vynulování pomocných proměnných
-                lastSelectedObject = null;
-                
+                lastSelectedObject = null;                
                 render(); // Překreslíme scénu, aby zmizely transformátory
                 break;
             case 'q':
@@ -300,11 +303,13 @@ function init() {
                 break;
 
             case 'm':
-                lastSelectedObject.position.set(
-                    Math.random() * 400 - 200,
-                    Math.random() * 400 - 200,
-                    Math.random() * 400 - 200
-                );
+                if (lastSelectedObject) {
+                    lastSelectedObject.position.set(
+                        Math.random() * 400 - 200,
+                        Math.random() * 400 - 200,
+                        Math.random() * 400 - 200
+                    );
+                }
                 break;
         }
     } );
@@ -318,7 +323,7 @@ function init() {
                 break;
         }
     } );
-} //End init ------------------------------------------------------------------------------------------------------------------------------	
+} //End init 	
 
 //GUI----------------------------------------------------------------------------------------------------------------
 var extent = {
@@ -352,6 +357,11 @@ var part = {
         if (lastSelectedObject) {
             separateMesh(lastSelectedObject); 
         }									
+    },
+    randomColor: function() {
+        if (lastSelectedObject) {
+            changeColor(lastSelectedObject);
+        }
     }
 };	
 
@@ -362,7 +372,7 @@ var params = {
 function addMainGui() {
     //View
     var folderProp = gui.addFolder( 'View' );
-    folderProp.addColor(params, 'backgroundColor').name('Background').onChange(function(value){ console.log(value); scene.background = new THREE.Color(value); render(); });
+    folderProp.addColor(params, 'backgroundColor').name('Background').onChange(function(value){ scene.background = new THREE.Color(value); render(); });
     folderProp.add(viewProp, 'perspCam').name('Persp. camera').onChange(function(value){setCamera(); render(); });
     folderProp.add(viewProp, 'section').name('Section').onChange(function(value){renderer.localClippingEnabled = value; render(); });
     folderProp.add(viewProp, 'px', extent.pn, extent.pp, extent.pStep).name('Pos. x').onChange(function(value){clipPlanes[0].constant=value; render(); }).listen();
@@ -372,7 +382,7 @@ function addMainGui() {
     folderProp.add(viewProp, 'viewx').name('View from X');
     folderProp.add(viewProp, 'viewy').name('View from Y');
     folderProp.add(viewProp, 'viewz').name('View from Z');
-    folderProp.add(lastSelectedObject, 'changeColor').name('Random color');						
+    folderProp.add(part, 'randomColor').name('Random color');						
 }	
 
 function refreshSelectedObjGui(obj) {
@@ -383,8 +393,8 @@ function refreshSelectedObjGui(obj) {
 				
     selectedFolder = gui.addFolder( 'Selected part: ' + (obj.name || 'Unnamed') );
     selectedFolder.add(obj, 'name').name('Name').listen();
-    selectedFolder.add(obj, 'changeColor').name('Random color');
-    selectedFolder.addColor(part, 'color').name('Specif. color').onChange(function(value){ obj.changeColor(value); });
+    selectedFolder.add(part, 'randomColor').name('Random color');
+    selectedFolder.addColor(part, 'color').name('Specif. color').onChange(function(value){ changeColor(obj, value); });
     selectedFolder.add(part, 'remove').name('Remove');	
     selectedFolder.add(part, 'separate').name('Separate Part');
 
@@ -482,7 +492,7 @@ function addShadowedLight( x, y, z, color, intensity ) {
 function loadModel(model, name, scale, colored) {
     return new Promise( (resolve, reject) => {	
 
-        var zipLoader = new ZipLoader( model ); //Např: './models/1011388_b.zip'
+        var zipLoader = new ZipLoader( model ); 
         zipLoader.load().then( function() {
             var url = zipLoader.extractAsBlobUrl( fileNameWithoutExtension(name) + '.txt');					
         
@@ -535,7 +545,6 @@ function loadGlbModel(model, name, scale, colored) {
             gltf.scene.traverse( function ( child ) {
                 if ( child.isMesh ) {
                     meshes.push( child );
-                    //console.log("child: ", child);
                     helperObjects.push(child);
                 }
             } );
@@ -558,7 +567,7 @@ function removeModel(part) {
         transformControls.detach( part );
         scene.remove( part );
         var partIndex = helperObjects.indexOf(part);
-        helperObjects.splice(partIndex, 1);			
+        if (partIndex !== -1) helperObjects.splice(partIndex, 1);			
         render();
     } catch(err) {
         console.log("Error: removeModel " + err.message);
@@ -589,8 +598,6 @@ function separateGroups( bufGeom ) {
         }                       
         newBufGeom.setAttribute( 'position', new THREE.BufferAttribute( newPositions, 3 ) );
         newBufGeom.setAttribute( 'normal', new THREE.BufferAttribute( newNormals, 3 ) );
-        
-        // PŘESUNUTO SEM: Nastavení skupiny pro novou geometrii
         newBufGeom.addGroup(0, destNumVerts, 0);
 
         outGeometries.push( newBufGeom );
@@ -599,8 +606,6 @@ function separateGroups( bufGeom ) {
 }
 
 function onWindowResize() {
-    //currentCamera.aspect = window.innerWidth / window.innerHeight;
-    
     if (currentCamera == cameraPersp) {
         currentCamera.aspect = window.innerWidth / window.innerHeight;
     }
