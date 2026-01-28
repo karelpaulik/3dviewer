@@ -41,7 +41,6 @@ if (import.meta.env.DEV) {
 }
 
 // Inicializace--------------------------------------------------------------------------------------------------------
-setupPrototypes();
 isTouchScreen = isTouchDevice();
 
 init();
@@ -49,7 +48,7 @@ render();
 initLoad();
 
 // Funkce----------------------------------------------------------------------------------------------------------------
-function initLoad() {		   
+function initLoad() {		    
     // Načtení modelu z URL parametru---------------------------------------------------------
     // 1. Získání celého řetězce dotazu (query string) z aktuální URL
     // Např. získá '?model=https%3A%2F%2Ffirebase.zip&name=muj_dil.zip'
@@ -119,12 +118,6 @@ function setDefPosRotScale(obj) {
     obj.rotation.set(obj.initRotation.x, obj.initRotation.y, obj.initRotation.z);
     obj.scale.set(obj.initScale.x, obj.initScale.y, obj.initScale.z);
     render();
-}
-
-function setupPrototypes() {
-    THREE.Mesh.prototype.initPosition = { x: 0, y: 0, z: 0 };
-    THREE.Mesh.prototype.initRotation = { x: -Math.PI/2, y: 0, z: 0 };
-    THREE.Mesh.prototype.initScale = { x: 1, y: 1, z: 1 };
 }
 
 function createSectionMesh(mesh) {
@@ -523,7 +516,12 @@ function loadModel(model, name, scale, colored) {
                 }
                 var mesh = new THREE.Mesh(geometry, materials);					
                 
-                setDefPosRotScale(mesh);							
+                // Definice výchozích hodnot přímo na objektu (náhrada za prototypy)
+                mesh.initPosition = { x: 0, y: 0, z: 0 };
+                mesh.initRotation = { x: -Math.PI/2, y: 0, z: 0 };
+                mesh.initScale = { x: 1, y: 1, z: 1 };
+                
+                setDefPosRotScale(mesh);
                 mesh.name = fileNameWithoutExtension(model);
                 scene.add( mesh );	
                 console.log(mesh);
@@ -716,6 +714,16 @@ function separateMesh(meshToSeparate) {
         materials.push(meshToSeparate.material[i]);
         const newMesh = new THREE.Mesh(geom, materials);
         
+        // Separated parts - v initial pozici, rotaci a měřítku
+        // newMesh.initPosition = { ...meshToSeparate.initPosition };
+        // newMesh.initRotation = { ...meshToSeparate.initRotation };
+        // newMesh.initScale = { ...meshToSeparate.initScale };
+
+        // Separated parts - ve své aktuální pozici, rotaci a měřítku
+        newMesh.initPosition = meshToSeparate.position.clone();
+        newMesh.initRotation = meshToSeparate.rotation.clone();
+        newMesh.initScale = meshToSeparate.scale.clone();
+
         setDefPosRotScale(newMesh);
         newMesh.name = `Part_${i}_${meshToSeparate.name || 'sep'}`;
         //newMesh.name = fileNameWithoutExtension("sep dil");	
