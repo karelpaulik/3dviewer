@@ -10,24 +10,24 @@ import { GUI } from 'lil-gui';
 import ZipLoader from 'zip-loader';
 
 // Proměnné globálního rozsahu----------------------------------------------------------------------------------------
-var container, stats;
-var camera, cameraTarget, scene, renderer;			
+let container, stats;
+let camera, cameraTarget, scene, renderer;			
 
-var clipPlanes = [];		
+const clipPlanes = [];		
 
-var cameraPersp, cameraOrtho, currentCamera;
-var transformControls, orbitControls;
-var helperObjects = [];
+let cameraPersp, cameraOrtho, currentCamera;
+let transformControls, orbitControls;
+const helperObjects = [];
 
-var gui = new GUI();				
-var lastSelectedObject = null;
-var selectedFolder = null;
+const gui = new GUI();				
+let lastSelectedObject = null;
+let selectedFolder = null;
 
-var raycaster = new THREE.Raycaster();
-var mouse = new THREE.Vector2( 1, 1 ); //udání hodnoty 1,1 je kvůli inicializaci. Jinak může vybrat objekt i když není na vybrání.
-var INTERSECTED;
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2( 1, 1 ); //udání hodnoty 1,1 je kvůli inicializaci. Jinak může vybrat objekt i když není na vybrání.
+let INTERSECTED;
 
-var isTouchScreen;
+let isTouchScreen;
 
 // Možnost zobrazení následujících objektů v konzoli pouze v režimu "npx vite"
 if (import.meta.env.DEV) {
@@ -36,8 +36,8 @@ if (import.meta.env.DEV) {
     window.clipPlanes = clipPlanes;
 
     //NOK - toto není reference
-    window.transformControls=transformControls;
-    window.lastSelectedObject= lastSelectedObject;
+    window.transformControls = transformControls;
+    window.lastSelectedObject = lastSelectedObject;
 }
 
 // Inicializace--------------------------------------------------------------------------------------------------------
@@ -85,18 +85,18 @@ function initLoad() {
 
 function setPolygonOffsetFactor(obj, value) {
     if (!obj || !obj.material) return;
-    for (var i = 0; i < obj.material.length; i++) {
+    for (let i = 0; i < obj.material.length; i++) {
         // Kontrola, zda existuje potomek (sectionMesh), kterému se offset nastavuje
         if (obj.children[0] && obj.children[0].material[i]) {
             obj.children[0].material[i].polygonOffsetFactor = value;
         }
-    };
+    }
 }
 
 function changeColor(obj, color) {
     if (!obj) return;
     let newColor = color || undefined;
-    for (var i = 0; i < obj.material.length; i++) {
+    for (let i = 0; i < obj.material.length; i++) {
         if (color === undefined) {
             newColor = new THREE.Color(Math.random() * 0xffffff);
             //newColor = new THREE.Color();
@@ -108,7 +108,7 @@ function changeColor(obj, color) {
         if (obj.children[0]) {
             obj.children[0].material[i].color = newColor;
         }
-    };
+    }
     render();
 }
 
@@ -121,13 +121,13 @@ function setDefPosRotScale(obj) {
 }
 
 function createSectionMesh(mesh) {
-    var sectionMesh = mesh.clone();	
+    const sectionMesh = mesh.clone();	
 
     let parentMaterialColor;        
-    for (var j=0; j < sectionMesh.material.length; j++) {
+    for (let j=0; j < sectionMesh.material.length; j++) {
         parentMaterialColor = sectionMesh.material[j].color;
         //console.log(parentMaterialColor);
-        var material = new THREE.MeshBasicMaterial({
+        const material = new THREE.MeshBasicMaterial({
             side: THREE.BackSide,
             clippingPlanes: clipPlanes,
             clipIntersection: true,								
@@ -163,7 +163,7 @@ function init() {
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 2;
     
-        // // nutno jen pro animaci
+    // // nutno jen pro animaci
     // renderer.setAnimationLoop(() => {
     // 	// Vaše logika rotace a posunu
     // 	//model.rotation.y += 0.01;
@@ -197,7 +197,7 @@ function init() {
     currentCamera.add(headlight); // Světlo bude svítit ze stejného místa jako oči uživatele
     scene.add(currentCamera); // BEZ TOHOTO ŘÁDKU SVĚTLO NEBUDE SVÍTIT
 
-    var mouseDown = 0;
+    let mouseDown = 0;
     document.body.onmousedown = function() { 
         mouseDown = 1;
     }
@@ -322,7 +322,7 @@ function init() {
 } //End init 	
 
 //GUI----------------------------------------------------------------------------------------------------------------
-var extent = {
+const extent = {
     pn: -1000,
     pp: +1000,
     pStep: 10,
@@ -334,7 +334,7 @@ var extent = {
     sStep: 0.1
 }
 
-var viewProp = {
+const viewProp = {
     perspCam: false,
     section: false,
     px: 0,
@@ -346,7 +346,7 @@ var viewProp = {
     viewz: function() { viewFromPoint(0, 0, 1000) },
 }
     
-var part = {
+const part = {
     remove: function() { removeModel(lastSelectedObject); },
     color: "#888888",
     separate: function() { 
@@ -366,13 +366,13 @@ var part = {
     }
 };	
 
-var params = {
+const params = {
     backgroundColor: "#888888"
 }
 
 function addMainGui() {
     //View
-    var folderProp = gui.addFolder( 'View' );
+    const folderProp = gui.addFolder( 'View' );
     folderProp.addColor(params, 'backgroundColor').name('Background').onChange(function(value){ scene.background = new THREE.Color(value); render(); });
     folderProp.add(viewProp, 'perspCam').name('Persp. camera').onChange(function(value){setCamera(); render(); });
     folderProp.add(viewProp, 'section').name('Section').onChange(function(value){renderer.localClippingEnabled = value; render(); });
@@ -399,7 +399,7 @@ function refreshSelectedObjGui(obj) {
     selectedFolder.add(part, 'remove').name('Remove');	
     selectedFolder.add(part, 'separate').name('Separate Part');
 
-    var folder2 = selectedFolder.addFolder("Location");
+    const folder2 = selectedFolder.addFolder("Location");
     folder2.add(obj.position, 'x', extent.pn, extent.pp, extent.pStep)
         .name('Px')
         .onChange(function(value){obj.position.x=value; render(); })
@@ -432,7 +432,7 @@ function refreshSelectedObjGui(obj) {
     folder2.close();
     
     if (obj.children[0]) {   
-        var folder3 = selectedFolder.addFolder("Section view");
+        const folder3 = selectedFolder.addFolder("Section view");
         folder3.add(obj.children[0], 'visible').name('Fullfiled section').onChange(function(value){obj.children[0].visible = value; render(); });
         folder3.add(obj.children[0].material[0], 'polygonOffsetFactor', -4, 0, 0.1)
             .name('OffsetFactor')
@@ -482,7 +482,7 @@ function isTouchDevice() {
 }
 
 function addShadowedLight( x, y, z, color, intensity ) {
-    var directionalLight = new THREE.DirectionalLight( color, intensity );
+    const directionalLight = new THREE.DirectionalLight( color, intensity );
     directionalLight.position.set( x, y, z );
     scene.add( directionalLight );
     directionalLight.castShadow = true;
@@ -493,19 +493,19 @@ function addShadowedLight( x, y, z, color, intensity ) {
 function loadModel(model, name, scale, colored) {
     return new Promise( (resolve, reject) => {	
 
-        var zipLoader = new ZipLoader( model ); 
+        const zipLoader = new ZipLoader( model ); 
         zipLoader.load().then( function() {
-            var url = zipLoader.extractAsBlobUrl( fileNameWithoutExtension(name) + '.txt');					
+            const url = zipLoader.extractAsBlobUrl( fileNameWithoutExtension(name) + '.txt');					
         
-            var loader = new STLLoader();
+            const loader = new STLLoader();
             loader.load( url, function ( geometry ) {												
 
-                var materials = [];
-                var nGeometryGroups = geometry.groups.length;
+                const materials = [];
+                const nGeometryGroups = geometry.groups.length;
                 console.log("nGeometryGroups: ", nGeometryGroups);
                 
-                for (var i = 0; i < nGeometryGroups; i++) {
-                    var material = new THREE.MeshPhongMaterial({
+                for (let i = 0; i < nGeometryGroups; i++) {
+                    const material = new THREE.MeshPhongMaterial({
                         side: THREE.DoubleSide,
                         clippingPlanes: clipPlanes,
                         clipIntersection: true,								
@@ -514,7 +514,7 @@ function loadModel(model, name, scale, colored) {
                     });
                 materials.push(material);
                 }
-                var mesh = new THREE.Mesh(geometry, materials);					
+                const mesh = new THREE.Mesh(geometry, materials);					
                 
                 // Definice výchozích hodnot přímo na objektu (náhrada za prototypy)
                 mesh.initPosition = { x: 0, y: 0, z: 0 };
@@ -562,17 +562,17 @@ function loadGlbModel(model, name, scale, colored) {
 }			
 
 function fileNameWithoutExtension(path) {
-    var myArr = path.split('/');
-    var myStr = myArr[ myArr.length-1 ];
-    myArr = myStr.split('.');
-    return myArr[0];			
+    const myArr = path.split('/');
+    const myStr = myArr[ myArr.length-1 ];
+    const nameParts = myStr.split('.');
+    return nameParts[0];			
 }
 
 function removeModel(part) {
     try {				
         transformControls.detach( part );
         scene.remove( part );
-        var partIndex = helperObjects.indexOf(part);
+        const partIndex = helperObjects.indexOf(part);
         if (partIndex !== -1) helperObjects.splice(partIndex, 1);			
         render();
     } catch(err) {
@@ -581,20 +581,20 @@ function removeModel(part) {
 }
 
 function separateGroups( bufGeom ) {
-    var outGeometries = [];
-    var groups = bufGeom.groups;                    
-    var origPositions = bufGeom.getAttribute( 'position' ).array;
-    var origNormals = bufGeom.getAttribute( 'normal' ).array;
-    var origNumVerts = Math.floor( origPositions.length / 3 );    
-    for ( var ig = 0, ng = groups.length; ig < ng; ig ++ ) {                
-        var group = groups[ ig ];
-        var destNumVerts = group.count;
-        var newBufGeom = new THREE.BufferGeometry();
-        var newPositions = new Float32Array( destNumVerts * 3 );
-        var newNormals = new Float32Array( destNumVerts * 3 );
-        for ( var iv = 0; iv < destNumVerts; iv ++ ) {                    
-            var indexOrig = 3 * ( group.start + iv );
-            var indexDest = 3 * iv;                        
+    const outGeometries = [];
+    const groups = bufGeom.groups;                    
+    const origPositions = bufGeom.getAttribute( 'position' ).array;
+    const origNormals = bufGeom.getAttribute( 'normal' ).array;
+    
+    for ( let ig = 0, ng = groups.length; ig < ng; ig ++ ) {                
+        const group = groups[ ig ];
+        const destNumVerts = group.count;
+        const newBufGeom = new THREE.BufferGeometry();
+        const newPositions = new Float32Array( destNumVerts * 3 );
+        const newNormals = new Float32Array( destNumVerts * 3 );
+        for ( let iv = 0; iv < destNumVerts; iv ++ ) {                    
+            const indexOrig = 3 * ( group.start + iv );
+            const indexDest = 3 * iv;                        
             newPositions[ indexDest + 0 ] = origPositions[ indexOrig + 0 ];
             newPositions[ indexDest + 1 ] = origPositions[ indexOrig + 1 ];
             newPositions[ indexDest + 2 ] = origPositions[ indexOrig + 2 ];
@@ -612,13 +612,14 @@ function separateGroups( bufGeom ) {
 }
 
 function onWindowResize() {
+    const aspect = window.innerWidth / window.innerHeight;
+
     if (currentCamera == cameraPersp) {
-        currentCamera.aspect = window.innerWidth / window.innerHeight;
+        currentCamera.aspect = aspect;
     }
     
     if (currentCamera == cameraOrtho) { 				
         const frustumSize = 1;
-        const aspect = window.innerWidth / window.innerHeight;				
         currentCamera.left = - frustumSize * aspect / 0.002;
         currentCamera.right = frustumSize * aspect / 0.002;
         currentCamera.top = frustumSize / 0.002;
@@ -637,7 +638,7 @@ function render() {
 
         if (Array.isArray(object.material)) {
             // Pokud je materiál pole, projdeme všechny prvky
-            for (var i = 0; i < object.material.length; i++) {
+            for (let i = 0; i < object.material.length; i++) {
                 if (object.material[i].emissive) {
                     object.material[i].emissive.setHex(colorHex);
                 }
@@ -652,7 +653,7 @@ function render() {
     //------------------------------------------------------------    
     if (!isTouchScreen) {     
         raycaster.setFromCamera(mouse, currentCamera);
-        var intersects = raycaster.intersectObjects(helperObjects);               
+        const intersects = raycaster.intersectObjects(helperObjects);               
 
         if (intersects.length > 0) { // Myš je nad objektem
             if (INTERSECTED != intersects[0].object) { //jestliže současný vybraný prvek je jiný, než předchozí vybraný prvek
@@ -713,12 +714,12 @@ function separateMesh(meshToSeparate) {
         const materials = [];
         materials.push(meshToSeparate.material[i]);
         const newMesh = new THREE.Mesh(geom, materials);
-        
+
         // Separated parts - v initial pozici, rotaci a měřítku
         // newMesh.initPosition = { ...meshToSeparate.initPosition };
         // newMesh.initRotation = { ...meshToSeparate.initRotation };
         // newMesh.initScale = { ...meshToSeparate.initScale };
-
+        
         // Separated parts - ve své aktuální pozici, rotaci a měřítku
         newMesh.initPosition = meshToSeparate.position.clone();
         newMesh.initRotation = meshToSeparate.rotation.clone();
@@ -726,7 +727,7 @@ function separateMesh(meshToSeparate) {
 
         setDefPosRotScale(newMesh);
         newMesh.name = `Part_${i}_${meshToSeparate.name || 'sep'}`;
-        //newMesh.name = fileNameWithoutExtension("sep dil");	
+        //newMesh.name = fileNameWithoutExtension("sep dil");
         
         scene.add(newMesh);
         
