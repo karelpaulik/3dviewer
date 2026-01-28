@@ -104,18 +104,19 @@ function changeColor(obj, color) {
     render();
 }
 
+function setDefPosRotScale(obj) {
+    if (!obj) return;
+    obj.position.set(obj.initPosition.x, obj.initPosition.y, obj.initPosition.z);
+    obj.rotation.set(obj.initRotation.x, obj.initRotation.y, obj.initRotation.z);
+    obj.scale.set(obj.initScale.x, obj.initScale.y, obj.initScale.z);
+    render();
+}
+
 function setupPrototypes() {
     THREE.Mesh.prototype.initPosition = { x: 0, y: 0, z: 0 };
     THREE.Mesh.prototype.initRotation = { x: -Math.PI/2, y: 0, z: 0 };
     THREE.Mesh.prototype.initScale = { x: 1, y: 1, z: 1 };
 
-    
-    THREE.Mesh.prototype.setDefPosRotScale = function () {			
-        this.position.set(this.initPosition.x, this.initPosition.y, this.initPosition.z);
-        this.rotation.set(this.initRotation.x, this.initRotation.y, this.initRotation.z);
-        this.scale.set(this.initScale.x, this.initScale.y, this.initScale.z);
-        render();
-    };
 
     THREE.Mesh.prototype.setPolygonOffsetFactor = function (value) {			
         for (var i=0; i<this.material.length ; i++) {
@@ -166,7 +167,7 @@ function init() {
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 2;
-
+    
         // // nutno jen pro animaci
     // renderer.setAnimationLoop(() => {
     // 	// Vaše logika rotace a posunu
@@ -362,6 +363,11 @@ var part = {
         if (lastSelectedObject) {
             changeColor(lastSelectedObject);
         }
+    },
+    resetLocation: function() {
+        if (lastSelectedObject) {
+            setDefPosRotScale(lastSelectedObject);
+        }
     }
 };	
 
@@ -427,7 +433,7 @@ function refreshSelectedObjGui(obj) {
         .name('Scale')
         .onChange(function(value){obj.scale.x=value; obj.scale.y=value; obj.scale.z=value; render(); })
         .listen();
-    folder2.add(obj, 'setDefPosRotScale').name('Reset init. location');
+    folder2.add(part, 'resetLocation').name('Reset init. location');
     folder2.close();
     
     if (obj.children[0]) {   
@@ -515,7 +521,7 @@ function loadModel(model, name, scale, colored) {
                 }
                 var mesh = new THREE.Mesh(geometry, materials);					
                 
-                mesh.setDefPosRotScale();							
+                setDefPosRotScale(mesh);							
                 mesh.name = fileNameWithoutExtension(model);
                 scene.add( mesh );	
                 console.log(mesh);
@@ -708,8 +714,7 @@ function separateMesh(meshToSeparate) {
         materials.push(meshToSeparate.material[i]);
         const newMesh = new THREE.Mesh(geom, materials);
         
-        // Použití prototypových metod, které už máte (např. setDefPosRotScale)
-        newMesh.setDefPosRotScale();
+        setDefPosRotScale(newMesh);
         newMesh.name = `Part_${i}_${meshToSeparate.name || 'sep'}`;
         //newMesh.name = fileNameWithoutExtension("sep dil");	
         
