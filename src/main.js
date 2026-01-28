@@ -307,6 +307,18 @@ function init() {
                     );
                 }
                 break;
+            
+            case 'p': //select parent of the selected object
+                if (lastSelectedObject) {
+                    const parentObject = lastSelectedObject.parent;
+                    if (parentObject && parentObject !== scene) {
+                        transformControls.attach(parentObject);
+                        lastSelectedObject = parentObject;
+                        console.log("Selected parent object: ", lastSelectedObject);
+                        refreshSelectedObjGui(lastSelectedObject);
+                    }
+                }
+                break;
         }
     } );
 
