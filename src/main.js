@@ -84,7 +84,16 @@ function initLoad() {
     }
 }
 
-// Převedeno na běžnou funkci (původně THREE.Mesh.prototype.changeColor)
+function setPolygonOffsetFactor(obj, value) {
+    if (!obj || !obj.material) return;
+    for (var i = 0; i < obj.material.length; i++) {
+        // Kontrola, zda existuje potomek (sectionMesh), kterému se offset nastavuje
+        if (obj.children[0] && obj.children[0].material[i]) {
+            obj.children[0].material[i].polygonOffsetFactor = value;
+        }
+    };
+}
+
 function changeColor(obj, color) {
     if (!obj) return;
     let newColor = color || undefined;
@@ -116,13 +125,6 @@ function setupPrototypes() {
     THREE.Mesh.prototype.initPosition = { x: 0, y: 0, z: 0 };
     THREE.Mesh.prototype.initRotation = { x: -Math.PI/2, y: 0, z: 0 };
     THREE.Mesh.prototype.initScale = { x: 1, y: 1, z: 1 };
-
-
-    THREE.Mesh.prototype.setPolygonOffsetFactor = function (value) {			
-        for (var i=0; i<this.material.length ; i++) {
-            this.children[0].material[i].polygonOffsetFactor=value;
-        };
-    };
 
     THREE.Mesh.prototype.createSectionMesh = function () {
         var sectionMesh = this.clone();	
@@ -396,7 +398,7 @@ function refreshSelectedObjGui(obj) {
         selectedFolder.destroy();
         selectedFolder = null;
     }
-				
+                
     selectedFolder = gui.addFolder( 'Selected part: ' + (obj.name || 'Unnamed') );
     selectedFolder.add(obj, 'name').name('Name').listen();
     selectedFolder.add(part, 'randomColor').name('Random color');
@@ -441,7 +443,7 @@ function refreshSelectedObjGui(obj) {
         folder3.add(obj.children[0], 'visible').name('Fullfiled section').onChange(function(value){obj.children[0].visible = value; render(); });
         folder3.add(obj.children[0].material[0], 'polygonOffsetFactor', -4, 0, 0.1)
             .name('OffsetFactor')
-            .onChange(function(value){obj.setPolygonOffsetFactor(value); render(); });
+            .onChange(function(value){setPolygonOffsetFactor(obj, value);render(); });
     }
 
     selectedFolder.open();
