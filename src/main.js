@@ -125,35 +125,35 @@ function setupPrototypes() {
     THREE.Mesh.prototype.initPosition = { x: 0, y: 0, z: 0 };
     THREE.Mesh.prototype.initRotation = { x: -Math.PI/2, y: 0, z: 0 };
     THREE.Mesh.prototype.initScale = { x: 1, y: 1, z: 1 };
-
-    THREE.Mesh.prototype.createSectionMesh = function () {
-        var sectionMesh = this.clone();	
-
-        let parentMaterialColor;        
-        for (var j=0; j < sectionMesh.material.length; j++) {
-            parentMaterialColor = sectionMesh.material[j].color;
-            //console.log(parentMaterialColor);
-            var material = new THREE.MeshBasicMaterial({
-                side: THREE.BackSide,
-                clippingPlanes: clipPlanes,
-                clipIntersection: true,								
-                color: parentMaterialColor,
-                polygonOffset: true,
-                polygonOffsetFactor: -1,
-                wireframe: false
-            });
-            sectionMesh.material[j] = material;
-        }
-
-        sectionMesh.position.set( 0, 0, 0);
-        sectionMesh.rotation.set( 0, 0, 0);							
-        sectionMesh.scale.set( 1, 1, 1 );
-                
-        this.add(sectionMesh);			
-    }
 }
 
-function init() {    
+function createSectionMesh(mesh) {
+    var sectionMesh = mesh.clone();	
+
+    let parentMaterialColor;        
+    for (var j=0; j < sectionMesh.material.length; j++) {
+        parentMaterialColor = sectionMesh.material[j].color;
+        //console.log(parentMaterialColor);
+        var material = new THREE.MeshBasicMaterial({
+            side: THREE.BackSide,
+            clippingPlanes: clipPlanes,
+            clipIntersection: true,								
+            color: parentMaterialColor,
+            polygonOffset: true,
+            polygonOffsetFactor: -1,
+            wireframe: false
+        });
+        sectionMesh.material[j] = material;
+    }
+
+    sectionMesh.position.set( 0, 0, 0);
+    sectionMesh.rotation.set( 0, 0, 0);							
+    sectionMesh.scale.set( 1, 1, 1 );
+            
+    mesh.add(sectionMesh);			
+}
+
+function init() {   
     //container
     container = document.createElement( 'div' );
     document.body.appendChild( container );
@@ -530,7 +530,7 @@ function loadModel(model, name, scale, colored) {
                 render();
                 resolve(mesh);	
 
-                mesh.createSectionMesh();
+                createSectionMesh(mesh);
                 lastSelectedObject=mesh;  
                 addMainGui();
             } );
@@ -603,7 +603,7 @@ function separateGroups( bufGeom ) {
             newNormals[ indexDest + 0 ] = origNormals[ indexOrig + 0 ];
             newNormals[ indexDest + 1 ] = origNormals[ indexOrig + 1 ];
             newNormals[ indexDest + 2 ] = origNormals[ indexOrig + 2 ];                
-        }                       
+        }                        
         newBufGeom.setAttribute( 'position', new THREE.BufferAttribute( newPositions, 3 ) );
         newBufGeom.setAttribute( 'normal', new THREE.BufferAttribute( newNormals, 3 ) );
         newBufGeom.addGroup(0, destNumVerts, 0);
@@ -723,7 +723,7 @@ function separateMesh(meshToSeparate) {
         scene.add(newMesh);
         
         // Inicializace sekcí a registrace
-        newMesh.createSectionMesh();
+        createSectionMesh(newMesh);
         helperObjects.push(newMesh);
     });
 
