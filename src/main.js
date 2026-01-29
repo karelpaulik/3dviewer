@@ -29,6 +29,8 @@ let INTERSECTED;
 
 let isTouchScreen;
 
+let selectionHelper;
+
 // Možnost zobrazení následujících objektů v konzoli pouze v režimu "npx vite"
 if (import.meta.env.DEV) {
     //OK, reference na objekty jsou dostupné v konzoli pro ladění
@@ -221,7 +223,12 @@ function init() {
     transformControls.addEventListener( 'change', render );
     transformControls.addEventListener( 'dragging-changed', function ( event ) {
         orbitControls.enabled = ! event.value;
-    } );			
+    } );	
+    
+
+    selectionHelper = new THREE.BoxHelper(new THREE.Mesh(), 0xffff00);
+    selectionHelper.visible = false;
+    scene.add(selectionHelper);
     
     window.addEventListener( 'resize', onWindowResize, false );
     window.addEventListener( 'mousemove', onMouseMove, false );				
@@ -643,53 +650,85 @@ function onWindowResize() {
     render();
 }
 
-function render() {
-    // Pomocná funkce pro bezpečné nastavení emissive barvy
-    const setEmissiveColor = (object, colorHex) => {
-        if (!object || !object.material) return;
+// Funkce pro aktivaci zvýraznění (Emisivita + BoxHelper)
+function highlightObject(object) {
+    if (!object) return;
 
-        if (Array.isArray(object.material)) {
-            // Pokud je materiál pole, projdeme všechny prvky
-            for (let i = 0; i < object.material.length; i++) {
-                if (object.material[i].emissive) {
-                    object.material[i].emissive.setHex(colorHex);
-                }
-            }
-        } else {
-            // Pokud je to jeden objekt, nastavíme přímo
-            if (object.material.emissive) {
-                object.material.emissive.setHex(colorHex);
-            }
+    // 1. Nastavení emisivity (červená záře)
+    // Použijeme tvou logiku pro procházení materiálů
+    const applyEmissive = (mat) => {
+        if (mat.emissive) {
+            mat.emissive.setHex(0xff0000);
         }
     };
-    //------------------------------------------------------------    
-    if (!isTouchScreen) {     
+
+    if (Array.isArray(object.material)) {
+        object.material.forEach(applyEmissive);
+    } else {
+        applyEmissive(object.material);
+    }
+
+    // 2. Nastavení BoxHelperu (žlutý rámeček)
+    if (selectionHelper) {
+        selectionHelper.setFromObject(object);
+        selectionHelper.visible = true;
+    }
+}
+
+// Funkce pro vypnutí zvýraznění (Černá barva + Schování helperu)
+function clearHighlight() {
+    if (!INTERSECTED) return;
+
+    // 1. Vypnutí emisivity (nastavení na černou)
+    const removeEmissive = (mat) => {
+        if (mat.emissive) {
+            mat.emissive.setHex(0x000000);
+        }
+    };
+
+    if (Array.isArray(INTERSECTED.material)) {
+        INTERSECTED.material.forEach(removeEmissive);
+    } else {
+        removeEmissive(INTERSECTED.material);
+    }
+
+    // 2. Schování BoxHelperu
+    if (selectionHelper) {
+        selectionHelper.visible = false;
+    }
+}
+
+function render() {   
+    if (!isTouchScreen) {      
         raycaster.setFromCamera(mouse, currentCamera);
-        const intersects = raycaster.intersectObjects(helperObjects);               
+        const intersects = raycaster.intersectObjects(helperObjects);                
 
         if (intersects.length > 0) { // Myš je nad objektem
-            if (INTERSECTED != intersects[0].object) { //jestliže současný vybraný prvek je jiný, než předchozí vybraný prvek
+            if (INTERSECTED != intersects[0].object) { 
                 
-                // 1. Předchozímu objektu vypneme záři
+                // 1. Předchozímu objektu vypneme záři a helper
                 if (INTERSECTED) {
-                    setEmissiveColor(INTERSECTED, 0x000000);
+                    clearHighlight();
                 }   
                 
                 // 2. Nastavíme nový objekt
                 INTERSECTED = intersects[0].object;
                 
-                // 3. Novému objektu zapneme záři
-                setEmissiveColor(INTERSECTED, 0xff0000);
+                // 3. Novému objektu zapneme záři a helper
+                highlightObject(INTERSECTED);
             }
         } else { 
             // Přechod z vybraného objektu na prázdné místo
             if (INTERSECTED) {
-                setEmissiveColor(INTERSECTED, 0x000000);
+                clearHighlight();
                 INTERSECTED = null;
             }
         }
     }
-    //------------------------------------------------------------
+    
+    // Pokud se objekty ve scéně hýbou, odkomentuj řádek níže pro plynulý rámeček:
+    // if (selectionHelper && selectionHelper.visible) selectionHelper.update();
+
     renderer.render(scene, currentCamera);
 }
 
