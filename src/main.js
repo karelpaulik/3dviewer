@@ -238,25 +238,7 @@ function init() {
     window.addEventListener( 'keydown', function ( event ) {
         switch ( event.key ) {
             case 'Escape':
-                // 1. Odpojíme transformační prvky od objektu
-                if (transformControls.object) {
-                    transformControls.detach();
-                }                
-                // 2. Zničíme složku v lil-gui, pokud existuje
-                if (selectedFolder) {
-                    selectedFolder.destroy();
-                    selectedFolder = null;
-                }                
-                // 3. Volitelné: vynulování pomocných proměnných
-                lastSelectedMeshes.forEach( child => {
-                    if (child.material.emissive) {
-                        child.material.emissive.setHex(0x000000);
-                    }
-                });
-                lastSelectedMeshes.length = 0; // empty the array
-                lastSelectedObject = null;
-
-                render(); // Překreslíme scénu, aby zmizely transformátory
+                deselectObject();
                 break;
             case 'q':
             case 'Q':
@@ -725,6 +707,46 @@ function clearHighlight() {
     }
 }
 
+function selectObject(object) {
+    if (lastSelectedObject) {// 1. Pokud už je něco vybraného, nejdřív to "uklidíme"
+        deselectObject();
+    }
+    if (object) {        
+        lastSelectedObject = object;// 2. Nastavíme nové reference        
+        //highlightObject(object);// 3. Vizuální zvýraznění (Emisivita + BoxHelper)        
+        transformControls.attach(object);// 4. Připojíme TransformControls        
+        refreshSelectedObjGui(object);// 5. Aktualizujeme GUI        
+        console.log("Selected:", object.name);
+    }    
+    render();
+}
+
+function deselectObject() {
+    if (!lastSelectedObject) return;
+
+    // Vypneme vizuální prvky pro hlavní vybraný objekt
+    clearHighlight();
+    // Odpojíme transformační prvky od objektu
+    if (transformControls.object) {
+        transformControls.detach();
+    }                
+    // Zničíme složku v lil-gui, pokud existuje
+    if (selectedFolder) {
+        selectedFolder.destroy();
+        selectedFolder = null;
+    }                
+    // Volitelné: vynulování pomocných proměnných
+    lastSelectedMeshes.forEach( child => {
+        if (child.material.emissive) {
+            child.material.emissive.setHex(0x000000);
+        }
+    });
+    lastSelectedMeshes.length = 0; // empty the array
+
+    lastSelectedObject = null;
+    render(); // Překreslíme scénu, aby zmizely transformátory
+}
+
 function render() {   
     if (!isTouchScreen) {      
         raycaster.setFromCamera(mouse, currentCamera);
@@ -771,12 +793,10 @@ function onMouseMove( event ) {
 
 function onClick( event ) {		
     if (INTERSECTED) {
-        transformControls.attach(INTERSECTED);					
-        lastSelectedObject=INTERSECTED;	
-        console.log("Selected object: ", lastSelectedObject);				
-        refreshSelectedObjGui(lastSelectedObject);
+        selectObject(INTERSECTED);
     }
 }
+
 
 function separateMesh(meshToSeparate) {
     if (!meshToSeparate || !meshToSeparate.geometry) return;
