@@ -21,6 +21,7 @@ const helperObjects = [];
 
 const gui = new GUI();				
 let lastSelectedObject = null;
+const lastSelectedMeshes = [];
 let selectedFolder = null;
 
 const raycaster = new THREE.Raycaster();
@@ -80,8 +81,8 @@ function initLoad() {
 
     } else {
         //console.error("Chyba: Nebyl nalezen žádný model k načtení.");
-        loadModel('/models/1011364_c.zip','1011364_c.zip', 0.001, true).then( (result)=>{helperObjects.push( result )} );	
-        //loadGlbModel('./models/1011364_c.zip','1011364_c.zip', 0.001, true).then( (result)=>{helperObjects.push( result )} );
+        //loadModel('/models/1011364_c.zip','1011364_c.zip', 0.001, true).then( (result)=>{helperObjects.push( result )} );	
+        loadGlbModel('./models/1011364_c.zip','1011364_c.zip', 0.001, true).then( (result)=>{helperObjects.push( result )} );
     }
 }
 
@@ -247,7 +248,14 @@ function init() {
                     selectedFolder = null;
                 }                
                 // 3. Volitelné: vynulování pomocných proměnných
-                lastSelectedObject = null;                
+                lastSelectedMeshes.forEach( child => {
+                    if (child.material.emissive) {
+                        child.material.emissive.setHex(0x000000);
+                    }
+                });
+                lastSelectedMeshes.length = 0; // empty the array
+                lastSelectedObject = null;
+
                 render(); // Překreslíme scénu, aby zmizely transformátory
                 break;
             case 'q':
@@ -323,6 +331,21 @@ function init() {
                         lastSelectedObject = parentObject;
                         console.log("Selected parent object: ", lastSelectedObject);
                         refreshSelectedObjGui(lastSelectedObject);
+
+                        lastSelectedObject.traverse( function ( child ) {
+                            if ( child.isMesh ) {
+                                lastSelectedMeshes.push( child );
+                            }
+                        } );
+                        lastSelectedMeshes.forEach( child => {
+                            if (child.material.emissive) {
+                                child.material.emissive.setHex(0xff0000);
+                            }
+                        });
+
+                        render();
+                        console.log("Last sel obj. in parent meshes: ", lastSelectedObject);
+
                     }
                 }
                 break;
@@ -450,13 +473,13 @@ function refreshSelectedObjGui(obj) {
     folder2.add(part, 'resetLocation').name('Reset init. location');
     folder2.close();
     
-    if (obj.children[0]) {   
-        const folder3 = selectedFolder.addFolder("Section view");
-        folder3.add(obj.children[0], 'visible').name('Fullfiled section').onChange(function(value){obj.children[0].visible = value; render(); });
-        folder3.add(obj.children[0].material[0], 'polygonOffsetFactor', -4, 0, 0.1)
-            .name('OffsetFactor')
-            .onChange(function(value){setPolygonOffsetFactor(obj, value);render(); });
-    }
+    // if (obj.children[0]) {   
+    //     const folder3 = selectedFolder.addFolder("Section view");
+    //     folder3.add(obj.children[0], 'visible').name('Fullfiled section').onChange(function(value){obj.children[0].visible = value; render(); });
+    //     folder3.add(obj.children[0].material[0], 'polygonOffsetFactor', -4, 0, 0.1)
+    //         .name('OffsetFactor')
+    //         .onChange(function(value){setPolygonOffsetFactor(obj, value);render(); });
+    // }
 
     selectedFolder.open();
 }
@@ -556,29 +579,33 @@ function loadModel(model, name, scale, colored) {
 }
 
 function loadGlbModel(model, name, scale, colored) {
-    return new Promise( (resolve, reject) => {	
+    return new Promise((resolve, reject) => {
         const loader = new GLTFLoader();
-        loader.load( './models/1012053_l.glb', function ( gltf ) {
-            gltf.scene.scale.set( 1000.0, 1000.0, 1000.0 );
+        loader.load('./models/1012053_l.glb', function (gltf) {
+            gltf.scene.scale.set(1000.0, 1000.0, 1000.0);
             gltf.scene.rotation.x = - Math.PI / 2;
 
-            scene.add( gltf.scene );
+            scene.add(gltf.scene);
             console.log(gltf.scene);
 
             const meshes = [];
-
-            gltf.scene.traverse( function ( child ) {
-                if ( child.isMesh ) {
-                    meshes.push( child );
+            gltf.scene.traverse(function (child) {
+                if (child.isMesh) {
+                    if (child.material) {
+                        child.material = child.material.clone();// Naklonujeme materiál, aby byl unikátní. Jinak jeden typ materiálu pro více častí stejné barvy.
+                    }
+                    meshes.push(child);
                     helperObjects.push(child);
                 }
-            } );
+            });
 
             render();
             resolve(gltf.scene);
-        } );
+        }, undefined, function (error) {
+            reject(error); // Doporučuji přidat i error handling
+        });
     });
-}			
+}				
 
 function fileNameWithoutExtension(path) {
     const myArr = path.split('/');
@@ -656,17 +683,17 @@ function highlightObject(object) {
 
     // 1. Nastavení emisivity (červená záře)
     // Použijeme tvou logiku pro procházení materiálů
-    const applyEmissive = (mat) => {
-        if (mat.emissive) {
-            mat.emissive.setHex(0xff0000);
-        }
-    };
+    // const applyEmissive = (mat) => {
+    //     if (mat.emissive) {
+    //         mat.emissive.setHex(0xff0000);
+    //     }
+    // };
 
-    if (Array.isArray(object.material)) {
-        object.material.forEach(applyEmissive);
-    } else {
-        applyEmissive(object.material);
-    }
+    // if (Array.isArray(object.material)) {
+    //     object.material.forEach(applyEmissive);
+    // } else {
+    //     applyEmissive(object.material);
+    // }
 
     // 2. Nastavení BoxHelperu (žlutý rámeček)
     if (selectionHelper) {
@@ -680,17 +707,17 @@ function clearHighlight() {
     if (!INTERSECTED) return;
 
     // 1. Vypnutí emisivity (nastavení na černou)
-    const removeEmissive = (mat) => {
-        if (mat.emissive) {
-            mat.emissive.setHex(0x000000);
-        }
-    };
+    // const removeEmissive = (mat) => {
+    //     if (mat.emissive) {
+    //         mat.emissive.setHex(0x000000);
+    //     }
+    // };
 
-    if (Array.isArray(INTERSECTED.material)) {
-        INTERSECTED.material.forEach(removeEmissive);
-    } else {
-        removeEmissive(INTERSECTED.material);
-    }
+    // if (Array.isArray(INTERSECTED.material)) {
+    //     INTERSECTED.material.forEach(removeEmissive);
+    // } else {
+    //     removeEmissive(INTERSECTED.material);
+    // }
 
     // 2. Schování BoxHelperu
     if (selectionHelper) {
