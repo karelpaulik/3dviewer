@@ -310,22 +310,7 @@ function init() {
                     const parentObject = lastSelectedObject.parent;
                     if (parentObject && parentObject !== scene) {
                         selectObject(parentObject); //Tj. lastSelectedObject = parentObject; + další
-                        console.log("Selected parent object: ", parentObject);
-
-                        lastSelectedObject.traverse( function ( child ) {
-                            if ( child.isMesh ) {
-                                lastSelectedMeshes.push( child );
-                            }
-                        } );
-                        lastSelectedMeshes.forEach( child => {
-                            if (child.material.emissive) {
-                                child.material.emissive.setHex(0xff0000);
-                            }
-                        });
-
                         render();
-                        console.log("Last sel obj. in parent meshes: ", lastSelectedObject);
-
                     }
                 }
                 break;
@@ -718,8 +703,21 @@ function selectObject(object) {
     if (object) {        
         lastSelectedObject = object;// 2. Nastavíme nové reference             
         transformControls.attach(object);// 4. Připojíme TransformControls        
-        refreshSelectedObjGui(object);// 5. Aktualizujeme GUI        
-        //highlightObject(object);// 3. Vizuální zvýraznění (Emisivita + BoxHelper)   
+        refreshSelectedObjGui(object);// 5. Aktualizujeme GUI          
+
+        object.traverse( function ( child ) {
+            if ( child.isMesh ) {
+                lastSelectedMeshes.push( child );
+            }
+        } );
+        lastSelectedMeshes.forEach( child => {
+            if (child.material.emissive) {
+                //child.material.emissive.setHex(0xff0000);
+                applyEmissive(child, 0xff0000);
+            }
+        });
+        console.log("selected object: ", lastSelectedObject);
+
     }    
     render();
 }
