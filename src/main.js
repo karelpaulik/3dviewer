@@ -309,10 +309,8 @@ function init() {
                 if (lastSelectedObject) {
                     const parentObject = lastSelectedObject.parent;
                     if (parentObject && parentObject !== scene) {
-                        transformControls.attach(parentObject);
-                        lastSelectedObject = parentObject;
-                        console.log("Selected parent object: ", lastSelectedObject);
-                        refreshSelectedObjGui(lastSelectedObject);
+                        selectObject(parentObject); //Tj. lastSelectedObject = parentObject; + další
+                        console.log("Selected parent object: ", parentObject);
 
                         lastSelectedObject.traverse( function ( child ) {
                             if ( child.isMesh ) {
@@ -587,7 +585,7 @@ function loadGlbModel(model, name, scale, colored) {
                         child.material.clipIntersection = true;
                         child.material.side = THREE.DoubleSide;
                         child.material.polygonOffset = true;
-                        child.material.polygonOffsetFactor = -1;    
+                        child.material.polygonOffsetFactor = 1;    
                     }
                     meshes.push(child);
                     helperObjects.push(child);
@@ -726,11 +724,10 @@ function selectObject(object) {
         deselectObject();
     }
     if (object) {        
-        lastSelectedObject = object;// 2. Nastavíme nové reference        
-        //highlightObject(object);// 3. Vizuální zvýraznění (Emisivita + BoxHelper)        
+        lastSelectedObject = object;// 2. Nastavíme nové reference             
         transformControls.attach(object);// 4. Připojíme TransformControls        
         refreshSelectedObjGui(object);// 5. Aktualizujeme GUI        
-        console.log("Selected:", object.name);
+        //highlightObject(object);// 3. Vizuální zvýraznění (Emisivita + BoxHelper)   
     }    
     render();
 }
@@ -808,6 +805,7 @@ function onMouseMove( event ) {
 function onClick( event ) {		
     if (INTERSECTED) {
         selectObject(INTERSECTED);
+        console.log("Selected:", INTERSECTED);
     }
 }
 
