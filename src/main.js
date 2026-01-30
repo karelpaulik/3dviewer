@@ -71,30 +71,29 @@ function initLoad() {
 
         document.getElementById('fileNameLabel').textContent = fileName;
         document.getElementById('pageTitle').textContent = fileName;
-        
-        if (fileExtension === 'zip') {
-            loadModel(fileUrl, fileName, 0.001, true).then( (result) => {
-                helperObjects.push(result);
-                console.log(`Model ${fileName} byl úspěšně načten.`);
-            }).catch((error) => {
-                console.error(`Chyba při načítání modelu ${fileName}:`, error);
-            });
-        } else {
-            console.error(`Nepodporovaný formát souboru: ${fileExtension}`);
-            return;
-        }
 
-        if (fileExtension === 'glb' || fileExtension === 'gltf') {
-            loadGlbModel(fileUrl, fileName, 0.001, true).then( (result) => {
-                helperObjects.push(result);
-                console.log(`Model ${fileName} byl úspěšně načten.`);   
-            }).catch((error) => {
-                console.error(`Chyba při načítání modelu ${fileName}:`, error);
-            });
-        } else {
-            console.error(`Nepodporovaný formát souboru: ${fileExtension}`);
-            return;
-        }  
+        switch ( fileExtension ) {
+            case 'zip':      
+                loadModel(fileUrl, fileName, 0.001, true).then( (result) => {
+                    helperObjects.push(result);
+                    console.log(`Model ${fileName} byl úspěšně načten.`);
+                }).catch((error) => {
+                    console.error(`Chyba při načítání modelu ${fileName}:`, error);
+                });
+                break;
+
+            case 'glb': 
+                loadGlbModel(fileUrl, fileName, 0.001, true).then( (result) => {
+                    helperObjects.push(result);
+                    console.log(`Model ${fileName} byl úspěšně načten.`);   
+                }).catch((error) => {
+                    console.error(`Chyba při načítání modelu ${fileName}:`, error);
+                });
+                break;
+        
+            default:
+                console.error(`Chyba: Nepodporovaný formát souboru ${fileExtension}.`);
+        }
 
     } else {
         //console.error("Chyba: Nebyl nalezen žádný model k načtení.");
