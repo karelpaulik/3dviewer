@@ -305,7 +305,7 @@ function init() {
                 }
                 break;
             
-            case 'p': //select parent of the selected object
+            case 'ArrowUp': //select parent of the selected object
                 if (lastSelectedObject) {
                     const parentObject = lastSelectedObject.parent;
                     if (parentObject && parentObject !== scene) {
@@ -329,6 +329,12 @@ function init() {
                         console.log("Last sel obj. in parent meshes: ", lastSelectedObject);
 
                     }
+                }
+                break;
+
+            case 'ArrowDown': //select previous selected object
+                if (true) {
+
                 }
                 break;
         }
@@ -534,7 +540,9 @@ function loadModel(model, name, scale, colored) {
                         clippingPlanes: clipPlanes,
                         clipIntersection: true,								
                         color: Math.random() * 0xffffff,
-                        wireframe: false
+                        wireframe: false,
+                        polygonOffset: true,
+                        polygonOffsetFactor: 1
                     });
                 materials.push(material);
                 }
@@ -575,6 +583,11 @@ function loadGlbModel(model, name, scale, colored) {
                 if (child.isMesh) {
                     if (child.material) {
                         child.material = child.material.clone();// Naklonujeme materiál, aby byl unikátní. Jinak jeden typ materiálu pro více častí stejné barvy.
+                        child.material.clippingPlanes = clipPlanes;
+                        child.material.clipIntersection = true;
+                        child.material.side = THREE.DoubleSide;
+                        child.material.polygonOffset = true;
+                        child.material.polygonOffsetFactor = -1;    
                     }
                     meshes.push(child);
                     helperObjects.push(child);
@@ -583,6 +596,7 @@ function loadGlbModel(model, name, scale, colored) {
 
             render();
             resolve(gltf.scene);
+            addMainGui();
         }, undefined, function (error) {
             reject(error); // Doporučuji přidat i error handling
         });
