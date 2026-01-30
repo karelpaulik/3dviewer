@@ -671,23 +671,25 @@ function onWindowResize() {
     render();
 }
 
-// Funkce pro aktivaci zvýraznění (Emisivita + BoxHelper)
+function applyEmissive(object, color = 0xff0000) {
+    if (!object || !object.material) return;
+
+    if (Array.isArray(object.material)) {
+        object.material.forEach(mat => {
+            if (mat.emissive) mat.emissive.setHex(color);
+        });
+    } else {
+        if (object.material.emissive) {
+            object.material.emissive.setHex(color);
+        }
+    }
+}
+
 function highlightObject(object) {
     if (!object) return;
 
-    // 1. Nastavení emisivity (červená záře)
-    // Použijeme tvou logiku pro procházení materiálů
-    // const applyEmissive = (mat) => {
-    //     if (mat.emissive) {
-    //         mat.emissive.setHex(0xff0000);
-    //     }
-    // };
-
-    // if (Array.isArray(object.material)) {
-    //     object.material.forEach(applyEmissive);
-    // } else {
-    //     applyEmissive(object.material);
-    // }
+    // 1. Nastavení emisivity
+    // applyEmissive(object, 0xff0000);
 
     // 2. Nastavení BoxHelperu (žlutý rámeček)
     if (selectionHelper) {
@@ -700,18 +702,8 @@ function highlightObject(object) {
 function clearHighlight() {
     if (!INTERSECTED) return;
 
-    // 1. Vypnutí emisivity (nastavení na černou)
-    // const removeEmissive = (mat) => {
-    //     if (mat.emissive) {
-    //         mat.emissive.setHex(0x000000);
-    //     }
-    // };
-
-    // if (Array.isArray(INTERSECTED.material)) {
-    //     INTERSECTED.material.forEach(removeEmissive);
-    // } else {
-    //     removeEmissive(INTERSECTED.material);
-    // }
+    // 1. Vypnutí emisivity (použijeme naši univerzální funkci s černou barvou)
+    // applyEmissive(INTERSECTED, 0x000000);
 
     // 2. Schování BoxHelperu
     if (selectionHelper) {
