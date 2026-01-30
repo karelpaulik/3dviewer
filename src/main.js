@@ -98,7 +98,7 @@ function initLoad() {
     } else {
         //console.error("Chyba: Nebyl nalezen žádný model k načtení.");
         //loadModel('/models/1011364_c.zip','1011364_c.zip', 0.001, true).then( (result)=>{helperObjects.push( result )} );	
-        loadGlbModel('./models/1011364_c.zip','1011364_c.zip', 0.001, true).then( (result)=>{helperObjects.push( result )} );
+        loadGlbModel('/models/1012053_l.glb','1012053_l.glb', 0.001, true).then( (result)=>{helperObjects.push( result )} );
     }
 }
 
@@ -590,7 +590,8 @@ function loadModel(model, name, scale, colored) {
 function loadGlbModel(model, name, scale, colored) {
     return new Promise((resolve, reject) => {
         const loader = new GLTFLoader();
-        loader.load('./models/1012053_l.glb', function (gltf) {
+        //loader.load('./models/1012053_l.glb', function (gltf) {
+        loader.load(model, function (gltf) {
             gltf.scene.scale.set(1000.0, 1000.0, 1000.0);
             gltf.scene.rotation.x = - Math.PI / 2;
 
