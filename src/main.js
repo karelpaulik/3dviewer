@@ -22,6 +22,7 @@ const helperObjects = [];
 const gui = new GUI();				
 let lastSelectedObject = null;
 const lastSelectedMeshes = [];
+const selectionHistory = [];
 let selectedFolder = null;
 
 const raycaster = new THREE.Raycaster();
@@ -61,6 +62,7 @@ function initLoad() {
     // Např. pro 'model' získá 'https%3A%2F%2Ffirebase.zip' a pro 'name' získá 'muj_dil.zip'
     const fileUrl = urlParams.get('model'); 
     const fileName = urlParams.get('name'); 
+    const fileExtension = fileName ? fileName.split('.').pop().toLowerCase() : null;
 
     // 3. Načtení modelu
     if (fileUrl && fileName) {
@@ -316,9 +318,29 @@ function init() {
                 break;
 
             case 'ArrowDown': //select previous selected object
-                if (true) {
+                if (selectionHistory.length > 0) {
+                    // 1. Odstraníme aktuálně vybraný objekt z konce historie (protože tam byl právě přidán při výběru)
+                    // Pokud chceme jít do historie, musíme se zbavit toho, co tam je teď.
+                    selectionHistory.pop(); 
 
+                    // 2. Získáme objekt, který byl vybrán před ním
+                    const lastObject = selectionHistory.pop(); 
+
+                    if (lastObject) {
+                        // Funkce selectObject ho znovu přidá do pole (proto jsme dělali 2x pop), 
+                        // čímž se cyklus historie uzavře a funguje správně.
+                        selectObject(lastObject);
+                        render();
+                    } else {
+                        // Pokud v historii už nic není, zrušíme výběr úplně
+                        deselectObject();
+                    }
                 }
+                break;
+
+            case 'p':
+                console.log("selectionHistory.length: ", selectionHistory.length);
+                selectionHistory.forEach( (obj, index) => {console.log(obj.name, index)}) ;
                 break;
         }
     } );
@@ -697,13 +719,20 @@ function clearHighlight() {
 }
 
 function selectObject(object) {
-    if (lastSelectedObject) {// 1. Pokud už je něco vybraného, nejdřív to "uklidíme"
+    if (lastSelectedObject) {// Pokud už je něco vybraného, nejdřív to "uklidíme"
         deselectObject();
     }
+
     if (object) {        
-        lastSelectedObject = object;// 2. Nastavíme nové reference             
-        transformControls.attach(object);// 4. Připojíme TransformControls        
-        refreshSelectedObjGui(object);// 5. Aktualizujeme GUI          
+        lastSelectedObject = object;// Nastavíme nové reference             
+        transformControls.attach(object);// Připojíme TransformControls   
+             
+        selectionHistory.push(object); // Přidáme do historie vybraných objektů
+        if (selectionHistory.length > 30) {// Omezíme velikost historie (např. 30 záznamů), aby nezabírala paměť
+            selectionHistory.shift();
+        }
+
+        refreshSelectedObjGui(object);// Aktualizujeme GUI      
 
         object.traverse( function ( child ) {
             if ( child.isMesh ) {
@@ -737,11 +766,8 @@ function deselectObject() {
         selectedFolder = null;
     }                
     // Volitelné: vynulování pomocných proměnných
-    lastSelectedMeshes.forEach( child => {
-        if (child.material.emissive) {
-            child.material.emissive.setHex(0x000000);
-        }
-    });
+    lastSelectedMeshes.forEach(child => applyEmissive(child, 0x000000));
+
     lastSelectedMeshes.length = 0; // empty the array
 
     lastSelectedObject = null;
@@ -795,7 +821,6 @@ function onMouseMove( event ) {
 function onClick( event ) {		
     if (INTERSECTED) {
         selectObject(INTERSECTED);
-        console.log("Selected:", INTERSECTED);
     }
 }
 
