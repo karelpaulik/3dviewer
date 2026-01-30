@@ -72,14 +72,29 @@ function initLoad() {
         document.getElementById('fileNameLabel').textContent = fileName;
         document.getElementById('pageTitle').textContent = fileName;
         
-        // Použití proměnné modelToLoad v tvé funkci
-        loadModel(fileUrl, fileName, 0.001, true).then( (result) => {
-            // Zde pokračuje tvůj kód pro zpracování načteného modelu
-            helperObjects.push(result);
-            console.log(`Model ${fileName} byl úspěšně načten.`);
-        }).catch((error) => {
-            console.error(`Chyba při načítání modelu ${fileName}:`, error);
-        });
+        if (fileExtension === 'zip') {
+            loadModel(fileUrl, fileName, 0.001, true).then( (result) => {
+                helperObjects.push(result);
+                console.log(`Model ${fileName} byl úspěšně načten.`);
+            }).catch((error) => {
+                console.error(`Chyba při načítání modelu ${fileName}:`, error);
+            });
+        } else {
+            console.error(`Nepodporovaný formát souboru: ${fileExtension}`);
+            return;
+        }
+
+        if (fileExtension === 'glb' || fileExtension === 'gltf') {
+            loadGlbModel(fileUrl, fileName, 0.001, true).then( (result) => {
+                helperObjects.push(result);
+                console.log(`Model ${fileName} byl úspěšně načten.`);   
+            }).catch((error) => {
+                console.error(`Chyba při načítání modelu ${fileName}:`, error);
+            });
+        } else {
+            console.error(`Nepodporovaný formát souboru: ${fileExtension}`);
+            return;
+        }  
 
     } else {
         //console.error("Chyba: Nebyl nalezen žádný model k načtení.");
