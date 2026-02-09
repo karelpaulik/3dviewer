@@ -425,18 +425,20 @@ function addMainGui() {
     const folderProp = gui.addFolder( 'View' );
     folderProp.add(viewProp, 'fit').name('Fit View');
     folderProp.addColor(params, 'backgroundColor').name('Background').onChange(function(value){ scene.background = new THREE.Color(value); render(); });
-    folderProp.add(viewProp, 'perspCam').name('Persp. camera').onChange(function(value){setCamera(); render(); });
-        const sectionFolder = folderProp.addFolder("Section view");   
+    //folderProp.add(viewProp, 'perspCam').name('Persp. camera').onChange(function(value){setCamera(); render(); });
+    const sectionFolder = folderProp.addFolder("Section view");   
         sectionFolder.add(viewProp, 'section').name('Section').onChange(function(value){renderer.localClippingEnabled = value; render(); });
         sectionFolder.add(viewProp, 'px', extent.pn, extent.pp, extent.pStep).name('Pos. x').onChange(function(value){clipPlanes[0].constant=value; render(); }).listen();
         sectionFolder.add(viewProp, 'py', extent.pn, extent.pp, extent.pStep).name('Pos. y').onChange(function(value){clipPlanes[1].constant=value; render(); }).listen();
         sectionFolder.add(viewProp, 'pz', extent.pn, extent.pp, extent.pStep).name('Pos. z').onChange(function(value){clipPlanes[2].constant=value; render(); }).listen();
         sectionFolder.add(viewProp, 'reset').name('Reset section');
         sectionFolder.close();
-    folderProp.add(viewProp, 'viewx').name('View from X');
-    folderProp.add(viewProp, 'viewy').name('View from Y');
-    folderProp.add(viewProp, 'viewz').name('View from Z');
-    folderProp.add(part, 'randomColor').name('Random color');						
+    const oritationFolder = folderProp.addFolder("View orientation");
+        oritationFolder.add(viewProp, 'viewx').name('View from X');
+        oritationFolder.add(viewProp, 'viewy').name('View from Y');
+        oritationFolder.add(viewProp, 'viewz').name('View from Z');
+        oritationFolder.close();
+    //folderProp.add(part, 'randomColor').name('Random color');						
 }	
 
 function refreshSelectedObjGui(obj) {
@@ -704,7 +706,15 @@ function fileNameWithoutExtension(path) {
 function removeModel(part) {
     try {				
         transformControls.detach( part );
-        scene.remove( part );
+        
+        // Pokud je součástí skupiny (např. z GLB modelu), odstraníme z rodiče
+        if (part.parent) {
+            part.parent.remove( part );
+        } else {
+            // Jinak odstraníme ze scény
+            scene.remove( part );
+        }
+        
         const partIndex = helperObjects.indexOf(part);
         if (partIndex !== -1) helperObjects.splice(partIndex, 1);			
         render();
