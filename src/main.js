@@ -375,6 +375,7 @@ const extent = {
 const viewProp = {
     perspCam: false,
     section: false,
+    fullscreen: false,
     px: 0,
     py: 0,
     pz: 0,
@@ -451,6 +452,14 @@ function addMainGui() {
     //View
     const folderProp = gui.addFolder( 'View' );
     folderProp.add(viewProp, 'fit').name('Fit View');
+    // Fullscreen toggle (false = windowed, true = fullscreen)
+    let fsCtrl = folderProp.add(viewProp, 'fullscreen').name('Fullscreen').onChange(function(value){
+        if (value) {
+            document.getElementById('body').requestFullscreen().catch((err) => {console.warn('Fullscreen not available: ', err.message)});
+        } else {
+            if (document.fullscreenElement) document.exitFullscreen();
+        }
+    }).listen();
     folderProp.addColor(params, 'backgroundColor').name('Background').onChange(function(value){ scene.background = new THREE.Color(value); render(); });
     //folderProp.add(viewProp, 'perspCam').name('Persp. camera').onChange(function(value){setCamera(); render(); });
     const sectionFolder = folderProp.addFolder("Section view");   
@@ -465,7 +474,13 @@ function addMainGui() {
         oritationFolder.add(viewProp, 'viewy').name('View from Y');
         oritationFolder.add(viewProp, 'viewz').name('View from Z');
         oritationFolder.close();
-    //folderProp.add(part, 'randomColor').name('Random color');						
+    //folderProp.add(part, 'randomColor').name('Random color');	
+
+    // Když by toto nebylo, tak při ukončení fullscreenu escapem, by "fulscreen" zůstalo zartřené. Funkčně by se moc nestalo.
+    document.addEventListener('fullscreenchange', function(){
+        viewProp.fullscreen = !!document.fullscreenElement;
+        if (fsCtrl && fsCtrl.updateDisplay) fsCtrl.updateDisplay();
+    });
 }	
 
 function refreshSelectedObjGui(obj) {
