@@ -423,14 +423,16 @@ const params = {
 function addMainGui() {
     //View
     const folderProp = gui.addFolder( 'View' );
+    folderProp.add(viewProp, 'fit').name('Fit View');
     folderProp.addColor(params, 'backgroundColor').name('Background').onChange(function(value){ scene.background = new THREE.Color(value); render(); });
     folderProp.add(viewProp, 'perspCam').name('Persp. camera').onChange(function(value){setCamera(); render(); });
-    folderProp.add(viewProp, 'section').name('Section').onChange(function(value){renderer.localClippingEnabled = value; render(); });
-    folderProp.add(viewProp, 'px', extent.pn, extent.pp, extent.pStep).name('Pos. x').onChange(function(value){clipPlanes[0].constant=value; render(); }).listen();
-    folderProp.add(viewProp, 'py', extent.pn, extent.pp, extent.pStep).name('Pos. y').onChange(function(value){clipPlanes[1].constant=value; render(); }).listen();
-    folderProp.add(viewProp, 'pz', extent.pn, extent.pp, extent.pStep).name('Pos. z').onChange(function(value){clipPlanes[2].constant=value; render(); }).listen();
-    folderProp.add(viewProp, 'reset').name('Reset section');
-    folderProp.add(viewProp, 'fit').name('Fit View');
+        const sectionFolder = folderProp.addFolder("Section view");   
+        sectionFolder.add(viewProp, 'section').name('Section').onChange(function(value){renderer.localClippingEnabled = value; render(); });
+        sectionFolder.add(viewProp, 'px', extent.pn, extent.pp, extent.pStep).name('Pos. x').onChange(function(value){clipPlanes[0].constant=value; render(); }).listen();
+        sectionFolder.add(viewProp, 'py', extent.pn, extent.pp, extent.pStep).name('Pos. y').onChange(function(value){clipPlanes[1].constant=value; render(); }).listen();
+        sectionFolder.add(viewProp, 'pz', extent.pn, extent.pp, extent.pStep).name('Pos. z').onChange(function(value){clipPlanes[2].constant=value; render(); }).listen();
+        sectionFolder.add(viewProp, 'reset').name('Reset section');
+        sectionFolder.close();
     folderProp.add(viewProp, 'viewx').name('View from X');
     folderProp.add(viewProp, 'viewy').name('View from Y');
     folderProp.add(viewProp, 'viewz').name('View from Z');
