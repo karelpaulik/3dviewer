@@ -501,8 +501,21 @@ function resetSection() {
 }
     
 function viewFromPoint(x, y, z) {
-    currentCamera.position.set( x, y, z );	
-    currentCamera.lookAt( 0, 0, 0 );					
+    // Vypočítáme střed všech objektů ve scéně
+    let box = new THREE.Box3();
+    helperObjects.forEach(obj => {
+        box.expandByObject(obj);
+    });
+    
+    const center = box.isEmpty() ? new THREE.Vector3(0, 0, 0) : box.getCenter(new THREE.Vector3());
+    
+    // Nastavíme cíl orbitu na střed modelu
+    orbitControls.target.copy(center);
+    
+    // Nastavíme pozici kamery - offset od centra
+    const offset = new THREE.Vector3(x, y, z);
+    currentCamera.position.copy(center).add(offset);	
+    currentCamera.lookAt(center.x, center.y, center.z);					
     orbitControls.update();
 }
 
