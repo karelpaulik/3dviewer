@@ -390,6 +390,7 @@ const viewProp = {
     py: 0,
     pz: 0,
     reset: function() { resetSection() },
+    fit: function() { fitView() },
     viewx: function() { viewFromPoint(1000, 0, 0) },
     viewy: function() { viewFromPoint(0, 1000, 0) },
     viewz: function() { viewFromPoint(0, 0, 1000) },
@@ -429,6 +430,7 @@ function addMainGui() {
     folderProp.add(viewProp, 'py', extent.pn, extent.pp, extent.pStep).name('Pos. y').onChange(function(value){clipPlanes[1].constant=value; render(); }).listen();
     folderProp.add(viewProp, 'pz', extent.pn, extent.pp, extent.pStep).name('Pos. z').onChange(function(value){clipPlanes[2].constant=value; render(); }).listen();
     folderProp.add(viewProp, 'reset').name('Reset section');
+    folderProp.add(viewProp, 'fit').name('Fit View');
     folderProp.add(viewProp, 'viewx').name('View from X');
     folderProp.add(viewProp, 'viewy').name('View from Y');
     folderProp.add(viewProp, 'viewz').name('View from Z');
@@ -502,6 +504,60 @@ function viewFromPoint(x, y, z) {
     currentCamera.position.set( x, y, z );	
     currentCamera.lookAt( 0, 0, 0 );					
     orbitControls.update();
+}
+
+function fitView() {
+    // Výpočet ohraničujícího boxu všech objektů ve scéně
+    let box = new THREE.Box3();
+    
+    helperObjects.forEach(obj => {
+        box.expandByObject(obj);
+    });
+
+    // Pokud je box prázdný, použijeme výchozí pozici
+    if (!box.isEmpty()) {
+        // Získáme střed a velikost boxu
+        const center = box.getCenter(new THREE.Vector3());
+        const size = box.getSize(new THREE.Vector3());
+        
+        // Nastavíme cíl orbitu na střed modelu
+        orbitControls.target.copy(center);
+        
+        // Výpočet vzdálenosti kamery od objektu
+        const maxDim = Math.max(size.x, size.y, size.z);
+        
+        let cameraDistance;
+        if (currentCamera.isPerspectiveCamera) {
+            // Pro perspektivní kameru
+            const fov = currentCamera.fov * (Math.PI / 180); // Převod na radiány
+            cameraDistance = Math.abs(maxDim / 2 / Math.tan(fov / 2)) * 1.5;
+        } else {
+            // Pro ortografickou kameru - nastavíme zoom
+            cameraDistance = maxDim * 1.5;
+            // Nastavíme zoom tak, aby byl model vidět v celé šířce s malou rezervou
+            const aspect = window.innerWidth / window.innerHeight;
+            const frameSize = Math.max(size.x, size.y) * 1.5; // 50% rezerva
+            currentCamera.zoom = Math.min(
+                window.innerWidth / frameSize,
+                window.innerHeight / frameSize
+            );
+            currentCamera.updateProjectionMatrix();
+        }
+        
+        // Nastavíme kameru do isometrické polohy (45 stupňů)
+        const angle = Math.PI / 4; // 45 stupňů
+        currentCamera.position.set(
+            center.x + cameraDistance * Math.cos(angle),
+            center.y + cameraDistance * Math.sin(angle),
+            center.z + cameraDistance * Math.cos(angle)
+        );
+        
+        // Aktualizujeme kameru
+        currentCamera.lookAt(center);
+        orbitControls.update();
+    }
+    
+    render();
 }
     
 function updateSection() {
