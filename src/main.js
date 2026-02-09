@@ -333,35 +333,12 @@ function init() {
                 }
                 break;
             
-            case 'ArrowUp': //select parent of the selected object
-                if (lastSelectedObject) {
-                    const parentObject = lastSelectedObject.parent;
-                    if (parentObject && parentObject !== scene) {
-                        selectObject(parentObject); //Tj. lastSelectedObject = parentObject; + další
-                        render();
-                    }
-                }
+            case 'ArrowUp': // select parent of the selected object
+                selectParent();
                 break;
 
-            case 'ArrowDown': //select previous selected object
-                if (selectionHistory.length > 0) {
-                    // 1. Odstraníme aktuálně vybraný objekt z konce historie (protože tam byl právě přidán při výběru)
-                    // Pokud chceme jít do historie, musíme se zbavit toho, co tam je teď.
-                    selectionHistory.pop(); 
-
-                    // 2. Získáme objekt, který byl vybrán před ním
-                    const lastObject = selectionHistory.pop(); 
-
-                    if (lastObject) {
-                        // Funkce selectObject ho znovu přidá do pole (proto jsme dělali 2x pop), 
-                        // čímž se cyklus historie uzavře a funguje správně.
-                        selectObject(lastObject);
-                        render();
-                    } else {
-                        // Pokud v historii už nic není, zrušíme výběr úplně
-                        deselectObject();
-                    }
-                }
+            case 'ArrowDown': // select previous selected object
+                selectPrevious();
                 break;
 
             case 'p':
@@ -425,8 +402,46 @@ const part = {
         if (lastSelectedObject) {
             setDefPosRotScale(lastSelectedObject);
         }
+    },
+    selectParent: function() {
+        selectParent();
+    },
+    selectPrevious: function() {   
+        selectPrevious(); 
     }
 };	
+
+// Navigation functions used by keyboard and GUI
+function selectParent() {
+    if (lastSelectedObject) {
+        const parentObject = lastSelectedObject.parent;
+        if (parentObject && parentObject !== scene) {
+            selectObject(parentObject); //Tj. lastSelectedObject = parentObject; + další
+            render();
+        }
+    }
+}
+
+function selectPrevious() {
+    if (selectionHistory.length > 0) {
+        // 1. Odstraníme aktuálně vybraný objekt z konce historie (protože tam byl právě přidán při výběru)
+        // Pokud chceme jít do historie, musíme se zbavit toho, co tam je teď.
+        selectionHistory.pop(); 
+
+        // 2. Získáme objekt, který byl vybrán před ním
+        const lastObject = selectionHistory.pop(); 
+
+        if (lastObject) {
+            // Funkce selectObject ho znovu přidá do pole (proto jsme dělali 2x pop), 
+            // čímž se cyklus historie uzavře a funguje správně.
+            selectObject(lastObject);
+            render();
+        } else {
+            // Pokud v historii už nic není, zrušíme výběr úplně
+            deselectObject();
+        }
+    }
+}
 
 const params = {
     backgroundColor: "#888888"
@@ -505,6 +520,12 @@ function refreshSelectedObjGui(obj) {
     //         .name('OffsetFactor')
     //         .onChange(function(value){setPolygonOffsetFactor(obj, value);render(); });
     // }
+
+    // Navigation buttons: Arrow Up / Arrow Down
+    const navFolder = selectedFolder.addFolder("Navigation");
+        navFolder.add(part, 'selectParent').name('Select parent (Arrow Up)');
+        navFolder.add(part, 'selectPrevious').name('Select previous (Arrow Down)');
+        navFolder.close();
 
     selectedFolder.open();
 }
