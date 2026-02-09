@@ -32,6 +32,7 @@ let INTERSECTED;
 let isTouchScreen;
 
 let selectionHelper;
+let isTransformDragging = false;
 
 // Možnost zobrazení následujících objektů v konzoli pouze v režimu "npx vite"
 if (import.meta.env.DEV) {
@@ -239,7 +240,15 @@ function init() {
     scene.add( transformControls.getHelper() );	//Nutno v novém three.js. Dříve bylo: scene.add( transformControls );
     transformControls.addEventListener( 'change', render );
     transformControls.addEventListener( 'dragging-changed', function ( event ) {
-        orbitControls.enabled = ! event.value;
+        if (event.value) { // Dragování začalo
+            isTransformDragging = true;
+            orbitControls.enabled = false;
+        } else { // Dragování skončilo - setTimeout nutný, aby se onClick stihl vykonat s isTransformDragging = true
+            setTimeout(() => {
+                isTransformDragging = false;
+                orbitControls.enabled = true;
+            }, 100);
+        }
     } );	
     
 
@@ -871,21 +880,19 @@ function deselectObject() {
 }
 
 function render() {   
-    if (!isTouchScreen) {      
+    // Během dragování TransformControls nechceme přepínat hover/selection
+    if (!isTouchScreen && !isTransformDragging) {      
         raycaster.setFromCamera(mouse, currentCamera);
         const intersects = raycaster.intersectObjects(helperObjects);                
 
         if (intersects.length > 0) { // Myš je nad objektem
             if (INTERSECTED != intersects[0].object) { 
-                
                 // 1. Předchozímu objektu vypneme záři a helper
                 if (INTERSECTED) {
                     clearHighlight();
                 }   
-                
                 // 2. Nastavíme nový objekt
                 INTERSECTED = intersects[0].object;
-                
                 // 3. Novému objektu zapneme záři a helper
                 highlightObject(INTERSECTED);
             }
@@ -905,7 +912,7 @@ function render() {
 }
 
 
-function onMouseMove( event ) {			
+function onMouseMove( event ) {	
     event.preventDefault();			
     // calculate mouse position in normalized device coordinates
     // (-1 to +1) for both components				
@@ -915,6 +922,8 @@ function onMouseMove( event ) {
 }			
 
 function onClick( event ) {		
+    // Pokud právě probíhá drag transformací, ignorujeme click
+    if (isTransformDragging) return;
     if (INTERSECTED) {
         selectObject(INTERSECTED);
     }
