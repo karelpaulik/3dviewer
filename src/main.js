@@ -259,6 +259,9 @@ function init() {
     window.addEventListener( 'resize', onWindowResize, false );
     window.addEventListener( 'mousemove', onMouseMove, false );				
     window.addEventListener( 'click', onClick, false );
+    window.addEventListener( 'touchstart', onTouchStart, false );
+    window.addEventListener( 'touchmove', onTouchMove, false );
+    window.addEventListener( 'touchend', onTouchEnd, false );
     
     window.addEventListener( 'keydown', function ( event ) {
         switch ( event.key ) {
@@ -880,8 +883,8 @@ function deselectObject() {
 }
 
 function render() {   
-    // Během dragování TransformControls nechceme přepínat hover/selection
-    if (!isTouchScreen && !isTransformDragging) {      
+    // Raycast pro výběr (funguje na všech zařízeních, ale jen pokud se nedraží)
+    if (!isTransformDragging) {      
         raycaster.setFromCamera(mouse, currentCamera);
         const intersects = raycaster.intersectObjects(helperObjects);                
 
@@ -926,6 +929,36 @@ function onClick( event ) {
     if (isTransformDragging) return;
     if (INTERSECTED) {
         selectObject(INTERSECTED);
+    }
+}
+
+function onTouchStart( event ) {
+    if (event.touches.length === 1) {
+        // Single touch - simulujeme mousemove
+        const touch = event.touches[0];
+        mouse.x = ( touch.clientX / window.innerWidth ) * 2 - 1;
+        mouse.y = - ( touch.clientY / window.innerHeight ) * 2 + 1;
+        render();
+    }
+}
+
+function onTouchMove( event ) {
+    if (event.touches.length === 1) {
+        // Single touch move - simulujeme mousemove
+        const touch = event.touches[0];
+        mouse.x = ( touch.clientX / window.innerWidth ) * 2 - 1;
+        mouse.y = - ( touch.clientY / window.innerHeight ) * 2 + 1;
+        render();
+    }
+}
+
+function onTouchEnd( event ) {
+    if (event.touches.length === 0) {
+        // All touches ended - simulujeme click pro selekci
+        if (isTransformDragging) return;
+        if (INTERSECTED) {
+            selectObject(INTERSECTED);
+        }
     }
 }
 
