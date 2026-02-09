@@ -482,36 +482,36 @@ function refreshSelectedObjGui(obj) {
     selectedFolder.add(part, 'separate').name('Separate Part');
 
     const folder2 = selectedFolder.addFolder("Location");
-    folder2.add(obj.position, 'x', extent.pn, extent.pp, extent.pStep)
-        .name('Px')
-        .onChange(function(value){obj.position.x=value; render(); })
-        .listen();
-    folder2.add(obj.position, 'y', extent.pn, extent.pp, extent.pStep)
-        .name('Py')
-        .onChange(function(value){obj.position.y=value; render(); })
-        .listen();
-    folder2.add(obj.position, 'z', extent.pn, extent.pp, extent.pStep)
-        .name('Pz')
-        .onChange(function(value){obj.position.z=value; render(); })
-        .listen();
-    folder2.add(obj.rotation, 'x', extent.rn, extent.rp, extent.rStep)
-        .name('Rx')
-        .onChange(function(value){obj.rotation.x=value; render(); })
-        .listen();
-    folder2.add(obj.rotation, 'y', extent.rn, extent.rp, extent.rStep)
-        .name('Ry')
-        .onChange(function(value){obj.rotation.y=value; render(); })
-        .listen();
-    folder2.add(obj.rotation, 'z', extent.rn, extent.rp, extent.rStep)
-        .name('Rz')
-        .onChange(function(value){obj.rotation.z=value; render(); })
-        .listen();
-    folder2.add(obj.scale, 'x', extent.sn, extent.sp, extent.sStep)
-        .name('Scale')
-        .onChange(function(value){obj.scale.x=value; obj.scale.y=value; obj.scale.z=value; render(); })
-        .listen();
-    folder2.add(part, 'resetLocation').name('Reset init. location');
-    folder2.close();
+        folder2.add(obj.position, 'x', extent.pn, extent.pp, extent.pStep)
+            .name('Px')
+            .onChange(function(value){obj.position.x=value; render(); })
+            .listen();
+        folder2.add(obj.position, 'y', extent.pn, extent.pp, extent.pStep)
+            .name('Py')
+            .onChange(function(value){obj.position.y=value; render(); })
+            .listen();
+        folder2.add(obj.position, 'z', extent.pn, extent.pp, extent.pStep)
+            .name('Pz')
+            .onChange(function(value){obj.position.z=value; render(); })
+            .listen();
+        folder2.add(obj.rotation, 'x', extent.rn, extent.rp, extent.rStep)
+            .name('Rx')
+            .onChange(function(value){obj.rotation.x=value; render(); })
+            .listen();
+        folder2.add(obj.rotation, 'y', extent.rn, extent.rp, extent.rStep)
+            .name('Ry')
+            .onChange(function(value){obj.rotation.y=value; render(); })
+            .listen();
+        folder2.add(obj.rotation, 'z', extent.rn, extent.rp, extent.rStep)
+            .name('Rz')
+            .onChange(function(value){obj.rotation.z=value; render(); })
+            .listen();
+        folder2.add(obj.scale, 'x', extent.sn, extent.sp, extent.sStep)
+            .name('Scale')
+            .onChange(function(value){obj.scale.x=value; obj.scale.y=value; obj.scale.z=value; render(); })
+            .listen();
+        folder2.add(part, 'resetLocation').name('Reset init. location');
+        folder2.close();
     
     // if (obj.children[0]) {   
     //     const folder3 = selectedFolder.addFolder("Section view");
@@ -525,7 +525,7 @@ function refreshSelectedObjGui(obj) {
     const navFolder = selectedFolder.addFolder("Navigation");
         navFolder.add(part, 'selectParent').name('Select parent (Arrow Up)');
         navFolder.add(part, 'selectPrevious').name('Select previous (Arrow Down)');
-        navFolder.close();
+        navFolder.open();
 
     selectedFolder.open();
 }
@@ -904,8 +904,11 @@ function deselectObject() {
 }
 
 function render() {   
-    // Raycast pro výběr (funguje na všech zařízeních, ale jen pokud se nedraží)
-    if (!isTransformDragging) {      
+    // isMouseOverGui - pokud kurzor nad GUI a současně nad objektem, pak má přednost GUI.
+    const isMouseOverGui = document.elementFromPoint(mouse.x * window.innerWidth / 2 + window.innerWidth / 2, 
+                                                     -mouse.y * window.innerHeight / 2 + window.innerHeight / 2)?.closest('.lil-gui');
+    
+    if (!isTransformDragging && !isMouseOverGui) {      
         raycaster.setFromCamera(mouse, currentCamera);
         const intersects = raycaster.intersectObjects(helperObjects);                
 
@@ -927,6 +930,10 @@ function render() {
                 INTERSECTED = null;
             }
         }
+    } else if (isMouseOverGui && INTERSECTED) {
+        // Pokud je kurzor nad GUI, vypneme highlight
+        clearHighlight();
+        INTERSECTED = null;
     }
     
     // Pokud se objekty ve scéně hýbou, odkomentuj řádek níže pro plynulý rámeček:
@@ -946,6 +953,11 @@ function onMouseMove( event ) {
 }			
 
 function onClick( event ) {		
+    // Pokud je kliknuto na GUI prvek, ignorujeme raycast pro selekci
+    if (event.target.closest('.lil-gui')) {
+        return;
+    }
+    
     // Pokud právě probíhá drag transformací, ignorujeme click
     if (isTransformDragging) return;
     if (INTERSECTED) {
