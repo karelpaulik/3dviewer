@@ -38,8 +38,8 @@ const viewProp = {
     perspCam: false,
     section: false,
     fullscreen: false,
-    // Povolit / zakázat selekci objektů myší
-    isSelectAllowed: true,
+    isSelectAllowed: true, // Povolit / zakázat selekci objektů myší
+    backgroundColor: "#888888",
     px: 0,
     py: 0,
     pz: 0,
@@ -87,10 +87,6 @@ const part = {
         selectPrevious(); 
     }
 };	
-
-const params = {
-    backgroundColor: "#888888"
-}
 
 // Možnost zobrazení následujících objektů v konzoli pouze v režimu "npx vite"
 if (import.meta.env.DEV) {
@@ -318,7 +314,7 @@ function addMainGui() {
         }
     }).listen();
     folderProp.add(viewProp, 'isSelectAllowed').name('Allow selection').listen();
-    folderProp.addColor(params, 'backgroundColor').name('Background').onChange(function(value){ scene.background = new THREE.Color(value); render(); });
+    folderProp.addColor(viewProp, 'backgroundColor').name('Background').onChange(function(value){ scene.background = new THREE.Color(value); render(); });
     //folderProp.add(viewProp, 'perspCam').name('Persp. camera').onChange(function(value){setCamera(); render(); });
     const sectionFolder = folderProp.addFolder("Section view");   
         sectionFolder.add(viewProp, 'section').name('Section').onChange(function(value){renderer.localClippingEnabled = value; render(); });
