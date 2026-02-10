@@ -307,31 +307,30 @@ function init() {
 function addMainGui() {
     //View
     const folderProp = gui.addFolder( 'View' );
-    folderProp.add(viewProp, 'fit').name('Fit View');
-    // Fullscreen toggle (false = windowed, true = fullscreen)
-    let fsCtrl = folderProp.add(viewProp, 'fullscreen').name('Fullscreen').onChange(function(value){
-        if (value) {
-            document.getElementById('body').requestFullscreen().catch((err) => {console.warn('Fullscreen not available: ', err.message)});
-        } else {
-            if (document.fullscreenElement) document.exitFullscreen();
-        }
-    }).listen();
-    folderProp.add(viewProp, 'isSelectAllowed').name('Allow selection').listen();
-    folderProp.addColor(viewProp, 'backgroundColor').name('Background').onChange(function(value){ scene.background = new THREE.Color(value); render(); });
-    //folderProp.add(viewProp, 'perspCam').name('Persp. camera').onChange(function(value){setCamera(); render(); });
-    const sectionFolder = folderProp.addFolder("Section view");   
-        sectionFolder.add(viewProp, 'section').name('Section').onChange(function(value){renderer.localClippingEnabled = value; render(); });
-        sectionFolder.add(viewProp, 'px', extent.pn, extent.pp, extent.pStep).name('Pos. x').onChange(function(value){clipPlanes[0].constant=value; render(); }).listen();
-        sectionFolder.add(viewProp, 'py', extent.pn, extent.pp, extent.pStep).name('Pos. y').onChange(function(value){clipPlanes[1].constant=value; render(); }).listen();
-        sectionFolder.add(viewProp, 'pz', extent.pn, extent.pp, extent.pStep).name('Pos. z').onChange(function(value){clipPlanes[2].constant=value; render(); }).listen();
-        sectionFolder.add(viewProp, 'reset').name('Reset section');
-        sectionFolder.close();
-    const oritationFolder = folderProp.addFolder("View orientation");
-        oritationFolder.add(viewProp, 'viewx').name('View from X');
-        oritationFolder.add(viewProp, 'viewy').name('View from Y');
-        oritationFolder.add(viewProp, 'viewz').name('View from Z');
-        oritationFolder.close();
-    //folderProp.add(part, 'randomColor').name('Random color');	
+        folderProp.add(viewProp, 'fit').name('Fit View');
+        let fsCtrl = folderProp.add(viewProp, 'fullscreen').name('Fullscreen').onChange(function(value){// Fullscreen toggle (false = windowed, true = fullscreen)
+            if (value) {
+                document.getElementById('body').requestFullscreen().catch((err) => {console.warn('Fullscreen not available: ', err.message)});
+            } else {
+                if (document.fullscreenElement) document.exitFullscreen();
+            }
+        }).listen();
+        folderProp.add(viewProp, 'isSelectAllowed').name('Allow selection').listen();
+        folderProp.addColor(viewProp, 'backgroundColor').name('Background').onChange(function(value){ scene.background = new THREE.Color(value); render(); });
+        //folderProp.add(viewProp, 'perspCam').name('Persp. camera').onChange(function(value){setCamera(); render(); });
+        const sectionFolder = folderProp.addFolder("Section view");   
+            sectionFolder.add(viewProp, 'section').name('Section').onChange(function(value){renderer.localClippingEnabled = value; render(); });
+            sectionFolder.add(viewProp, 'px', extent.pn, extent.pp, extent.pStep).name('Pos. x').onChange(function(value){clipPlanes[0].constant=value; render(); }).listen();
+            sectionFolder.add(viewProp, 'py', extent.pn, extent.pp, extent.pStep).name('Pos. y').onChange(function(value){clipPlanes[1].constant=value; render(); }).listen();
+            sectionFolder.add(viewProp, 'pz', extent.pn, extent.pp, extent.pStep).name('Pos. z').onChange(function(value){clipPlanes[2].constant=value; render(); }).listen();
+            sectionFolder.add(viewProp, 'reset').name('Reset section');
+            sectionFolder.close();
+        const oritationFolder = folderProp.addFolder("View orientation");
+            oritationFolder.add(viewProp, 'viewx').name('View from X');
+            oritationFolder.add(viewProp, 'viewy').name('View from Y');
+            oritationFolder.add(viewProp, 'viewz').name('View from Z');
+            oritationFolder.close();
+        //folderProp.add(part, 'randomColor').name('Random color');	
 
     // Když by toto nebylo, tak při ukončení fullscreenu escapem, by "fulscreen" zůstalo zartřené. Funkčně by se moc nestalo.
     document.addEventListener('fullscreenchange', function(){
@@ -348,8 +347,8 @@ function refreshSelectedObjGui(obj) {
                 
     selectedFolder = gui.addFolder( 'Selected part: ' + (obj.name || 'Unnamed') );
     selectedFolder.add(obj, 'name').name('Name').listen();
-    selectedFolder.add(part, 'randomColor').name('Random color');
     selectedFolder.addColor(part, 'color').name('Specif. color').onChange(function(value){ changeColor(obj, value); });
+    selectedFolder.add(part, 'randomColor').name('Random color');
     //selectedFolder.add(part, 'remove').name('Remove');	
     selectedFolder.add(part, 'separate').name('Separate Part');
     selectedFolder.add(part, 'deselect').name('Deselect');
@@ -448,7 +447,7 @@ function initLoad() {
 
     } else {
         //console.error("Chyba: Nebyl nalezen žádný model k načtení.");
-        //loadModel('/models/1011364_c.zip','1011364_c.zip', 0.001, true).then( (result)=>{helperObjects.push( result )} );	
+        //loadModel('./models/1011364_c.zip','1011364_c.zip', 0.001, true).then( (result)=>{helperObjects.push( result )} );	
         
         //loadGlbModel('/models/1012053_l.glb','1012053_l.glb', 0.001, true).then( (result)=>{helperObjects.push( result )} );
         loadGlbModel('./models/1012053_l.glb','1012053_l.glb', 0.001, true).then( (result)=>{helperObjects.push( result )} );
@@ -467,20 +466,38 @@ function setPolygonOffsetFactor(obj, value) {
 
 function changeColor(obj, color) {
     if (!obj) return;
-    let newColor = color || undefined;
-    for (let i = 0; i < obj.material.length; i++) {
-        if (color === undefined) {
-            newColor = new THREE.Color(Math.random() * 0xffffff);
-            //newColor = new THREE.Color();
-            //newColor.setHSL(Math.random(), 0.6, 0.5); // Náhodný odstín, daná sytost i jas
+
+    const newColor = color ? new THREE.Color(color) : new THREE.Color(Math.random() * 0xffffff);
+    //newColor = new THREE.Color();
+    //newColor.setHSL(Math.random(), 0.6, 0.5); // Náhodný odstín, daná sytost i jas
+
+    const applyToMaterial = (mat) => {
+        if (!mat) return;
+        if (mat.color) mat.color.copy(newColor);
+        if (mat.emissive) mat.emissive.setHex(0x000000);
+        mat.needsUpdate = true;
+    };
+
+    // If the object itself has material(s)
+    if (obj.material) {
+        if (Array.isArray(obj.material)) {
+            obj.material.forEach(applyToMaterial);
         } else {
-            newColor = new THREE.Color(color);
-        }
-        obj.material[i].color = newColor;
-        if (obj.children[0]) {
-            obj.children[0].material[i].color = newColor;
+            applyToMaterial(obj.material);
         }
     }
+
+    // Also apply to any child meshes (covers GLB scene/group cases and section meshes)
+    obj.traverse((child) => {
+        if (child.isMesh && child.material) {
+            if (Array.isArray(child.material)) {
+                child.material.forEach(applyToMaterial);
+            } else {
+                applyToMaterial(child.material);
+            }
+        }
+    });
+
     render();
 }
 
