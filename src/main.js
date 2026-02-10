@@ -449,7 +449,9 @@ function initLoad() {
     } else {
         //console.error("Chyba: Nebyl nalezen žádný model k načtení.");
         //loadModel('/models/1011364_c.zip','1011364_c.zip', 0.001, true).then( (result)=>{helperObjects.push( result )} );	
-        loadGlbModel('/models/1012053_l.glb','1012053_l.glb', 0.001, true).then( (result)=>{helperObjects.push( result )} );
+        
+        //loadGlbModel('/models/1012053_l.glb','1012053_l.glb', 0.001, true).then( (result)=>{helperObjects.push( result )} );
+        loadGlbModel('./models/1012053_l.glb','1012053_l.glb', 0.001, true).then( (result)=>{helperObjects.push( result )} );
     }
 }
 
