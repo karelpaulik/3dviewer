@@ -920,7 +920,11 @@ function deselectObject() {
     lastSelectedMeshes.length = 0; // empty the array
 
     lastSelectedObject = null;
-    render(); // Překreslíme scénu, aby zmizely transformátory
+
+    setTimeout(() => { //render uvnitř setTimeout, pro deselekci objektu, kdy je nějaký objekt pod kurzorem.
+        render();
+    }, 100);
+
 }
 
 function render() {   
