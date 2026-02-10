@@ -34,6 +34,64 @@ let isTouchScreen;
 let selectionHelper;
 let isTransformDragging = false;
 
+const viewProp = {
+    perspCam: false,
+    section: false,
+    fullscreen: false,
+    // Povolit / zakázat selekci objektů myší
+    isSelectAllowed: true,
+    px: 0,
+    py: 0,
+    pz: 0,
+    reset: function() { resetSection() },
+    fit: function() { fitView() },
+    viewx: function() { viewFromPoint(1000, 0, 0) },
+    viewy: function() { viewFromPoint(0, 1000, 0) },
+    viewz: function() { viewFromPoint(0, 0, 1000) },
+};
+
+const extent = {
+    pn: -1000,
+    pp: +1000,
+    pStep: 10,
+    rn: -3.1416,
+    rp: 3.1416,
+    rStep: 0.035,
+    sn: 0,
+    sp: 10,
+    sStep: 0.1
+}
+    
+const part = {
+    remove: function() { removeModel(lastSelectedObject); },
+    color: "#888888",
+    separate: function() { 
+        if (lastSelectedObject) {
+            separateMesh(lastSelectedObject); 
+        }									
+    },
+    randomColor: function() {
+        if (lastSelectedObject) {
+            changeColor(lastSelectedObject);
+        }
+    },
+    resetLocation: function() {
+        if (lastSelectedObject) {
+            setDefPosRotScale(lastSelectedObject);
+        }
+    },
+    selectParent: function() {
+        selectParent();
+    },
+    selectPrevious: function() {   
+        selectPrevious(); 
+    }
+};	
+
+const params = {
+    backgroundColor: "#888888"
+}
+
 // Možnost zobrazení následujících objektů v konzoli pouze v režimu "npx vite"
 if (import.meta.env.DEV) {
     //OK, reference na objekty jsou dostupné v konzoli pro ladění
@@ -53,119 +111,6 @@ render();
 initLoad();
 
 // Funkce----------------------------------------------------------------------------------------------------------------
-function initLoad() {		    
-    // Načtení modelu z URL parametru---------------------------------------------------------
-    // 1. Získání celého řetězce dotazu (query string) z aktuální URL
-    // Např. získá '?model=https%3A%2F%2Ffirebase.zip&name=muj_dil.zip'
-    const urlParams = new URLSearchParams(window.location.search);
-
-    // 2. Získání hodnoty parametru s názvem 'model' (URL k modelu) a 'name' (původní název souboru)
-    // Např. pro 'model' získá 'https%3A%2F%2Ffirebase.zip' a pro 'name' získá 'muj_dil.zip'
-    const fileUrl = urlParams.get('model'); 
-    const fileName = urlParams.get('name'); 
-    const fileExtension = fileName ? fileName.split('.').pop().toLowerCase() : null;
-
-    // 3. Načtení modelu
-    if (fileUrl && fileName) {
-        console.log(`fileUrl: ${fileUrl}`);
-        console.log(`fileName: ${fileName}`);
-
-        document.getElementById('fileNameLabel').textContent = fileName;
-        document.getElementById('pageTitle').textContent = fileName;
-
-        switch ( fileExtension ) {
-            case 'zip':      
-                loadModel(fileUrl, fileName, 0.001, true).then( (result) => {
-                    helperObjects.push(result);
-                    console.log(`Model ${fileName} byl úspěšně načten.`);
-                }).catch((error) => {
-                    console.error(`Chyba při načítání modelu ${fileName}:`, error);
-                });
-                break;
-
-            case 'glb': 
-                loadGlbModel(fileUrl, fileName, 0.001, true).then( (result) => {
-                    helperObjects.push(result);
-                    console.log(`Model ${fileName} byl úspěšně načten.`);   
-                }).catch((error) => {
-                    console.error(`Chyba při načítání modelu ${fileName}:`, error);
-                });
-                break;
-        
-            default:
-                console.error(`Chyba: Nepodporovaný formát souboru ${fileExtension}.`);
-        }
-
-    } else {
-        //console.error("Chyba: Nebyl nalezen žádný model k načtení.");
-        //loadModel('/models/1011364_c.zip','1011364_c.zip', 0.001, true).then( (result)=>{helperObjects.push( result )} );	
-        loadGlbModel('/models/1012053_l.glb','1012053_l.glb', 0.001, true).then( (result)=>{helperObjects.push( result )} );
-    }
-}
-
-function setPolygonOffsetFactor(obj, value) {
-    if (!obj || !obj.material) return;
-    for (let i = 0; i < obj.material.length; i++) {
-        // Kontrola, zda existuje potomek (sectionMesh), kterému se offset nastavuje
-        if (obj.children[0] && obj.children[0].material[i]) {
-            obj.children[0].material[i].polygonOffsetFactor = value;
-        }
-    }
-}
-
-function changeColor(obj, color) {
-    if (!obj) return;
-    let newColor = color || undefined;
-    for (let i = 0; i < obj.material.length; i++) {
-        if (color === undefined) {
-            newColor = new THREE.Color(Math.random() * 0xffffff);
-            //newColor = new THREE.Color();
-            //newColor.setHSL(Math.random(), 0.6, 0.5); // Náhodný odstín, daná sytost i jas
-        } else {
-            newColor = new THREE.Color(color);
-        }
-        obj.material[i].color = newColor;
-        if (obj.children[0]) {
-            obj.children[0].material[i].color = newColor;
-        }
-    }
-    render();
-}
-
-function setDefPosRotScale(obj) {
-    if (!obj) return;
-    obj.position.set(obj.initPosition.x, obj.initPosition.y, obj.initPosition.z);
-    obj.rotation.set(obj.initRotation.x, obj.initRotation.y, obj.initRotation.z);
-    obj.scale.set(obj.initScale.x, obj.initScale.y, obj.initScale.z);
-    render();
-}
-
-function createSectionMesh(mesh) {
-    const sectionMesh = mesh.clone();	
-
-    let parentMaterialColor;        
-    for (let j=0; j < sectionMesh.material.length; j++) {
-        parentMaterialColor = sectionMesh.material[j].color;
-        //console.log(parentMaterialColor);
-        const material = new THREE.MeshBasicMaterial({
-            side: THREE.BackSide,
-            clippingPlanes: clipPlanes,
-            clipIntersection: true,								
-            color: parentMaterialColor,
-            polygonOffset: true,
-            polygonOffsetFactor: -1,
-            wireframe: false
-        });
-        sectionMesh.material[j] = material;
-    }
-
-    sectionMesh.position.set( 0, 0, 0);
-    sectionMesh.rotation.set( 0, 0, 0);							
-    sectionMesh.scale.set( 1, 1, 1 );
-            
-    mesh.add(sectionMesh);			
-}
-
 function init() {   
     //container
     container = document.createElement( 'div' );
@@ -357,97 +302,9 @@ function init() {
                 break;
         }
     } );
-} //End init 	
+} //End init 
 
 //GUI----------------------------------------------------------------------------------------------------------------
-const extent = {
-    pn: -1000,
-    pp: +1000,
-    pStep: 10,
-    rn: -3.1416,
-    rp: 3.1416,
-    rStep: 0.035,
-    sn: 0,
-    sp: 10,
-    sStep: 0.1
-}
-
-const viewProp = {
-    perspCam: false,
-    section: false,
-    fullscreen: false,
-    px: 0,
-    py: 0,
-    pz: 0,
-    reset: function() { resetSection() },
-    fit: function() { fitView() },
-    viewx: function() { viewFromPoint(1000, 0, 0) },
-    viewy: function() { viewFromPoint(0, 1000, 0) },
-    viewz: function() { viewFromPoint(0, 0, 1000) },
-}
-    
-const part = {
-    remove: function() { removeModel(lastSelectedObject); },
-    color: "#888888",
-    separate: function() { 
-        if (lastSelectedObject) {
-            separateMesh(lastSelectedObject); 
-        }									
-    },
-    randomColor: function() {
-        if (lastSelectedObject) {
-            changeColor(lastSelectedObject);
-        }
-    },
-    resetLocation: function() {
-        if (lastSelectedObject) {
-            setDefPosRotScale(lastSelectedObject);
-        }
-    },
-    selectParent: function() {
-        selectParent();
-    },
-    selectPrevious: function() {   
-        selectPrevious(); 
-    }
-};	
-
-// Navigation functions used by keyboard and GUI
-function selectParent() {
-    if (lastSelectedObject) {
-        const parentObject = lastSelectedObject.parent;
-        if (parentObject && parentObject !== scene) {
-            selectObject(parentObject); //Tj. lastSelectedObject = parentObject; + další
-            render();
-        }
-    }
-}
-
-function selectPrevious() {
-    if (selectionHistory.length > 0) {
-        // 1. Odstraníme aktuálně vybraný objekt z konce historie (protože tam byl právě přidán při výběru)
-        // Pokud chceme jít do historie, musíme se zbavit toho, co tam je teď.
-        selectionHistory.pop(); 
-
-        // 2. Získáme objekt, který byl vybrán před ním
-        const lastObject = selectionHistory.pop(); 
-
-        if (lastObject) {
-            // Funkce selectObject ho znovu přidá do pole (proto jsme dělali 2x pop), 
-            // čímž se cyklus historie uzavře a funguje správně.
-            selectObject(lastObject);
-            render();
-        } else {
-            // Pokud v historii už nic není, zrušíme výběr úplně
-            deselectObject();
-        }
-    }
-}
-
-const params = {
-    backgroundColor: "#888888"
-}
-
 function addMainGui() {
     //View
     const folderProp = gui.addFolder( 'View' );
@@ -460,6 +317,7 @@ function addMainGui() {
             if (document.fullscreenElement) document.exitFullscreen();
         }
     }).listen();
+    folderProp.add(viewProp, 'isSelectAllowed').name('Allow selection').listen();
     folderProp.addColor(params, 'backgroundColor').name('Background').onChange(function(value){ scene.background = new THREE.Color(value); render(); });
     //folderProp.add(viewProp, 'perspCam').name('Persp. camera').onChange(function(value){setCamera(); render(); });
     const sectionFolder = folderProp.addFolder("Section view");   
@@ -543,6 +401,151 @@ function refreshSelectedObjGui(obj) {
         navFolder.open();
 
     selectedFolder.open();
+}
+
+function initLoad() {		    
+    // Načtení modelu z URL parametru---------------------------------------------------------
+    // 1. Získání celého řetězce dotazu (query string) z aktuální URL
+    // Např. získá '?model=https%3A%2F%2Ffirebase.zip&name=muj_dil.zip'
+    const urlParams = new URLSearchParams(window.location.search);
+
+    // 2. Získání hodnoty parametru s názvem 'model' (URL k modelu) a 'name' (původní název souboru)
+    // Např. pro 'model' získá 'https%3A%2F%2Ffirebase.zip' a pro 'name' získá 'muj_dil.zip'
+    const fileUrl = urlParams.get('model'); 
+    const fileName = urlParams.get('name'); 
+    const fileExtension = fileName ? fileName.split('.').pop().toLowerCase() : null;
+
+    // 3. Načtení modelu
+    if (fileUrl && fileName) {
+        console.log(`fileUrl: ${fileUrl}`);
+        console.log(`fileName: ${fileName}`);
+
+        document.getElementById('fileNameLabel').textContent = fileName;
+        document.getElementById('pageTitle').textContent = fileName;
+
+        switch ( fileExtension ) {
+            case 'zip':      
+                loadModel(fileUrl, fileName, 0.001, true).then( (result) => {
+                    helperObjects.push(result);
+                    console.log(`Model ${fileName} byl úspěšně načten.`);
+                }).catch((error) => {
+                    console.error(`Chyba při načítání modelu ${fileName}:`, error);
+                });
+                break;
+
+            case 'glb': 
+                loadGlbModel(fileUrl, fileName, 0.001, true).then( (result) => {
+                    helperObjects.push(result);
+                    console.log(`Model ${fileName} byl úspěšně načten.`);   
+                }).catch((error) => {
+                    console.error(`Chyba při načítání modelu ${fileName}:`, error);
+                });
+                break;
+        
+            default:
+                console.error(`Chyba: Nepodporovaný formát souboru ${fileExtension}.`);
+        }
+
+    } else {
+        //console.error("Chyba: Nebyl nalezen žádný model k načtení.");
+        //loadModel('/models/1011364_c.zip','1011364_c.zip', 0.001, true).then( (result)=>{helperObjects.push( result )} );	
+        loadGlbModel('/models/1012053_l.glb','1012053_l.glb', 0.001, true).then( (result)=>{helperObjects.push( result )} );
+    }
+}
+
+function setPolygonOffsetFactor(obj, value) {
+    if (!obj || !obj.material) return;
+    for (let i = 0; i < obj.material.length; i++) {
+        // Kontrola, zda existuje potomek (sectionMesh), kterému se offset nastavuje
+        if (obj.children[0] && obj.children[0].material[i]) {
+            obj.children[0].material[i].polygonOffsetFactor = value;
+        }
+    }
+}
+
+function changeColor(obj, color) {
+    if (!obj) return;
+    let newColor = color || undefined;
+    for (let i = 0; i < obj.material.length; i++) {
+        if (color === undefined) {
+            newColor = new THREE.Color(Math.random() * 0xffffff);
+            //newColor = new THREE.Color();
+            //newColor.setHSL(Math.random(), 0.6, 0.5); // Náhodný odstín, daná sytost i jas
+        } else {
+            newColor = new THREE.Color(color);
+        }
+        obj.material[i].color = newColor;
+        if (obj.children[0]) {
+            obj.children[0].material[i].color = newColor;
+        }
+    }
+    render();
+}
+
+function setDefPosRotScale(obj) {
+    if (!obj) return;
+    obj.position.set(obj.initPosition.x, obj.initPosition.y, obj.initPosition.z);
+    obj.rotation.set(obj.initRotation.x, obj.initRotation.y, obj.initRotation.z);
+    obj.scale.set(obj.initScale.x, obj.initScale.y, obj.initScale.z);
+    render();
+}
+
+function createSectionMesh(mesh) {
+    const sectionMesh = mesh.clone();	
+
+    let parentMaterialColor;        
+    for (let j=0; j < sectionMesh.material.length; j++) {
+        parentMaterialColor = sectionMesh.material[j].color;
+        //console.log(parentMaterialColor);
+        const material = new THREE.MeshBasicMaterial({
+            side: THREE.BackSide,
+            clippingPlanes: clipPlanes,
+            clipIntersection: true,								
+            color: parentMaterialColor,
+            polygonOffset: true,
+            polygonOffsetFactor: -1,
+            wireframe: false
+        });
+        sectionMesh.material[j] = material;
+    }
+
+    sectionMesh.position.set( 0, 0, 0);
+    sectionMesh.rotation.set( 0, 0, 0);							
+    sectionMesh.scale.set( 1, 1, 1 );
+            
+    mesh.add(sectionMesh);			
+}	
+
+// Navigation functions used by keyboard and GUI
+function selectParent() {
+    if (lastSelectedObject) {
+        const parentObject = lastSelectedObject.parent;
+        if (parentObject && parentObject !== scene) {
+            selectObject(parentObject); //Tj. lastSelectedObject = parentObject; + další
+            render();
+        }
+    }
+}
+
+function selectPrevious() {
+    if (selectionHistory.length > 0) {
+        // 1. Odstraníme aktuálně vybraný objekt z konce historie (protože tam byl právě přidán při výběru)
+        // Pokud chceme jít do historie, musíme se zbavit toho, co tam je teď.
+        selectionHistory.pop(); 
+
+        // 2. Získáme objekt, který byl vybrán před ním
+        const lastObject = selectionHistory.pop(); 
+
+        if (lastObject) {
+            // Funkce selectObject ho znovu přidá do pole (proto jsme dělali 2x pop), 
+            // čímž se cyklus historie uzavře a funguje správně.
+            selectObject(lastObject);
+            render();
+        } else {
+            // Pokud v historii už nic není, zrušíme výběr úplně
+            deselectObject();
+        }
+    }
 }
 
 function resetSection() {					
@@ -919,11 +922,12 @@ function deselectObject() {
 }
 
 function render() {   
+    //console.log("viewProp.isSelectAllowed: ", viewProp.isSelectAllowed);
     // isMouseOverGui - pokud kurzor nad GUI a současně nad objektem, pak má přednost GUI.
     const isMouseOverGui = document.elementFromPoint(mouse.x * window.innerWidth / 2 + window.innerWidth / 2, 
                                                      -mouse.y * window.innerHeight / 2 + window.innerHeight / 2)?.closest('.lil-gui');
     
-    if (!isTransformDragging && !isMouseOverGui) {      
+    if (!isTransformDragging && !isMouseOverGui && viewProp.isSelectAllowed) {      
         raycaster.setFromCamera(mouse, currentCamera);
         const intersects = raycaster.intersectObjects(helperObjects);                
 
@@ -950,6 +954,12 @@ function render() {
         clearHighlight();
         INTERSECTED = null;
     }
+
+    // Pokud je selekce zakázána, zajistíme že nebude nic zvýrazněno
+    if (!viewProp.isSelectAllowed && INTERSECTED) {
+        clearHighlight();
+        INTERSECTED = null;
+    }
     
     // Pokud se objekty ve scéně hýbou, odkomentuj řádek níže pro plynulý rámeček:
     // if (selectionHelper && selectionHelper.visible) selectionHelper.update();
@@ -972,7 +982,9 @@ function onClick( event ) {
     if (event.target.closest('.lil-gui')) {
         return;
     }
-    
+    // Pokud je selekce zakázána v GUI, ignorujeme click
+    if (!viewProp.isSelectAllowed) return;
+
     // Pokud právě probíhá drag transformací, ignorujeme click
     if (isTransformDragging) return;
     if (INTERSECTED) {
@@ -1003,6 +1015,7 @@ function onTouchMove( event ) {
 function onTouchEnd( event ) {
     if (event.touches.length === 0) {
         // All touches ended - simulujeme click pro selekci
+        if (!viewProp.isSelectAllowed) return;
         if (isTransformDragging) return;
         if (INTERSECTED) {
             selectObject(INTERSECTED);
