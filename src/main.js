@@ -70,6 +70,9 @@ const part = {
             separateMesh(lastSelectedObject); 
         }									
     },
+    deselect: function() { // Přidáno: tlačítko pro zrušení selekce
+        deselectObject();
+    },
     randomColor: function() {
         if (lastSelectedObject) {
             changeColor(lastSelectedObject);
@@ -349,6 +352,7 @@ function refreshSelectedObjGui(obj) {
     selectedFolder.addColor(part, 'color').name('Specif. color').onChange(function(value){ changeColor(obj, value); });
     selectedFolder.add(part, 'remove').name('Remove');	
     selectedFolder.add(part, 'separate').name('Separate Part');
+    selectedFolder.add(part, 'deselect').name('Deselect');
 
     const folder2 = selectedFolder.addFolder("Location");
         folder2.add(obj.position, 'x', extent.pn, extent.pp, extent.pStep)
