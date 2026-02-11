@@ -436,6 +436,7 @@ function initLoad() {
                 loadModel(fileUrl, fileName, 0.001, true).then( (result) => {
                     helperObjects.push(result);
                     //addAxesHelper();
+                    fitView();
                     console.log(`Model ${fileName} byl úspěšně načten.`);
                 }).catch((error) => {
                     console.error(`Chyba při načítání modelu ${fileName}:`, error);
@@ -446,6 +447,7 @@ function initLoad() {
                 loadGlbModel(fileUrl, fileName, 0.001, true).then( (result) => {
                     helperObjects.push(result);
                     //addAxesHelper();
+                    fitView();
                     console.log(`Model ${fileName} byl úspěšně načten.`);   
                 }).catch((error) => {
                     console.error(`Chyba při načítání modelu ${fileName}:`, error);
@@ -464,6 +466,7 @@ function initLoad() {
         loadGlbModel('./models/1012053_l.glb','1012053_l.glb', 0.001, true).then( (result)=>{
             helperObjects.push( result );
             addAxesHelper();
+            fitView();
         });
     }
 }
