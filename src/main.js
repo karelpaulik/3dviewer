@@ -49,6 +49,7 @@ const viewProp = {
     viewx: function() { viewFromPoint(1000, 0, 0) },
     viewy: function() { viewFromPoint(0, 1000, 0) },
     viewz: function() { viewFromPoint(0, 0, 1000) },
+    showHiddenObjects: function() { showHiddenObjects() },
 };
 
 const extent = {
@@ -314,6 +315,7 @@ function addMainGui() {
     //View
     const folderProp = gui.addFolder( 'View' );
         folderProp.add(viewProp, 'fit').name('Fit View');
+        folderProp.add(viewProp, 'showHiddenObjects').name('Show hidden objects');
         let fsCtrl = folderProp.add(viewProp, 'fullscreen').name('Fullscreen').onChange(function(value){// Fullscreen toggle (false = windowed, true = fullscreen)
             if (value) {
                 document.getElementById('body').requestFullscreen().catch((err) => {console.warn('Fullscreen not available: ', err.message)});
@@ -817,6 +819,23 @@ function hideObject(part) {
         render();
     } catch(err) {
         console.log("Error: hideObject " + err.message);
+    }
+}
+
+function showHiddenObjects() {
+    try {
+        // Projdeme všechny skryté objekty a zobrazíme je
+        hiddenObjects.forEach(obj => {
+            obj.visible = true;
+            console.log(`Objekt ${obj.name || 'Unnamed'} byl zobrazen.`);
+        });
+        
+        // Vyprázdníme pole skrytých objektů
+        hiddenObjects.length = 0;
+        
+        render();
+    } catch(err) {
+        console.log("Error: showHiddenObjects " + err.message);
     }
 }
 
