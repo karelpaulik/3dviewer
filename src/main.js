@@ -18,6 +18,7 @@ const clipPlanes = [];
 let cameraPersp, cameraOrtho, currentCamera;
 let transformControls, orbitControls;
 const helperObjects = [];
+const hiddenObjects = [];
 
 const gui = new GUI();				
 let lastSelectedObject = null;
@@ -88,6 +89,11 @@ const part = {
     },
     selectPrevious: function() {   
         selectPrevious(); 
+    },
+    hideObject: function() {
+        if (lastSelectedObject) {
+            hideObject(lastSelectedObject);
+        }
     }
 };	
 
@@ -351,6 +357,7 @@ function refreshSelectedObjGui(obj) {
     selectedFolder.add(part, 'randomColor').name('Random color');
     //selectedFolder.add(part, 'remove').name('Remove');	
     selectedFolder.add(part, 'separate').name('Separate Part');
+    selectedFolder.add(part, 'hideObject').name('Hide Object');
     selectedFolder.add(part, 'deselect').name('Deselect');
 
     const folder2 = selectedFolder.addFolder("Location");
@@ -790,6 +797,26 @@ function removeModel(part) {
         render();
     } catch(err) {
         console.log("Error: removeModel " + err.message);
+    }
+}
+
+function hideObject(part) {
+    try {
+        // Skryjeme objekt nastavením visibility na false
+        part.visible = false;
+        
+        // Přidáme objekt do pole skrytých objektů, pokud tam ještě není
+        if (!hiddenObjects.includes(part)) {
+            hiddenObjects.push(part);
+            console.log(`Objekt ${part.name || 'Unnamed'} byl skryt.`);
+        }
+        
+        // Zrušíme selekci skrytého objektu
+        deselectObject();
+        
+        render();
+    } catch(err) {
+        console.log("Error: hideObject " + err.message);
     }
 }
 
