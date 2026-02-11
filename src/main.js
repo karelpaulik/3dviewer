@@ -19,6 +19,7 @@ let cameraPersp, cameraOrtho, currentCamera;
 let transformControls, orbitControls;
 const helperObjects = [];
 const hiddenObjects = [];
+let temporarilyShownObjects = [];
 
 const gui = new GUI();				
 let lastSelectedObject = null;
@@ -50,6 +51,7 @@ const viewProp = {
     viewy: function() { viewFromPoint(0, 1000, 0) },
     viewz: function() { viewFromPoint(0, 0, 1000) },
     showHiddenObjects: function() { showHiddenObjects() },
+    switchHiddenObjects: function() { toggleHiddenObjects() },
 };
 
 const extent = {
@@ -316,6 +318,7 @@ function addMainGui() {
     const folderProp = gui.addFolder( 'View' );
         folderProp.add(viewProp, 'fit').name('Fit View');
         folderProp.add(viewProp, 'showHiddenObjects').name('Show hidden objects');
+        folderProp.add(viewProp, 'switchHiddenObjects').name('Switch hidden objects');
         let fsCtrl = folderProp.add(viewProp, 'fullscreen').name('Fullscreen').onChange(function(value){// Fullscreen toggle (false = windowed, true = fullscreen)
             if (value) {
                 document.getElementById('body').requestFullscreen().catch((err) => {console.warn('Fullscreen not available: ', err.message)});
@@ -901,6 +904,14 @@ function hideObject(part) {
         // Skryjeme objekt nastavením visibility na false
         part.visible = false;
         
+        // Pokud se objekt nachází v temporarilyShownObjects, odstraníme ho odtud
+        // Objekt může být pouze v jednom z těchto dvou polí
+        const tempIndex = temporarilyShownObjects.indexOf(part);
+        if (tempIndex !== -1) {
+            temporarilyShownObjects.splice(tempIndex, 1);
+            console.log(`Objekt ${part.name || 'Unnamed'} byl odstraněn z temporarilyShownObjects.`);
+        }
+        
         // Přidáme objekt do pole skrytých objektů, pokud tam ještě není
         if (!hiddenObjects.includes(part)) {
             hiddenObjects.push(part);
@@ -930,6 +941,32 @@ function showHiddenObjects() {
         render();
     } catch(err) {
         console.log("Error: showHiddenObjects " + err.message);
+    }
+}
+
+function toggleHiddenObjects() {
+    try {
+        // Prohodíme pole hiddenObjects a temporarilyShownObjects
+        const temp = [...hiddenObjects];
+        hiddenObjects.length = 0;
+        hiddenObjects.push(...temporarilyShownObjects);
+        temporarilyShownObjects = temp;
+        
+        // Všechny objekty v hiddenObjects nastavíme jako neviditelné
+        hiddenObjects.forEach(obj => {
+            obj.visible = false;
+            console.log(`Objekt ${obj.name || 'Unnamed'} je skrytý.`);
+        });
+        
+        // Všechny objekty v temporarilyShownObjects nastavíme jako viditelné
+        temporarilyShownObjects.forEach(obj => {
+            obj.visible = true;
+            console.log(`Objekt ${obj.name || 'Unnamed'} je viditelný.`);
+        });
+        
+        render();
+    } catch(err) {
+        console.log("Error: toggleHiddenObjects " + err.message);
     }
 }
 
