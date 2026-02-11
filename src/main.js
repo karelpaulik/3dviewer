@@ -147,7 +147,7 @@ function init() {
     const frustumSize = 1;
     const aspect = window.innerWidth / window.innerHeight;
     cameraPersp = new THREE.PerspectiveCamera( 20, aspect, 250, 20000 );
-    cameraOrtho = new THREE.OrthographicCamera( frustumSize * aspect / - 0.002, frustumSize * aspect / 0.002, frustumSize / 0.002, frustumSize / - 0.002, 250, 20000 );
+    cameraOrtho = new THREE.OrthographicCamera( frustumSize * aspect / - 0.002, frustumSize * aspect / 0.002, frustumSize / 0.002, frustumSize / - 0.002, 0.1, 20000 );
     
     currentCamera = cameraOrtho;
 
@@ -435,6 +435,7 @@ function initLoad() {
             case 'zip':      
                 loadModel(fileUrl, fileName, 0.001, true).then( (result) => {
                     helperObjects.push(result);
+                    //addAxesHelper();
                     console.log(`Model ${fileName} byl úspěšně načten.`);
                 }).catch((error) => {
                     console.error(`Chyba při načítání modelu ${fileName}:`, error);
@@ -444,6 +445,7 @@ function initLoad() {
             case 'glb': 
                 loadGlbModel(fileUrl, fileName, 0.001, true).then( (result) => {
                     helperObjects.push(result);
+                    //addAxesHelper();
                     console.log(`Model ${fileName} byl úspěšně načten.`);   
                 }).catch((error) => {
                     console.error(`Chyba při načítání modelu ${fileName}:`, error);
@@ -459,7 +461,10 @@ function initLoad() {
         //loadModel('./models/1011364_c.zip','1011364_c.zip', 0.001, true).then( (result)=>{helperObjects.push( result )} );	
         
         //loadGlbModel('/models/1012053_l.glb','1012053_l.glb', 0.001, true).then( (result)=>{helperObjects.push( result )} );
-        loadGlbModel('./models/1012053_l.glb','1012053_l.glb', 0.001, true).then( (result)=>{helperObjects.push( result )} );
+        loadGlbModel('./models/1012053_l.glb','1012053_l.glb', 0.001, true).then( (result)=>{
+            helperObjects.push( result );
+            addAxesHelper();
+        });
     }
 }
 
@@ -651,6 +656,63 @@ function fitView() {
         // Aktualizujeme kameru
         currentCamera.lookAt(center);
         orbitControls.update();
+        
+        // Debug funkce pro výpis parametrů zobrazení
+        const debugViewParams = (params = {}) => {
+            console.log('=== FitView Debug ===');
+            
+            // Parametry frustum kamery
+            console.log('--- Camera Frustum ---');
+            if (currentCamera.isPerspectiveCamera) {
+                console.log('Camera type: Perspective');
+                console.log('FOV:', currentCamera.fov);
+                console.log('Aspect:', currentCamera.aspect.toFixed(4));
+                console.log('Near:', currentCamera.near);
+                console.log('Far:', currentCamera.far);
+            } else {
+                console.log('Camera type: Orthographic');
+                console.log('Left:', currentCamera.left.toFixed(2));
+                console.log('Right:', currentCamera.right.toFixed(2));
+                console.log('Top:', currentCamera.top.toFixed(2));
+                console.log('Bottom:', currentCamera.bottom.toFixed(2));
+                console.log('Near:', currentCamera.near);
+                console.log('Far:', currentCamera.far);
+                console.log('Zoom:', currentCamera.zoom.toFixed(4));
+            }
+            
+            // Parametry modelu a kamery
+            console.log('--- Model & Camera ---');
+            console.log('Box center:', `x: ${center.x.toFixed(2)}, y: ${center.y.toFixed(2)}, z: ${center.z.toFixed(2)}`);
+            console.log('Box size:', `x: ${size.x.toFixed(2)}, y: ${size.y.toFixed(2)}, z: ${size.z.toFixed(2)}`);
+            
+            if (params.maxDim !== undefined) {
+                console.log('Max dimension:', params.maxDim.toFixed(2));
+            }
+            if (params.cameraDistance !== undefined) {
+                console.log('Camera distance:', params.cameraDistance.toFixed(2));
+            }
+            if (params.cameraPosition) {
+                const pos = params.cameraPosition;
+                console.log('Camera position:', `x: ${pos.x.toFixed(2)}, y: ${pos.y.toFixed(2)}, z: ${pos.z.toFixed(2)}`);
+                
+                // Vypočítáme skutečnou vzdálenost kamery od středu
+                const actualDistance = Math.sqrt(
+                    Math.pow(pos.x - center.x, 2) +
+                    Math.pow(pos.y - center.y, 2) +
+                    Math.pow(pos.z - center.z, 2)
+                );
+                console.log('Actual distance from center:', actualDistance.toFixed(2));
+            }
+            
+            console.log('====================');
+        };
+        
+        // Zavoláme debug funkci s vypočítanými parametry
+        debugViewParams({
+            maxDim: maxDim,
+            cameraDistance: cameraDistance,
+            cameraPosition: currentCamera.position
+        });
     }
     
     render();
@@ -687,6 +749,35 @@ function addShadowedLight( x, y, z, color, intensity ) {
     directionalLight.position.set( x, y, z );
     scene.add( directionalLight );
     directionalLight.castShadow = true;
+}
+
+function addAxesHelper(axesSize) {
+    let size;
+    
+    // Pokud není zadán parametr, velikost se dopočítá
+    if (axesSize === undefined) {
+        // Vypočítáme střed a velikost všech objektů
+        let box = new THREE.Box3();
+        helperObjects.forEach(obj => {
+            box.expandByObject(obj);
+        });
+        
+        if (!box.isEmpty()) {
+            const boxSize = box.getSize(new THREE.Vector3());
+            const maxDim = Math.max(boxSize.x, boxSize.y, boxSize.z);
+            size = maxDim * 0.5;
+        } else {
+            return; // Pokud je box prázdný, neděláme nic
+        }
+    } else {
+        // Pokud je parametr zadán, použijeme ho jako velikost
+        size = axesSize;
+    }
+    
+    // Vytvoříme helper s určenou velikostí
+    const axesHelper = new THREE.AxesHelper(size);
+    scene.add(axesHelper);
+    render();
 }
 
 //https://www.reddit.com/r/learnjavascript/comments/9jovpn/how_can_i_load_a_3d_model_asynchronously_in/	
