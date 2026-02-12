@@ -373,9 +373,9 @@ function refreshSelectedObjGui(obj) {
     selectedFolder.addColor(part, 'color').name('Specif. color').onChange(function(value){ changeColor(obj, value); });
     selectedFolder.add(part, 'randomColor').name('Random color');
     //selectedFolder.add(part, 'remove').name('Remove');	
-    selectedFolder.add(part, 'separate').name('Separate Part');
+    //selectedFolder.add(part, 'separate').name('Separate Part');
     selectedFolder.add(part, 'hideObject').name('Hide Object');
-    selectedFolder.add(part, 'deselect').name('Deselect');
+    //selectedFolder.add(part, 'deselect').name('Deselect');
 
     const folder2 = selectedFolder.addFolder("Location");
         folder2.add(part, 'resetLocation').name('Reset init. location');
