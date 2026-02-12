@@ -1241,7 +1241,7 @@ function onMouseUp( event ) {
 
 function onClick( event ) {		
     // Pokud je kliknuto na GUI prvek, ignorujeme raycast pro selekci
-    if (event.target.closest('.lil-gui')) {
+    if (gui.domElement.contains(event.target)) {
         return;
     }
     // Pokud je selekce zakázána v GUI, ignorujeme click
