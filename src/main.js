@@ -29,7 +29,12 @@ let selectedFolder = null;
 
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2( 1, 1 ); //udání hodnoty 1,1 je kvůli inicializaci. Jinak může vybrat objekt i když není na vybrání.
+const mouseDownPos = new THREE.Vector2();
+const mouseUpPos = new THREE.Vector2();
+const touchStartPos = new THREE.Vector2();
+const touchEndPos = new THREE.Vector2();
 let INTERSECTED;
+let isMouseDown = false;
 
 let isTouchScreen;
 
@@ -176,14 +181,6 @@ function init() {
     const headlight = new THREE.DirectionalLight(0xffffff, 0.5);
     currentCamera.add(headlight); // Světlo bude svítit ze stejného místa jako oči uživatele
     scene.add(currentCamera); // BEZ TOHOTO ŘÁDKU SVĚTLO NEBUDE SVÍTIT
-
-    let mouseDown = 0;
-    document.body.onmousedown = function() { 
-        mouseDown = 1;
-    }
-    document.body.onmouseup = function() {
-        mouseDown = 0;
-    }
     
     //clipPlanes
     clipPlanes[0] = new THREE.Plane( new THREE.Vector3( -1, 0, 0 ), 0 );
@@ -222,6 +219,8 @@ function init() {
     
     window.addEventListener( 'resize', onWindowResize, false );
     window.addEventListener( 'mousemove', onMouseMove, false );				
+    window.addEventListener( 'mousedown', onMouseDown, false );
+    window.addEventListener( 'mouseup', onMouseUp, false );
     window.addEventListener( 'click', onClick, false );
     window.addEventListener( 'touchstart', onTouchStart, false );
     window.addEventListener( 'touchmove', onTouchMove, false );
@@ -1177,7 +1176,8 @@ function render() {
     const isMouseOverGui = document.elementFromPoint(mouse.x * window.innerWidth / 2 + window.innerWidth / 2, 
                                                      -mouse.y * window.innerHeight / 2 + window.innerHeight / 2)?.closest('.lil-gui');
     
-    if (!isTransformDragging && !isMouseOverGui && viewProp.isSelectAllowed) {      
+    // Nezvýrazňujeme objekty při dragování (rotaci/posouvání) nebo při transformaci
+    if (!isTransformDragging && !isMouseOverGui && !isMouseDown && viewProp.isSelectAllowed) {      
         raycaster.setFromCamera(mouse, currentCamera);
         const intersects = raycaster.intersectObjects(helperObjects);                
 
@@ -1199,8 +1199,8 @@ function render() {
                 INTERSECTED = null;
             }
         }
-    } else if (isMouseOverGui && INTERSECTED) {
-        // Pokud je kurzor nad GUI, vypneme highlight
+    } else if ((isMouseOverGui || isMouseDown) && INTERSECTED) {
+        // Pokud je kurzor nad GUI nebo probíhá dragování, vypneme highlight
         clearHighlight();
         INTERSECTED = null;
     }
@@ -1225,7 +1225,18 @@ function onMouseMove( event ) {
     mouse.x = ( event.clientX / window.innerWidth ) * 2 - 1;
     mouse.y = - ( event.clientY / window.innerHeight ) * 2 + 1;				
     render();
-}			
+}
+
+function onMouseDown( event ) {
+    // Uložíme pozici myši při stisku tlačítka
+    mouseDownPos.x = event.clientX;
+    mouseDownPos.y = event.clientY;
+    isMouseDown = true;
+}
+
+function onMouseUp( event ) {
+    isMouseDown = false;
+}
 
 function onClick( event ) {		
     // Pokud je kliknuto na GUI prvek, ignorujeme raycast pro selekci
@@ -1237,6 +1248,19 @@ function onClick( event ) {
 
     // Pokud právě probíhá drag transformací, ignorujeme click
     if (isTransformDragging) return;
+
+    // Uložíme pozici myši při uvolnění tlačítka
+    mouseUpPos.x = event.clientX;
+    mouseUpPos.y = event.clientY;
+
+    // Vypočítáme vzdálenost mezi pozicí při stisku a uvolnění
+    const dragDistance = mouseDownPos.distanceTo(mouseUpPos);
+
+    // Pokud byla myš posunuta více než 3 pixely, považujeme to za drag (ne click)
+    if (dragDistance > 3) {
+        return; // Ignorujeme selekci při dragování
+    }
+
     if (INTERSECTED) {
         selectObject(INTERSECTED);
     }
@@ -1244,8 +1268,10 @@ function onClick( event ) {
 
 function onTouchStart( event ) {
     if (event.touches.length === 1) {
-        // Single touch - simulujeme mousemove
+        // Single touch - simulujeme mousemove a uložíme pozici
         const touch = event.touches[0];
+        touchStartPos.x = touch.clientX;
+        touchStartPos.y = touch.clientY;
         mouse.x = ( touch.clientX / window.innerWidth ) * 2 - 1;
         mouse.y = - ( touch.clientY / window.innerHeight ) * 2 + 1;
         render();
@@ -1263,7 +1289,20 @@ function onTouchMove( event ) {
 }
 
 function onTouchEnd( event ) {
-    if (event.touches.length === 0) {
+    if (event.changedTouches.length > 0) {
+        // Uložíme pozici dotyku při ukončení
+        const touch = event.changedTouches[0];
+        touchEndPos.x = touch.clientX;
+        touchEndPos.y = touch.clientY;
+
+        // Vypočítáme vzdálenost mezi počáteční a koncovou pozicí
+        const dragDistance = touchStartPos.distanceTo(touchEndPos);
+
+        // Selekce pouze pokud nedocházelo k dragování (vzdálenost < 10 pixelů)
+        if (dragDistance > 10) {
+            return; // Ignorujeme selekci při dragování
+        }
+
         // All touches ended - simulujeme click pro selekci
         if (!viewProp.isSelectAllowed) return;
         if (isTransformDragging) return;
