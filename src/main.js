@@ -378,6 +378,7 @@ function refreshSelectedObjGui(obj) {
     selectedFolder.add(part, 'deselect').name('Deselect');
 
     const folder2 = selectedFolder.addFolder("Location");
+        folder2.add(part, 'resetLocation').name('Reset init. location');
         folder2.add(part, 'undoTransform').name('Undo last transform');
         folder2.add(obj.position, 'x', extent.pn, extent.pp, extent.pStep)
             .name('Px')
@@ -407,7 +408,6 @@ function refreshSelectedObjGui(obj) {
             .name('Scale')
             .onChange(function(value){obj.scale.x=value; obj.scale.y=value; obj.scale.z=value; render(); })
             .listen();
-        folder2.add(part, 'resetLocation').name('Reset init. location');
         folder2.close();
     
     // if (obj.children[0]) {   
@@ -616,25 +616,21 @@ function selectParent() {
 }
 
 function selectPrevious() {
-    if (selectionHistory.length > 0) {
-        // 1. Odstraníme aktuálně vybraný objekt z konce historie (protože tam byl právě přidán při výběru)
-        // Pokud chceme jít do historie, musíme se zbavit toho, co tam je teď.
-        selectionHistory.pop(); 
-
-        // 2. Získáme objekt, který byl vybrán před ním
-        const lastObject = selectionHistory.pop(); 
-
-        if (lastObject) {
-            // Funkce selectObject ho znovu přidá do pole (proto jsme dělali 2x pop), 
-            // čímž se cyklus historie uzavře a funguje správně.
-            selectObject(lastObject);
-            render();
-        } else {
-            // Pokud v historii už nic není, zrušíme výběr úplně
-            deselectObject();
-        }
+    // Potřebujeme alespoň 2 objekty v historii (aktuální + předchozí)
+    if (selectionHistory.length < 2) {
+        return;
+    }
+    
+    // Získáme předposlední objekt (ten před aktuálně vybraným)
+    const previousObject = selectionHistory[selectionHistory.length - 2];
+    
+    if (previousObject) {
+        selectionHistory.length -= 2;// Odstraníme poslední 2 prvky najednou (aktuální + předchozí)
+        selectObject(previousObject);// selectObject automaticky přidá previousObject na konec historie
+        render();
     }
 }
+
 
 function resetSection() {					
     viewProp.px = 0;
