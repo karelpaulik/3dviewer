@@ -35,6 +35,7 @@ const touchStartPos = new THREE.Vector2();
 const touchEndPos = new THREE.Vector2();
 let INTERSECTED;
 let isMouseDown = false;
+let isTouchDragging = false;
 
 let isTouchScreen;
 
@@ -1177,7 +1178,7 @@ function render() {
                                                      -mouse.y * window.innerHeight / 2 + window.innerHeight / 2)?.closest('.lil-gui');
     
     // Nezvýrazňujeme objekty při dragování (rotaci/posouvání) nebo při transformaci
-    if (!isTransformDragging && !isMouseOverGui && !isMouseDown && viewProp.isSelectAllowed) {      
+    if (!isTransformDragging && !isMouseOverGui && !isMouseDown && !isTouchDragging && viewProp.isSelectAllowed) {      
         raycaster.setFromCamera(mouse, currentCamera);
         const intersects = raycaster.intersectObjects(helperObjects);                
 
@@ -1199,7 +1200,7 @@ function render() {
                 INTERSECTED = null;
             }
         }
-    } else if ((isMouseOverGui || isMouseDown) && INTERSECTED) {
+    } else if ((isMouseOverGui || isMouseDown || isTouchDragging) && INTERSECTED) {
         // Pokud je kurzor nad GUI nebo probíhá dragování, vypneme highlight
         clearHighlight();
         INTERSECTED = null;
@@ -1272,6 +1273,7 @@ function onTouchStart( event ) {
         const touch = event.touches[0];
         touchStartPos.x = touch.clientX;
         touchStartPos.y = touch.clientY;
+        isTouchDragging = false;
         mouse.x = ( touch.clientX / window.innerWidth ) * 2 - 1;
         mouse.y = - ( touch.clientY / window.innerHeight ) * 2 + 1;
         render();
@@ -1282,6 +1284,14 @@ function onTouchMove( event ) {
     if (event.touches.length === 1) {
         // Single touch move - simulujeme mousemove
         const touch = event.touches[0];
+        
+        // Zjistíme, zda dochází k dragování
+        const currentPos = new THREE.Vector2(touch.clientX, touch.clientY);
+        const distance = touchStartPos.distanceTo(currentPos);
+        if (distance > 3) {
+            isTouchDragging = true;
+        }
+        
         mouse.x = ( touch.clientX / window.innerWidth ) * 2 - 1;
         mouse.y = - ( touch.clientY / window.innerHeight ) * 2 + 1;
         render();
@@ -1299,7 +1309,8 @@ function onTouchEnd( event ) {
         const dragDistance = touchStartPos.distanceTo(touchEndPos);
 
         // Selekce pouze pokud nedocházelo k dragování (vzdálenost < 10 pixelů)
-        if (dragDistance > 10) {
+        if (dragDistance > 10 || isTouchDragging) {
+            isTouchDragging = false;
             return; // Ignorujeme selekci při dragování
         }
 
@@ -1309,6 +1320,8 @@ function onTouchEnd( event ) {
         if (INTERSECTED) {
             selectObject(INTERSECTED);
         }
+        
+        isTouchDragging = false;
     }
 }
 
