@@ -35,6 +35,7 @@ let isTouchScreen;
 
 let selectionHelper;
 let isTransformDragging = false;
+let previousTransformState = null; // Uložení předchozího stavu pro undo
 
 const viewProp = {
     perspCam: false,
@@ -97,6 +98,11 @@ const part = {
     hideObject: function() {
         if (lastSelectedObject) {
             hideObject(lastSelectedObject);
+        }
+    },
+    undoTransform: function() {
+        if (lastSelectedObject && previousTransformState) {
+            undoLastTransform(lastSelectedObject);
         }
     }
 };	
@@ -197,6 +203,10 @@ function init() {
         if (event.value) { // Dragování začalo
             isTransformDragging = true;
             orbitControls.enabled = false;
+            // Uložíme předchozí stav před změnou
+            if (transformControls.object) {
+                savePreviousTransformState(transformControls.object);
+            }
         } else { // Dragování skončilo - setTimeout nutný, aby se onClick stihl vykonat s isTransformDragging = true
             setTimeout(() => {
                 isTransformDragging = false;
@@ -368,6 +378,7 @@ function refreshSelectedObjGui(obj) {
     selectedFolder.add(part, 'deselect').name('Deselect');
 
     const folder2 = selectedFolder.addFolder("Location");
+        folder2.add(part, 'undoTransform').name('Undo last transform');
         folder2.add(obj.position, 'x', extent.pn, extent.pp, extent.pStep)
             .name('Px')
             .onChange(function(value){obj.position.x=value; render(); })
@@ -539,6 +550,31 @@ function resetWholeModel() {
             child.scale.copy(child.initScale);
         }
     });
+    render();
+}
+
+function savePreviousTransformState(obj) {
+    if (!obj) return;
+    previousTransformState = {
+        object: obj,
+        position: obj.position.clone(),
+        rotation: obj.rotation.clone(),
+        scale: obj.scale.clone()
+    };
+}
+
+function undoLastTransform(obj) {
+    if (!obj || !previousTransformState || previousTransformState.object !== obj) {
+        console.log("Není co vrátit zpět.");
+        return;
+    }
+    
+    obj.position.copy(previousTransformState.position);
+    obj.rotation.copy(previousTransformState.rotation);
+    obj.scale.copy(previousTransformState.scale);
+    
+    console.log("Transformace vrácena zpět.");
+    previousTransformState = null; // Vymažeme uložený stav
     render();
 }
 
