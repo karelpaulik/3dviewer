@@ -52,6 +52,7 @@ const viewProp = {
     viewz: function() { viewFromPoint(0, 0, 1000) },
     showHiddenObjects: function() { showHiddenObjects() },
     switchHiddenObjects: function() { toggleHiddenObjects() },
+    resetWholeModel: function() { resetWholeModel() },
 };
 
 const extent = {
@@ -317,6 +318,7 @@ function addMainGui() {
     //View
     const folderProp = gui.addFolder( 'View' );
         folderProp.add(viewProp, 'fit').name('Fit View');
+        folderProp.add(viewProp, 'resetWholeModel').name('Reset whole model');
         folderProp.add(viewProp, 'showHiddenObjects').name('Show hidden objects');
         folderProp.add(viewProp, 'switchHiddenObjects').name('Switch hidden objects');
         let fsCtrl = folderProp.add(viewProp, 'fullscreen').name('Fullscreen').onChange(function(value){// Fullscreen toggle (false = windowed, true = fullscreen)
@@ -526,6 +528,17 @@ function setDefPosRotScale(obj) {
     obj.position.set(obj.initPosition.x, obj.initPosition.y, obj.initPosition.z);
     obj.rotation.set(obj.initRotation.x, obj.initRotation.y, obj.initRotation.z);
     obj.scale.set(obj.initScale.x, obj.initScale.y, obj.initScale.z);
+    render();
+}
+
+function resetWholeModel() {
+    scene.traverse(function(child) {
+        if (child.initPosition && child.initRotation && child.initScale) {
+            child.position.copy(child.initPosition);
+            child.rotation.copy(child.initRotation);
+            child.scale.copy(child.initScale);
+        }
+    });
     render();
 }
 
