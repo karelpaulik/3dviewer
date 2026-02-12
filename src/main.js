@@ -849,6 +849,11 @@ function loadGlbModel(model, name, scale, colored) {
 
             const meshes = [];
             gltf.scene.traverse(function (child) {
+                // Uložení počátečních hodnot pro všechny objekty (Group, Object3D, Mesh)
+                child.initPosition = child.position.clone();
+                child.initRotation = child.rotation.clone();
+                child.initScale = child.scale.clone();
+                
                 if (child.isMesh) {
                     if (child.material) {
                         child.material = child.material.clone();// Naklonujeme materiál, aby byl unikátní. Jinak jeden typ materiálu pro více častí stejné barvy.
@@ -857,7 +862,7 @@ function loadGlbModel(model, name, scale, colored) {
                         child.material.side = THREE.DoubleSide;
                         child.material.polygonOffset = true;
                         child.material.polygonOffsetFactor = 1;    
-                    }
+                    }                    
                     meshes.push(child);
                     helperObjects.push(child);
                 }
