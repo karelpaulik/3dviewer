@@ -1319,6 +1319,8 @@ function onTouchEnd( event ) {
         if (isTransformDragging) return;
         if (INTERSECTED) {
             selectObject(INTERSECTED);
+        } else {
+            deselectObject();
         }
         
         isTouchDragging = false;
