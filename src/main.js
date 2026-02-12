@@ -1298,6 +1298,15 @@ function onTouchMove( event ) {
     }
 }
 
+function isTouchOnGUI(event) { // return: true/false
+    if (event.changedTouches.length > 0) {
+        const touch = event.changedTouches[0];
+        const elementAtTouch = document.elementFromPoint(touch.clientX, touch.clientY);
+        return gui.domElement.contains(elementAtTouch);
+    }
+    return false;
+}
+
 function onTouchEnd( event ) {
     if (event.changedTouches.length > 0) {
         // Uložíme pozici dotyku při ukončení
@@ -1317,6 +1326,12 @@ function onTouchEnd( event ) {
         // All touches ended - simulujeme click pro selekci
         if (!viewProp.isSelectAllowed) return;
         if (isTransformDragging) return;
+
+        // Pokud je dotykem stisknuto na GUI prvek, ignorujeme raycast pro selekci
+        if (isTouchOnGUI(event)) {
+            return;
+        }
+
         if (INTERSECTED) {
             selectObject(INTERSECTED);
         } else {
