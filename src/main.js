@@ -8,12 +8,14 @@ import { TransformControls } from 'three/addons/controls/TransformControls.js';
 //import { GUI } from 'dat.gui';
 import { GUI } from 'lil-gui';
 import ZipLoader from 'zip-loader';
+import { updateCrossSectionLines as updateCrossSectionLinesCore } from './crossSectionUtils.js';
 
 // Proměnné globálního rozsahu----------------------------------------------------------------------------------------
 let container, stats;
 let camera, cameraTarget, scene, renderer;			
 
 const clipPlanes = [];		
+let crossSectionLines = null; // Pro uchování průřezových čar
 
 let cameraPersp, cameraOrtho, currentCamera;
 let transformControls, orbitControls;
@@ -52,6 +54,10 @@ const viewProp = {
     px: 0,
     py: 0,
     pz: 0,
+    showCrossSection: false,
+    crossSectionPlane: 'XY', // XY, XZ, YZ
+    crossSectionPos: 0,
+    crossSectionColor: "#ff0000",
     reset: function() { resetSection() },
     fit: function() { fitView() },
     viewx: function() { viewFromPoint(1000, 0, 0) },
@@ -347,6 +353,14 @@ function addMainGui() {
             sectionFolder.add(viewProp, 'py', extent.pn, extent.pp, extent.pStep).name('Pos. y').onChange(function(value){clipPlanes[1].constant=value; render(); }).listen();
             sectionFolder.add(viewProp, 'pz', extent.pn, extent.pp, extent.pStep).name('Pos. z').onChange(function(value){clipPlanes[2].constant=value; render(); }).listen();
             sectionFolder.add(viewProp, 'reset').name('Reset section');
+            
+            const crossSectionFolder = sectionFolder.addFolder("Cross Section Lines");
+            crossSectionFolder.add(viewProp, 'showCrossSection').name('Show Lines').onChange(function(value){updateCrossSectionLines(); render(); });
+            crossSectionFolder.add(viewProp, 'crossSectionPlane', ['XY', 'XZ', 'YZ']).name('Plane').onChange(function(value){if(viewProp.showCrossSection){updateCrossSectionLines(); render();}});
+            crossSectionFolder.add(viewProp, 'crossSectionPos', extent.pn, extent.pp, extent.pStep).name('Position').onChange(function(value){if(viewProp.showCrossSection){updateCrossSectionLines(); render();}}).listen();
+            crossSectionFolder.addColor(viewProp, 'crossSectionColor').name('Color').onChange(function(value){if(crossSectionLines){crossSectionLines.material.color.set(value); render();}});
+            crossSectionFolder.close();
+            
             sectionFolder.close();
         const oritationFolder = folderProp.addFolder("View orientation");
             oritationFolder.add(viewProp, 'viewx').name('View from X');
@@ -550,6 +564,12 @@ function resetWholeModel() {
             child.scale.copy(child.initScale);
         }
     });
+    
+    // Aktualizace průřezových čar
+    if (viewProp.showCrossSection) {
+        updateCrossSectionLines();
+    }
+    
     render();
 }
 
@@ -636,7 +656,16 @@ function resetSection() {
     viewProp.px = 0;
     viewProp.py = 0;
     viewProp.pz = 0;
+    viewProp.crossSectionPos = 0;
     updateSection();
+    if (viewProp.showCrossSection) {
+        updateCrossSectionLines();
+    }
+}
+
+// Wrapper funkce pro aktualizaci průřezových čar
+function updateCrossSectionLines() {
+    crossSectionLines = updateCrossSectionLinesCore(scene, crossSectionLines, viewProp, helperObjects);
 }
     
 function viewFromPoint(x, y, z) {
@@ -943,6 +972,12 @@ function removeModel(part) {
         
         const partIndex = helperObjects.indexOf(part);
         if (partIndex !== -1) helperObjects.splice(partIndex, 1);			
+        
+        // Aktualizace průřezových čar
+        if (viewProp.showCrossSection) {
+            updateCrossSectionLines();
+        }
+        
         render();
     } catch(err) {
         console.log("Error: removeModel " + err.message);
@@ -971,6 +1006,11 @@ function hideObject(part) {
         // Zrušíme selekci skrytého objektu
         deselectObject();
         
+        // Aktualizace průřezových čar
+        if (viewProp.showCrossSection) {
+            updateCrossSectionLines();
+        }
+        
         render();
     } catch(err) {
         console.log("Error: hideObject " + err.message);
@@ -987,6 +1027,11 @@ function showHiddenObjects() {
         
         // Vyprázdníme pole skrytých objektů
         hiddenObjects.length = 0;
+        
+        // Aktualizace průřezových čar
+        if (viewProp.showCrossSection) {
+            updateCrossSectionLines();
+        }
         
         render();
     } catch(err) {
@@ -1013,6 +1058,11 @@ function toggleHiddenObjects() {
             obj.visible = true;
             console.log(`Objekt ${obj.name || 'Unnamed'} je viditelný.`);
         });
+        
+        // Aktualizace průřezových čar
+        if (viewProp.showCrossSection) {
+            updateCrossSectionLines();
+        }
         
         render();
     } catch(err) {
