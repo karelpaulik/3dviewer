@@ -490,7 +490,7 @@ function initLoad() {
 
     } else {
         //console.error("Chyba: Nebyl nalezen žádný model k načtení.");
-        //loadModel('./models/1011364_c.zip','1011364_c.zip', 0.001, true).then( (result)=>{meshObjects.push( result )} );	
+        //loadModel('./models/1011364_c.zip','1011364_c.zip', 0.001, true).then( (result)=>{} );	
         
         //loadGlbModel('/models/1012053_l.glb','1012053_l.glb', 0.001, true).then( (result)=>{meshObjects.push( result )} );
         loadGlbModel('./models/1012053_l.glb','1012053_l.glb', 0.001, true).then( (result)=>{
@@ -599,13 +599,17 @@ function undoLastTransform(obj) {
 }
 
 function createSectionMesh(mesh) {
-    const sectionMesh = mesh.clone();	
+    // Klonujeme BEZ children (false) - jinak by se kopíroval i již existující sectionMesh
+    const sectionMesh = mesh.clone(false);	
 
-    let parentMaterialColor;        
-    for (let j=0; j < sectionMesh.material.length; j++) {
-        parentMaterialColor = sectionMesh.material[j].color;
-        //console.log(parentMaterialColor);
-        const material = new THREE.MeshBasicMaterial({
+    // Zpracování materiálu - může být pole nebo jednotlivý objekt
+    const materials = Array.isArray(sectionMesh.material) 
+        ? sectionMesh.material 
+        : [sectionMesh.material];
+    
+    const newMaterials = materials.map(mat => {
+        const parentMaterialColor = mat.color;
+        return new THREE.MeshBasicMaterial({
             side: THREE.BackSide,
             clippingPlanes: clipPlanes,
             clipIntersection: true,								
@@ -614,8 +618,12 @@ function createSectionMesh(mesh) {
             polygonOffsetFactor: -1,
             wireframe: false
         });
-        sectionMesh.material[j] = material;
-    }
+    });
+    
+    // Nastavíme zpět podle původního formátu
+    sectionMesh.material = Array.isArray(sectionMesh.material) 
+        ? newMaterials 
+        : newMaterials[0];
 
     sectionMesh.position.set( 0, 0, 0);
     sectionMesh.rotation.set( 0, 0, 0);							
@@ -941,6 +949,11 @@ function loadGlbModel(model, name, scale, colored) {
                     meshes.push(child);
                     meshObjects.push(child);
                 }
+            });
+            
+            // Teprve pak vytvoříme sectionMeshe (mimo traverse, aby nedošlo k rekurzi)
+            meshes.forEach(mesh => {
+                createSectionMesh(mesh);
             });
 
             render();
