@@ -110,7 +110,7 @@ function createCrossSectionLines(mesh, plane, crossSectionColor) {
 }
 
 // Funkce pro aktualizaci průřezových čar
-export function updateCrossSectionLines(scene, currentCrossSectionLines, viewProp, helperObjects) {
+export function updateCrossSectionLines(scene, currentCrossSectionLines, viewProp, meshObjects) {
     // Odstraníme staré čáry
     if (currentCrossSectionLines) {
         scene.remove(currentCrossSectionLines);
@@ -145,7 +145,7 @@ export function updateCrossSectionLines(scene, currentCrossSectionLines, viewPro
     // Projdeme všechny meshe ve scéně
     const allLines = [];
     
-    helperObjects.forEach(obj => {
+    meshObjects.forEach(obj => {
         obj.traverse((child) => {
             if (child.isMesh && child.visible) {
                 const lines = createCrossSectionLines(child, plane, viewProp.crossSectionColor);

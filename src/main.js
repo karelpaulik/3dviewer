@@ -19,7 +19,7 @@ let crossSectionLines = null; // Pro uchování průřezových čar
 
 let cameraPersp, cameraOrtho, currentCamera;
 let transformControls, orbitControls;
-const helperObjects = [];
+const meshObjects = [];
 const hiddenObjects = [];
 let temporarilyShownObjects = [];
 
@@ -122,7 +122,7 @@ const part = {
 // Možnost zobrazení následujících objektů v konzoli pouze v režimu "npx vite"
 if (import.meta.env.DEV) {
     //OK, reference na objekty jsou dostupné v konzoli pro ladění
-    window.helperObjects = helperObjects;
+    window.meshObjects = meshObjects;
     window.clipPlanes = clipPlanes;
 
     //NOK - toto není reference
@@ -464,7 +464,7 @@ function initLoad() {
         switch ( fileExtension ) {
             case 'zip':      
                 loadModel(fileUrl, fileName, 0.001, true).then( (result) => {
-                    helperObjects.push(result);
+                    // Mesh je již přidán do meshObjects uvnitř loadModel
                     //addAxesHelper();
                     fitView();
                     console.log(`Model ${fileName} byl úspěšně načten.`);
@@ -475,7 +475,7 @@ function initLoad() {
 
             case 'glb': 
                 loadGlbModel(fileUrl, fileName, 0.001, true).then( (result) => {
-                    helperObjects.push(result);
+                    // Meshe jsou již přidány do meshObjects uvnitř loadGlbModel
                     //addAxesHelper();
                     fitView();
                     console.log(`Model ${fileName} byl úspěšně načten.`);   
@@ -490,11 +490,11 @@ function initLoad() {
 
     } else {
         //console.error("Chyba: Nebyl nalezen žádný model k načtení.");
-        //loadModel('./models/1011364_c.zip','1011364_c.zip', 0.001, true).then( (result)=>{helperObjects.push( result )} );	
+        //loadModel('./models/1011364_c.zip','1011364_c.zip', 0.001, true).then( (result)=>{meshObjects.push( result )} );	
         
-        //loadGlbModel('/models/1012053_l.glb','1012053_l.glb', 0.001, true).then( (result)=>{helperObjects.push( result )} );
+        //loadGlbModel('/models/1012053_l.glb','1012053_l.glb', 0.001, true).then( (result)=>{meshObjects.push( result )} );
         loadGlbModel('./models/1012053_l.glb','1012053_l.glb', 0.001, true).then( (result)=>{
-            helperObjects.push( result );
+            // Meshe jsou již přidány do meshObjects uvnitř loadGlbModel
             addAxesHelper();
             fitView();
         });
@@ -665,13 +665,13 @@ function resetSection() {
 
 // Wrapper funkce pro aktualizaci průřezových čar
 function updateCrossSectionLines() {
-    crossSectionLines = updateCrossSectionLinesCore(scene, crossSectionLines, viewProp, helperObjects);
+    crossSectionLines = updateCrossSectionLinesCore(scene, crossSectionLines, viewProp, meshObjects);
 }
     
 function viewFromPoint(x, y, z) {
     // Vypočítáme střed všech objektů ve scéně
     let box = new THREE.Box3();
-    helperObjects.forEach(obj => {
+    meshObjects.forEach(obj => {
         box.expandByObject(obj);
     });
     
@@ -691,7 +691,7 @@ function fitView() {
     // Výpočet ohraničujícího boxu všech objektů ve scéně
     let box = new THREE.Box3();
     
-    helperObjects.forEach(obj => {
+    meshObjects.forEach(obj => {
         box.expandByObject(obj);
     });
 
@@ -838,7 +838,7 @@ function addAxesHelper(axesSize) {
     if (axesSize === undefined) {
         // Vypočítáme střed a velikost všech objektů
         let box = new THREE.Box3();
-        helperObjects.forEach(obj => {
+        meshObjects.forEach(obj => {
             box.expandByObject(obj);
         });
         
@@ -899,6 +899,7 @@ function loadModel(model, name, scale, colored) {
                 mesh.name = fileNameWithoutExtension(model);
                 scene.add( mesh );	
                 console.log(mesh);
+                meshObjects.push(mesh);
                 render();
                 resolve(mesh);	
 
@@ -938,7 +939,7 @@ function loadGlbModel(model, name, scale, colored) {
                         child.material.polygonOffsetFactor = 1;    
                     }                    
                     meshes.push(child);
-                    helperObjects.push(child);
+                    meshObjects.push(child);
                 }
             });
 
@@ -970,8 +971,8 @@ function removeModel(part) {
             scene.remove( part );
         }
         
-        const partIndex = helperObjects.indexOf(part);
-        if (partIndex !== -1) helperObjects.splice(partIndex, 1);			
+        const partIndex = meshObjects.indexOf(part);
+        if (partIndex !== -1) meshObjects.splice(partIndex, 1);			
         
         // Aktualizace průřezových čar
         if (viewProp.showCrossSection) {
@@ -1230,7 +1231,7 @@ function render() {
     // Nezvýrazňujeme objekty při dragování (rotaci/posouvání) nebo při transformaci
     if (!isTransformDragging && !isMouseOverGui && !isMouseDown && !isTouchDragging && viewProp.isSelectAllowed) {      
         raycaster.setFromCamera(mouse, currentCamera);
-        const intersects = raycaster.intersectObjects(helperObjects);                
+        const intersects = raycaster.intersectObjects(meshObjects);                
 
         if (intersects.length > 0) { // Myš je nad objektem
             if (INTERSECTED != intersects[0].object) { 
@@ -1426,7 +1427,7 @@ function separateMesh(meshToSeparate) {
         
         // Inicializace sekcí a registrace
         createSectionMesh(newMesh);
-        helperObjects.push(newMesh);
+        meshObjects.push(newMesh);
     });
 
     render();
