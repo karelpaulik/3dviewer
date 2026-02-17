@@ -22,6 +22,7 @@ let transformControls, orbitControls;
 const meshObjects = [];
 const hiddenObjects = [];
 let temporarilyShownObjects = [];
+const loadedModels = []; // Pole pro uchování načtených GLB modelů (root scene objekty)
 
 const gui = new GUI();				
 let lastSelectedObject = null;
@@ -67,6 +68,12 @@ const viewProp = {
     showHiddenObjects: function() { showHiddenObjects() },
     switchHiddenObjects: function() { toggleHiddenObjects() },
     resetWholeModel: function() { resetWholeModel() },
+    rotateXPlus: function() { rotateAllModels('x', Math.PI / 2) },
+    rotateXMinus: function() { rotateAllModels('x', -Math.PI / 2) },
+    rotateYPlus: function() { rotateAllModels('y', Math.PI / 2) },
+    rotateYMinus: function() { rotateAllModels('y', -Math.PI / 2) },
+    rotateZPlus: function() { rotateAllModels('z', Math.PI / 2) },
+    rotateZMinus: function() { rotateAllModels('z', -Math.PI / 2) },
 };
 
 const extent = {
@@ -369,6 +376,15 @@ function addMainGui() {
             oritationFolder.add(viewProp, 'viewy').name('View from Y');
             oritationFolder.add(viewProp, 'viewz').name('View from Z');
             oritationFolder.close();
+        
+        const rotationFolder = folderProp.addFolder("Model Rotation");
+            rotationFolder.add(viewProp, 'rotateXPlus').name('Rotate X +90°');
+            rotationFolder.add(viewProp, 'rotateXMinus').name('Rotate X -90°');
+            rotationFolder.add(viewProp, 'rotateYPlus').name('Rotate Y +90°');
+            rotationFolder.add(viewProp, 'rotateYMinus').name('Rotate Y -90°');
+            rotationFolder.add(viewProp, 'rotateZPlus').name('Rotate Z +90°');
+            rotationFolder.add(viewProp, 'rotateZMinus').name('Rotate Z -90°');
+            rotationFolder.close();
         //folderProp.add(part, 'randomColor').name('Random color');	
 
     // Když by toto nebylo, tak při ukončení fullscreenu escapem, by "fulscreen" zůstalo zartřené. Funkčně by se moc nestalo.
@@ -564,6 +580,31 @@ function resetWholeModel() {
             child.position.copy(child.initPosition);
             child.rotation.copy(child.initRotation);
             child.scale.copy(child.initScale);
+        }
+    });
+    
+    // Aktualizace průřezových čar
+    if (viewProp.showCrossSection) {
+        updateCrossSectionLines();
+    }
+    
+    render();
+}
+
+function rotateAllModels(axis, angle) {
+    loadedModels.forEach(function(model) {
+        if (model && model.rotation) {
+            switch(axis) {
+                case 'x':
+                    model.rotation.x += angle;
+                    break;
+                case 'y':
+                    model.rotation.y += angle;
+                    break;
+                case 'z':
+                    model.rotation.z += angle;
+                    break;
+            }
         }
     });
     
@@ -967,9 +1008,10 @@ function loadGlbModel(model, name, scale, colored) {
         //loader.load('./models/1012053_l.glb', function (gltf) {
         loader.load(model, function (gltf) {
             gltf.scene.scale.set(1000.0, 1000.0, 1000.0);
-            gltf.scene.rotation.x = - Math.PI / 2;
+            // Rotace byla odstraněna - lze nyní nastavit pomocí GUI tlačítek
 
             scene.add(gltf.scene);
+            loadedModels.push(gltf.scene); // Uložení reference na načtený model
             console.log(gltf.scene);
 
             const meshes = [];
