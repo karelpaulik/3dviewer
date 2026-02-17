@@ -58,6 +58,7 @@ const viewProp = {
     crossSectionPlane: 'XY', // XY, XZ, YZ
     crossSectionPos: 0,
     crossSectionColor: "#ff0000",
+    showSectionMesh: false, // Toggle pro zobrazení/skrytí sectionMesh
     reset: function() { resetSection() },
     fit: function() { fitView() },
     viewx: function() { viewFromPoint(1000, 0, 0) },
@@ -349,6 +350,7 @@ function addMainGui() {
         //folderProp.add(viewProp, 'perspCam').name('Persp. camera').onChange(function(value){setCamera(); render(); });
         const sectionFolder = folderProp.addFolder("Section view");   
             sectionFolder.add(viewProp, 'section').name('Section').onChange(function(value){renderer.localClippingEnabled = value; render(); });
+            sectionFolder.add(viewProp, 'showSectionMesh').name('Show Section Mesh').onChange(function(value){toggleSectionMeshAll(); });
             sectionFolder.add(viewProp, 'px', extent.pn, extent.pp, extent.pStep).name('Pos. x').onChange(function(value){clipPlanes[0].constant=value; render(); }).listen();
             sectionFolder.add(viewProp, 'py', extent.pn, extent.pp, extent.pStep).name('Pos. y').onChange(function(value){clipPlanes[1].constant=value; render(); }).listen();
             sectionFolder.add(viewProp, 'pz', extent.pn, extent.pp, extent.pStep).name('Pos. z').onChange(function(value){clipPlanes[2].constant=value; render(); }).listen();
@@ -599,6 +601,11 @@ function undoLastTransform(obj) {
 }
 
 function createSectionMesh(mesh) {
+    // Kontrola, zda již mesh nemá sectionMesh
+    if (mesh.children.some(child => child.isSectionMesh)) {
+        return; // SectionMesh již existuje
+    }
+    
     // Klonujeme BEZ children (false) - jinak by se kopíroval i již existující sectionMesh
     const sectionMesh = mesh.clone(false);	
 
@@ -628,8 +635,44 @@ function createSectionMesh(mesh) {
     sectionMesh.position.set( 0, 0, 0);
     sectionMesh.rotation.set( 0, 0, 0);							
     sectionMesh.scale.set( 1, 1, 1 );
+    
+    // Označení, že jde o sectionMesh
+    sectionMesh.isSectionMesh = true;
             
     mesh.add(sectionMesh);			
+}
+
+function toggleSectionMeshAll() {
+    if (viewProp.showSectionMesh) {
+        // Vytvoření sectionMesh pro všechny meshe
+        meshObjects.forEach(mesh => {
+            if (mesh.isMesh) {
+                createSectionMesh(mesh);
+            }
+        });
+    } else {
+        // Odstranění všech sectionMesh
+        meshObjects.forEach(mesh => {
+            if (mesh.isMesh) {
+                // Projdeme children a najdeme ty, které jsou sectionMesh
+                mesh.children.forEach(child => {
+                    if (child.isSectionMesh) {
+                        mesh.remove(child);
+                        // Uvolníme paměť
+                        if (child.geometry) child.geometry.dispose();
+                        if (child.material) {
+                            if (Array.isArray(child.material)) {
+                                child.material.forEach(mat => mat.dispose());
+                            } else {
+                                child.material.dispose();
+                            }
+                        }
+                    }
+                });
+            }
+        });
+    }
+    render();
 }	
 
 // Navigation functions used by keyboard and GUI
@@ -911,7 +954,6 @@ function loadModel(model, name, scale, colored) {
                 render();
                 resolve(mesh);	
 
-                createSectionMesh(mesh);
                 lastSelectedObject=mesh;  
                 addMainGui();
             } );
@@ -951,11 +993,7 @@ function loadGlbModel(model, name, scale, colored) {
                 }
             });
             
-            // Teprve pak vytvoříme sectionMeshe (mimo traverse, aby nedošlo k rekurzi)
-            meshes.forEach(mesh => {
-                createSectionMesh(mesh);
-            });
-
+            
             render();
             resolve(gltf.scene);
             addMainGui();
@@ -1438,8 +1476,6 @@ function separateMesh(meshToSeparate) {
         
         scene.add(newMesh);
         
-        // Inicializace sekcí a registrace
-        createSectionMesh(newMesh);
         meshObjects.push(newMesh);
     });
 
