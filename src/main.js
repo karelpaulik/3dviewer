@@ -78,7 +78,11 @@ const viewProp = {
     rotateZMinus: function() { rotateAllModels('z', -Math.PI / 2) },
     exportAll: function() { exportAllModels(); },
     exportSelected: function() { exportSelectedObject(); },
-    transformSpace: true, // true = world, false = local
+    transformSpace: true,  // true = world, false = local
+    snapEnabled: true,     // true = snap vždy aktivní, false = snap jen při Shift
+    snapTranslation: 10,   // krok translace
+    snapRotationDeg: 30,   // krok rotace ve stupních
+    snapScale: 0.25,       // krok měřítka
 };
 
 const extent = {
@@ -215,12 +219,13 @@ function init() {
     transformControls = new TransformControls( currentCamera, renderer.domElement );
     transformControls.setSize( 0.5 );	
     transformControls.setSpace( 'world' ); // Default: world space (intuitivnější pro uživatele)
+    applySnapSettings(); // Aplikujeme snap nastavení při inicializaci
     scene.add( transformControls.getHelper() );	//Nutno v novém three.js. Dříve bylo: scene.add( transformControls );
     transformControls.addEventListener( 'change', function() {
         // World-space manual snap: built-in setTranslationSnap works only in 'local' space.
         // In 'world' space we must snap the world-space coordinates and convert back to local.
-        if (isShiftHeld && transformControls.object && transformControls.getMode() === 'translate' && transformControls.space === 'world') {
-            const snap = 50;
+        if ((viewProp.snapEnabled || isShiftHeld) && transformControls.object && transformControls.getMode() === 'translate' && transformControls.space === 'world') {
+            const snap = viewProp.snapTranslation;
             const obj = transformControls.object;
             // Force-update the full parent chain so matrixWorld is current
             obj.updateWorldMatrix(true, false);
@@ -292,9 +297,7 @@ function init() {
 
             case 'Shift':
                 isShiftHeld = true;
-                transformControls.setTranslationSnap( 50 );  // works in 'local' space; 'world' is handled manually
-                transformControls.setRotationSnap( THREE.MathUtils.degToRad( 30 ) );
-                transformControls.setScaleSnap( 0.25 );
+                applySnapSettings();
                 break;
 
             case 'r':
@@ -370,13 +373,23 @@ function init() {
         switch ( event.key ) {
             case 'Shift':
                 isShiftHeld = false;
-                transformControls.setTranslationSnap( null );
-                transformControls.setRotationSnap( null );
-                transformControls.setScaleSnap( null );
+                applySnapSettings();
                 break;
         }
     } );
 } //End init 
+
+function applySnapSettings() {
+    if (viewProp.snapEnabled || isShiftHeld) {
+        transformControls.setTranslationSnap( viewProp.snapTranslation );
+        transformControls.setRotationSnap( THREE.MathUtils.degToRad( viewProp.snapRotationDeg ) );
+        transformControls.setScaleSnap( viewProp.snapScale );
+    } else {
+        transformControls.setTranslationSnap( null );
+        transformControls.setRotationSnap( null );
+        transformControls.setScaleSnap( null );
+    }
+}
 
 //GUI----------------------------------------------------------------------------------------------------------------
 function addMainGui() {
@@ -429,6 +442,12 @@ function addMainGui() {
             rotationFolder.add(viewProp, 'rotateZPlus').name('Rotate Z +90°');
             rotationFolder.add(viewProp, 'rotateZMinus').name('Rotate Z -90°');
             rotationFolder.close();
+        const snapFolder = folderProp.addFolder("Snap");
+            snapFolder.add(viewProp, 'snapEnabled').name('Snap aktivní').onChange(function() { applySnapSettings(); }).listen();
+            snapFolder.add(viewProp, 'snapTranslation', 1, 1000, 1).name('Translace').onChange(function() { applySnapSettings(); }).listen();
+            snapFolder.add(viewProp, 'snapRotationDeg', 1, 90, 1).name('Rotace (°)').onChange(function() { applySnapSettings(); }).listen();
+            snapFolder.add(viewProp, 'snapScale', 0.01, 2, 0.01).name('Měřítko').onChange(function() { applySnapSettings(); }).listen();
+            snapFolder.close();
         const exportFolder = folderProp.addFolder("Export GLB");
             exportFolder.add(viewProp, 'exportAll').name('Export all models');
             exportFolder.add(viewProp, 'exportSelected').name('Export selected object');
