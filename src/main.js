@@ -46,6 +46,7 @@ let isTouchScreen;
 let selectionHelper;
 let axesHelperObject = null; // Reference na axes helper objekt ve scéně
 let isTransformDragging = false;
+let orthoHalfSize = 500; // Polovelikost frustumu ortografické kamery v world units (dynamicky přepočítána po načtení modelu)
 let previousTransformState = null; // Uložení předchozího stavu pro undo
 let isShiftHeld = false; // Pro manuální translation snap ve world space
 
@@ -186,10 +187,13 @@ function init() {
     container.appendChild( renderer.domElement );
     
     //currentCamera
-    const frustumSize = 1;
     const aspect = window.innerWidth / window.innerHeight;
     cameraPersp = new THREE.PerspectiveCamera( 20, aspect, 250, 20000 );
-    cameraOrtho = new THREE.OrthographicCamera( frustumSize * aspect / - 0.002, frustumSize * aspect / 0.002, frustumSize / 0.002, frustumSize / - 0.002, 0.1, 20000 );
+    cameraOrtho = new THREE.OrthographicCamera(
+        -orthoHalfSize * aspect, orthoHalfSize * aspect,
+         orthoHalfSize,         -orthoHalfSize,
+        0.1, orthoHalfSize * 40
+    );
     
     currentCamera = cameraOrtho;
 
@@ -387,6 +391,36 @@ function init() {
     } );
 } //End init 
 
+// Přepočítá frustum ortografické kamery podle aktuálního obsahu meshObjects.
+// Volat po každém načtení modelu.
+function recalibrateOrthoCamera() {
+    const box = new THREE.Box3();
+    meshObjects.forEach(obj => box.expandByObject(obj));
+    if (box.isEmpty()) return;
+
+    const size = box.getSize(new THREE.Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z);
+
+    orthoHalfSize = maxDim * 1.5; // 50% rezerva kolem modelu
+
+    const aspect = window.innerWidth / window.innerHeight;
+    cameraOrtho.left   = -orthoHalfSize * aspect;
+    cameraOrtho.right  =  orthoHalfSize * aspect;
+    cameraOrtho.top    =  orthoHalfSize;
+    cameraOrtho.bottom = -orthoHalfSize;
+    // Kamera sedí ve fitView na ~maxDim*2.6 od středu scény.
+    // near: musí být < (vzdálenost kamery - poloměr modelu) = maxDim*2.6 - maxDim*0.5 ≈ maxDim*2.
+    //       Volíme konzervativních 1 world unit (případně maxDim*0.01), aby šel i zoom dovnitř.
+    // far:  musí přesáhnout (vzdálenost kamery + průměr scény) = maxDim*2.6 + maxDim*1.5 ≈ maxDim*4.2.
+    //       Volíme maxDim*10 jako rozumnou rezervu pro orbit/pan.
+    cameraOrtho.near   =  Math.min(1, maxDim * 0.01);
+    cameraOrtho.far    =  maxDim * 10;
+    cameraOrtho.zoom   =  1;
+    cameraOrtho.updateProjectionMatrix();
+
+    console.log(`[recalibrateOrthoCamera] maxDim=${maxDim.toFixed(1)}, orthoHalfSize=${orthoHalfSize.toFixed(1)}, near=${cameraOrtho.near.toFixed(2)}, far=${cameraOrtho.far.toFixed(1)}`);
+}
+
 function applySnapSettings() {
     if (viewProp.snapEnabled || isShiftHeld) {
         transformControls.setTranslationSnap( viewProp.snapTranslation );
@@ -562,8 +596,7 @@ function initLoad() {
         switch ( fileExtension ) {
             case 'zip':      
                 loadModel(fileUrl, fileName, 0.001, true).then( (result) => {
-                    // Mesh je již přidán do meshObjects uvnitř loadModel
-                    //addAxesHelper();
+                    recalibrateOrthoCamera();
                     fitView();
                     console.log(`Model ${fileName} byl úspěšně načten.`);
                 }).catch((error) => {
@@ -573,8 +606,7 @@ function initLoad() {
 
             case 'glb': 
                 loadGlbModel(fileUrl, fileName, 0.001, true).then( (result) => {
-                    // Meshe jsou již přidány do meshObjects uvnitř loadGlbModel
-                    //addAxesHelper();
+                    recalibrateOrthoCamera();
                     fitView();
                     console.log(`Model ${fileName} byl úspěšně načten.`);   
                 }).catch((error) => {
@@ -592,7 +624,7 @@ function initLoad() {
         
         //loadGlbModel('/models/1012053_l.glb','1012053_l.glb', 0.001, true).then( (result)=>{meshObjects.push( result )} );
         loadGlbModel('./models/1012053_l.glb','1012053_l.glb', 0.001, true).then( (result)=>{
-            // Meshe jsou již přidány do meshObjects uvnitř loadGlbModel
+            recalibrateOrthoCamera();
             fitView();
         });
     }
@@ -1304,12 +1336,11 @@ function onWindowResize() {
         currentCamera.aspect = aspect;
     }
     
-    if (currentCamera == cameraOrtho) { 				
-        const frustumSize = 1;
-        currentCamera.left = - frustumSize * aspect / 0.002;
-        currentCamera.right = frustumSize * aspect / 0.002;
-        currentCamera.top = frustumSize / 0.002;
-        currentCamera.bottom = - frustumSize / 0.002;					
+    if (currentCamera == cameraOrtho) {
+        currentCamera.left   = -orthoHalfSize * aspect;
+        currentCamera.right  =  orthoHalfSize * aspect;
+        currentCamera.top    =  orthoHalfSize;
+        currentCamera.bottom = -orthoHalfSize;
     }
     
     currentCamera.updateProjectionMatrix();
