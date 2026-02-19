@@ -83,6 +83,7 @@ const viewProp = {
     snapTranslation: 10,   // krok translace
     snapRotationDeg: 30,   // krok rotace ve stupních
     snapScale: 0.25,       // krok měřítka
+    transformMode: 'translate', // transform mode: translate, rotate, scale
 };
 
 const extent = {
@@ -303,16 +304,19 @@ function init() {
             case 'r':
             case 'R':
                 transformControls.setMode( 'rotate' );
+                viewProp.transformMode = 'rotate';
                 break;
 
             case 's':
             case 'S':
                 transformControls.setMode( 'scale' );
+                viewProp.transformMode = 'scale';
                 break;
 
             case 't':
             case 'T':
                 transformControls.setMode( 'translate' );
+                viewProp.transformMode = 'translate';
                 break;
 
             case '+':
@@ -443,6 +447,7 @@ function addMainGui() {
             rotationFolder.add(viewProp, 'rotateZMinus').name('Rotate Z -90°');
             rotationFolder.close();
         const snapFolder = folderProp.addFolder("Snap");
+            snapFolder.add(viewProp, 'transformMode', ['translate', 'rotate', 'scale']).name('Mód').onChange(function(value) { transformControls.setMode(value); }).listen();
             snapFolder.add(viewProp, 'snapEnabled').name('Snap aktivní').onChange(function() { applySnapSettings(); }).listen();
             snapFolder.add(viewProp, 'snapTranslation', 1, 1000, 1).name('Translace').onChange(function() { applySnapSettings(); }).listen();
             snapFolder.add(viewProp, 'snapRotationDeg', 1, 90, 1).name('Rotace (°)').onChange(function() { applySnapSettings(); }).listen();
