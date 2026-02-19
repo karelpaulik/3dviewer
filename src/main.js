@@ -226,6 +226,16 @@ function init() {
             setTimeout(() => {
                 isTransformDragging = false;
                 orbitControls.enabled = true;
+                // Zaokrouhlení floating-point nepřesností blízkých nule
+                if (transformControls.object) {
+                    const obj = transformControls.object;
+                    obj.position.x = roundNearZero(obj.position.x);
+                    obj.position.y = roundNearZero(obj.position.y);
+                    obj.position.z = roundNearZero(obj.position.z);
+                    obj.rotation.x = roundNearZero(obj.rotation.x);
+                    obj.rotation.y = roundNearZero(obj.rotation.y);
+                    obj.rotation.z = roundNearZero(obj.rotation.z);
+                }
             }, 100);
         }
     } );	
@@ -380,7 +390,7 @@ function addMainGui() {
             oritationFolder.add(viewProp, 'viewz').name('View from Z');
             oritationFolder.close();
         
-        const rotationFolder = folderProp.addFolder("Model Rotation");
+        const rotationFolder = folderProp.addFolder("Whole Model Rotation");
             rotationFolder.add(viewProp, 'rotateXPlus').name('Rotate X +90°');
             rotationFolder.add(viewProp, 'rotateXMinus').name('Rotate X -90°');
             rotationFolder.add(viewProp, 'rotateYPlus').name('Rotate Y +90°');
@@ -621,6 +631,10 @@ function rotateAllModels(axis, angle) {
     }
     
     render();
+}
+
+function roundNearZero(value, epsilon = 1e-10) {
+    return Math.abs(value) < epsilon ? 0 : value;
 }
 
 function savePreviousTransformState(obj) {
