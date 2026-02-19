@@ -46,6 +46,7 @@ let isTouchScreen;
 let selectionHelper;
 let isTransformDragging = false;
 let previousTransformState = null; // Uložení předchozího stavu pro undo
+let isShiftHeld = false; // Pro manuální translation snap ve world space
 
 const viewProp = {
     perspCam: false,
@@ -212,8 +213,31 @@ function init() {
 
     transformControls = new TransformControls( currentCamera, renderer.domElement );
     transformControls.setSize( 0.5 );	
+    transformControls.setSpace( 'world' ); // Default: world space (intuitivnější pro uživatele)
     scene.add( transformControls.getHelper() );	//Nutno v novém three.js. Dříve bylo: scene.add( transformControls );
-    transformControls.addEventListener( 'change', render );
+    transformControls.addEventListener( 'change', function() {
+        // World-space manual snap: built-in setTranslationSnap works only in 'local' space.
+        // In 'world' space we must snap the world-space coordinates and convert back to local.
+        if (isShiftHeld && transformControls.object && transformControls.getMode() === 'translate' && transformControls.space === 'world') {
+            const snap = 50;
+            const obj = transformControls.object;
+            // Force-update the full parent chain so matrixWorld is current
+            obj.updateWorldMatrix(true, false);
+            // Read snapped world position directly from matrixWorld (avoids a second updateWorldMatrix call)
+            const worldPos = new THREE.Vector3().setFromMatrixPosition(obj.matrixWorld);
+            worldPos.x = Math.round(worldPos.x / snap) * snap;
+            worldPos.y = Math.round(worldPos.y / snap) * snap;
+            worldPos.z = Math.round(worldPos.z / snap) * snap;
+            // Convert snapped world position back to parent local space
+            if (obj.parent) {
+                obj.parent.updateWorldMatrix(true, false);
+                const invParent = new THREE.Matrix4().copy(obj.parent.matrixWorld).invert();
+                worldPos.applyMatrix4(invParent);
+            }
+            obj.position.copy(worldPos);
+        }
+        render();
+    } );
     transformControls.addEventListener( 'dragging-changed', function ( event ) {
         if (event.value) { // Dragování začalo
             isTransformDragging = true;
@@ -265,7 +289,8 @@ function init() {
                 break;
 
             case 'Shift':
-                transformControls.setTranslationSnap( 10 );
+                isShiftHeld = true;
+                transformControls.setTranslationSnap( 50 );  // works in 'local' space; 'world' is handled manually
                 transformControls.setRotationSnap( THREE.MathUtils.degToRad( 30 ) );
                 transformControls.setScaleSnap( 0.25 );
                 break;
@@ -342,6 +367,7 @@ function init() {
     window.addEventListener( 'keyup', function ( event ) {
         switch ( event.key ) {
             case 'Shift':
+                isShiftHeld = false;
                 transformControls.setTranslationSnap( null );
                 transformControls.setRotationSnap( null );
                 transformControls.setScaleSnap( null );
