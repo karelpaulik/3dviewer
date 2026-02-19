@@ -44,6 +44,7 @@ let isTouchDragging = false;
 let isTouchScreen;
 
 let selectionHelper;
+let axesHelperObject = null; // Reference na axes helper objekt ve scéně
 let isTransformDragging = false;
 let previousTransformState = null; // Uložení předchozího stavu pro undo
 let isShiftHeld = false; // Pro manuální translation snap ve world space
@@ -84,6 +85,8 @@ const viewProp = {
     snapRotationDeg: 30,   // krok rotace ve stupních
     snapScale: 0.25,       // krok měřítka
     transformMode: 'translate', // transform mode: translate, rotate, scale
+    showAxesHelper: false, // Zobrazit / skrýt axes helper
+    axesHelperSize: 100,   // Velikost axes helperu
 };
 
 const extent = {
@@ -458,6 +461,10 @@ function addMainGui() {
             exportFolder.add(viewProp, 'exportAll').name('Export all models');
             exportFolder.add(viewProp, 'exportSelected').name('Export selected object');
             exportFolder.close();
+        const axesFolder = folderProp.addFolder("Axes Helper");
+            axesFolder.add(viewProp, 'showAxesHelper').name('Zobrazit osy').onChange(function() { updateAxesHelper(); }).listen();
+            axesFolder.add(viewProp, 'axesHelperSize', 1, 2000, 1).name('Velikost').onChange(function() { updateAxesHelper(); }).listen();
+            axesFolder.close();
         //folderProp.add(part, 'randomColor').name('Random color');	
 
     // Když by toto nebylo, tak při ukončení fullscreenu escapem, by "fulscreen" zůstalo zartřené. Funkčně by se moc nestalo.
@@ -586,7 +593,6 @@ function initLoad() {
         //loadGlbModel('/models/1012053_l.glb','1012053_l.glb', 0.001, true).then( (result)=>{meshObjects.push( result )} );
         loadGlbModel('./models/1012053_l.glb','1012053_l.glb', 0.001, true).then( (result)=>{
             // Meshe jsou již přidány do meshObjects uvnitř loadGlbModel
-            addAxesHelper();
             fitView();
         });
     }
@@ -1001,31 +1007,41 @@ function addShadowedLight( x, y, z, color, intensity ) {
 }
 
 function addAxesHelper(axesSize) {
-    let size;
-    
-    // Pokud není zadán parametr, velikost se dopočítá
-    if (axesSize === undefined) {
-        // Vypočítáme střed a velikost všech objektů
-        let box = new THREE.Box3();
-        meshObjects.forEach(obj => {
-            box.expandByObject(obj);
-        });
-        
-        if (!box.isEmpty()) {
-            const boxSize = box.getSize(new THREE.Vector3());
-            const maxDim = Math.max(boxSize.x, boxSize.y, boxSize.z);
-            size = maxDim * 0.5;
-        } else {
-            return; // Pokud je box prázdný, neděláme nic
-        }
-    } else {
-        // Pokud je parametr zadán, použijeme ho jako velikost
-        size = axesSize;
+    // Zpětná kompatibilita - nastaví velikost a zobrazí helper
+    if (axesSize !== undefined) viewProp.axesHelperSize = axesSize;
+    viewProp.showAxesHelper = true;
+    updateAxesHelper();
+}
+
+function updateAxesHelper() {
+    // Odebereme stávající objekt ze scény
+    if (axesHelperObject) {
+        scene.remove(axesHelperObject);
+        axesHelperObject.dispose?.();
+        axesHelperObject = null;
     }
     
-    // Vytvoříme helper s určenou velikostí
-    const axesHelper = new THREE.AxesHelper(size);
-    scene.add(axesHelper);
+    if (!viewProp.showAxesHelper) {
+        render();
+        return;
+    }
+    
+    // Pokud je velikost 0 nebo nebyla nastavena, dopočítáme ji z modelu
+    let size = viewProp.axesHelperSize;
+    if (!size || size <= 0) {
+        const box = new THREE.Box3();
+        meshObjects.forEach(obj => box.expandByObject(obj));
+        if (!box.isEmpty()) {
+            const boxSize = box.getSize(new THREE.Vector3());
+            size = Math.max(boxSize.x, boxSize.y, boxSize.z) * 0.5;
+            viewProp.axesHelperSize = Math.round(size);
+        } else {
+            return;
+        }
+    }
+    
+    axesHelperObject = new THREE.AxesHelper(size);
+    scene.add(axesHelperObject);
     render();
 }
 
