@@ -252,6 +252,9 @@ function init() {
             }
             obj.position.copy(worldPos);
         }
+        if (isTransformDragging && viewProp.showCrossSection && viewProp.autoUpdateSectionLines) {
+            updateCrossSectionLines();
+        }
         render();
     } );
     transformControls.addEventListener( 'dragging-changed', function ( event ) {
@@ -1520,7 +1523,7 @@ function onMouseUp( event ) {
 
 function onClick( event ) {		
     // Pokud je kliknuto na GUI prvek, ignorujeme raycast pro selekci
-    if (gui.domElement.contains(event.target)) {
+    if (isMouseOnGUI(event)) {
         return;
     }
     // Pokud je selekce zakázána v GUI, ignorujeme click
@@ -1543,6 +1546,8 @@ function onClick( event ) {
 
     if (INTERSECTED) {
         selectObject(INTERSECTED);
+    } else {
+        deselectObject();
     }
 }
 
@@ -1575,6 +1580,11 @@ function onTouchMove( event ) {
         mouse.y = - ( touch.clientY / window.innerHeight ) * 2 + 1;
         render();
     }
+}
+
+function isMouseOnGUI(event) { // return: true/false
+    const element = document.elementFromPoint(event.clientX, event.clientY);
+    return gui.domElement.contains(element);
 }
 
 function isTouchOnGUI(event) { // return: true/false
