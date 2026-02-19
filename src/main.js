@@ -1554,6 +1554,17 @@ function exportSelectedObject() {
     const exporter = new GLTFExporter();
     const clone = lastSelectedObject.clone(true);
 
+    // Aplikujeme world transform na klon, aby se po importu zobrazil ve stejné pozici
+    // jako originál (i když je originál child otočeného/posunutého parenta)
+    lastSelectedObject.updateWorldMatrix(true, false);// Aktualizujeme world matici, aby obsahovala aktuální pozici, rotaci a měřítko včetně rodičů. true pro update pozice rodičů, false pro neupdate pozice dětí (nechceme měnit pozici klonu)
+    const worldPos = new THREE.Vector3();// Pro dekompozici world matice potřebujeme vytvořit proměnné pro pozici, rotaci a měřítko
+    const worldQuat = new THREE.Quaternion();
+    const worldScale = new THREE.Vector3();
+    lastSelectedObject.matrixWorld.decompose(worldPos, worldQuat, worldScale);// Dekomponujeme world matici na pozici, rotaci a měřítko
+    clone.position.copy(worldPos);
+    clone.quaternion.copy(worldQuat);
+    clone.scale.copy(worldScale);
+
     exporter.parse(clone, function(result) {
         saveArrayBuffer(result, finalName);
         console.log(`Export selected: hotovo.`);
