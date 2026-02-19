@@ -78,6 +78,7 @@ const viewProp = {
     rotateZMinus: function() { rotateAllModels('z', -Math.PI / 2) },
     exportAll: function() { exportAllModels(); },
     exportSelected: function() { exportSelectedObject(); },
+    transformSpace: true, // true = world, false = local
 };
 
 const extent = {
@@ -286,6 +287,7 @@ function init() {
             case 'q':
             case 'Q':
                 transformControls.setSpace( transformControls.space === 'local' ? 'world' : 'local' );
+                viewProp.transformSpace = transformControls.space === 'world';
                 break;
 
             case 'Shift':
@@ -392,6 +394,9 @@ function addMainGui() {
             }
         }).listen();
         folderProp.add(viewProp, 'isSelectAllowed').name('Allow selection').listen();
+        folderProp.add(viewProp, 'transformSpace').name('Transform: World space').onChange(function(value) {
+            transformControls.setSpace( value ? 'world' : 'local' );
+        }).listen();
         folderProp.addColor(viewProp, 'backgroundColor').name('Background').onChange(function(value){ scene.background = new THREE.Color(value); render(); });
         //folderProp.add(viewProp, 'perspCam').name('Persp. camera').onChange(function(value){setCamera(); render(); });
         const sectionFolder = folderProp.addFolder("Section view");   
