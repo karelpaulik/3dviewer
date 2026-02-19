@@ -1007,7 +1007,16 @@ function loadGlbModel(model, name, scale, colored) {
         const loader = new GLTFLoader();
         //loader.load('./models/1012053_l.glb', function (gltf) {
         loader.load(model, function (gltf) {
-            gltf.scene.scale.set(1000.0, 1000.0, 1000.0);
+            // Oprava extrémních scale hodnot způsobených exportem (např. 0.001 nebo 0.01 z CAD → Blender → GLB)
+            // Povolený rozsah: [0.1, 10] — vše mimo se považuje za artefakt exportu a resetuje se na 1
+            gltf.scene.traverse(function (child) {
+                const s = child.scale;
+                if (Math.abs(s.x) < 0.1 || Math.abs(s.x) > 10 ||
+                    Math.abs(s.y) < 0.1 || Math.abs(s.y) > 10 ||
+                    Math.abs(s.z) < 0.1 || Math.abs(s.z) > 10) {
+                    child.scale.set(1, 1, 1);
+                }
+            });
             // Rotace byla odstraněna - lze nyní nastavit pomocí GUI tlačítek
 
             scene.add(gltf.scene);
