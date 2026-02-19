@@ -64,6 +64,7 @@ const viewProp = {
     crossSectionPos: 0,
     crossSectionColor: "#ff0000",
     showSectionMesh: false, // Toggle pro zobrazení/skrytí sectionMesh
+    autoUpdateSectionLines: false, // Automaticky aktualizovat průřezové čáry při změnách scény
     reset: function() { resetSection() },
     fit: function() { fitView() },
     viewx: function() { viewFromPoint(1000, 0, 0) },
@@ -464,6 +465,7 @@ function addMainGui() {
             
             const crossSectionFolder = sectionFolder.addFolder("Cross Section Lines");
             crossSectionFolder.add(viewProp, 'showCrossSection').name('Show Lines').onChange(function(value){updateCrossSectionLines(); render(); });
+            crossSectionFolder.add(viewProp, 'autoUpdateSectionLines').name('Update Section Lines');
             crossSectionFolder.add(viewProp, 'crossSectionPlane', ['XY', 'XZ', 'YZ']).name('Plane').onChange(function(value){if(viewProp.showCrossSection){updateCrossSectionLines(); render();}});
             crossSectionFolder.add(viewProp, 'crossSectionPos', extent.pn, extent.pp, extent.pStep).name('Position').onChange(function(value){if(viewProp.showCrossSection){updateCrossSectionLines(); render();}}).listen();
             crossSectionFolder.addColor(viewProp, 'crossSectionColor').name('Color').onChange(function(value){if(crossSectionLines){crossSectionLines.material.color.set(value); render();}});
@@ -695,7 +697,7 @@ function resetWholeModel() {
     });
     
     // Aktualizace průřezových čar
-    if (viewProp.showCrossSection) {
+    if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) {
         updateCrossSectionLines();
     }
     
@@ -720,7 +722,7 @@ function rotateAllModels(axis, angle) {
     });
     
     // Aktualizace průřezových čar
-    if (viewProp.showCrossSection) {
+    if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) {
         updateCrossSectionLines();
     }
     
@@ -865,7 +867,7 @@ function resetSection() {
     viewProp.pz = 0;
     viewProp.crossSectionPos = 0;
     updateSection();
-    if (viewProp.showCrossSection) {
+    if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) {
         updateCrossSectionLines();
     }
 }
@@ -1202,7 +1204,7 @@ function removeModel(part) {
         if (partIndex !== -1) meshObjects.splice(partIndex, 1);			
         
         // Aktualizace průřezových čar
-        if (viewProp.showCrossSection) {
+        if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) {
             updateCrossSectionLines();
         }
         
@@ -1235,7 +1237,7 @@ function hideObject(part) {
         deselectObject();
         
         // Aktualizace průřezových čar
-        if (viewProp.showCrossSection) {
+        if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) {
             updateCrossSectionLines();
         }
         
@@ -1257,7 +1259,7 @@ function showHiddenObjects() {
         hiddenObjects.length = 0;
         
         // Aktualizace průřezových čar
-        if (viewProp.showCrossSection) {
+        if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) {
             updateCrossSectionLines();
         }
         
@@ -1288,7 +1290,7 @@ function toggleHiddenObjects() {
         });
         
         // Aktualizace průřezových čar
-        if (viewProp.showCrossSection) {
+        if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) {
             updateCrossSectionLines();
         }
         
