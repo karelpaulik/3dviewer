@@ -225,7 +225,8 @@ function init() {
     transformControls.addEventListener( 'change', function() {
         // World-space manual snap: built-in setTranslationSnap works only in 'local' space.
         // In 'world' space we must snap the world-space coordinates and convert back to local.
-        if ((viewProp.snapEnabled || isShiftHeld) && transformControls.object && transformControls.getMode() === 'translate' && transformControls.space === 'world') {
+        // isTransformDragging check: aby snap neběžel při attach() (výběru objektu), ale jen při skutečném táhnutí.
+        if (isTransformDragging && (viewProp.snapEnabled || isShiftHeld) && transformControls.object && transformControls.getMode() === 'translate' && transformControls.space === 'world') {
             const snap = viewProp.snapTranslation;
             const obj = transformControls.object;
             // Force-update the full parent chain so matrixWorld is current
