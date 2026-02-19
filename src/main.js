@@ -4,6 +4,7 @@ import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 
 //import { GUI } from 'dat.gui';
 import { GUI } from 'lil-gui';
@@ -74,6 +75,8 @@ const viewProp = {
     rotateYMinus: function() { rotateAllModels('y', -Math.PI / 2) },
     rotateZPlus: function() { rotateAllModels('z', Math.PI / 2) },
     rotateZMinus: function() { rotateAllModels('z', -Math.PI / 2) },
+    exportAll: function() { exportAllModels(); },
+    exportSelected: function() { exportSelectedObject(); },
 };
 
 const extent = {
@@ -385,6 +388,10 @@ function addMainGui() {
             rotationFolder.add(viewProp, 'rotateZPlus').name('Rotate Z +90°');
             rotationFolder.add(viewProp, 'rotateZMinus').name('Rotate Z -90°');
             rotationFolder.close();
+        const exportFolder = folderProp.addFolder("Export GLB");
+            exportFolder.add(viewProp, 'exportAll').name('Export all models');
+            exportFolder.add(viewProp, 'exportSelected').name('Export selected object');
+            exportFolder.close();
         //folderProp.add(part, 'randomColor').name('Random color');	
 
     // Když by toto nebylo, tak při ukončení fullscreenu escapem, by "fulscreen" zůstalo zartřené. Funkčně by se moc nestalo.
@@ -1495,6 +1502,65 @@ function onTouchEnd( event ) {
     }
 }
 
+
+function saveArrayBuffer(buffer, filename) {
+    const blob = new Blob([buffer], { type: 'application/octet-stream' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(link.href);
+}
+
+function exportAllModels() {
+    if (loadedModels.length === 0) {
+        console.warn('Žádné modely k exportu.');
+        return;
+    }
+    const defaultName = 'export_all.glb';
+    const filename = window.prompt('Název souboru pro export:', defaultName);
+    if (filename === null) return; // uživatel stiskl Cancel
+    const finalName = filename.trim() || defaultName;
+    const exporter = new GLTFExporter();
+    const group = new THREE.Group();
+    loadedModels.forEach(model => {
+        group.add(model.clone(true));
+    });
+    exporter.parse(group, function(result) {
+        saveArrayBuffer(result, finalName);
+        console.log('Export all: hotovo.');
+    }, function(error) {
+        console.error('Chyba při exportu:', error);
+    }, { binary: true, onlyVisible: false });
+}
+
+function exportSelectedObject() {
+    if (!lastSelectedObject) {
+        console.warn('Žádný objekt není vybrán.');
+        return;
+    }
+    const defaultName = `export_${lastSelectedObject.name || 'selected'}.glb`;
+    const filename = window.prompt('Název souboru pro export:', defaultName);
+    if (filename === null) return; // uživatel stiskl Cancel
+    const finalName = filename.trim() || defaultName;
+    // Vypneme emissive (zvýraznění výběru) před exportem
+    lastSelectedObject.traverse((child) => {
+        if (child.isMesh && child.material) {
+            const mats = Array.isArray(child.material) ? child.material : [child.material];
+            mats.forEach(mat => { if (mat.emissive) mat.emissive.setHex(0x000000); });
+        }
+    });
+
+    const exporter = new GLTFExporter();
+    const clone = lastSelectedObject.clone(true);
+
+    exporter.parse(clone, function(result) {
+        saveArrayBuffer(result, finalName);
+        console.log(`Export selected: hotovo.`);
+    }, function(error) {
+        console.error('Chyba při exportu:', error);
+    }, { binary: true, onlyVisible: false });
+}
 
 function separateMesh(meshToSeparate) {
     if (!meshToSeparate || !meshToSeparate.geometry) return;
