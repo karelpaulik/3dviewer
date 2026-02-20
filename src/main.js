@@ -40,6 +40,7 @@ const touchEndPos = new THREE.Vector2();
 let INTERSECTED;
 let isMouseDown = false;
 let isTouchDragging = false;
+let suppressTouchEndOnce = false; // Prevents deselect after long-press context menu
 
 let isTouchScreen;
 
@@ -1526,6 +1527,11 @@ function onClick( event ) {
     if (isMouseOnGUI(event)) {
         return;
     }
+    // Pokud je kliknuto na kontextové menu, ignorujeme selekci
+    const elAtClick = document.elementFromPoint(event.clientX, event.clientY);
+    if (elAtClick && elAtClick.closest('.ctx-menu')) {
+        return;
+    }
     // Pokud je selekce zakázána v GUI, ignorujeme click
     if (!viewProp.isSelectAllowed) return;
 
@@ -1618,6 +1624,19 @@ function onTouchEnd( event ) {
 
         // Pokud je dotykem stisknuto na GUI prvek, ignorujeme raycast pro selekci
         if (isTouchOnGUI(event)) {
+            return;
+        }
+
+        if (suppressTouchEndOnce) {
+            suppressTouchEndOnce = false;
+            isTouchDragging = false;
+            return;
+        }
+
+        // Pokud se dotyk ukončil na kontextovém menu, neměníme selekci (click se teprve spustí)
+        const elAtTouch = document.elementFromPoint(touch.clientX, touch.clientY);
+        if (elAtTouch && elAtTouch.closest('.ctx-menu')) {
+            isTouchDragging = false;
             return;
         }
 
@@ -1955,6 +1974,7 @@ function separateMesh(meshToSeparate) {
         longPressStartPos.set(touch.clientX, touch.clientY);
         longPressTimer = setTimeout(() => {
             longPressTimer = null;
+            suppressTouchEndOnce = true;
             triggerContextMenu(touch.clientX, touch.clientY);
         }, 500);
     }, { passive: true });
