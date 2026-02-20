@@ -1738,3 +1738,250 @@ function separateMesh(meshToSeparate) {
 
     render();
 }
+
+// ---- Context menus (RMB) -----------------------------------------------------------------------
+(function initContextMenus() {
+
+    // --- Helpers ---
+    function separator() {
+        const s = document.createElement('div');
+        s.className = 'ctx-separator';
+        return s;
+    }
+
+    function simpleItem(text, fn) {
+        const it = document.createElement('div');
+        it.className = 'ctx-item';
+        it.textContent = text;
+        it.addEventListener('click', fn);
+        return it;
+    }
+
+    // --- Build empty-space menu ---
+    function createEmptyMenu() {
+        const m = document.createElement('div');
+        m.className = 'ctx-menu hidden';
+
+        const lbl = document.createElement('div');
+        lbl.className = 'ctx-label';
+        lbl.textContent = 'Scene';
+        m.appendChild(lbl);
+
+        // Allow selection (checkbox)
+        const itemSel = document.createElement('div');
+        itemSel.className = 'ctx-item';
+        const chk = document.createElement('input');
+        chk.type = 'checkbox';
+        chk.id = 'ctx-chk-select';
+        const chkLbl = document.createElement('label');
+        chkLbl.htmlFor = 'ctx-chk-select';
+        chkLbl.textContent = 'Allow selection';
+        chkLbl.style.cursor = 'pointer';
+        itemSel.appendChild(chk);
+        itemSel.appendChild(chkLbl);
+        itemSel.addEventListener('click', (e) => {
+            e.stopPropagation();
+            viewProp.isSelectAllowed = !viewProp.isSelectAllowed;
+            chk.checked = viewProp.isSelectAllowed;
+            hideAll();
+        });
+        m.appendChild(itemSel);
+
+        m.appendChild(separator());
+
+        m.appendChild(simpleItem('Show hidden objects', () => { showHiddenObjects(); hideAll(); }));
+        m.appendChild(simpleItem('Switch hidden objects', () => { toggleHiddenObjects(); hideAll(); }));
+
+        m.appendChild(separator());
+
+        // View orientation (submenu)
+        const itemView = document.createElement('div');
+        itemView.className = 'ctx-item has-sub';
+        itemView.innerHTML = 'View orientation';
+        const subView = document.createElement('div');
+        subView.className = 'ctx-submenu';
+        [
+            ['View from X', () => viewFromPoint(1000, 0, 0)],
+            ['View from Y', () => viewFromPoint(0, 1000, 0)],
+            ['View from Z', () => viewFromPoint(0, 0, 1000)],
+        ].forEach(([name, fn]) => {
+            subView.appendChild(simpleItem(name, () => { fn(); hideAll(); }));
+        });
+        itemView.appendChild(subView);
+        m.appendChild(itemView);
+
+        return m;
+    }
+
+    // --- Build object menu ---
+    function createObjectMenu() {
+        const m = document.createElement('div');
+        m.className = 'ctx-menu hidden';
+
+        const lbl = document.createElement('div');
+        lbl.className = 'ctx-label';
+        lbl.id = 'ctx-obj-label';
+        lbl.textContent = 'Object';
+        m.appendChild(lbl);
+
+        // Hide object
+        m.appendChild(simpleItem('Hide object', () => {
+            if (lastSelectedObject) hideObject(lastSelectedObject);
+            hideAll();
+        }));
+
+        m.appendChild(separator());
+
+        // Location (submenu)
+        const itemLoc = document.createElement('div');
+        itemLoc.className = 'ctx-item has-sub';
+        itemLoc.innerHTML = 'Location';
+        const subLoc = document.createElement('div');
+        subLoc.className = 'ctx-submenu';
+
+        subLoc.appendChild(simpleItem('Reset init. location', () => {
+            if (lastSelectedObject) setDefPosRotScale(lastSelectedObject);
+            hideAll();
+        }));
+        subLoc.appendChild(simpleItem('Undo last transform', () => {
+            if (lastSelectedObject && previousTransformState) undoLastTransform(lastSelectedObject);
+            hideAll();
+        }));
+        subLoc.appendChild(separator());
+
+        const inputDefs = [
+            { id: 'ctx-px', label: 'Px',    step: extent.pStep, get: () => lastSelectedObject?.position.x,  set: v => { if (lastSelectedObject) { lastSelectedObject.position.x = v; render(); } } },
+            { id: 'ctx-py', label: 'Py',    step: extent.pStep, get: () => lastSelectedObject?.position.y,  set: v => { if (lastSelectedObject) { lastSelectedObject.position.y = v; render(); } } },
+            { id: 'ctx-pz', label: 'Pz',    step: extent.pStep, get: () => lastSelectedObject?.position.z,  set: v => { if (lastSelectedObject) { lastSelectedObject.position.z = v; render(); } } },
+            { id: 'ctx-rx', label: 'Rx',    step: extent.rStep, get: () => lastSelectedObject?.rotation.x,  set: v => { if (lastSelectedObject) { lastSelectedObject.rotation.x = v; render(); } } },
+            { id: 'ctx-ry', label: 'Ry',    step: extent.rStep, get: () => lastSelectedObject?.rotation.y,  set: v => { if (lastSelectedObject) { lastSelectedObject.rotation.y = v; render(); } } },
+            { id: 'ctx-rz', label: 'Rz',    step: extent.rStep, get: () => lastSelectedObject?.rotation.z,  set: v => { if (lastSelectedObject) { lastSelectedObject.rotation.z = v; render(); } } },
+            { id: 'ctx-sc', label: 'Scale', step: extent.sStep, get: () => lastSelectedObject?.scale.x,     set: v => { if (lastSelectedObject) { lastSelectedObject.scale.set(v, v, v); render(); } } },
+        ];
+
+        inputDefs.forEach(def => {
+            const row = document.createElement('div');
+            row.className = 'ctx-input-row';
+            const lbl = document.createElement('label');
+            lbl.textContent = def.label;
+            const inp = document.createElement('input');
+            inp.type = 'number';
+            inp.id = def.id;
+            inp.step = def.step;
+            inp.addEventListener('click', e => e.stopPropagation());
+            inp.addEventListener('change', e => def.set(parseFloat(e.target.value)));
+            row.appendChild(lbl);
+            row.appendChild(inp);
+            subLoc.appendChild(row);
+        });
+
+        itemLoc.appendChild(subLoc);
+        m.appendChild(itemLoc);
+
+        return m;
+    }
+
+    // --- State ---
+    let activeMenu = null;
+    const menuEmpty  = createEmptyMenu();
+    const menuObject = createObjectMenu();
+    document.body.appendChild(menuEmpty);
+    document.body.appendChild(menuObject);
+
+    function hideAll() {
+        menuEmpty.classList.add('hidden');
+        menuObject.classList.add('hidden');
+        activeMenu = null;
+    }
+
+    function showAt(menu, x, y) {
+        hideAll();
+        menu.style.left = x + 'px';
+        menu.style.top  = y + 'px';
+        menu.classList.remove('hidden');
+        activeMenu = menu;
+        // keep inside viewport
+        const r = menu.getBoundingClientRect();
+        if (r.right  > window.innerWidth)  menu.style.left = (x - r.width)  + 'px';
+        if (r.bottom > window.innerHeight) menu.style.top  = (y - r.height) + 'px';
+    }
+
+    function refreshObjectInputs(obj) {
+        document.getElementById('ctx-obj-label').textContent = obj.name || 'Object';
+        const map = {
+            'ctx-px': obj.position.x,
+            'ctx-py': obj.position.y,
+            'ctx-pz': obj.position.z,
+            'ctx-rx': obj.rotation.x,
+            'ctx-ry': obj.rotation.y,
+            'ctx-rz': obj.rotation.z,
+            'ctx-sc': obj.scale.x,
+        };
+        for (const [id, val] of Object.entries(map)) {
+            const el = document.getElementById(id);
+            if (el) el.value = parseFloat(val.toFixed(4));
+        }
+    }
+
+    // --- Shared trigger (mouse RMB + touch long-press) ---
+    function triggerContextMenu(x, y) {
+        if (lastSelectedObject) {
+            refreshObjectInputs(lastSelectedObject);
+            showAt(menuObject, x, y);
+        } else {
+            document.getElementById('ctx-chk-select').checked = viewProp.isSelectAllowed;
+            showAt(menuEmpty, x, y);
+        }
+    }
+
+    // --- Mouse RMB handler ---
+    window.addEventListener('contextmenu', function(event) {
+        if (isMouseOnGUI(event)) return; // let GUI handle its own RMB
+        event.preventDefault();
+        triggerContextMenu(event.clientX, event.clientY);
+    }, false);
+
+    // --- Touch long-press handler (500 ms) ---
+    let longPressTimer = null;
+    let longPressStartPos = new THREE.Vector2();
+
+    window.addEventListener('touchstart', function(event) {
+        if (event.touches.length !== 1) return;
+        const touch = event.touches[0];
+        // Skip if touch is on GUI
+        const el = document.elementFromPoint(touch.clientX, touch.clientY);
+        if (gui.domElement.contains(el)) return;
+
+        longPressStartPos.set(touch.clientX, touch.clientY);
+        longPressTimer = setTimeout(() => {
+            longPressTimer = null;
+            triggerContextMenu(touch.clientX, touch.clientY);
+        }, 500);
+    }, { passive: true });
+
+    window.addEventListener('touchmove', function(event) {
+        if (!longPressTimer) return;
+        if (event.touches.length !== 1) { clearTimeout(longPressTimer); longPressTimer = null; return; }
+        const touch = event.touches[0];
+        const moved = longPressStartPos.distanceTo(new THREE.Vector2(touch.clientX, touch.clientY));
+        if (moved > 10) { clearTimeout(longPressTimer); longPressTimer = null; }
+    }, { passive: true });
+
+    window.addEventListener('touchend', function() {
+        if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+    }, { passive: true });
+
+    window.addEventListener('touchcancel', function() {
+        if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+    }, { passive: true });
+
+    // Close on outside click
+    window.addEventListener('mousedown', function(e) {
+        if (activeMenu && !activeMenu.contains(e.target)) hideAll();
+    }, true);
+
+    window.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') hideAll();
+    });
+
+})();
