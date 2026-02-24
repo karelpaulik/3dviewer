@@ -51,6 +51,13 @@ let orthoHalfSize = 500; // Polovelikost frustumu ortografické kamery v world u
 let previousTransformState = null; // Uložení předchozího stavu pro undo
 let isShiftHeld = false; // Pro manuální translation snap ve world space
 
+// --- Multi-výběr ---
+const selectedObjects = [];       // objekty přidané do multi-výběru (reference, ještě nejsou reparentovány)
+const multiOriginalParents = [];  // původní rodiče (paralelní pole k selectedObjects)
+const multiSelectionHelpers = []; // azurové BoxHelpery pro vizualizaci multi-výběru
+let pivotObject = null;           // pivot pro skupinovou transformaci
+let isMultiSelectActive = false;  // jsou objekty reparentovány do pivotu a TC je na pivotu?
+
 const viewProp = {
     perspCam: false,
     section: false,
@@ -90,6 +97,10 @@ const viewProp = {
     transformMode: 'translate', // transform mode: translate, rotate, scale
     showAxesHelper: false, // Zobrazit / skrýt axes helper
     axesHelperSize: 100,   // Velikost axes helperu
+    // Multi-výběr
+    addToMulti: function() { addCurrentToMultiSelect(); },
+    groupActive: false,
+    clearMulti: function() { clearMultiSelect(); },
 };
 
 const extent = {
@@ -280,6 +291,13 @@ function init() {
                     obj.rotation.y = roundNearZero(obj.rotation.y);
                     obj.rotation.z = roundNearZero(obj.rotation.z);
                 }
+                // Přepočítáme BoxHelpery po dokončení skupinové transformace
+                if (isMultiSelectActive) {
+                    multiSelectionHelpers.forEach((h, i) => {
+                        if (selectedObjects[i]) h.setFromObject(selectedObjects[i]);
+                    });
+                    render();
+                }
             }, 100);
         }
     } );	
@@ -330,6 +348,16 @@ function init() {
             case 'T':
                 transformControls.setMode( 'translate' );
                 viewProp.transformMode = 'translate';
+                break;
+
+            case '/':
+                if (lastSelectedObject) {
+                    addCurrentToMultiSelect(); // přidat/odebrat z multi-výběru
+                }
+                break;
+
+            case '*':
+                if (isMultiSelectActive) deactivateMultiSelect(); else activateMultiSelect();
                 break;
 
             case '+':
@@ -505,6 +533,13 @@ function addMainGui() {
             axesFolder.add(viewProp, 'showAxesHelper').name('Zobrazit osy').onChange(function() { updateAxesHelper(); }).listen();
             axesFolder.add(viewProp, 'axesHelperSize', 1, 2000, 1).name('Velikost').onChange(function() { updateAxesHelper(); }).listen();
             axesFolder.close();
+        const multiFolder = folderProp.addFolder("Multi-výběr skupiny");
+            multiFolder.add(viewProp, 'groupActive').name('Group active (*)').onChange(function(value) {
+                if (value) activateMultiSelect(); else deactivateMultiSelect();
+            }).listen();
+            multiFolder.add(viewProp, 'addToMulti').name('Přidat/odebrat vybraný (/)');
+            multiFolder.add(viewProp, 'clearMulti').name('Vyčistit skupinu');
+            multiFolder.close();
         //folderProp.add(part, 'randomColor').name('Random color');	
 
     // Když by toto nebylo, tak při ukončení fullscreenu escapem, by "fulscreen" zůstalo zartřené. Funkčně by se moc nestalo.
@@ -1083,6 +1118,110 @@ function updateAxesHelper() {
     render();
 }
 
+// --- Multi-výběr: funkce ---
+
+// Přidá / odebere lastSelectedObject do/z multi-výběru. Volá se klávesou "+".
+function addCurrentToMultiSelect() {
+    if (!lastSelectedObject) return;
+    if (isMultiSelectActive) {
+        console.log('Multi-výběr je aktivní – nejprve deaktivujte skupinu.');
+        return;
+    }
+    const obj = lastSelectedObject;
+    const idx = selectedObjects.indexOf(obj);
+    if (idx !== -1) {
+        // Odebrat z multi-výběru
+        selectedObjects.splice(idx, 1);
+        multiOriginalParents.splice(idx, 1);
+        scene.remove(multiSelectionHelpers[idx]);
+        multiSelectionHelpers.splice(idx, 1);
+        console.log(`Multi-výběr: odebrán "${obj.name}", zbývá: ${selectedObjects.length}`);
+    } else {
+        // Přidat do multi-výběru
+        selectedObjects.push(obj);
+        multiOriginalParents.push(obj.parent);
+        const h = new THREE.BoxHelper(obj, 0x00ccff);
+        scene.add(h);
+        multiSelectionHelpers.push(h);
+        console.log(`Multi-výběr: přidán "${obj.name}", celkem: ${selectedObjects.length}`);
+    }
+    render();
+}
+
+// Aktivuje skupinovou transformaci: reparentuje objekty do pivotu, TC se přepne na pivot.
+function activateMultiSelect() {
+    if (selectedObjects.length < 2) {
+        console.log('Multi-výběr: je potřeba alespoň 2 objekty (klávesa +).');
+        return;
+    }
+    if (isMultiSelectActive) return;
+
+    // Zrušíme single-select, aby TC nebyl připojen k jinému objektu
+    deselectObject();
+
+    // Střed skupiny (centroid)
+    const center = new THREE.Vector3();
+    selectedObjects.forEach(obj => {
+        obj.updateWorldMatrix(true, false);
+        center.add(new THREE.Vector3().setFromMatrixPosition(obj.matrixWorld));
+    });
+    center.divideScalar(selectedObjects.length);
+
+    // Vytvoříme pivot na centroidu
+    pivotObject = new THREE.Object3D();
+    pivotObject.name = '__multiSelectPivot__';
+    pivotObject.position.copy(center);
+    scene.add(pivotObject);
+
+    // Reparentujeme objekty do pivotu (Three.js zachová world-space pozici)
+    selectedObjects.forEach(obj => pivotObject.attach(obj));
+
+    // Připojíme TC k pivotu
+    transformControls.attach(pivotObject);
+    isMultiSelectActive = true;
+    viewProp.groupActive = true;
+    console.log(`Multi-výběr aktivován, ${selectedObjects.length} objektů.`);
+    render();
+}
+
+// Deaktivuje skupinovou transformaci: vrátí objekty původním rodičům, TC se odpojí.
+// Seznam selectedObjects zůstane zachován – lze skupinu znovu aktivovat.
+function deactivateMultiSelect() {
+    if (!isMultiSelectActive) return;
+
+    if (transformControls.object === pivotObject) transformControls.detach();
+
+    // Vrátíme objekty zpět jejich původním rodičům (zachová se world-space pozice)
+    selectedObjects.forEach((obj, i) => {
+        const parent = multiOriginalParents[i] || scene;
+        parent.attach(obj);
+    });
+
+    // Odstraníme pivot ze scény
+    scene.remove(pivotObject);
+    pivotObject = null;
+    isMultiSelectActive = false;
+    viewProp.groupActive = false;
+
+    // Aktualizujeme BoxHelpery (objekty se vrátily, ale pozice se nezměnila)
+    multiSelectionHelpers.forEach((h, i) => {
+        if (selectedObjects[i]) h.setFromObject(selectedObjects[i]);
+    });
+    console.log('Multi-výběr deaktivován. Seznam objektů zachován.');
+    render();
+}
+
+// Zruší multi-výběr úplně: deaktivuje skupinu a vymaže celý seznam.
+function clearMultiSelect() {
+    deactivateMultiSelect();
+    multiSelectionHelpers.forEach(h => scene.remove(h));
+    multiSelectionHelpers.length = 0;
+    selectedObjects.length = 0;
+    multiOriginalParents.length = 0;
+    console.log('Multi-výběr vyčištěn.');
+    render();
+}
+
 //https://www.reddit.com/r/learnjavascript/comments/9jovpn/how_can_i_load_a_3d_model_asynchronously_in/	
 //https://javascript.info/promise-basics
 function loadModel(model, name, scale, colored) {
@@ -1404,7 +1543,7 @@ function selectObject(object) {
         transformControls.attach(object);// Připojíme TransformControls   
              
         selectionHistory.push(object); // Přidáme do historie vybraných objektů
-        if (selectionHistory.length > 30) {// Omezíme velikost historie (např. 30 záznamů), aby nezabírala paměť
+        if (selectionHistory.length > 30) { // Omezíme velikost historie (např. 30 záznamů), aby nezabírala paměť
             selectionHistory.shift();
         }
 
