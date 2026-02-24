@@ -1737,16 +1737,24 @@ function render() {
     // Nezvýrazňujeme objekty při dragování (rotaci/posouvání) nebo při transformaci
     if (!isTransformDragging && !isMouseOverGui && !isMouseDown && !isTouchDragging && viewProp.isSelectAllowed && !viewProp.isGroupTransformActive) {      
         raycaster.setFromCamera(mouse, currentCamera);
-        const intersects = raycaster.intersectObjects(meshObjects);                
+        const intersects = raycaster.intersectObjects(meshObjects);
 
-        if (intersects.length > 0) { // Myš je nad objektem
-            if (INTERSECTED != intersects[0].object) { 
+        // Filtrujeme průsečíky, které leží na ořezané (neviditelné) straně clippingPlanes.
+        // Materiály používají clipIntersection: true → fragment je NEVIDITELNÝ jen pokud leží
+        // vně VŠECH rovin zároveň. Bod je tedy VIDITELNÝ pokud leží uvnitř alespoň jedné roviny
+        // (distanceToPoint >= 0 pro alespoň jednu rovinu).
+        const visibleIntersects = (renderer.localClippingEnabled && clipPlanes.length > 0)
+            ? intersects.filter(hit => clipPlanes.some(plane => plane.distanceToPoint(hit.point) >= 0))
+            : intersects;
+
+        if (visibleIntersects.length > 0) { // Myš je nad viditelnou částí objektu
+            if (INTERSECTED != visibleIntersects[0].object) { 
                 // 1. Předchozímu objektu vypneme záři a helper
                 if (INTERSECTED) {
                     clearHighlight();
                 }   
                 // 2. Nastavíme nový objekt
-                INTERSECTED = intersects[0].object;
+                INTERSECTED = visibleIntersects[0].object;
                 // 3. Novému objektu zapneme záři a helper
                 highlightObject(INTERSECTED);
             }
