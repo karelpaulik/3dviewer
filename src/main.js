@@ -56,7 +56,6 @@ const selectedObjects = [];       // objekty přidané do multi-výběru (refere
 const multiOriginalParents = [];  // původní rodiče (paralelní pole k selectedObjects)
 const multiSelectionHelpers = []; // azurové BoxHelpery pro vizualizaci multi-výběru
 let pivotObject = null;           // pivot pro skupinovou transformaci
-let isMultiSelectActive = false;  // jsou objekty reparentovány do pivotu a TC je na pivotu?
 
 // --- Group History ---
 const groupHistory = [];          // pole snapshotů: { name, objects[] }
@@ -104,7 +103,7 @@ const viewProp = {
     axesHelperSize: 100,   // Velikost axes helperu
     // Group Selection
     addToMulti: function() { addCurrentToMultiSelect(); },
-    groupTransformActive: false,
+    isGroupTransformActive: false,
     clearMulti: function() { clearMultiSelect(); },
     // Group History
     addGroupToHistory: function() { addCurrentGroupToHistory(); },
@@ -304,7 +303,7 @@ function init() {
                     obj.rotation.z = roundNearZero(obj.rotation.z);
                 }
                 // Přepočítáme BoxHelpery po dokončení skupinové transformace
-                if (isMultiSelectActive) {
+                if (viewProp.isGroupTransformActive) {
                     multiSelectionHelpers.forEach((h, i) => {
                         if (selectedObjects[i]) h.setFromObject(selectedObjects[i]);
                     });
@@ -370,7 +369,7 @@ function init() {
                 break;
 
             case '*':
-                if (isMultiSelectActive) deactivateMultiSelect(); else activateMultiSelect();
+                if (viewProp.isGroupTransformActive) deactivateMultiSelect(); else activateMultiSelect();
                 break;
 
             case '+':
@@ -547,7 +546,7 @@ function addMainGui() {
             axesFolder.add(viewProp, 'axesHelperSize', 1, 2000, 1).name('Velikost').onChange(function() { updateAxesHelper(); }).listen();
             axesFolder.close();
         const multiFolder = folderProp.addFolder("Group Selection");
-            multiFolder.add(viewProp, 'groupTransformActive').name('Group transform active (*)').onChange(function(value) {
+            multiFolder.add(viewProp, 'isGroupTransformActive').name('Group transform active (*)').onChange(function(value) {
                 if (value) activateMultiSelect(); else deactivateMultiSelect();
             }).listen();
             multiFolder.add(viewProp, 'addToMulti').name('Add/remove selected (/)');
@@ -1144,7 +1143,7 @@ function updateAxesHelper() {
 // Přidá / odebere lastSelectedObject do/z multi-výběru. Volá se klávesou "+".".
 function addCurrentToMultiSelect() {
     if (!lastSelectedObject) return;
-    if (isMultiSelectActive) {
+    if (viewProp.isGroupTransformActive) {
         console.log('Multi-výběr je aktivní – nejprve deaktivujte skupinu.');
         return;
     }
@@ -1175,7 +1174,7 @@ function activateMultiSelect() {
         console.log('Multi-výběr: je potřeba alespoň 2 objekty (klávesa +).');
         return;
     }
-    if (isMultiSelectActive) return;
+    if (viewProp.isGroupTransformActive) return;
 
     // Zrušíme single-select, aby TC nebyl připojen k jinému objektu
     deselectObject();
@@ -1199,8 +1198,7 @@ function activateMultiSelect() {
 
     // Připojíme TC k pivotu
     transformControls.attach(pivotObject);
-    isMultiSelectActive = true;
-    viewProp.groupTransformActive = true;
+    viewProp.isGroupTransformActive = true;
     console.log(`Multi-výběr aktivován, ${selectedObjects.length} objektů.`);
     render();
 }
@@ -1208,7 +1206,7 @@ function activateMultiSelect() {
 // Deaktivuje skupinovou transformaci: vrátí objekty původním rodičům, TC se odpojí.
 // Seznam selectedObjects zůstane zachován – lze skupinu znovu aktivovat.
 function deactivateMultiSelect() {
-    if (!isMultiSelectActive) return;
+    if (!viewProp.isGroupTransformActive) return;
 
     if (transformControls.object === pivotObject) transformControls.detach();
 
@@ -1221,8 +1219,7 @@ function deactivateMultiSelect() {
     // Odstraníme pivot ze scény
     scene.remove(pivotObject);
     pivotObject = null;
-    isMultiSelectActive = false;
-    viewProp.groupTransformActive = false;
+    viewProp.isGroupTransformActive = false;
 
     // Aktualizujeme BoxHelpery (objekty se vrátily, ale pozice se nezměnila)
     multiSelectionHelpers.forEach((h, i) => {
@@ -1738,7 +1735,7 @@ function render() {
                                                      -mouse.y * window.innerHeight / 2 + window.innerHeight / 2)?.closest('.lil-gui');
     
     // Nezvýrazňujeme objekty při dragování (rotaci/posouvání) nebo při transformaci
-    if (!isTransformDragging && !isMouseOverGui && !isMouseDown && !isTouchDragging && viewProp.isSelectAllowed) {      
+    if (!isTransformDragging && !isMouseOverGui && !isMouseDown && !isTouchDragging && viewProp.isSelectAllowed && !viewProp.isGroupTransformActive) {      
         raycaster.setFromCamera(mouse, currentCamera);
         const intersects = raycaster.intersectObjects(meshObjects);                
 
@@ -1766,8 +1763,8 @@ function render() {
         INTERSECTED = null;
     }
 
-    // Pokud je selekce zakázána, zajistíme že nebude nic zvýrazněno
-    if (!viewProp.isSelectAllowed && INTERSECTED) {
+    // Pokud je selekce zakázána nebo je aktivní skupinová transformace, zajistíme že nebude nic zvýrazněno
+    if ((!viewProp.isSelectAllowed || viewProp.isGroupTransformActive) && INTERSECTED) {
         clearHighlight();
         INTERSECTED = null;
     }
@@ -1811,6 +1808,7 @@ function onClick( event ) {
     }
     // Pokud je selekce zakázána v GUI, ignorujeme click
     if (!viewProp.isSelectAllowed) return;
+    if (viewProp.isGroupTransformActive) return;
 
     // Pokud právě probíhá drag transformací, ignorujeme click
     if (isTransformDragging) return;
@@ -1898,6 +1896,7 @@ function onTouchEnd( event ) {
 
         // All touches ended - simulujeme click pro selekci
         if (!viewProp.isSelectAllowed) return;
+        if (viewProp.isGroupTransformActive) return;
         if (isTransformDragging) return;
 
         // Pokud je dotykem stisknuto na GUI prvek, ignorujeme raycast pro selekci
