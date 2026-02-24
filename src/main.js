@@ -2235,7 +2235,15 @@ function separateMesh(meshToSeparate) {
     window.addEventListener('contextmenu', function(event) {
         if (isMouseOnGUI(event)) return; // let GUI handle its own RMB
         event.preventDefault();
+        
+        // Kontrola, zda se myš od pravého kliknutí příliš pohybovala
+        const contextMenuPos = new THREE.Vector2(event.clientX, event.clientY);
+        const dragDistance = mouseDownPos.distanceTo(contextMenuPos);
+        
+        // Zobrazit kontextové menu pouze pokud se myš neposunula více než 3 pixely
+        if (dragDistance <= 3) {
         triggerContextMenu(event.clientX, event.clientY);
+        }
     }, false);
 
     // --- Touch long-press handler (500 ms) ---
