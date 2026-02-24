@@ -86,12 +86,26 @@ a, button, input, select {
 	font-size: 12px;
 }
 
+/* Root-level folders (View, Selected part…) */
+.lil-gui.root > .children > .lil-gui > .title,
 .lil-gui.lil-root > .lil-children > .lil-gui > .lil-title {
     background-color: black !important;
     font-weight: 800 !important;
     text-transform: uppercase !important;
     font-size: 12px !important;
     color: red !important;
+}
+
+/* Sub-folders at any depth (all folders below root-level) */
+.lil-gui.root .lil-gui .lil-gui > .title,
+.lil-gui.lil-root .lil-gui .lil-gui > .lil-title {
+    background-color: #333 !important;
+    font-weight: 600 !important;
+    text-transform: none !important;
+    font-size: 11px !important;
+    color: #c8a96e !important;
+    border-left: 3px solid #c8a96e !important;
+    padding-left: 6px !important;
 }
 
 /* Context menu ------------------------------------ */

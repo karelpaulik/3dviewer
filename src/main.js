@@ -104,7 +104,7 @@ const viewProp = {
     axesHelperSize: 100,   // Velikost axes helperu
     // Group Selection
     addToMulti: function() { addCurrentToMultiSelect(); },
-    groupActive: false,
+    groupTransformActive: false,
     clearMulti: function() { clearMultiSelect(); },
     // Group History
     addGroupToHistory: function() { addCurrentGroupToHistory(); },
@@ -547,10 +547,10 @@ function addMainGui() {
             axesFolder.add(viewProp, 'axesHelperSize', 1, 2000, 1).name('Velikost').onChange(function() { updateAxesHelper(); }).listen();
             axesFolder.close();
         const multiFolder = folderProp.addFolder("Group Selection");
-            multiFolder.add(viewProp, 'groupActive').name('Group active (*)').onChange(function(value) {
+            multiFolder.add(viewProp, 'groupTransformActive').name('Group transform active (*)').onChange(function(value) {
                 if (value) activateMultiSelect(); else deactivateMultiSelect();
             }).listen();
-            multiFolder.add(viewProp, 'addToMulti').name('Add/remove selected (/');
+            multiFolder.add(viewProp, 'addToMulti').name('Add/remove selected (/)');
             multiFolder.add(viewProp, 'clearMulti').name('Clear group');
             multiFolder.add(viewProp, 'addGroupToHistory').name('Add to history');
             const historyFolder = multiFolder.addFolder('Group History');
@@ -1200,7 +1200,7 @@ function activateMultiSelect() {
     // Připojíme TC k pivotu
     transformControls.attach(pivotObject);
     isMultiSelectActive = true;
-    viewProp.groupActive = true;
+    viewProp.groupTransformActive = true;
     console.log(`Multi-výběr aktivován, ${selectedObjects.length} objektů.`);
     render();
 }
@@ -1222,7 +1222,7 @@ function deactivateMultiSelect() {
     scene.remove(pivotObject);
     pivotObject = null;
     isMultiSelectActive = false;
-    viewProp.groupActive = false;
+    viewProp.groupTransformActive = false;
 
     // Aktualizujeme BoxHelpery (objekty se vrátily, ale pozice se nezměnila)
     multiSelectionHelpers.forEach((h, i) => {
