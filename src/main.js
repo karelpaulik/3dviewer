@@ -58,6 +58,11 @@ const multiSelectionHelpers = []; // azurové BoxHelpery pro vizualizaci multi-v
 let pivotObject = null;           // pivot pro skupinovou transformaci
 let isMultiSelectActive = false;  // jsou objekty reparentovány do pivotu a TC je na pivotu?
 
+// --- Group History ---
+const groupHistory = [];          // pole snapshotů: { name, objects[] }
+let groupHistoryIndex = -1;       // index aktuálně zobrazeného záznamu (-1 = žádný)
+const groupHistoryPreviewHelpers = []; // oránžové BoxHelpery pro náhled history entry
+
 const viewProp = {
     perspCam: false,
     section: false,
@@ -97,10 +102,17 @@ const viewProp = {
     transformMode: 'translate', // transform mode: translate, rotate, scale
     showAxesHelper: false, // Zobrazit / skrýt axes helper
     axesHelperSize: 100,   // Velikost axes helperu
-    // Multi-výběr
+    // Group Selection
     addToMulti: function() { addCurrentToMultiSelect(); },
     groupActive: false,
     clearMulti: function() { clearMultiSelect(); },
+    // Group History
+    addGroupToHistory: function() { addCurrentGroupToHistory(); },
+    historyInfo: '– žádný záznam –',
+    historyPrev: function() { navigateGroupHistory(-1); },
+    historyNext: function() { navigateGroupHistory(+1); },
+    historyRestore: function() { restoreGroupFromHistory(); },
+    historyRemove: function() { removeFromGroupHistory(); },
 };
 
 const extent = {
@@ -320,6 +332,7 @@ function init() {
         switch ( event.key ) {
             case 'Escape':
                 deselectObject();
+                clearHistoryPreviewHelpers();
                 break;
             case 'q':
             case 'Q':
@@ -533,12 +546,20 @@ function addMainGui() {
             axesFolder.add(viewProp, 'showAxesHelper').name('Zobrazit osy').onChange(function() { updateAxesHelper(); }).listen();
             axesFolder.add(viewProp, 'axesHelperSize', 1, 2000, 1).name('Velikost').onChange(function() { updateAxesHelper(); }).listen();
             axesFolder.close();
-        const multiFolder = folderProp.addFolder("Multi-výběr skupiny");
+        const multiFolder = folderProp.addFolder("Group Selection");
             multiFolder.add(viewProp, 'groupActive').name('Group active (*)').onChange(function(value) {
                 if (value) activateMultiSelect(); else deactivateMultiSelect();
             }).listen();
-            multiFolder.add(viewProp, 'addToMulti').name('Přidat/odebrat vybraný (/)');
-            multiFolder.add(viewProp, 'clearMulti').name('Vyčistit skupinu');
+            multiFolder.add(viewProp, 'addToMulti').name('Add/remove selected (/');
+            multiFolder.add(viewProp, 'clearMulti').name('Clear group');
+            multiFolder.add(viewProp, 'addGroupToHistory').name('Add to history');
+            const historyFolder = multiFolder.addFolder('Group History');
+                historyFolder.add(viewProp, 'historyInfo').name('Entry').listen().disable();
+                historyFolder.add(viewProp, 'historyPrev').name('← Previous');
+                historyFolder.add(viewProp, 'historyNext').name('→ Next');
+                historyFolder.add(viewProp, 'historyRestore').name('Restore');
+                historyFolder.add(viewProp, 'historyRemove').name('Remove from history');
+                historyFolder.close();
             multiFolder.close();
         //folderProp.add(part, 'randomColor').name('Random color');	
 
@@ -1120,7 +1141,7 @@ function updateAxesHelper() {
 
 // --- Multi-výběr: funkce ---
 
-// Přidá / odebere lastSelectedObject do/z multi-výběru. Volá se klávesou "+".
+// Přidá / odebere lastSelectedObject do/z multi-výběru. Volá se klávesou "+".".
 function addCurrentToMultiSelect() {
     if (!lastSelectedObject) return;
     if (isMultiSelectActive) {
@@ -1220,6 +1241,123 @@ function clearMultiSelect() {
     multiOriginalParents.length = 0;
     console.log('Multi-výběr vyčištěn.');
     render();
+}
+
+// --- Group History ---
+
+// Uloží aktuální selectedObjects do groupHistory jako pojmenovaný snapshot.
+function addCurrentGroupToHistory() {
+    if (selectedObjects.length === 0) {
+        console.log('Group History: seznam je prázdný, nelze uložit.');
+        return;
+    }
+    const names = selectedObjects.map(o => o.name || 'Unnamed').join(', ');
+    const snapshot = {
+        name: `[${groupHistory.length + 1}] ${names}`,
+        objects: [...selectedObjects]          // kopie referencí
+    };
+    groupHistory.push(snapshot);
+    groupHistoryIndex = groupHistory.length - 1;
+    updateHistoryInfo();
+    console.log(`Group History: uložen snapshot "${snapshot.name}".`);
+}
+
+// Přejde v historii o dir kroků (-1 = předchozí, +1 = následující).
+function navigateGroupHistory(dir) {
+    if (groupHistory.length === 0) {
+        console.log('Group History: historie je prázdná.');
+        return;
+    }
+    groupHistoryIndex = Math.max(0, Math.min(groupHistory.length - 1, groupHistoryIndex + dir));
+    updateHistoryInfo();
+
+    // Zobrazíme oránžové preview-helpery pro objekty aktuálního záznamu
+    clearHistoryPreviewHelpers();
+    groupHistory[groupHistoryIndex].objects.forEach(obj => {
+        if (!obj || !obj.parent) return;
+        const h = new THREE.BoxHelper(obj, 0xff8800);
+        scene.add(h);
+        groupHistoryPreviewHelpers.push(h);
+    });
+
+    console.log(`Group History: index ${groupHistoryIndex} – "${groupHistory[groupHistoryIndex].name}"`);
+    render();
+}
+
+// Odstrání preview-helpery ze scény.
+function clearHistoryPreviewHelpers() {
+    groupHistoryPreviewHelpers.forEach(h => scene.remove(h));
+    groupHistoryPreviewHelpers.length = 0;
+    render();
+}
+
+// Obnoví selectedObjects ze záznamu na groupHistoryIndex.
+function restoreGroupFromHistory() {
+    if (groupHistoryIndex < 0 || groupHistoryIndex >= groupHistory.length) {
+        console.log('Group History: žádný záznam k obnovení.');
+        return;
+    }
+
+    // Odstráníme preview-helpery – objekty dostanou cyan helpery ze standardního seznamu
+    clearHistoryPreviewHelpers();
+    const snapshot = groupHistory[groupHistoryIndex];
+
+    // Nejprve vyčistíme aktuální skupinu (bez mazání historie)
+    deactivateMultiSelect();
+    multiSelectionHelpers.forEach(h => scene.remove(h));
+    multiSelectionHelpers.length = 0;
+    selectedObjects.length = 0;
+    multiOriginalParents.length = 0;
+
+    // Obnovíme objekty ze snapshotu
+    snapshot.objects.forEach(obj => {
+        // Objekt může být mezidobí smazán – bezpečnostní kontrola
+        if (!obj || !obj.parent) return;
+        selectedObjects.push(obj);
+        multiOriginalParents.push(obj.parent);
+        const h = new THREE.BoxHelper(obj, 0x00ccff);
+        scene.add(h);
+        multiSelectionHelpers.push(h);
+    });
+
+    console.log(`Group History: obnovena skupina "${snapshot.name}" (${selectedObjects.length} objektů).`);
+    render();
+}
+
+// Odstraní aktuální záznam z groupHistory.
+function removeFromGroupHistory() {
+    if (groupHistoryIndex < 0 || groupHistoryIndex >= groupHistory.length) {
+        console.log('Group History: žádný záznam k odstranění.');
+        return;
+    }
+    clearHistoryPreviewHelpers();
+    const removed = groupHistory.splice(groupHistoryIndex, 1)[0];
+    // Upravíme index: po smazání posledního záznamu posuneme dozadu
+    if (groupHistoryIndex >= groupHistory.length) {
+        groupHistoryIndex = groupHistory.length - 1;
+    }
+    updateHistoryInfo();
+    // Pokud zbývají záznamy, zobrazíme preview nového aktuálního
+    if (groupHistoryIndex >= 0) {
+        groupHistory[groupHistoryIndex].objects.forEach(obj => {
+            if (!obj || !obj.parent) return;
+            const h = new THREE.BoxHelper(obj, 0xff8800);
+            scene.add(h);
+            groupHistoryPreviewHelpers.push(h);
+        });
+        render();
+    }
+    console.log(`Group History: odstraněn záznam "${removed.name}", zbývá: ${groupHistory.length}`);
+}
+
+// Aktualizuje zobrazovaný text v GUI.
+function updateHistoryInfo() {
+    if (groupHistoryIndex < 0 || groupHistory.length === 0) {
+        viewProp.historyInfo = '– žádný záznam –';
+    } else {
+        const snap = groupHistory[groupHistoryIndex];
+        viewProp.historyInfo = `${groupHistoryIndex + 1}/${groupHistory.length}: ${snap.name}`;
+    }
 }
 
 //https://www.reddit.com/r/learnjavascript/comments/9jovpn/how_can_i_load_a_3d_model_asynchronously_in/	
@@ -1693,6 +1831,7 @@ function onClick( event ) {
         selectObject(INTERSECTED);
     } else {
         deselectObject();
+        clearHistoryPreviewHelpers();
     }
 }
 
@@ -1783,6 +1922,7 @@ function onTouchEnd( event ) {
             selectObject(INTERSECTED);
         } else {
             deselectObject();
+            clearHistoryPreviewHelpers();
         }
         
         isTouchDragging = false;
