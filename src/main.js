@@ -1739,13 +1739,21 @@ function render() {
         raycaster.setFromCamera(mouse, currentCamera);
         const intersects = raycaster.intersectObjects(meshObjects);
 
+        // Pomocná funkce: vrací true, jen pokud je objekt i všichni jeho předci viditelní.
+        const isFullyVisible = (obj) => {
+            let o = obj;
+            while (o) { if (!o.visible) return false; o = o.parent; }
+            return true;
+        };
+
         // Filtrujeme průsečíky, které leží na ořezané (neviditelné) straně clippingPlanes.
         // Materiály používají clipIntersection: true → fragment je NEVIDITELNÝ jen pokud leží
         // vně VŠECH rovin zároveň. Bod je tedy VIDITELNÝ pokud leží uvnitř alespoň jedné roviny
         // (distanceToPoint >= 0 pro alespoň jednu rovinu).
+        // Zároveň přeskakujeme skryté objekty (visible = false).
         const visibleIntersects = (renderer.localClippingEnabled && clipPlanes.length > 0)
-            ? intersects.filter(hit => clipPlanes.some(plane => plane.distanceToPoint(hit.point) >= 0))
-            : intersects;
+            ? intersects.filter(hit => isFullyVisible(hit.object) && clipPlanes.some(plane => plane.distanceToPoint(hit.point) >= 0))
+            : intersects.filter(hit => isFullyVisible(hit.object));
 
         if (visibleIntersects.length > 0) { // Myš je nad viditelnou částí objektu
             if (INTERSECTED != visibleIntersects[0].object) { 
