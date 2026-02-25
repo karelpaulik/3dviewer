@@ -46,6 +46,7 @@ let isTouchScreen;
 
 let selectionHelper;
 let axesHelperObject = null; // Reference na axes helper objekt ve scéně
+let raycastArrowHelper = null; // ArrowHelper pro vizualizaci raycasting paprsku
 let isTransformDragging = false;
 let orthoHalfSize = 500; // Polovelikost frustumu ortografické kamery v world units (dynamicky přepočítána po načtení modelu)
 let previousTransformState = null; // Uložení předchozího stavu pro undo
@@ -101,6 +102,8 @@ const viewProp = {
     transformMode: 'translate', // transform mode: translate, rotate, scale
     showAxesHelper: false, // Zobrazit / skrýt axes helper
     axesHelperSize: 100,   // Velikost axes helperu
+    showRaycastHelper: false, // Zobrazit / skrýt raycasting helper (ArrowHelper)
+    raycastHelperSize: 20000,  // Délka paprsku raycasting helperu
     // Group Selection
     addToMulti: function() { addCurrentToMultiSelect(); },
     isGroupTransformActive: false,
@@ -531,20 +534,22 @@ function addMainGui() {
             rotationFolder.add(viewProp, 'rotateZMinus').name('Rotate Z -90°');
             rotationFolder.close();
         const snapFolder = folderProp.addFolder("Snap");
-            snapFolder.add(viewProp, 'transformMode', ['translate', 'rotate', 'scale']).name('Mód').onChange(function(value) { transformControls.setMode(value); }).listen();
-            snapFolder.add(viewProp, 'snapEnabled').name('Snap aktivní').onChange(function() { applySnapSettings(); }).listen();
-            snapFolder.add(viewProp, 'snapTranslation', 1, 1000, 1).name('Translace').onChange(function() { applySnapSettings(); }).listen();
-            snapFolder.add(viewProp, 'snapRotationDeg', 1, 90, 1).name('Rotace (°)').onChange(function() { applySnapSettings(); }).listen();
-            snapFolder.add(viewProp, 'snapScale', 0.01, 2, 0.01).name('Měřítko').onChange(function() { applySnapSettings(); }).listen();
+            snapFolder.add(viewProp, 'transformMode', ['translate', 'rotate', 'scale']).name('Mode').onChange(function(value) { transformControls.setMode(value); }).listen();
+            snapFolder.add(viewProp, 'snapEnabled').name('Snap enabled').onChange(function() { applySnapSettings(); }).listen();
+            snapFolder.add(viewProp, 'snapTranslation', 1, 1000, 1).name('Translation').onChange(function() { applySnapSettings(); }).listen();
+            snapFolder.add(viewProp, 'snapRotationDeg', 1, 90, 1).name('Rotation (°)').onChange(function() { applySnapSettings(); }).listen();
+            snapFolder.add(viewProp, 'snapScale', 0.01, 2, 0.01).name('Scale').onChange(function() { applySnapSettings(); }).listen();
             snapFolder.close();
         const exportFolder = folderProp.addFolder("Export GLB");
             exportFolder.add(viewProp, 'exportAll').name('Export all models');
             exportFolder.add(viewProp, 'exportSelected').name('Export selected object');
             exportFolder.close();
-        const axesFolder = folderProp.addFolder("Axes Helper");
-            axesFolder.add(viewProp, 'showAxesHelper').name('Zobrazit osy').onChange(function() { updateAxesHelper(); }).listen();
-            axesFolder.add(viewProp, 'axesHelperSize', 1, 2000, 1).name('Velikost').onChange(function() { updateAxesHelper(); }).listen();
-            axesFolder.close();
+        const helpersFolder = folderProp.addFolder("Helpers");
+            helpersFolder.add(viewProp, 'showAxesHelper').name('axes').onChange(function() { updateAxesHelper(); }).listen();
+            helpersFolder.add(viewProp, 'axesHelperSize', 1, 2000, 1).name('axes size').onChange(function() { updateAxesHelper(); }).listen();
+            helpersFolder.add(viewProp, 'showRaycastHelper').name('raycast').onChange(function() { if (!viewProp.showRaycastHelper && raycastArrowHelper) { scene.remove(raycastArrowHelper); raycastArrowHelper = null; render(); } }).listen();
+            helpersFolder.add(viewProp, 'raycastHelperSize', 100, 100000, 100).name('raycast size').listen();
+            helpersFolder.close();
         const multiFolder = folderProp.addFolder("Group Selection");
             multiFolder.add(viewProp, 'isGroupTransformActive').name('Group transform active (*)').onChange(function(value) {
                 if (value) activateMultiSelect(); else deactivateMultiSelect();
@@ -1737,6 +1742,19 @@ function render() {
     // Nezvýrazňujeme objekty při dragování (rotaci/posouvání) nebo při transformaci
     if (!isTransformDragging && !isMouseOverGui && !isMouseDown && !isTouchDragging && viewProp.isSelectAllowed && !viewProp.isGroupTransformActive) {      
         raycaster.setFromCamera(mouse, currentCamera);
+        // Raycasting ArrowHelper – vizualizace paprsku pro ladění
+        if (viewProp.showRaycastHelper) {
+            if (raycastArrowHelper) scene.remove(raycastArrowHelper);
+            raycastArrowHelper = new THREE.ArrowHelper(
+                raycaster.ray.direction,
+                raycaster.ray.origin,
+                viewProp.raycastHelperSize, // délka paprsku
+                0xff0000, // červená barva
+                20,      // délka šipky
+                10     // šířka šipky
+            );
+            scene.add(raycastArrowHelper);
+        }
         const intersects = raycaster.intersectObjects(meshObjects);
 
         // Pomocná funkce: vrací true, jen pokud je objekt i všichni jeho předci viditelní.
