@@ -745,18 +745,18 @@ function changeColor(obj, color) {
 
 function setDefPosRotScale(obj) {
     if (!obj) return;
-    obj.position.set(obj.initPosition.x, obj.initPosition.y, obj.initPosition.z);
-    obj.rotation.set(obj.initRotation.x, obj.initRotation.y, obj.initRotation.z);
-    obj.scale.set(obj.initScale.x, obj.initScale.y, obj.initScale.z);
+    obj.position.set(obj.userData.initPosition.x, obj.userData.initPosition.y, obj.userData.initPosition.z);
+    obj.rotation.set(obj.userData.initRotation.x, obj.userData.initRotation.y, obj.userData.initRotation.z);
+    obj.scale.set(obj.userData.initScale.x, obj.userData.initScale.y, obj.userData.initScale.z);
     render();
 }
 
 function resetWholeModel() {
     scene.traverse(function(child) {
-        if (child.initPosition && child.initRotation && child.initScale) {
-            child.position.copy(child.initPosition);
-            child.rotation.copy(child.initRotation);
-            child.scale.copy(child.initScale);
+        if (child.userData.initPosition && child.userData.initRotation && child.userData.initScale) {
+            child.position.copy(child.userData.initPosition);
+            child.rotation.copy(child.userData.initRotation);
+            child.scale.copy(child.userData.initScale);
         }
     });
     
@@ -1392,12 +1392,10 @@ function loadModel(model, name, scale, colored) {
                 }
                 const mesh = new THREE.Mesh(geometry, materials);					
                 
-                // Definice výchozích hodnot přímo na objektu (náhrada za prototypy)
-                mesh.initPosition = { x: 0, y: 0, z: 0 };
-                mesh.initRotation = { x: -Math.PI/2, y: 0, z: 0 };
-                mesh.initScale = { x: 1, y: 1, z: 1 };
-                
-                setDefPosRotScale(mesh);
+                // Definice výchozích hodnot v userData (Three.js best practice)
+                mesh.userData.initPosition = { x: 0, y: 0, z: 0 };
+                mesh.userData.initRotation = { x: -Math.PI/2, y: 0, z: 0 };
+                mesh.userData.initScale = { x: 1, y: 1, z: 1 };
                 mesh.name = fileNameWithoutExtension(model);
                 scene.add( mesh );	
                 console.log(mesh);
@@ -1435,10 +1433,10 @@ function loadGlbModel(model, name, scale, colored) {
 
             const meshes = [];
             gltf.scene.traverse(function (child) {
-                // Uložení počátečních hodnot pro všechny objekty (Group, Object3D, Mesh)
-                child.initPosition = child.position.clone();
-                child.initRotation = child.rotation.clone();
-                child.initScale = child.scale.clone();
+                // Uložení počátečních hodnot v userData pro všechny objekty (Group, Object3D, Mesh)
+                child.userData.initPosition = child.position.clone();
+                child.userData.initRotation = child.rotation.clone();
+                child.userData.initScale = child.scale.clone();
                 
                 if (child.isMesh) {
                     if (child.material) {
