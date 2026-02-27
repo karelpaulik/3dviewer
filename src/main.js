@@ -2492,13 +2492,22 @@ function assemblyDeleteStep() {
         console.log('[Assembly] No step to delete – select a step using the playback controls.');
         return;
     }
-    const removed = assemblyData.steps.splice(ei, 1)[0];
+    const step = assemblyData.steps[ei];
+    if (!confirm(`Delete step "${step.name}"?`)) return;
+
+    // Reset objects in this step to their init positions before removing the step
+    step.transformations.forEach(t => {
+        t.objectRef.position.set(t.initPosition.x, t.initPosition.y, t.initPosition.z);
+    });
+
+    assemblyData.steps.splice(ei, 1);
     assemblyData.steps.forEach((s, i) => { s.id = i + 1; });
     if (assemblyState.currentStepIndex >= assemblyData.steps.length) {
         assemblyState.currentStepIndex = assemblyData.steps.length - 1;
     }
     updateAssemblyGuiInfo();
-    console.log(`[Assembly] Step "${removed.name}" deleted.`);
+    render();
+    console.log(`[Assembly] Step "${step.name}" deleted, objects reset to init positions.`);
 }
 
 // Move the edit step one position up (earlier) in the sequence.
