@@ -25,6 +25,39 @@ const hiddenObjects = [];
 let temporarilyShownObjects = [];
 const loadedModels = []; // Pole pro uchování načtených GLB modelů (root scene objekty)
 
+// ===== Assembly / Disassembly Workflow =====
+const assemblyData = {
+    modelFile: '',
+    description: '',
+    steps: []  // { id, name, description, transformations: [{ objectRef, initPosition, finalPosition }] }
+};
+
+const assemblyState = {
+    editMode: false,       // When true, object drags are recorded into the active edit step
+    currentStepIndex: -1,  // -1 = fully assembled; N = steps[0..N] have been applied (also used as the edit target)
+};
+
+let assemblyAnimation = null;  // requestAnimationFrame handle for step animation
+
+const assemblyGui = {
+    stepInfo: '\u2013 no step \u2013',
+    editMode: false,
+    editStepInfo: '\u2013 no step \u2013',
+    newStep: function() { assemblyNewStep(); },
+    stepName: '',
+    stepDescription: '',
+    moveStepUp: function() { assemblyMoveStepUp(); },
+    moveStepDown: function() { assemblyMoveStepDown(); },
+    deleteStep: function() { assemblyDeleteStep(); },
+    removeObjectFromStep: function() { assemblyRemoveObjectFromStep(); },
+    resetToStart: function() { assemblyResetToStart(); },
+    prevStep: function() { assemblyPrevStep(); },
+    nextStep: function() { assemblyNextStep(); },
+    resetToFinish: function() { assemblyResetToFinish(); },
+    animationDuration: 600,
+};
+// ============================================
+
 const gui = new GUI();				
 let lastSelectedObject = null;
 const lastSelectedMeshes = [];
@@ -173,6 +206,8 @@ if (import.meta.env.DEV) {
     //OK, reference na objekty jsou dostupné v konzoli pro ladění
     window.meshObjects = meshObjects;
     window.clipPlanes = clipPlanes;
+    window.assemblyData = assemblyData;
+    window.assemblyState = assemblyState;
 
     //NOK - toto není reference
     window.transformControls = transformControls;
@@ -305,6 +340,10 @@ function init() {
                     obj.rotation.y = roundNearZero(obj.rotation.y);
                     obj.rotation.z = roundNearZero(obj.rotation.z);
                 }
+                // Zaznamenat transformaci v assembly edit modu
+                if (assemblyState.editMode && assemblyState.currentStepIndex >= 0 && previousTransformState && transformControls.object) {
+                    recordAssemblyTransformation(previousTransformState.object, previousTransformState.position);
+                }
                 // Přepočítáme BoxHelpery po dokončení skupinové transformace
                 if (viewProp.isGroupTransformActive) {
                     multiSelectionHelpers.forEach((h, i) => {
@@ -420,6 +459,26 @@ function init() {
 
             case 'ArrowDown': // select previous selected object
                 selectPrevious();
+                break;
+
+            case 'PageUp':
+                assemblyPrevStep();
+                event.preventDefault();
+                break;
+
+            case 'PageDown':
+                assemblyNextStep();
+                event.preventDefault();
+                break;
+
+            case 'Home':
+                assemblyResetToStart();
+                event.preventDefault();
+                break;
+
+            case 'End':
+                assemblyResetToFinish();
+                event.preventDefault();
                 break;
 
             case 'p':
@@ -572,6 +631,8 @@ function addMainGui() {
         viewProp.fullscreen = !!document.fullscreenElement;
         if (fsCtrl && fsCtrl.updateDisplay) fsCtrl.updateDisplay();
     });
+
+    addAssemblyGui();
 }	
 
 function refreshSelectedObjGui(obj) {
@@ -2066,6 +2127,333 @@ function separateMesh(meshToSeparate) {
     });
 
     render();
+}
+
+// ===== Assembly / Disassembly Functions =========================================================
+
+function addAssemblyGui() {
+    const assemblyFolder = gui.addFolder('Assembly Workflow');
+
+    // --- Playback ---
+    const playbackFolder = assemblyFolder.addFolder('Playback');
+    playbackFolder.add(assemblyGui, 'stepInfo').name('Status').disable().listen();
+    playbackFolder.add(assemblyGui, 'resetToStart').name('⏮  Reset to start  [Home]');
+    playbackFolder.add(assemblyGui, 'prevStep').name('◀  Previous step  [PageUp]');
+    playbackFolder.add(assemblyGui, 'nextStep').name('Next step  ▶  [PageDown]');
+    playbackFolder.add(assemblyGui, 'resetToFinish').name('Reset to finish  ⏭  [End]');
+    playbackFolder.add(assemblyGui, 'animationDuration', 0, 2000, 50).name('Animation (ms)');
+    playbackFolder.open();
+
+    // --- Edit ---
+    const editFolder = assemblyFolder.addFolder('Edit');
+    editFolder.add(assemblyGui, 'editMode').name('Edit mode').onChange(function(value) {
+        assemblyState.editMode = value;
+        editControls.forEach(c => value ? c.enable() : c.disable());
+        console.log(`[Assembly] Edit mode: ${value}`);
+    }).listen();
+    editFolder.add(assemblyGui, 'editStepInfo').name('Active step').disable().listen();
+
+    // Controls that are enabled only in edit mode
+    const editControls = [];
+    editControls.push( editFolder.add(assemblyGui, 'newStep').name('+ New step') );
+    editControls.push( editFolder.add(assemblyGui, 'deleteStep').name('✕  Delete step') );
+    editControls.push( editFolder.add(assemblyGui, 'stepName').name('Step name').onFinishChange(function(value) {
+        const ci = assemblyState.currentStepIndex;
+        if (ci >= 0 && ci < assemblyData.steps.length) {
+            assemblyData.steps[ci].name = value;
+            updateAssemblyGuiInfo();
+        }
+    }).listen() );
+    editControls.push( editFolder.add(assemblyGui, 'stepDescription').name('Description').onFinishChange(function(value) {
+        const ci = assemblyState.currentStepIndex;
+        if (ci >= 0 && ci < assemblyData.steps.length) {
+            assemblyData.steps[ci].description = value;
+        }
+    }).listen() );
+    editControls.push( editFolder.add(assemblyGui, 'moveStepUp').name('↑  Move step up') );
+    editControls.push( editFolder.add(assemblyGui, 'moveStepDown').name('↓  Move step down') );
+    editControls.push( editFolder.add(assemblyGui, 'removeObjectFromStep').name('✕  Remove object from step') );
+
+    // Start disabled (editMode defaults to false)
+    editControls.forEach(c => c.disable());
+
+    editFolder.open();
+
+    assemblyFolder.open();
+    updateAssemblyGuiInfo();
+}
+
+function updateAssemblyGuiInfo() {
+    const n = assemblyData.steps.length;
+
+    // Playback status
+    if (assemblyState.currentStepIndex < 0) {
+        assemblyGui.stepInfo = `Assembled (${n} step${n === 1 ? '' : 's'})`;
+    } else {
+        const step = assemblyData.steps[assemblyState.currentStepIndex];
+        assemblyGui.stepInfo = `Step ${assemblyState.currentStepIndex + 1}/${n}: ${step.name}`;
+    }
+
+    // Edit status — mirrors current playback step
+    const ei = assemblyState.currentStepIndex;
+    if (ei >= 0 && ei < n) {
+        const es = assemblyData.steps[ei];
+        assemblyGui.editStepInfo = `Step ${ei + 1}/${n}: ${es.name} (${es.transformations.length} move${es.transformations.length === 1 ? '' : 's'})`;
+        assemblyGui.stepName = es.name;
+        assemblyGui.stepDescription = es.description;
+    } else {
+        assemblyGui.editStepInfo = '– assembled (select step ▶) –';
+        assemblyGui.stepName = '';
+        assemblyGui.stepDescription = '';
+    }
+}
+
+// Called at end of a TransformControls drag when editMode is active.
+// prevPos is the THREE.Vector3 position BEFORE the drag (from previousTransformState).
+function recordAssemblyTransformation(obj, prevPos) {
+    if (!obj || !prevPos) return;
+    const step = assemblyData.steps[assemblyState.currentStepIndex];
+    if (!step) return;
+
+    // Ignore trivial zero-moves
+    const dx = obj.position.x - prevPos.x;
+    const dy = obj.position.y - prevPos.y;
+    const dz = obj.position.z - prevPos.z;
+    if (Math.abs(dx) < 0.0001 && Math.abs(dy) < 0.0001 && Math.abs(dz) < 0.0001) return;
+
+    // Check if this object is already tracked in this step
+    const existing = step.transformations.find(t => t.objectRef === obj);
+    if (existing) {
+        // Keep original initPosition, only update the final destination
+        existing.finalPosition = { x: obj.position.x, y: obj.position.y, z: obj.position.z };
+    } else {
+        step.transformations.push({
+            objectRef: obj,
+            initPosition: { x: prevPos.x, y: prevPos.y, z: prevPos.z },
+            finalPosition: { x: obj.position.x, y: obj.position.y, z: obj.position.z },
+        });
+    }
+
+    console.log(`[Assembly] Krok ${step.id} "${step.name}": zaznamenán pohyb objektu "${obj.name}"`);
+    updateAssemblyGuiInfo();
+}
+
+// Animate all transformations in a step forward (disassembly) or backward (assembly).
+function animateAssemblyStep(transformations, forward, onComplete) {
+    if (assemblyAnimation) {
+        cancelAnimationFrame(assemblyAnimation);
+        assemblyAnimation = null;
+    }
+
+    const duration = assemblyGui.animationDuration;
+
+    // Instant move when duration === 0
+    if (duration <= 0) {
+        transformations.forEach(t => {
+            const target = forward ? t.finalPosition : t.initPosition;
+            t.objectRef.position.set(target.x, target.y, target.z);
+        });
+        if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) updateCrossSectionLines();
+        render();
+        if (onComplete) onComplete();
+        return;
+    }
+
+    const start = performance.now();
+    const startPositions = transformations.map(t => t.objectRef.position.clone());
+    const targetPositions = transformations.map(t => {
+        const p = forward ? t.finalPosition : t.initPosition;
+        return new THREE.Vector3(p.x, p.y, p.z);
+    });
+
+    function step(now) {
+        const elapsed = now - start;
+        const alpha = Math.min(elapsed / duration, 1);
+        // Smoothstep ease-in-out
+        const eased = alpha * alpha * (3 - 2 * alpha);
+
+        transformations.forEach((tr, i) => {
+            tr.objectRef.position.lerpVectors(startPositions[i], targetPositions[i], eased);
+        });
+
+        if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) updateCrossSectionLines();
+        render();
+
+        if (alpha < 1) {
+            assemblyAnimation = requestAnimationFrame(step);
+        } else {
+            assemblyAnimation = null;
+            if (onComplete) onComplete();
+        }
+    }
+
+    assemblyAnimation = requestAnimationFrame(step);
+}
+
+// Reset to the fully disassembled state (all steps applied).
+function assemblyResetToFinish() {
+    if (assemblyAnimation) {
+        cancelAnimationFrame(assemblyAnimation);
+        assemblyAnimation = null;
+    }
+    if (assemblyData.steps.length === 0) return;
+
+    // Apply every step's final positions instantly
+    assemblyData.steps.forEach(step => {
+        step.transformations.forEach(t => {
+            t.objectRef.position.set(t.finalPosition.x, t.finalPosition.y, t.finalPosition.z);
+        });
+    });
+
+    assemblyState.currentStepIndex = assemblyData.steps.length - 1;
+    updateAssemblyGuiInfo();
+    render();
+    if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) updateCrossSectionLines();
+    render();
+}
+
+// Reset every object to its original loaded position (fully assembled state).
+function assemblyResetToStart() {
+    if (assemblyAnimation) {
+        cancelAnimationFrame(assemblyAnimation);
+        assemblyAnimation = null;
+    }
+
+    // Return all objects to their initial positions by reversing all transformations
+    assemblyData.steps.forEach(step => {
+        step.transformations.forEach(t => {
+            t.objectRef.position.set(t.initPosition.x, t.initPosition.y, t.initPosition.z);
+        });
+    });
+
+    assemblyState.currentStepIndex = -1;
+    updateAssemblyGuiInfo();
+    render();
+    if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) updateCrossSectionLines();
+    render();
+}
+
+// Apply the next disassembly step (move objects to finalPosition).
+function assemblyNextStep() {
+    const nextIndex = assemblyState.currentStepIndex + 1;
+    if (nextIndex >= assemblyData.steps.length) {
+        console.log('[Assembly] No more steps – end of disassembly.');
+        return;
+    }
+
+    const step = assemblyData.steps[nextIndex];
+    if (step.transformations.length === 0) {
+        assemblyState.currentStepIndex = nextIndex;
+        updateAssemblyGuiInfo();
+        console.log(`[Assembly] → Step ${nextIndex + 1}: "${step.name}" (no moves)`);
+        return;
+    }
+
+    animateAssemblyStep(step.transformations, true, () => {
+        assemblyState.currentStepIndex = nextIndex;
+        updateAssemblyGuiInfo();
+        console.log(`[Assembly] → Step ${nextIndex + 1}/${assemblyData.steps.length}: "${step.name}"`);
+    });
+}
+
+// Undo the current disassembly step (move objects back to initPosition).
+function assemblyPrevStep() {
+    if (assemblyState.currentStepIndex < 0) {
+        console.log('[Assembly] Already at the start.');
+        return;
+    }
+
+    const step = assemblyData.steps[assemblyState.currentStepIndex];
+    if (step.transformations.length === 0) {
+        assemblyState.currentStepIndex--;
+        updateAssemblyGuiInfo();
+        return;
+    }
+
+    animateAssemblyStep(step.transformations, false, () => {
+        assemblyState.currentStepIndex--;
+        updateAssemblyGuiInfo();
+        const label = assemblyState.currentStepIndex < 0
+            ? 'Assembled'
+            : `Step ${assemblyState.currentStepIndex + 1}: "${assemblyData.steps[assemblyState.currentStepIndex].name}"`;
+        console.log(`[Assembly] ← Back → ${label}`);
+    });
+}
+
+// Create a new empty step and make it the active edit step.
+function assemblyNewStep() {
+    const id = assemblyData.steps.length + 1;
+    assemblyData.steps.push({
+        id: id,
+        name: `Step ${id}`,
+        description: '',
+        transformations: [],
+    });
+    // New step becomes the active playback/edit step
+    assemblyState.currentStepIndex = assemblyData.steps.length - 1;
+    updateAssemblyGuiInfo();
+    console.log(`[Assembly] New step ${id} created.`);
+}
+
+// Remove the currently selected object from the current step's transformations.
+function assemblyRemoveObjectFromStep() {
+    const ci = assemblyState.currentStepIndex;
+    if (ci < 0 || ci >= assemblyData.steps.length) {
+        console.log('[Assembly] No step selected – select a step using the playback controls.');
+        return;
+    }
+    if (!lastSelectedObject) {
+        console.log('[Assembly] No object selected.');
+        return;
+    }
+    const step = assemblyData.steps[ci];
+    const before = step.transformations.length;
+    step.transformations = step.transformations.filter(t => t.objectRef !== lastSelectedObject);
+    const removed = before - step.transformations.length;
+    if (removed > 0) {
+        console.log(`[Assembly] Object "${lastSelectedObject.name}" removed from step "${step.name}".`);
+    } else {
+        console.log(`[Assembly] Object "${lastSelectedObject.name}" not found in step "${step.name}".`);
+    }
+    updateAssemblyGuiInfo();
+}
+
+// Delete the currently selected edit step.
+function assemblyDeleteStep() {
+    const ei = assemblyState.currentStepIndex;
+    if (ei < 0 || ei >= assemblyData.steps.length) {
+        console.log('[Assembly] No step to delete – select a step using the playback controls.');
+        return;
+    }
+    const removed = assemblyData.steps.splice(ei, 1)[0];
+    assemblyData.steps.forEach((s, i) => { s.id = i + 1; });
+    if (assemblyState.currentStepIndex >= assemblyData.steps.length) {
+        assemblyState.currentStepIndex = assemblyData.steps.length - 1;
+    }
+    updateAssemblyGuiInfo();
+    console.log(`[Assembly] Step "${removed.name}" deleted.`);
+}
+
+// Move the edit step one position up (earlier) in the sequence.
+function assemblyMoveStepUp() {
+    const ei = assemblyState.currentStepIndex;
+    if (ei <= 0) return;
+    [assemblyData.steps[ei], assemblyData.steps[ei - 1]] = [assemblyData.steps[ei - 1], assemblyData.steps[ei]];
+    assemblyData.steps.forEach((s, i) => { s.id = i + 1; });
+    assemblyState.currentStepIndex = ei - 1;
+    updateAssemblyGuiInfo();
+    console.log(`[Assembly] Step moved up → position ${assemblyState.currentStepIndex + 1}.`);
+}
+
+// Move the edit step one position down (later) in the sequence.
+function assemblyMoveStepDown() {
+    const ei = assemblyState.currentStepIndex;
+    if (ei < 0 || ei >= assemblyData.steps.length - 1) return;
+    [assemblyData.steps[ei], assemblyData.steps[ei + 1]] = [assemblyData.steps[ei + 1], assemblyData.steps[ei]];
+    assemblyData.steps.forEach((s, i) => { s.id = i + 1; });
+    assemblyState.currentStepIndex = ei + 1;
+    updateAssemblyGuiInfo();
+    console.log(`[Assembly] Step moved down → position ${assemblyState.currentStepIndex + 1}.`);
 }
 
 // ---- Context menus (RMB) -----------------------------------------------------------------------
