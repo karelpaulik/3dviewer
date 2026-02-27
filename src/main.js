@@ -725,7 +725,7 @@ function initLoad() {
                 loadModel(fileUrl, fileName, 0.001, true).then( (result) => {
                     recalibrateOrthoCamera();
                     fitView();
-                    console.log(`Model ${fileName} byl úspěšně načten.`);
+                    console.log(`Model ${fileName} loaded successfully.`);
                 }).catch((error) => {
                     console.error(`Chyba při načítání modelu ${fileName}:`, error);
                 });
@@ -735,7 +735,7 @@ function initLoad() {
                 loadGlbModel(fileUrl, fileName, 0.001, true).then( (result) => {
                     recalibrateOrthoCamera();
                     fitView();
-                    console.log(`Model ${fileName} byl úspěšně načten.`);   
+                    console.log(`Model ${fileName} loaded successfully.`);   
                 }).catch((error) => {
                     console.error(`Chyba při načítání modelu ${fileName}:`, error);
                 });
@@ -870,7 +870,7 @@ function savePreviousTransformState(obj) {
 
 function undoLastTransform(obj) {
     if (!obj || !previousTransformState || previousTransformState.object !== obj) {
-        console.log("Není co vrátit zpět.");
+        console.log("Nothing to undo.");
         return;
     }
     
@@ -878,7 +878,7 @@ function undoLastTransform(obj) {
     obj.rotation.copy(previousTransformState.rotation);
     obj.scale.copy(previousTransformState.scale);
     
-    console.log("Transformace vrácena zpět.");
+    console.log("Transformation undone.");
     previousTransformState = null; // Vymažeme uložený stav
     render();
 }
@@ -1210,7 +1210,7 @@ function updateAxesHelper() {
 function addCurrentToMultiSelect() {
     if (!lastSelectedObject) return;
     if (viewProp.isGroupTransformActive) {
-        console.log('Multi-výběr je aktivní – nejprve deaktivujte skupinu.');
+        console.log('Multi-selection is active – deactivate the group first.');
         return;
     }
     const obj = lastSelectedObject;
@@ -1221,7 +1221,7 @@ function addCurrentToMultiSelect() {
         multiOriginalParents.splice(idx, 1);
         scene.remove(multiSelectionHelpers[idx]);
         multiSelectionHelpers.splice(idx, 1);
-        console.log(`Multi-výběr: odebrán "${obj.name}", zbývá: ${selectedObjects.length}`);
+        console.log(`Multi-selection: removed "${obj.name}", remaining: ${selectedObjects.length}`);
     } else {
         // Přidat do multi-výběru
         selectedObjects.push(obj);
@@ -1229,7 +1229,7 @@ function addCurrentToMultiSelect() {
         const h = new THREE.BoxHelper(obj, 0x00ccff);
         scene.add(h);
         multiSelectionHelpers.push(h);
-        console.log(`Multi-výběr: přidán "${obj.name}", celkem: ${selectedObjects.length}`);
+        console.log(`Multi-selection: added "${obj.name}", total: ${selectedObjects.length}`);
     }
     render();
 }
@@ -1237,7 +1237,7 @@ function addCurrentToMultiSelect() {
 // Aktivuje skupinovou transformaci: reparentuje objekty do pivotu, TC se přepne na pivot.
 function activateMultiSelect() {
     if (selectedObjects.length < 2) {
-        console.log('Multi-výběr: je potřeba alespoň 2 objekty (klávesa +).');
+        console.log('Multi-selection: at least 2 objects required (key +).');
         return;
     }
     if (viewProp.isGroupTransformActive) return;
@@ -1265,7 +1265,7 @@ function activateMultiSelect() {
     // Připojíme TC k pivotu
     transformControls.attach(pivotObject);
     viewProp.isGroupTransformActive = true;
-    console.log(`Multi-výběr aktivován, ${selectedObjects.length} objektů.`);
+    console.log(`Multi-selection activated, ${selectedObjects.length} objects.`);
     render();
 }
 
@@ -1291,7 +1291,7 @@ function deactivateMultiSelect() {
     multiSelectionHelpers.forEach((h, i) => {
         if (selectedObjects[i]) h.setFromObject(selectedObjects[i]);
     });
-    console.log('Multi-výběr deaktivován. Seznam objektů zachován.');
+    console.log('Multi-selection deactivated. Object list preserved.');
     render();
 }
 
@@ -1302,7 +1302,7 @@ function clearMultiSelect() {
     multiSelectionHelpers.length = 0;
     selectedObjects.length = 0;
     multiOriginalParents.length = 0;
-    console.log('Multi-výběr vyčištěn.');
+    console.log('Multi-selection cleared.');
     render();
 }
 
@@ -1311,7 +1311,7 @@ function clearMultiSelect() {
 // Uloží aktuální selectedObjects do groupHistory jako pojmenovaný snapshot.
 function addCurrentGroupToHistory() {
     if (selectedObjects.length === 0) {
-        console.log('Group History: seznam je prázdný, nelze uložit.');
+        console.log('Group History: list is empty, cannot save.');
         return;
     }
     const names = selectedObjects.map(o => o.name || 'Unnamed').join(', ');
@@ -1322,13 +1322,13 @@ function addCurrentGroupToHistory() {
     groupHistory.push(snapshot);
     groupHistoryIndex = groupHistory.length - 1;
     updateHistoryInfo();
-    console.log(`Group History: uložen snapshot "${snapshot.name}".`);
+    console.log(`Group History: snapshot "${snapshot.name}" saved.`);
 }
 
 // Přejde v historii o dir kroků (-1 = předchozí, +1 = následující).
 function navigateGroupHistory(dir) {
     if (groupHistory.length === 0) {
-        console.log('Group History: historie je prázdná.');
+        console.log('Group History: history is empty.');
         return;
     }
     groupHistoryIndex = Math.max(0, Math.min(groupHistory.length - 1, groupHistoryIndex + dir));
@@ -1357,7 +1357,7 @@ function clearHistoryPreviewHelpers() {
 // Obnoví selectedObjects ze záznamu na groupHistoryIndex.
 function restoreGroupFromHistory() {
     if (groupHistoryIndex < 0 || groupHistoryIndex >= groupHistory.length) {
-        console.log('Group History: žádný záznam k obnovení.');
+        console.log('Group History: no record to restore.');
         return;
     }
 
@@ -1383,14 +1383,14 @@ function restoreGroupFromHistory() {
         multiSelectionHelpers.push(h);
     });
 
-    console.log(`Group History: obnovena skupina "${snapshot.name}" (${selectedObjects.length} objektů).`);
+    console.log(`Group History: group "${snapshot.name}" restored (${selectedObjects.length} objects).`);
     render();
 }
 
 // Odstraní aktuální záznam z groupHistory.
 function removeFromGroupHistory() {
     if (groupHistoryIndex < 0 || groupHistoryIndex >= groupHistory.length) {
-        console.log('Group History: žádný záznam k odstranění.');
+        console.log('Group History: no record to delete.');
         return;
     }
     clearHistoryPreviewHelpers();
@@ -1410,7 +1410,7 @@ function removeFromGroupHistory() {
         });
         render();
     }
-    console.log(`Group History: odstraněn záznam "${removed.name}", zbývá: ${groupHistory.length}`);
+    console.log(`Group History: record "${removed.name}" deleted, remaining: ${groupHistory.length}`);
 }
 
 // Aktualizuje zobrazovaný text v GUI.
@@ -1566,13 +1566,13 @@ function hideObject(part) {
         const tempIndex = temporarilyShownObjects.indexOf(part);
         if (tempIndex !== -1) {
             temporarilyShownObjects.splice(tempIndex, 1);
-            console.log(`Objekt ${part.name || 'Unnamed'} byl odstraněn z temporarilyShownObjects.`);
+            console.log(`Object ${part.name || 'Unnamed'} removed from temporarilyShownObjects.`);
         }
         
         // Přidáme objekt do pole skrytých objektů, pokud tam ještě není
         if (!hiddenObjects.includes(part)) {
             hiddenObjects.push(part);
-            console.log(`Objekt ${part.name || 'Unnamed'} byl skryt.`);
+            console.log(`Object ${part.name || 'Unnamed'} hidden.`);
         }
         
         // Zrušíme selekci skrytého objektu
@@ -1594,7 +1594,7 @@ function showHiddenObjects() {
         // Projdeme všechny skryté objekty a zobrazíme je
         hiddenObjects.forEach(obj => {
             obj.visible = true;
-            console.log(`Objekt ${obj.name || 'Unnamed'} byl zobrazen.`);
+            console.log(`Object ${obj.name || 'Unnamed'} shown.`);
         });
         
         // Vyprázdníme pole skrytých objektů
@@ -1622,13 +1622,13 @@ function toggleHiddenObjects() {
         // Všechny objekty v hiddenObjects nastavíme jako neviditelné
         hiddenObjects.forEach(obj => {
             obj.visible = false;
-            console.log(`Objekt ${obj.name || 'Unnamed'} je skrytý.`);
+            console.log(`Object ${obj.name || 'Unnamed'} is hidden.`);
         });
         
         // Všechny objekty v temporarilyShownObjects nastavíme jako viditelné
         temporarilyShownObjects.forEach(obj => {
             obj.visible = true;
-            console.log(`Objekt ${obj.name || 'Unnamed'} je viditelný.`);
+            console.log(`Object ${obj.name || 'Unnamed'} is visible.`);
         });
         
         // Aktualizace průřezových čar
@@ -2234,7 +2234,7 @@ function recordAssemblyTransformation(obj, prevPos) {
         });
     }
 
-    console.log(`[Assembly] Krok ${step.id} "${step.name}": zaznamenán pohyb objektu "${obj.name}"`);
+    console.log(`[Assembly] Step ${step.id} "${step.name}": recorded movement of object "${obj.name}"`);
     updateAssemblyGuiInfo();
 }
 
