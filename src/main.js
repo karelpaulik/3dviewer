@@ -83,6 +83,7 @@ let raycastArrowHelper = null; // ArrowHelper pro vizualizaci raycasting paprsku
 let isTransformDragging = false;
 let orthoHalfSize = 500; // Polovelikost frustumu ortografické kamery v world units (dynamicky přepočítána po načtení modelu)
 let previousTransformState = null; // Uložení předchozího stavu pro undo
+let previousGroupTransformStates = []; // World positions of group objects before drag (for assembly recording)
 let isShiftHeld = false; // Pro manuální translation snap ve world space
 
 // --- Multi-výběr ---
@@ -323,8 +324,12 @@ function init() {
             isTransformDragging = true;
             orbitControls.enabled = false;
             // Uložíme předchozí stav před změnou
-            if (transformControls.object) {
-                savePreviousTransformState(transformControls.object);
+            if (transformControls.object && !viewProp.isGroupTransformActive) {
+                savePreviousTransformState();
+            }
+            // Pro group transform uložíme world pozice všech objektů skupiny
+            if (viewProp.isGroupTransformActive) {
+                savePreviousGroupTransformStates();
             }
         } else { // Dragování skončilo - setTimeout nutný, aby se onClick stihl vykonat s isTransformDragging = true
             setTimeout(() => {
@@ -341,8 +346,12 @@ function init() {
                     obj.rotation.z = roundNearZero(obj.rotation.z);
                 }
                 // Zaznamenat transformaci v assembly edit modu
-                if (assemblyState.editMode && assemblyState.currentStepIndex >= 0 && previousTransformState && transformControls.object) {
-                    recordAssemblyTransformation(previousTransformState.object, previousTransformState.position);
+                if (assemblyState.editMode && assemblyState.currentStepIndex >= 0) {
+                    if (viewProp.isGroupTransformActive && previousGroupTransformStates.length > 0) {
+                        recordGroupTransformations();
+                    } else if (previousTransformState && transformControls.object) {
+                        recordAssemblyTransformation();
+                    }
                 }
                 // Přepočítáme BoxHelpery po dokončení skupinové transformace
                 if (viewProp.isGroupTransformActive) {
@@ -858,7 +867,8 @@ function roundNearZero(value, epsilon = 1e-10) {
     return Math.abs(value) < epsilon ? 0 : value;
 }
 
-function savePreviousTransformState(obj) {
+function savePreviousTransformState() {
+    const obj = transformControls.object;
     if (!obj) return;
     previousTransformState = {
         object: obj,
@@ -866,6 +876,15 @@ function savePreviousTransformState(obj) {
         rotation: obj.rotation.clone(),
         scale: obj.scale.clone()
     };
+}
+
+// Analogous to savePreviousTransformState(), but for all objects in the active group.
+// Saves world-space positions (needed because objects are reparented into the pivot).
+function savePreviousGroupTransformStates() {
+    previousGroupTransformStates = selectedObjects.map((obj) => {
+        obj.updateWorldMatrix(true, false);
+        return { object: obj, worldPosition: new THREE.Vector3().setFromMatrixPosition(obj.matrixWorld) };
+    });
 }
 
 function undoLastTransform(obj) {
@@ -2208,9 +2227,57 @@ function updateAssemblyGuiInfo() {
     }
 }
 
+// Records assembly transformations for all objects in an active group selection.
+// Positions are computed in each object's original-parent local space to survive deactivation.
+function recordGroupTransformations() {
+    const step = assemblyData.steps[assemblyState.currentStepIndex];
+    if (!step) return;
+
+    previousGroupTransformStates.forEach((state, i) => {
+        const obj = state.object;
+        // Get current world position (object is still parented to pivot)
+        obj.updateWorldMatrix(true, false);
+        const finalWorld = new THREE.Vector3().setFromMatrixPosition(obj.matrixWorld);
+
+        // Convert both world positions to original parent's local space
+        const originalParent = multiOriginalParents[i];
+        const initLocal = state.worldPosition.clone();
+        const finalLocal = finalWorld.clone();
+        if (originalParent) {
+            originalParent.updateWorldMatrix(true, false);
+            const invParent = new THREE.Matrix4().copy(originalParent.matrixWorld).invert();
+            initLocal.applyMatrix4(invParent);
+            finalLocal.applyMatrix4(invParent);
+        }
+
+        // Ignore trivial zero-moves
+        const dx = finalLocal.x - initLocal.x;
+        const dy = finalLocal.y - initLocal.y;
+        const dz = finalLocal.z - initLocal.z;
+        if (Math.abs(dx) < 0.0001 && Math.abs(dy) < 0.0001 && Math.abs(dz) < 0.0001) return;
+
+        const existing = step.transformations.find(t => t.objectRef === obj);
+        if (existing) {
+            existing.finalPosition = { x: finalLocal.x, y: finalLocal.y, z: finalLocal.z };
+        } else {
+            step.transformations.push({
+                objectRef: obj,
+                initPosition: { x: initLocal.x, y: initLocal.y, z: initLocal.z },
+                finalPosition: { x: finalLocal.x, y: finalLocal.y, z: finalLocal.z },
+            });
+        }
+        console.log(`[Assembly] Step ${step.id} "${step.name}": recorded movement of object "${obj.name}" (group)`);
+    });
+
+    previousGroupTransformStates = [];
+    updateAssemblyGuiInfo();
+}
+
 // Called at end of a TransformControls drag when editMode is active.
 // prevPos is the THREE.Vector3 position BEFORE the drag (from previousTransformState).
-function recordAssemblyTransformation(obj, prevPos) {
+function recordAssemblyTransformation() {
+    const obj = previousTransformState?.object;
+    const prevPos = previousTransformState?.position;
     if (!obj || !prevPos) return;
     const step = assemblyData.steps[assemblyState.currentStepIndex];
     if (!step) return;
