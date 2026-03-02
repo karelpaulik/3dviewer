@@ -2093,10 +2093,10 @@ function onClick( event ) {
         INTERSECTED = null;
         deselectObject();
         clearHistoryPreviewHelpers();
-        // if (selectedObjects.length > 0) {
-        //     addCurrentGroupToHistory();
-        //     clearMultiSelect();
-        // }
+        if (selectedObjects.length > 0) {
+            addCurrentGroupToHistory();
+            clearMultiSelect();
+        }
     }
 }
 
@@ -2208,10 +2208,10 @@ function onTouchEnd( event ) {
             INTERSECTED = null;
             deselectObject();
             clearHistoryPreviewHelpers();
-            // if (selectedObjects.length > 0) {
-            //     addCurrentGroupToHistory();
-            //     clearMultiSelect();
-            // }
+            if (selectedObjects.length > 0) {
+                addCurrentGroupToHistory();
+                clearMultiSelect();
+            }
         }
         
         isTouchDragging = false;
