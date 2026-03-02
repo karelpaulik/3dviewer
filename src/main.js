@@ -2228,8 +2228,6 @@ function addAssemblyGui() {
 
     // Controls that are enabled only in edit mode
     const editControls = [];
-    editControls.push( editFolder.add(assemblyGui, 'newStep').name('+ New step') );
-    editControls.push( editFolder.add(assemblyGui, 'deleteStep').name('✕  Delete step') );
     editControls.push( editFolder.add(assemblyGui, 'stepName').name('Step name').onFinishChange(function(value) {
         const ci = assemblyState.currentStepIndex;
         if (ci >= 0 && ci < assemblyData.steps.length) {
@@ -2243,6 +2241,8 @@ function addAssemblyGui() {
             assemblyData.steps[ci].description = value;
         }
     }).listen() );
+    editControls.push( editFolder.add(assemblyGui, 'newStep').name('+ New step') );
+    editControls.push( editFolder.add(assemblyGui, 'deleteStep').name('✕  Delete step') );
     editControls.push( editFolder.add(assemblyGui, 'moveStepUp').name('↑  Move step up') );
     editControls.push( editFolder.add(assemblyGui, 'moveStepDown').name('↓  Move step down') );
     editControls.push( editFolder.add(assemblyGui, 'removeObjectFromStep').name('✕  Remove object from step') );
@@ -2264,18 +2264,18 @@ function updateAssemblyGuiInfo() {
         assemblyGui.stepInfo = `Assembled (${n} step${n === 1 ? '' : 's'})`;
     } else {
         const step = assemblyData.steps[assemblyState.currentStepIndex];
-        assemblyGui.stepInfo = `Step ${assemblyState.currentStepIndex + 1}/${n}: ${step.name}`;
+        assemblyGui.stepInfo = `${assemblyState.currentStepIndex + 1}/${n}: ${step.name}`;
     }
 
     // Edit status — mirrors current playback step
     const ei = assemblyState.currentStepIndex;
     if (ei >= 0 && ei < n) {
         const es = assemblyData.steps[ei];
-        assemblyGui.editStepInfo = `Step ${ei + 1}/${n}: ${es.name} (${es.transformations.length} move${es.transformations.length === 1 ? '' : 's'})`;
+        assemblyGui.editStepInfo = `${ei + 1}/${n}: ${es.name} (${es.transformations.length} move${es.transformations.length === 1 ? '' : 's'})`;
         assemblyGui.stepName = es.name;
         assemblyGui.stepDescription = es.description;
     } else {
-        assemblyGui.editStepInfo = '– assembled (select step ▶) –';
+        assemblyGui.editStepInfo = 'Assembled';
         assemblyGui.stepName = '';
         assemblyGui.stepDescription = '';
     }
