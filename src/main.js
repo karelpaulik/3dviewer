@@ -126,6 +126,7 @@ const viewProp = {
     rotateYMinus: function() { rotateAllModels('y', -Math.PI / 2) },
     rotateZPlus: function() { rotateAllModels('z', Math.PI / 2) },
     rotateZMinus: function() { rotateAllModels('z', -Math.PI / 2) },
+    bakeWholeModelRotation: function() { bakeWholeModelRotation(); },
     exportAll: function() { exportAllModels(); },
     exportSelected: function() { exportSelectedObject(); },
     transformSpace: true,  // true = world, false = local
@@ -600,6 +601,7 @@ function addMainGui() {
             rotationFolder.add(viewProp, 'rotateYMinus').name('Rotate Y -90°');
             rotationFolder.add(viewProp, 'rotateZPlus').name('Rotate Z +90°');
             rotationFolder.add(viewProp, 'rotateZMinus').name('Rotate Z -90°');
+            rotationFolder.add(viewProp, 'bakeWholeModelRotation').name('Bake rotation');
             rotationFolder.close();
         const snapFolder = folderProp.addFolder("Snap");
             snapFolder.add(viewProp, 'transformMode', ['translate', 'rotate', 'scale']).name('Mode').onChange(function(value) { transformControls.setMode(value); }).listen();
@@ -835,6 +837,58 @@ function resetWholeModel() {
         updateCrossSectionLines();
     }
     
+    render();
+}
+
+function bakeWholeModelRotation() {
+    loadedModels.forEach(function(model) {
+        if (!model) return;
+
+        // 1. Aktualizujeme world matice PŘED jakoukoliv změnou
+        model.updateMatrixWorld(true);
+
+        // 2. Sestavíme novou "modelWorld bez rotace" (stejná pozice a scale, nulová rotace)
+        const posQ = new THREE.Quaternion();
+        const posV = new THREE.Vector3();
+        const posS = new THREE.Vector3();
+        model.matrixWorld.decompose(posV, posQ, posS);
+
+        const modelWorldNoRot = new THREE.Matrix4().compose(posV, new THREE.Quaternion(), posS);
+        const modelWorldInv = model.matrixWorld.clone().invert();
+
+        // 3. Pro každý mesh: zapečeme rotaci přímo do geometrie
+        //    Vertex nesmí vizuálně změnit svoji world-space polohu.
+        //    newMeshWorld * new_vertex = oldMeshWorld * old_vertex
+        //    → geomTransform = newMeshWorld⁻¹ * oldMeshWorld
+        model.traverse(function(node) {
+            if (!node.isMesh || !node.geometry) return;
+
+            node.updateWorldMatrix(true, false);
+            const oldMeshWorld = node.matrixWorld.clone();
+
+            // Lokální řetěz od modelu k tomuto meshi (nezávislý na rotaci modelu)
+            const localChain = new THREE.Matrix4().multiplyMatrices(modelWorldInv, oldMeshWorld);
+
+            // World matice meshe po vynulování rotace modelu
+            const newMeshWorld = new THREE.Matrix4().multiplyMatrices(modelWorldNoRot, localChain);
+
+            // Transformace geometrie: přemapuje old local vertex → new local vertex
+            const geomTransform = new THREE.Matrix4().multiplyMatrices(
+                newMeshWorld.clone().invert(),
+                oldMeshWorld
+            );
+
+            node.geometry = node.geometry.clone(); // nesdílet geometrii s ostatními meshy
+            node.geometry.applyMatrix4(geomTransform);
+            node.geometry.computeBoundingSphere();
+            node.geometry.computeBoundingBox();
+        });
+
+        // 4. Teprve nyní vynulujeme rotaci modelu
+        //    Lokální transformy všech objektů v hierarchii zůstávají beze změny.
+        model.rotation.set(0, 0, 0);
+        model.updateMatrixWorld(true);
+    });
     render();
 }
 
