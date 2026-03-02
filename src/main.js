@@ -699,8 +699,8 @@ function addMainGui() {
             multiFolder.add(viewProp, 'isGroupTransformActive').name('Group transform active (*)').onChange(function(value) {
                 if (value) activateMultiSelect(); else deactivateMultiSelect();
             }).listen();
-            multiFolder.add(viewProp, 'addToMulti').name('Add/remove selected (/)');
             multiFolder.add(viewProp, 'multiSelectBoxPadding', 0, 200, 1).name('Box padding').listen();
+            multiFolder.add(viewProp, 'addToMulti').name('Add/remove selected (/)');
             multiFolder.add(viewProp, 'clearMulti').name('Clear group');
             multiFolder.add(viewProp, 'addGroupToHistory').name('Add to history');
             const historyFolder = multiFolder.addFolder('Group History');
