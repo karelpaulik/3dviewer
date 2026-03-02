@@ -2083,9 +2083,14 @@ function onClick( event ) {
         return; // Ignorujeme selekci při dragování
     }
 
-    if (INTERSECTED) {
-        selectObject(resolveCADSelection(INTERSECTED));
+    // Čerstvý raycast – INTERSECTED mohl být smazán během mousedown (isMouseDown=true blokuje render highlight)
+    const clickTarget = getFreshRaycastTarget();
+
+    if (clickTarget) {
+        INTERSECTED = clickTarget;
+        selectObject(resolveCADSelection(clickTarget));
     } else {
+        INTERSECTED = null;
         deselectObject();
         clearHistoryPreviewHelpers();
         // if (selectedObjects.length > 0) {
@@ -2129,6 +2134,21 @@ function onTouchMove( event ) {
 function isMouseOnGUI(event) { // return: true/false
     const element = document.elementFromPoint(event.clientX, event.clientY);
     return gui.domElement.contains(element);
+}
+
+// Provádí čerstvý raycast a vrací nejblíže ležící viditelný mesh pod kurzorem, nebo null.
+function getFreshRaycastTarget() {
+    raycaster.setFromCamera(mouse, currentCamera);
+    const intersects = raycaster.intersectObjects(meshObjects);
+    const isFullyVisible = (obj) => {
+        let o = obj;
+        while (o) { if (!o.visible) return false; o = o.parent; }
+        return true;
+    };
+    const visible = (renderer.localClippingEnabled && clipPlanes.length > 0)
+        ? intersects.filter(hit => isFullyVisible(hit.object) && clipPlanes.some(plane => plane.distanceToPoint(hit.point) >= 0))
+        : intersects.filter(hit => isFullyVisible(hit.object));
+    return visible.length > 0 ? visible[0].object : null;
 }
 
 function isTouchOnGUI(event) { // return: true/false
@@ -2179,9 +2199,13 @@ function onTouchEnd( event ) {
             return;
         }
 
-        if (INTERSECTED) {
-            selectObject(resolveCADSelection(INTERSECTED));
+        // Čerstvý raycast – stejný důvod jako u onClick (INTERSECTED mohl být smazán)
+        const touchTarget = getFreshRaycastTarget();
+        if (touchTarget) {
+            INTERSECTED = touchTarget;
+            selectObject(resolveCADSelection(touchTarget));
         } else {
+            INTERSECTED = null;
             deselectObject();
             clearHistoryPreviewHelpers();
             // if (selectedObjects.length > 0) {
