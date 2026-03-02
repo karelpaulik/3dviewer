@@ -139,6 +139,7 @@ const viewProp = {
     axesHelperSize: 100,   // Velikost axes helperu
     showRaycastHelper: false, // Zobrazit / skrýt raycasting helper (ArrowHelper)
     raycastHelperSize: 20000,  // Délka paprsku raycasting helperu
+    cadSelection: true, // CAD selection: true = vybere pojmenovaného předka meshe, false = vybere mesh přímo
     // Group Selection
     addToMulti: function() { addCurrentToMultiSelect(); },
     isGroupTransformActive: false,
@@ -566,6 +567,7 @@ function addMainGui() {
             }
         }).listen();
         folderProp.add(viewProp, 'isSelectAllowed').name('Allow selection').listen();
+        folderProp.add(viewProp, 'cadSelection').name('CAD selection').listen();
         folderProp.add(viewProp, 'transformSpace').name('Transform: World space').onChange(function(value) {
             transformControls.setSpace( value ? 'world' : 'local' );
         }).listen();
@@ -1792,6 +1794,22 @@ function highlightObject(object) {
     }
 }
 
+// Pokud je cadSelection zapnutý, vrátí nejbližšího pojmenovaného předka (nebo mesh samotný, pokud žádný není).
+// Pokud je cadSelection vypnutý, vrátí objekt beze změny.
+function resolveCADSelection(object) {
+    if (!viewProp.cadSelection) return object;
+    // Začínáme od rodiče meshe
+    let candidate = object.parent;
+    while (candidate) {
+        // Konec hierarchie – vraťme naposledy nalezeného pojmenovaného nebo samotný mesh
+        if (!candidate.parent) break;
+        if (candidate.name && candidate.name.trim() !== '') return candidate;
+        candidate = candidate.parent;
+    }
+    // Žádný pojmenovaný předek nenalezen – vrátíme původní mesh
+    return object;
+}
+
 // Funkce pro vypnutí zvýraznění (Černá barva + Schování helperu)
 function clearHighlight() {
     if (!INTERSECTED) return;
@@ -1992,7 +2010,7 @@ function onClick( event ) {
     }
 
     if (INTERSECTED) {
-        selectObject(INTERSECTED);
+        selectObject(resolveCADSelection(INTERSECTED));
     } else {
         deselectObject();
         clearHistoryPreviewHelpers();
@@ -2084,7 +2102,7 @@ function onTouchEnd( event ) {
         }
 
         if (INTERSECTED) {
-            selectObject(INTERSECTED);
+            selectObject(resolveCADSelection(INTERSECTED));
         } else {
             deselectObject();
             clearHistoryPreviewHelpers();
