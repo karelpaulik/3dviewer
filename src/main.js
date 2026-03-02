@@ -140,6 +140,7 @@ const viewProp = {
     showRaycastHelper: false, // Zobrazit / skrýt raycasting helper (ArrowHelper)
     raycastHelperSize: 20000,  // Délka paprsku raycasting helperu
     cadSelection: true, // CAD selection: true = vybere pojmenovaného předka meshe, false = vybere mesh přímo
+    multiSelectBoxPadding: 3, // Rozšíření PaddedBoxHelperu pro multiselect (world-units)
     // Group Selection
     addToMulti: function() { addCurrentToMultiSelect(); },
     isGroupTransformActive: false,
@@ -225,6 +226,62 @@ render();
 initLoad();
 
 // Funkce----------------------------------------------------------------------------------------------------------------
+
+/**
+ * PaddedBoxHelper – stejné chování jako THREE.BoxHelper, ale s nastavitelným
+ * rozšířením (padding) na všech šesti stranách ohraničujícího boxu.
+ *
+ * @param {THREE.Object3D} object  – objekt, jehož bounding-box se zobrazuje
+ * @param {number|string}  color   – barva drátového rámečku (výchozí 0xffff00)
+ * @param {number}         padding – rozšíření boxu ve world-units na každé straně (výchozí 0)
+ */
+class PaddedBoxHelper extends THREE.LineSegments {
+    constructor(object, color = 0xffff00, padding = 0) {
+        const indices = new Uint16Array([0,1, 1,2, 2,3, 3,0,  4,5, 5,6, 6,7, 7,4,  0,4, 1,5, 2,6, 3,7]);
+        const positions = new Float32Array(8 * 3);
+        const geometry = new THREE.BufferGeometry();
+        geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        super(geometry, new THREE.LineBasicMaterial({ color, toneMapped: false }));
+        this.object  = object;
+        this.padding = padding;
+        this.type    = 'PaddedBoxHelper';
+        this.matrixAutoUpdate = false;
+        this.update();
+    }
+
+    update(object) {
+        if (object !== undefined) this.object = object;
+        if (this.object === undefined) return;
+        const box = new THREE.Box3().setFromObject(this.object);
+        if (box.isEmpty()) return;
+        if (this.padding !== 0) box.expandByScalar(this.padding);
+        const { min, max } = box;
+        const arr = this.geometry.attributes.position.array;
+        arr[ 0]=max.x; arr[ 1]=max.y; arr[ 2]=max.z;
+        arr[ 3]=min.x; arr[ 4]=max.y; arr[ 5]=max.z;
+        arr[ 6]=min.x; arr[ 7]=min.y; arr[ 8]=max.z;
+        arr[ 9]=max.x; arr[10]=min.y; arr[11]=max.z;
+        arr[12]=max.x; arr[13]=max.y; arr[14]=min.z;
+        arr[15]=min.x; arr[16]=max.y; arr[17]=min.z;
+        arr[18]=min.x; arr[19]=min.y; arr[20]=min.z;
+        arr[21]=max.x; arr[22]=min.y; arr[23]=min.z;
+        this.geometry.attributes.position.needsUpdate = true;
+        this.geometry.computeBoundingSphere();
+    }
+
+    setFromObject(object) {
+        this.object = object;
+        this.update();
+        return this;
+    }
+
+    dispose() {
+        this.geometry.dispose();
+        this.material.dispose();
+    }
+}
+
 function init() {   
     //container
     container = document.createElement( 'div' );
@@ -627,6 +684,7 @@ function addMainGui() {
                 if (value) activateMultiSelect(); else deactivateMultiSelect();
             }).listen();
             multiFolder.add(viewProp, 'addToMulti').name('Add/remove selected (/)');
+            multiFolder.add(viewProp, 'multiSelectBoxPadding', 0, 200, 1).name('Box padding').listen();
             multiFolder.add(viewProp, 'clearMulti').name('Clear group');
             multiFolder.add(viewProp, 'addGroupToHistory').name('Add to history');
             const historyFolder = multiFolder.addFolder('Group History');
@@ -1301,7 +1359,7 @@ function addCurrentToMultiSelect() {
         // Přidat do multi-výběru
         selectedObjects.push(obj);
         multiOriginalParents.push(obj.parent);
-        const h = new THREE.BoxHelper(obj, 0x00ccff);
+        const h = new PaddedBoxHelper(obj, 0x00ccff, viewProp.multiSelectBoxPadding);
         scene.add(h);
         multiSelectionHelpers.push(h);
         console.log(`Multi-selection: added "${obj.name}", total: ${selectedObjects.length}`);
@@ -1413,7 +1471,7 @@ function navigateGroupHistory(dir) {
     clearHistoryPreviewHelpers();
     groupHistory[groupHistoryIndex].objects.forEach(obj => {
         if (!obj || !obj.parent) return;
-        const h = new THREE.BoxHelper(obj, 0xff8800);
+        const h = new PaddedBoxHelper(obj, 0xff8800, viewProp.multiSelectBoxPadding);
         scene.add(h);
         groupHistoryPreviewHelpers.push(h);
     });
@@ -1453,7 +1511,7 @@ function restoreGroupFromHistory() {
         if (!obj || !obj.parent) return;
         selectedObjects.push(obj);
         multiOriginalParents.push(obj.parent);
-        const h = new THREE.BoxHelper(obj, 0x00ccff);
+        const h = new PaddedBoxHelper(obj, 0x00ccff, viewProp.multiSelectBoxPadding);
         scene.add(h);
         multiSelectionHelpers.push(h);
     });
@@ -1479,7 +1537,7 @@ function removeFromGroupHistory() {
     if (groupHistoryIndex >= 0) {
         groupHistory[groupHistoryIndex].objects.forEach(obj => {
             if (!obj || !obj.parent) return;
-            const h = new THREE.BoxHelper(obj, 0xff8800);
+            const h = new PaddedBoxHelper(obj, 0xff8800, viewProp.multiSelectBoxPadding);
             scene.add(h);
             groupHistoryPreviewHelpers.push(h);
         });
