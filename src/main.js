@@ -442,6 +442,10 @@ function init() {
             case 'Escape':
                 deselectObject();
                 clearHistoryPreviewHelpers();
+                if (selectedObjects.length > 0) {
+                    addCurrentGroupToHistory();
+                    clearMultiSelect();
+                }
                 break;
             case 'q':
             case 'Q':
@@ -552,6 +556,18 @@ function init() {
             case 'p':
                 console.log("selectionHistory.length: ", selectionHistory.length);
                 selectionHistory.forEach( (obj, index) => {console.log(obj.name, index)}) ;
+                break;
+
+            case '7': // group history previous
+                navigateGroupHistory(-1);
+                break;
+
+            case '8': // group history restore
+                restoreGroupFromHistory();
+                break;
+
+            case '9': // group history next
+                navigateGroupHistory(+1);
                 break;
         }
     } );
@@ -689,9 +705,9 @@ function addMainGui() {
             multiFolder.add(viewProp, 'addGroupToHistory').name('Add to history');
             const historyFolder = multiFolder.addFolder('Group History');
                 historyFolder.add(viewProp, 'historyInfo').name('Entry').listen().disable();
-                historyFolder.add(viewProp, 'historyPrev').name('← Previous');
-                historyFolder.add(viewProp, 'historyNext').name('→ Next');
-                historyFolder.add(viewProp, 'historyRestore').name('Restore');
+                historyFolder.add(viewProp, 'historyPrev').name('← Previous  [7]');
+                historyFolder.add(viewProp, 'historyNext').name('→ Next  [9]');
+                historyFolder.add(viewProp, 'historyRestore').name('Restore  [8]');
                 historyFolder.add(viewProp, 'historyRemove').name('Remove from history');
                 historyFolder.close();
             multiFolder.close();
@@ -2072,6 +2088,10 @@ function onClick( event ) {
     } else {
         deselectObject();
         clearHistoryPreviewHelpers();
+        // if (selectedObjects.length > 0) {
+        //     addCurrentGroupToHistory();
+        //     clearMultiSelect();
+        // }
     }
 }
 
@@ -2164,6 +2184,10 @@ function onTouchEnd( event ) {
         } else {
             deselectObject();
             clearHistoryPreviewHelpers();
+            // if (selectedObjects.length > 0) {
+            //     addCurrentGroupToHistory();
+            //     clearMultiSelect();
+            // }
         }
         
         isTouchDragging = false;
