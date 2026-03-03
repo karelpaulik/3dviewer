@@ -38,6 +38,8 @@ const assemblyState = {
 };
 
 let assemblyAnimation = null;  // requestAnimationFrame handle for step animation
+let assemblyStepsListFolder = null; // Dynamicky přebudovávaný subfolder seznamu kroků
+let _assemblyFolderRef = null;      // Reference na hlavní Assembly Workflow folder (pro rebuild)
 
 const assemblyGui = {
     stepInfo: '\u2013 no step \u2013',
@@ -720,6 +722,7 @@ function addMainGui() {
         if (fsCtrl && fsCtrl.updateDisplay) fsCtrl.updateDisplay();
     });
 
+    folderProp.close();
     addAssemblyGui();
 }	
 
@@ -2352,6 +2355,7 @@ function separateMesh(meshToSeparate) {
 
 function addAssemblyGui() {
     const assemblyFolder = gui.addFolder('Assembly Workflow');
+    _assemblyFolderRef = assemblyFolder;
 
     // --- Playback ---
     const playbackFolder = assemblyFolder.addFolder('Playback');
@@ -2399,7 +2403,7 @@ function addAssemblyGui() {
 
     editFolder.open();
 
-    assemblyFolder.open();
+    assemblyFolder.close();
     updateAssemblyGuiInfo();
 }
 
@@ -2428,6 +2432,81 @@ function updateAssemblyGuiInfo() {
     }
 
     updateAssemblyStepHelpers();
+    rebuildAssemblyStepsList();
+}
+
+// Rebuild the "Steps" subfolder with one button per step.
+function rebuildAssemblyStepsList() {
+    // Remove old subfolder
+    if (assemblyStepsListFolder) {
+        assemblyStepsListFolder.destroy();
+        assemblyStepsListFolder = null;
+    }
+    if (!_assemblyFolderRef) return;
+
+    const n = assemblyData.steps.length;
+    const folderTitle = n === 0 ? 'Steps (empty)' : `Steps (${n})`;
+    assemblyStepsListFolder = _assemblyFolderRef.addFolder(folderTitle);
+
+    if (n === 0) {
+        assemblyStepsListFolder.open();
+        return;
+    }
+
+    assemblyData.steps.forEach((step, i) => {
+        const isActive = i === assemblyState.currentStepIndex;
+        const label = `${isActive ? '▶ ' : '   '}${i + 1}:  ${step.name}`;
+        const btn = { go: function() { assemblyGoToStep(i); } };
+        assemblyStepsListFolder.add(btn, 'go').name(label);
+    });
+
+    assemblyStepsListFolder.open();
+}
+
+// Jump directly to a given step index (0-based), animating only the final move.
+function assemblyGoToStep(targetIndex) {
+    if (targetIndex < 0 || targetIndex >= assemblyData.steps.length) return;
+    if (targetIndex === assemblyState.currentStepIndex) return;
+
+    // Cancel any running animation
+    if (assemblyAnimation) {
+        cancelAnimationFrame(assemblyAnimation);
+        assemblyAnimation = null;
+    }
+
+    // Reset all objects to their init (assembled) positions
+    [...assemblyData.steps].reverse().forEach(step => {
+        step.transformations.forEach(t => {
+            t.objectRef.position.set(t.initPosition.x, t.initPosition.y, t.initPosition.z);
+        });
+    });
+
+    // Apply steps 0 .. targetIndex-1 instantly
+    for (let i = 0; i < targetIndex; i++) {
+        assemblyData.steps[i].transformations.forEach(t => {
+            t.objectRef.position.set(t.finalPosition.x, t.finalPosition.y, t.finalPosition.z);
+        });
+    }
+
+    // Set index to one before target so animateAssemblyStep callback is correct
+    assemblyState.currentStepIndex = targetIndex - 1;
+
+    // Animate the target step
+    const step = assemblyData.steps[targetIndex];
+    if (step.transformations.length === 0) {
+        assemblyState.currentStepIndex = targetIndex;
+        updateAssemblyGuiInfo();
+        render();
+        if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) updateCrossSectionLines();
+        render();
+    } else {
+        render(); // Show instant reposition before animation
+        animateAssemblyStep(step.transformations, true, () => {
+            assemblyState.currentStepIndex = targetIndex;
+            updateAssemblyGuiInfo();
+            console.log(`[Assembly] → Jump to step ${targetIndex + 1}: "${step.name}"`);
+        });
+    }
 }
 
 // Records assembly transformations for all objects in an active group selection.
