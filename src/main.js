@@ -2564,8 +2564,10 @@ function assemblyResetToStart() {
         assemblyAnimation = null;
     }
 
-    // Return all objects to their initial positions by reversing all transformations
-    assemblyData.steps.forEach(step => {
+    // Return all objects to their initial positions by reversing all transformations.
+    // Iterate in reverse so that the first step's initPosition (the true original position)
+    // is applied last and wins for objects that appear in multiple steps.
+    [...assemblyData.steps].reverse().forEach(step => {
         step.transformations.forEach(t => {
             t.objectRef.position.set(t.initPosition.x, t.initPosition.y, t.initPosition.z);
         });
