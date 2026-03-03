@@ -29,7 +29,7 @@ const loadedModels = []; // Pole pro uchování načtených GLB modelů (root sc
 const assemblyData = {
     modelFile: '',
     description: '',
-    steps: []  // { id, name, description, transformations: [{ objectRef, initPosition, finalPosition }] }
+    steps: []  // { id, name, description, transformations: [{ objectRef, initPosition, finalPosition, initQuaternion, finalQuaternion, initScale, finalScale }] }
 };
 
 const assemblyState = {
@@ -1026,11 +1026,11 @@ function savePreviousTransformState() {
 }
 
 // Analogous to savePreviousTransformState(), but for all objects in the active group.
-// Saves world-space positions (needed because objects are reparented into the pivot).
+// Saves the full world-space matrix (needed because objects are reparented into the pivot).
 function savePreviousGroupTransformStates() {
     previousGroupTransformStates = selectedObjects.map((obj) => {
         obj.updateWorldMatrix(true, false);
-        return { object: obj, worldPosition: new THREE.Vector3().setFromMatrixPosition(obj.matrixWorld) };
+        return { object: obj, worldMatrix: obj.matrixWorld.clone() };
     });
 }
 
@@ -2530,38 +2530,51 @@ function recordGroupTransformations() {
 
     previousGroupTransformStates.forEach((state, i) => {
         const obj = state.object;
-        // Get current world position (object is still parented to pivot)
+        // Get current world matrix (object is still parented to pivot)
         obj.updateWorldMatrix(true, false);
-        const finalWorld = new THREE.Vector3().setFromMatrixPosition(obj.matrixWorld);
+        const finalWorldMatrix = obj.matrixWorld.clone();
+        const initWorldMatrix = state.worldMatrix;
 
-        // Convert both world positions to original parent's local space
+        // Convert both world matrices to original parent's local space
         const originalParent = multiOriginalParents[i];
-        const initLocal = state.worldPosition.clone();
-        const finalLocal = finalWorld.clone();
+        let initLocalMatrix = initWorldMatrix.clone();
+        let finalLocalMatrix = finalWorldMatrix.clone();
         if (originalParent) {
             originalParent.updateWorldMatrix(true, false);
             const invParent = new THREE.Matrix4().copy(originalParent.matrixWorld).invert();
-            initLocal.applyMatrix4(invParent);
-            finalLocal.applyMatrix4(invParent);
+            initLocalMatrix.premultiply(invParent);
+            finalLocalMatrix.premultiply(invParent);
         }
 
-        // Ignore trivial zero-moves
-        const dx = finalLocal.x - initLocal.x;
-        const dy = finalLocal.y - initLocal.y;
-        const dz = finalLocal.z - initLocal.z;
-        if (Math.abs(dx) < 0.0001 && Math.abs(dy) < 0.0001 && Math.abs(dz) < 0.0001) return;
+        // Decompose both matrices
+        const initPos = new THREE.Vector3(), initQuat = new THREE.Quaternion(), initScale = new THREE.Vector3();
+        const finalPos = new THREE.Vector3(), finalQuat = new THREE.Quaternion(), finalScale = new THREE.Vector3();
+        initLocalMatrix.decompose(initPos, initQuat, initScale);
+        finalLocalMatrix.decompose(finalPos, finalQuat, finalScale);
+
+        // Ignore trivial zero-moves/rotations/scales
+        const posDelta = finalPos.distanceTo(initPos);
+        const rotDelta = initQuat.angleTo(finalQuat);
+        const scaleDelta = finalScale.distanceTo(initScale);
+        if (posDelta < 0.0001 && rotDelta < 0.0001 && scaleDelta < 0.0001) return;
 
         const existing = step.transformations.find(t => t.objectRef === obj);
         if (existing) {
-            existing.finalPosition = { x: finalLocal.x, y: finalLocal.y, z: finalLocal.z };
+            existing.finalPosition  = { x: finalPos.x,  y: finalPos.y,  z: finalPos.z };
+            existing.finalQuaternion = { x: finalQuat.x, y: finalQuat.y, z: finalQuat.z, w: finalQuat.w };
+            existing.finalScale     = { x: finalScale.x, y: finalScale.y, z: finalScale.z };
         } else {
             step.transformations.push({
                 objectRef: obj,
-                initPosition: { x: initLocal.x, y: initLocal.y, z: initLocal.z },
-                finalPosition: { x: finalLocal.x, y: finalLocal.y, z: finalLocal.z },
+                initPosition:   { x: initPos.x,  y: initPos.y,  z: initPos.z },
+                finalPosition:  { x: finalPos.x,  y: finalPos.y,  z: finalPos.z },
+                initQuaternion:  { x: initQuat.x, y: initQuat.y, z: initQuat.z, w: initQuat.w },
+                finalQuaternion: { x: finalQuat.x, y: finalQuat.y, z: finalQuat.z, w: finalQuat.w },
+                initScale:  { x: initScale.x, y: initScale.y, z: initScale.z },
+                finalScale: { x: finalScale.x, y: finalScale.y, z: finalScale.z },
             });
         }
-        console.log(`[Assembly] Step ${step.id} "${step.name}": recorded movement of object "${obj.name}" (group)`);
+        console.log(`[Assembly] Step ${step.id} "${step.name}": recorded transform of object "${obj.name}" (group)`);
     });
 
     previousGroupTransformStates = [];
@@ -2569,34 +2582,45 @@ function recordGroupTransformations() {
 }
 
 // Called at end of a TransformControls drag when editMode is active.
-// prevPos is the THREE.Vector3 position BEFORE the drag (from previousTransformState).
 function recordAssemblyTransformation() {
     const obj = previousTransformState?.object;
-    const prevPos = previousTransformState?.position;
-    if (!obj || !prevPos) return;
+    if (!obj || !previousTransformState) return;
     const step = assemblyData.steps[assemblyState.currentStepIndex];
     if (!step) return;
 
-    // Ignore trivial zero-moves
-    const dx = obj.position.x - prevPos.x;
-    const dy = obj.position.y - prevPos.y;
-    const dz = obj.position.z - prevPos.z;
-    if (Math.abs(dx) < 0.0001 && Math.abs(dy) < 0.0001 && Math.abs(dz) < 0.0001) return;
+    const prevPos   = previousTransformState.position;   // THREE.Vector3
+    const prevRot   = previousTransformState.rotation;   // THREE.Euler
+    const prevScale = previousTransformState.scale;      // THREE.Vector3
+
+    const prevQuat = new THREE.Quaternion().setFromEuler(prevRot);
+    const curQuat  = new THREE.Quaternion().setFromEuler(obj.rotation);
+
+    // Ignore trivial no-ops
+    const posDelta   = obj.position.distanceTo(prevPos);
+    const rotDelta   = prevQuat.angleTo(curQuat);
+    const scaleDelta = obj.scale.distanceTo(prevScale);
+    if (posDelta < 0.0001 && rotDelta < 0.0001 && scaleDelta < 0.0001) return;
 
     // Check if this object is already tracked in this step
     const existing = step.transformations.find(t => t.objectRef === obj);
     if (existing) {
-        // Keep original initPosition, only update the final destination
-        existing.finalPosition = { x: obj.position.x, y: obj.position.y, z: obj.position.z };
+        // Keep original init values, only update the final destinations
+        existing.finalPosition   = { x: obj.position.x, y: obj.position.y, z: obj.position.z };
+        existing.finalQuaternion = { x: curQuat.x, y: curQuat.y, z: curQuat.z, w: curQuat.w };
+        existing.finalScale      = { x: obj.scale.x, y: obj.scale.y, z: obj.scale.z };
     } else {
         step.transformations.push({
             objectRef: obj,
-            initPosition: { x: prevPos.x, y: prevPos.y, z: prevPos.z },
-            finalPosition: { x: obj.position.x, y: obj.position.y, z: obj.position.z },
+            initPosition:   { x: prevPos.x, y: prevPos.y, z: prevPos.z },
+            finalPosition:  { x: obj.position.x, y: obj.position.y, z: obj.position.z },
+            initQuaternion:  { x: prevQuat.x, y: prevQuat.y, z: prevQuat.z, w: prevQuat.w },
+            finalQuaternion: { x: curQuat.x, y: curQuat.y, z: curQuat.z, w: curQuat.w },
+            initScale:  { x: prevScale.x, y: prevScale.y, z: prevScale.z },
+            finalScale: { x: obj.scale.x, y: obj.scale.y, z: obj.scale.z },
         });
     }
 
-    console.log(`[Assembly] Step ${step.id} "${step.name}": recorded movement of object "${obj.name}"`);
+    console.log(`[Assembly] Step ${step.id} "${step.name}": recorded transform of object "${obj.name}"`);
     updateAssemblyGuiInfo();
 }
 
@@ -2609,12 +2633,38 @@ function animateAssemblyStep(transformations, forward, onComplete) {
 
     const duration = assemblyGui.animationDuration;
 
+    // Helper: apply all transform components instantly at a given interpolation alpha
+    function applyTransforms(tList, startStates, alpha) {
+        tList.forEach((tr, i) => {
+            const s = startStates[i];
+            tr.objectRef.position.lerpVectors(s.pos, s.targetPos, alpha);
+            if (s.hasRot)   tr.objectRef.quaternion.slerpQuaternions(s.quat, s.targetQuat, alpha);
+            if (s.hasScale) tr.objectRef.scale.lerpVectors(s.scale, s.targetScale, alpha);
+        });
+    }
+
+    // Build start+target state for each transformation
+    const startStates = transformations.map(tr => {
+        const tgtP = forward ? tr.finalPosition  : tr.initPosition;
+        const tgtQ = forward ? tr.finalQuaternion : tr.initQuaternion;
+        const tgtS = forward ? tr.finalScale     : tr.initScale;
+        const hasRot   = !!(tr.initQuaternion && tr.finalQuaternion);
+        const hasScale = !!(tr.initScale && tr.finalScale);
+        return {
+            pos:       tr.objectRef.position.clone(),
+            targetPos: new THREE.Vector3(tgtP.x, tgtP.y, tgtP.z),
+            quat:       tr.objectRef.quaternion.clone(),
+            targetQuat: hasRot   ? new THREE.Quaternion(tgtQ.x, tgtQ.y, tgtQ.z, tgtQ.w) : null,
+            scale:       tr.objectRef.scale.clone(),
+            targetScale: hasScale ? new THREE.Vector3(tgtS.x, tgtS.y, tgtS.z) : null,
+            hasRot,
+            hasScale,
+        };
+    });
+
     // Instant move when duration === 0
     if (duration <= 0) {
-        transformations.forEach(t => {
-            const target = forward ? t.finalPosition : t.initPosition;
-            t.objectRef.position.set(target.x, target.y, target.z);
-        });
+        applyTransforms(transformations, startStates, 1);
         if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) updateCrossSectionLines();
         render();
         if (onComplete) onComplete();
@@ -2622,11 +2672,6 @@ function animateAssemblyStep(transformations, forward, onComplete) {
     }
 
     const start = performance.now();
-    const startPositions = transformations.map(t => t.objectRef.position.clone());
-    const targetPositions = transformations.map(t => {
-        const p = forward ? t.finalPosition : t.initPosition;
-        return new THREE.Vector3(p.x, p.y, p.z);
-    });
 
     function step(now) {
         const elapsed = now - start;
@@ -2634,9 +2679,7 @@ function animateAssemblyStep(transformations, forward, onComplete) {
         // Smoothstep ease-in-out
         const eased = alpha * alpha * (3 - 2 * alpha);
 
-        transformations.forEach((tr, i) => {
-            tr.objectRef.position.lerpVectors(startPositions[i], targetPositions[i], eased);
-        });
+        applyTransforms(transformations, startStates, eased);
 
         if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) updateCrossSectionLines();
         render();
@@ -2660,10 +2703,12 @@ function assemblyResetToFinish() {
     }
     if (assemblyData.steps.length === 0) return;
 
-    // Apply every step's final positions instantly
+    // Apply every step's final transforms instantly
     assemblyData.steps.forEach(step => {
         step.transformations.forEach(t => {
             t.objectRef.position.set(t.finalPosition.x, t.finalPosition.y, t.finalPosition.z);
+            if (t.finalQuaternion) t.objectRef.quaternion.set(t.finalQuaternion.x, t.finalQuaternion.y, t.finalQuaternion.z, t.finalQuaternion.w);
+            if (t.finalScale)      t.objectRef.scale.set(t.finalScale.x, t.finalScale.y, t.finalScale.z);
         });
     });
 
@@ -2681,12 +2726,14 @@ function assemblyResetToStart() {
         assemblyAnimation = null;
     }
 
-    // Return all objects to their initial positions by reversing all transformations.
-    // Iterate in reverse so that the first step's initPosition (the true original position)
-    // is applied last and wins for objects that appear in multiple steps.
+    // Return all objects to their initial transforms by reversing all transformations.
+    // Iterate in reverse so that the first step's init values (the true original state)
+    // are applied last and win for objects that appear in multiple steps.
     [...assemblyData.steps].reverse().forEach(step => {
         step.transformations.forEach(t => {
             t.objectRef.position.set(t.initPosition.x, t.initPosition.y, t.initPosition.z);
+            if (t.initQuaternion) t.objectRef.quaternion.set(t.initQuaternion.x, t.initQuaternion.y, t.initQuaternion.z, t.initQuaternion.w);
+            if (t.initScale)      t.objectRef.scale.set(t.initScale.x, t.initScale.y, t.initScale.z);
         });
     });
 
@@ -2792,9 +2839,11 @@ function assemblyDeleteStep() {
     const step = assemblyData.steps[ei];
     if (!confirm(`Delete step "${step.name}"?`)) return;
 
-    // Reset objects in this step to their init positions before removing the step
+    // Reset objects in this step to their init transforms before removing the step
     step.transformations.forEach(t => {
         t.objectRef.position.set(t.initPosition.x, t.initPosition.y, t.initPosition.z);
+        if (t.initQuaternion) t.objectRef.quaternion.set(t.initQuaternion.x, t.initQuaternion.y, t.initQuaternion.z, t.initQuaternion.w);
+        if (t.initScale)      t.objectRef.scale.set(t.initScale.x, t.initScale.y, t.initScale.z);
     });
 
     assemblyData.steps.splice(ei, 1);
