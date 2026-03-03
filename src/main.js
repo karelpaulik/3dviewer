@@ -757,33 +757,53 @@ function refreshSelectedObjGui(obj) {
     const folder2 = selectedFolder.addFolder("Location");
         folder2.add(part, 'resetLocation').name('Reset init. location');
         folder2.add(part, 'undoTransform').name('Undo last transform');
+
+        // Capture "before" state when the object is selected (TransformControl is already attached).
+        savePreviousTransformState();
+
+        // Called by every Location slider after the user releases.
+        function _onGuiLocationFinish() {
+            if (assemblyState.editMode && assemblyState.currentStepIndex >= 0) {
+                recordAssemblyTransformation();
+            }
+            // Refresh baseline so the next slider interaction has a correct "before".
+            savePreviousTransformState();
+        }
+
         folder2.add(obj.position, 'x', extent.pn, extent.pp, extent.pStep)
             .name('Px')
             .onChange(function(value){obj.position.x=value; render(); })
+            .onFinishChange(_onGuiLocationFinish)
             .listen();
         folder2.add(obj.position, 'y', extent.pn, extent.pp, extent.pStep)
             .name('Py')
             .onChange(function(value){obj.position.y=value; render(); })
+            .onFinishChange(_onGuiLocationFinish)
             .listen();
         folder2.add(obj.position, 'z', extent.pn, extent.pp, extent.pStep)
             .name('Pz')
             .onChange(function(value){obj.position.z=value; render(); })
+            .onFinishChange(_onGuiLocationFinish)
             .listen();
         folder2.add(obj.rotation, 'x', extent.rn, extent.rp, extent.rStep)
             .name('Rx')
             .onChange(function(value){obj.rotation.x=value; render(); })
+            .onFinishChange(_onGuiLocationFinish)
             .listen();
         folder2.add(obj.rotation, 'y', extent.rn, extent.rp, extent.rStep)
             .name('Ry')
             .onChange(function(value){obj.rotation.y=value; render(); })
+            .onFinishChange(_onGuiLocationFinish)
             .listen();
         folder2.add(obj.rotation, 'z', extent.rn, extent.rp, extent.rStep)
             .name('Rz')
             .onChange(function(value){obj.rotation.z=value; render(); })
+            .onFinishChange(_onGuiLocationFinish)
             .listen();
         folder2.add(obj.scale, 'x', extent.sn, extent.sp, extent.sStep)
             .name('Scale')
             .onChange(function(value){obj.scale.x=value; obj.scale.y=value; obj.scale.z=value; render(); })
+            .onFinishChange(_onGuiLocationFinish)
             .listen();
         folder2.close();
     
