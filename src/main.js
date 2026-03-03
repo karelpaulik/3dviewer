@@ -383,6 +383,19 @@ function init() {
     } );
     transformControls.addEventListener( 'dragging-changed', function ( event ) {
         if (event.value) { // Dragování začalo
+            // V edit modu zakázat posun objektu bez definovaného name
+            if (assemblyState.editMode) {
+                const dragObj = transformControls.object;
+                const hasName = dragObj && dragObj.name && dragObj.name.trim() !== '';
+                if (!hasName) {
+                    transformControls.detach();
+                    orbitControls.enabled = false;
+                    console.warn('Assembly edit mode: cannot transform an unnamed object.');
+                    alert('Object without name can not be transformed.');
+                    window.addEventListener('mouseup', () => { orbitControls.enabled = true; }, { once: true });
+                    return;
+                }
+            }
             isTransformDragging = true;
             orbitControls.enabled = false;
             // Uložíme předchozí stav před změnou
