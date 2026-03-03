@@ -96,6 +96,7 @@ let pivotObject = null;           // pivot pro skupinovou transformaci
 const groupHistory = [];          // pole snapshotů: { name, objects[] }
 let groupHistoryIndex = -1;       // index aktuálně zobrazeného záznamu (-1 = žádný)
 const groupHistoryPreviewHelpers = []; // oránžové BoxHelpery pro náhled history entry
+const assemblyStepHelpers = [];       // žluté BoxHelpery pro objekty aktuálního assembly kroku (edit mode)
 
 const viewProp = {
     perspCam: false,
@@ -1496,6 +1497,27 @@ function navigateGroupHistory(dir) {
     render();
 }
 
+// Zobrazí PaddedBoxHelpery kolem objektů aktuálního assembly kroku, pokud je aktivní edit mode.
+// Volá se z updateAssemblyGuiInfo() a při přepnutí editMode.
+function updateAssemblyStepHelpers() {
+    // Odstraníme staré helpery
+    assemblyStepHelpers.forEach(h => scene.remove(h));
+    assemblyStepHelpers.length = 0;
+
+    if (!assemblyState.editMode) { render(); return; }
+    const ci = assemblyState.currentStepIndex;
+    if (ci < 0 || ci >= assemblyData.steps.length) { render(); return; }
+
+    const step = assemblyData.steps[ci];
+    step.transformations.forEach(t => {
+        if (!t.objectRef || !t.objectRef.parent) return;
+        const h = new PaddedBoxHelper(t.objectRef, 0xffee00, viewProp.multiSelectBoxPadding);
+        scene.add(h);
+        assemblyStepHelpers.push(h);
+    });
+    render();
+}
+
 // Odstrání preview-helpery ze scény.
 function clearHistoryPreviewHelpers() {
     groupHistoryPreviewHelpers.forEach(h => scene.remove(h));
@@ -2346,6 +2368,7 @@ function addAssemblyGui() {
     editFolder.add(assemblyGui, 'editMode').name('Edit mode').onChange(function(value) {
         assemblyState.editMode = value;
         editControls.forEach(c => value ? c.enable() : c.disable());
+        updateAssemblyStepHelpers();
         console.log(`[Assembly] Edit mode: ${value}`);
     }).listen();
     editFolder.add(assemblyGui, 'editStepInfo').name('Active step').disable().listen();
@@ -2403,6 +2426,8 @@ function updateAssemblyGuiInfo() {
         assemblyGui.stepName = '';
         assemblyGui.stepDescription = '';
     }
+
+    updateAssemblyStepHelpers();
 }
 
 // Records assembly transformations for all objects in an active group selection.
