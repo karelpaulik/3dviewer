@@ -2898,12 +2898,22 @@ function assemblyRemoveObjectFromStep() {
     }
     const step = assemblyData.steps[ci];
     const before = step.transformations.length;
+
+    // Check the object is actually in this step before asking
+    const isInStep = step.transformations.some(t => t.objectRef === lastSelectedObject);
+    if (!isInStep) {
+        console.log(`[Assembly] Object "${lastSelectedObject.name}" not found in step "${step.name}".`);
+        return;
+    }
+
+    if (!confirm(`Remove "${lastSelectedObject.name}" from step "${step.name}"?`)) return;
+
     step.transformations = step.transformations.filter(t => t.objectRef !== lastSelectedObject);
     const removed = before - step.transformations.length;
     if (removed > 0) {
+        // Repair the chain so following steps get correct init values
+        repairChainForObject(lastSelectedObject);
         console.log(`[Assembly] Object "${lastSelectedObject.name}" removed from step "${step.name}".`);
-    } else {
-        console.log(`[Assembly] Object "${lastSelectedObject.name}" not found in step "${step.name}".`);
     }
     updateAssemblyGuiInfo();
 }
