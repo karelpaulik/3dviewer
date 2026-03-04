@@ -2607,11 +2607,11 @@ function recordGroupTransformations() {
                 finalScale: { x: finalScale.x, y: finalScale.y, z: finalScale.z },
             });
         }
+        repairChainForObject(obj);
         console.log(`[Assembly] Step ${step.id} "${step.name}": recorded transform of object "${obj.name}" (group)`);
     });
 
     previousGroupTransformStates = [];
-    repairChain();
     updateAssemblyGuiInfo();
 }
 
@@ -2692,6 +2692,8 @@ function repairChainForObject(objectRef) {
 }
 
 // Repair the full step chain for every object that appears in any step.
+// Not called in the normal edit flow (targeted repairChainForObject is used instead).
+// Reserved for bulk repairs, e.g. after import or future batch operations.
 function repairChain() {
     const allObjects = new Set();
     assemblyData.steps.forEach(step => {
@@ -2940,7 +2942,12 @@ function assemblyMoveStepUp() {
     [assemblyData.steps[ei], assemblyData.steps[ei - 1]] = [assemblyData.steps[ei - 1], assemblyData.steps[ei]];
     assemblyData.steps.forEach((s, i) => { s.id = i + 1; });
     assemblyState.currentStepIndex = ei - 1;
-    repairChain();
+    // Only repair objects that appear in the two swapped steps
+    const affectedUp = new Set([
+        ...assemblyData.steps[ei - 1].transformations.map(t => t.objectRef),
+        ...assemblyData.steps[ei].transformations.map(t => t.objectRef),
+    ]);
+    affectedUp.forEach(obj => repairChainForObject(obj));
     updateAssemblyGuiInfo();
     console.log(`[Assembly] Step moved up → position ${assemblyState.currentStepIndex + 1}.`);
 }
@@ -2952,7 +2959,12 @@ function assemblyMoveStepDown() {
     [assemblyData.steps[ei], assemblyData.steps[ei + 1]] = [assemblyData.steps[ei + 1], assemblyData.steps[ei]];
     assemblyData.steps.forEach((s, i) => { s.id = i + 1; });
     assemblyState.currentStepIndex = ei + 1;
-    repairChain();
+    // Only repair objects that appear in the two swapped steps
+    const affectedDown = new Set([
+        ...assemblyData.steps[ei].transformations.map(t => t.objectRef),
+        ...assemblyData.steps[ei + 1].transformations.map(t => t.objectRef),
+    ]);
+    affectedDown.forEach(obj => repairChainForObject(obj));
     updateAssemblyGuiInfo();
     console.log(`[Assembly] Step moved down → position ${assemblyState.currentStepIndex + 1}.`);
 }
