@@ -2918,6 +2918,9 @@ function assemblyDeleteStep() {
     const step = assemblyData.steps[ei];
     if (!confirm(`Delete step "${step.name}"?`)) return;
 
+    // Collect affected objects before removal (needed for chain repair below)
+    const affectedObjects = step.transformations.map(t => t.objectRef);
+
     // Reset objects in this step to their init transforms before removing the step
     step.transformations.forEach(t => {
         t.objectRef.position.set(t.initPosition.x, t.initPosition.y, t.initPosition.z);
@@ -2930,6 +2933,11 @@ function assemblyDeleteStep() {
     if (assemblyState.currentStepIndex >= assemblyData.steps.length) {
         assemblyState.currentStepIndex = assemblyData.steps.length - 1;
     }
+
+    // Repair the step chain for all affected objects so the following step's
+    // initPosition/Quaternion/Scale reflects the deleted step's absence.
+    affectedObjects.forEach(obj => repairChainForObject(obj));
+
     updateAssemblyGuiInfo();
     render();
     console.log(`[Assembly] Step "${step.name}" deleted, objects reset to init positions.`);
