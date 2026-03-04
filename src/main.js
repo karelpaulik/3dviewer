@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
@@ -1686,6 +1687,9 @@ function loadModel(model, name, scale, colored) {
 function loadGlbModel(model, name, scale, colored) {
     return new Promise((resolve, reject) => {
         const loader = new GLTFLoader();
+        const dracoLoader = new DRACOLoader();
+        dracoLoader.setDecoderPath('./draco/');
+        loader.setDRACOLoader(dracoLoader);
         //loader.load('./models/1012053_l.glb', function (gltf) {
         loader.load(model, function (gltf) {
             // Oprava extrémních scale hodnot způsobených exportem (např. 0.001 nebo 0.01 z CAD → Blender → GLB)
