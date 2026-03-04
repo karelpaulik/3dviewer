@@ -144,6 +144,7 @@ const viewProp = {
     snapRotationDeg: 30,   // krok rotace ve stupních
     snapScale: 0.25,       // krok měřítka
     transformMode: 'translate', // transform mode: translate, rotate, scale
+    wireframe: false,       // Wireframe přepínač
     showAxesHelper: false, // Zobrazit / skrýt axes helper
     axesHelperSize: 100,   // Velikost axes helperu
     showRaycastHelper: false, // Zobrazit / skrýt raycasting helper (ArrowHelper)
@@ -646,6 +647,16 @@ function applySnapSettings() {
     }
 }
 
+function toggleWireframeAll(value) {
+    meshObjects.forEach(mesh => {
+        if (mesh.isMesh) {
+            const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+            materials.forEach(mat => { mat.wireframe = value; });
+        }
+    });
+    render();
+}
+
 //GUI----------------------------------------------------------------------------------------------------------------
 function addMainGui() {
     //View
@@ -662,6 +673,7 @@ function addMainGui() {
             }
         }).listen();
         folderProp.add(viewProp, 'isSelectAllowed').name('Allow selection').listen();
+        folderProp.add(viewProp, 'wireframe').name('Wireframe').onChange(function(value){ toggleWireframeAll(value); }).listen();
         folderProp.add(viewProp, 'transformSpace').name('Transform: World space').onChange(function(value) {
             transformControls.setSpace( value ? 'world' : 'local' );
         }).listen();
