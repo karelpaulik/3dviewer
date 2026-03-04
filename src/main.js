@@ -10,6 +10,7 @@ import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 //import { GUI } from 'dat.gui';
 import { GUI } from 'lil-gui';
 import ZipLoader from 'zip-loader';
+import JSZip from 'jszip';
 import { updateCrossSectionLines as updateCrossSectionLinesCore } from './crossSectionUtils.js';
 
 // Proměnné globálního rozsahu----------------------------------------------------------------------------------------
@@ -25,6 +26,7 @@ const meshObjects = [];
 const hiddenObjects = [];
 let temporarilyShownObjects = [];
 const loadedModels = []; // Pole pro uchování načtených GLB modelů (root scene objekty)
+let loadedGlbFileName = '';  // Jméno načteného GLB souboru
 
 // ===== Assembly / Disassembly Workflow =====
 const assemblyData = {
@@ -63,6 +65,8 @@ const assemblyGui = {
     nextStep: function() { assemblyNextStep(); },
     resetToFinish: function() { assemblyResetToFinish(); },
     animationDuration: 600,
+    importWorkflow: function() { importAssemblyWorkflow(); },
+    exportWorkflow: function() { exportAssemblyWorkflow(); },
 };
 // ============================================
 
@@ -658,7 +662,10 @@ function toggleWireframeAll(value) {
 }
 
 //GUI----------------------------------------------------------------------------------------------------------------
+let mainGuiAdded = false;
 function addMainGui() {
+    if (mainGuiAdded) return;
+    mainGuiAdded = true;
     //View
     const folderProp = gui.addFolder( 'View' );
         folderProp.add(viewProp, 'fit').name('Fit View');
@@ -1702,7 +1709,7 @@ function loadGlbModel(model, name, scale, colored) {
         const dracoLoader = new DRACOLoader();
         dracoLoader.setDecoderPath('./draco/');
         loader.setDRACOLoader(dracoLoader);
-        //loader.load('./models/1012053_l.glb', function (gltf) {
+        loadedGlbFileName = name;
         loader.load(model, function (gltf) {
             // Oprava extrémních scale hodnot způsobených exportem (např. 0.001 nebo 0.01 z CAD → Blender → GLB)
             // Povolený rozsah: [0.1, 10] — vše mimo se považuje za artefakt exportu a resetuje se na 1
@@ -1746,7 +1753,7 @@ function loadGlbModel(model, name, scale, colored) {
             resolve(gltf.scene);
             addMainGui();
         }, undefined, function (error) {
-            reject(error); // Doporučuji přidat i error handling
+            reject(error);
         });
     });
 }				
@@ -1756,6 +1763,29 @@ function fileNameWithoutExtension(path) {
     const myStr = myArr[ myArr.length-1 ];
     const nameParts = myStr.split('.');
     return nameParts[0];			
+}
+
+function clearScene() {
+    if (assemblyAnimation !== null) {
+        cancelAnimationFrame(assemblyAnimation);
+        assemblyAnimation = null;
+    }
+    assemblyState.currentStepIndex = -1;
+    assemblyState.editMode = false;
+    assemblyGui.editMode = false;
+    assemblyData.steps = [];
+    assemblyData.description = '';
+    assemblyData.modelFile = '';
+    assemblyAnchors.clear();
+    loadedModels.forEach(model => scene.remove(model));
+    loadedModels.length = 0;
+    meshObjects.length = 0;
+    hiddenObjects.length = 0;
+    if (transformControls) transformControls.detach();
+    deselectObject();
+    if (selectedFolder) { selectedFolder.destroy(); selectedFolder = null; }
+    updateAssemblyStepHelpers();
+    render();
 }
 
 function removeModel(part) {
@@ -2297,6 +2327,144 @@ function onTouchEnd( event ) {
     }
 }
 
+async function exportAssemblyWorkflow() {
+    if (loadedModels.length === 0) {
+        alert('Load a GLB model first.');
+        return;
+    }
+    const baseName = loadedGlbFileName ? loadedGlbFileName.replace(/\.glb$/i, '') : 'model';
+    const stepSuffix = assemblyState.currentStepIndex >= 0
+        ? `_step${assemblyState.currentStepIndex + 1}`
+        : '_assembled';
+    const defaultZipName = `${baseName}${stepSuffix}_workflow.zip`;
+    const zipName = window.prompt('File name for workflow:', defaultZipName);
+    if (zipName === null) return;
+    const finalZipName = zipName.trim() || defaultZipName;
+    const glbName = finalZipName.replace(/\.zip$/i, '') + '.glb';
+
+    // Exportujeme aktuální stav scény přes GLTFExporter
+    const glbBuffer = await new Promise((resolve, reject) => {
+        const exporter = new GLTFExporter();
+        const group = new THREE.Group();
+        loadedModels.forEach(model => group.add(model.clone(true)));
+        exporter.parse(group, result => resolve(result),
+            error => reject(error),
+            { binary: true, onlyVisible: false });
+    });
+
+    // Sestavíme JSON workflow (stejná logika jako exportAssemblyWorkflow, ale modelFile = nové jméno GLB)
+    const jsonData = {
+        version: 1,
+        modelFile: glbName,
+        description: assemblyData.description || '',
+        anchors: {},
+        steps: [],
+    };
+    assemblyAnchors.forEach((anchor, obj) => {
+        jsonData.anchors[obj.name || obj.uuid] = anchor;
+    });
+    jsonData.steps = assemblyData.steps.map(step => ({
+        id: step.id,
+        name: step.name,
+        description: step.description || '',
+        transformations: step.transformations.map(t => ({
+            objectName:      t.objectRef ? (t.objectRef.name || t.objectRef.uuid) : '',
+            initPosition:    t.initPosition,
+            finalPosition:   t.finalPosition,
+            initQuaternion:  t.initQuaternion,
+            finalQuaternion: t.finalQuaternion,
+            initScale:       t.initScale,
+            finalScale:      t.finalScale,
+        })),
+    }));
+
+    const zip = new JSZip();
+    zip.file(glbName, glbBuffer);
+    zip.file('assembly.json', JSON.stringify(jsonData, null, 2));
+    const zipBuffer = await zip.generateAsync({ type: 'arraybuffer' });
+    saveArrayBuffer(zipBuffer, finalZipName);
+    console.log('[Assembly] Workflow ZIP exported:', finalZipName);
+}
+
+async function importAssemblyWorkflow() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.zip';
+    input.onchange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        try {
+            const buffer = await file.arrayBuffer();
+            const zip = await JSZip.loadAsync(buffer);
+
+            const jsonFile = zip.file('assembly.json');
+            if (!jsonFile) throw new Error('assembly.json not found in ZIP archive');
+            const jsonText = await jsonFile.async('text');
+            const jsonData = JSON.parse(jsonText);
+
+            const glbFile = zip.file(jsonData.modelFile);
+            if (!glbFile) throw new Error(`File "${jsonData.modelFile}" not found in ZIP archive`);
+            const glbBuffer = await glbFile.async('arraybuffer');
+
+            if (loadedModels.length > 0) {
+                if (!confirm('Loading a new workflow will replace the current model and workflow. Continue?')) return;
+            }
+
+            clearScene();
+
+            const blob = new Blob([glbBuffer], { type: 'model/gltf-binary' });
+            const blobUrl = URL.createObjectURL(blob);
+            await loadGlbModel(blobUrl, jsonData.modelFile, 0.001, true);
+            URL.revokeObjectURL(blobUrl);
+
+            recalibrateOrthoCamera();
+            fitView();
+
+            // Reconstruct assemblyData
+            assemblyData.description = jsonData.description || '';
+            assemblyData.modelFile = jsonData.modelFile;
+            assemblyData.steps = jsonData.steps.map(s => ({
+                id: s.id,
+                name: s.name,
+                description: s.description || '',
+                transformations: s.transformations
+                    .map(t => {
+                        const obj = scene.getObjectByName(t.objectName);
+                        if (!obj) { console.warn(`[Import] Object not found: "${t.objectName}"`); return null; }
+                        return {
+                            objectRef:       obj,
+                            initPosition:    t.initPosition,
+                            finalPosition:   t.finalPosition,
+                            initQuaternion:  t.initQuaternion,
+                            finalQuaternion: t.finalQuaternion,
+                            initScale:       t.initScale,
+                            finalScale:      t.finalScale,
+                        };
+                    })
+                    .filter(t => t !== null),
+            }));
+
+            assemblyAnchors.clear();
+            for (const [objName, anchor] of Object.entries(jsonData.anchors || {})) {
+                const obj = scene.getObjectByName(objName);
+                if (obj) assemblyAnchors.set(obj, anchor);
+            }
+
+            assemblyState.currentStepIndex = -1;
+            assemblyState.editMode = false;
+            assemblyGui.editMode = false;
+            updateAssemblyGuiInfo();
+
+            document.getElementById('fileNameLabel').textContent = jsonData.modelFile;
+            document.getElementById('pageTitle').textContent = jsonData.modelFile;
+            console.log(`[Import] Assembly workflow loaded: ${jsonData.steps.length} step(s).`);
+        } catch (err) {
+            console.error('[Assembly Import] Error:', err);
+            alert('Import error: ' + err.message);
+        }
+    };
+    input.click();
+}
 
 function saveArrayBuffer(buffer, filename) {
     const blob = new Blob([buffer], { type: 'application/octet-stream' });
@@ -2456,6 +2624,12 @@ function addAssemblyGui() {
     editControls.forEach(c => c.disable());
 
     editFolder.open();
+
+    // --- Import / Export ---
+    const ioFolder = assemblyFolder.addFolder('Import / Export');
+    ioFolder.add(assemblyGui, 'exportWorkflow').name('💾  Export workflow (.zip)');
+    ioFolder.add(assemblyGui, 'importWorkflow').name('📂  Import workflow (.zip)');
+    ioFolder.open();
 
     assemblyFolder.close();
     updateAssemblyGuiInfo();
