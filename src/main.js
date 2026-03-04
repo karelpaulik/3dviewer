@@ -32,6 +32,11 @@ const assemblyData = {
     steps: []  // { id, name, description, transformations: [{ objectRef, initPosition, finalPosition, initQuaternion, finalQuaternion, initScale, finalScale }] }
 };
 
+// Map: objectRef → { position, quaternion, scale } = the fully-assembled (base) state for each object.
+// Set once when an object is first introduced into any step. Used by repairChain to keep
+// initPositions consistent when steps are edited or reordered.
+const assemblyAnchors = new Map();
+
 const assemblyState = {
     editMode: false,       // When true, object drags are recorded into the active edit step
     currentStepIndex: -1,  // -1 = fully assembled; N = steps[0..N] have been applied (also used as the edit target)
@@ -2584,6 +2589,14 @@ function recordGroupTransformations() {
             existing.finalQuaternion = { x: finalQuat.x, y: finalQuat.y, z: finalQuat.z, w: finalQuat.w };
             existing.finalScale     = { x: finalScale.x, y: finalScale.y, z: finalScale.z };
         } else {
+            // Store the assembled base state the first time this object enters any step
+            if (!assemblyAnchors.has(obj)) {
+                assemblyAnchors.set(obj, {
+                    position:   { x: initPos.x,  y: initPos.y,  z: initPos.z },
+                    quaternion: { x: initQuat.x, y: initQuat.y, z: initQuat.z, w: initQuat.w },
+                    scale:      { x: initScale.x, y: initScale.y, z: initScale.z },
+                });
+            }
             step.transformations.push({
                 objectRef: obj,
                 initPosition:   { x: initPos.x,  y: initPos.y,  z: initPos.z },
@@ -2598,6 +2611,7 @@ function recordGroupTransformations() {
     });
 
     previousGroupTransformStates = [];
+    repairChain();
     updateAssemblyGuiInfo();
 }
 
@@ -2629,6 +2643,14 @@ function recordAssemblyTransformation() {
         existing.finalQuaternion = { x: curQuat.x, y: curQuat.y, z: curQuat.z, w: curQuat.w };
         existing.finalScale      = { x: obj.scale.x, y: obj.scale.y, z: obj.scale.z };
     } else {
+        // Store the assembled base state the first time this object enters any step
+        if (!assemblyAnchors.has(obj)) {
+            assemblyAnchors.set(obj, {
+                position:   { x: prevPos.x, y: prevPos.y, z: prevPos.z },
+                quaternion: { x: prevQuat.x, y: prevQuat.y, z: prevQuat.z, w: prevQuat.w },
+                scale:      { x: prevScale.x, y: prevScale.y, z: prevScale.z },
+            });
+        }
         step.transformations.push({
             objectRef: obj,
             initPosition:   { x: prevPos.x, y: prevPos.y, z: prevPos.z },
@@ -2640,8 +2662,43 @@ function recordAssemblyTransformation() {
         });
     }
 
+    repairChainForObject(obj);
     console.log(`[Assembly] Step ${step.id} "${step.name}": recorded transform of object "${obj.name}"`);
     updateAssemblyGuiInfo();
+}
+
+// Propagate finalPosition of each step as initPosition of the next step for the same object.
+// Uses assemblyAnchors as the stable base state so results are order-independent.
+function repairChainForObject(objectRef) {
+    const anchor = assemblyAnchors.get(objectRef);
+    let lastPos   = anchor ? anchor.position   : null;
+    let lastQuat  = anchor ? anchor.quaternion : null;
+    let lastScale = anchor ? anchor.scale      : null;
+
+    for (const step of assemblyData.steps) {
+        const t = step.transformations.find(tr => tr.objectRef === objectRef);
+        if (!t) continue;
+
+        if (lastPos !== null) {
+            t.initPosition   = { ...lastPos };
+            if (lastQuat)  t.initQuaternion  = { ...lastQuat };
+            if (lastScale) t.initScale       = { ...lastScale };
+        }
+
+        lastPos   = t.finalPosition;
+        lastQuat  = t.finalQuaternion;
+        lastScale = t.finalScale;
+    }
+}
+
+// Repair the full step chain for every object that appears in any step.
+function repairChain() {
+    const allObjects = new Set();
+    assemblyData.steps.forEach(step => {
+        step.transformations.forEach(t => allObjects.add(t.objectRef));
+    });
+    allObjects.forEach(obj => repairChainForObject(obj));
+    console.log('[Assembly] Chain repaired.');
 }
 
 // Animate all transformations in a step forward (disassembly) or backward (assembly).
@@ -2883,6 +2940,7 @@ function assemblyMoveStepUp() {
     [assemblyData.steps[ei], assemblyData.steps[ei - 1]] = [assemblyData.steps[ei - 1], assemblyData.steps[ei]];
     assemblyData.steps.forEach((s, i) => { s.id = i + 1; });
     assemblyState.currentStepIndex = ei - 1;
+    repairChain();
     updateAssemblyGuiInfo();
     console.log(`[Assembly] Step moved up → position ${assemblyState.currentStepIndex + 1}.`);
 }
@@ -2894,6 +2952,7 @@ function assemblyMoveStepDown() {
     [assemblyData.steps[ei], assemblyData.steps[ei + 1]] = [assemblyData.steps[ei + 1], assemblyData.steps[ei]];
     assemblyData.steps.forEach((s, i) => { s.id = i + 1; });
     assemblyState.currentStepIndex = ei + 1;
+    repairChain();
     updateAssemblyGuiInfo();
     console.log(`[Assembly] Step moved down → position ${assemblyState.currentStepIndex + 1}.`);
 }
