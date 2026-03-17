@@ -10,7 +10,6 @@ import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 //import { GUI } from 'dat.gui';
 import { GUI } from 'lil-gui';
 import ZipLoader from 'zip-loader';
-import JSZip from 'jszip';
 import { updateCrossSectionLines as updateCrossSectionLinesCore } from './crossSectionUtils.js';
 
 // Proměnné globálního rozsahu----------------------------------------------------------------------------------------
@@ -139,11 +138,6 @@ const viewProp = {
     bakeWholeModelRotation: function() { bakeWholeModelRotation(); },
     exportAll: function() { exportAllModels(); },
     exportSelected: function() { exportSelectedObject(); },
-    exportSceneZip: function() { exportSceneAsZip(); },
-    importAll: function() { importSceneFromZip(); },
-    importModelOnly: function() { importModelGlb(); },
-    importWorkflowOnly: function() { importWorkflowJson(); },
-    clearScene: function() { clearScene(); },
     transformSpace: true,  // true = world, false = local
     snapEnabled: true,     // true = snap vždy aktivní, false = snap jen při Shift
     snapTranslation: 10,   // krok translace
@@ -228,7 +222,6 @@ if (import.meta.env.DEV) {
     window.clipPlanes = clipPlanes;
     window.assemblyData = assemblyData;
     window.assemblyState = assemblyState;
-    window.loadedModels = loadedModels;
 
     //NOK - toto není reference
     window.transformControls = transformControls;
@@ -610,8 +603,6 @@ function init() {
                 break;
         }
     } );
-
-    addMainGui();
 } //End init 
 
 // Přepočítá frustum ortografické kamery podle aktuálního obsahu meshObjects.
@@ -674,7 +665,6 @@ function addMainGui() {
         folderProp.add(viewProp, 'resetWholeModel').name('Reset whole model');
         folderProp.add(viewProp, 'showHiddenObjects').name('Show hidden objects');
         folderProp.add(viewProp, 'switchHiddenObjects').name('Switch hidden objects');
-        folderProp.add(viewProp, 'clearScene').name('✕ Clear scene');
         let fsCtrl = folderProp.add(viewProp, 'fullscreen').name('Fullscreen').onChange(function(value){// Fullscreen toggle (false = windowed, true = fullscreen)
             if (value) {
                 document.getElementById('body').requestFullscreen().catch((err) => {console.warn('Fullscreen not available: ', err.message)});
@@ -733,12 +723,6 @@ function addMainGui() {
             exportFolder.add(viewProp, 'exportAll').name('Export all models');
             exportFolder.add(viewProp, 'exportSelected').name('Export selected object');
             exportFolder.close();
-        const ioFolder = folderProp.addFolder("Import / Export (ZIP)");
-            ioFolder.add(viewProp, 'exportSceneZip').name('⬆ Export (model + workflow)');
-            ioFolder.add(viewProp, 'importAll').name('⬇ Import all (ZIP)');
-            ioFolder.add(viewProp, 'importModelOnly').name('⬇ Import model (GLB)');
-            ioFolder.add(viewProp, 'importWorkflowOnly').name('⬇ Import workflow (JSON)');
-            ioFolder.close();
         const helpersFolder = folderProp.addFolder("Helpers");
             helpersFolder.add(viewProp, 'showAxesHelper').name('axes').onChange(function() { updateAxesHelper(); }).listen();
             helpersFolder.add(viewProp, 'axesHelperSize', 1, 2000, 1).name('axes size').onChange(function() { updateAxesHelper(); }).listen();
@@ -858,8 +842,7 @@ function refreshSelectedObjGui(obj) {
     selectedFolder.open();
 }
 
-function initLoad() {
-		    
+function initLoad() {		    
     // Načtení modelu z URL parametru---------------------------------------------------------
     // 1. Získání celého řetězce dotazu (query string) z aktuální URL
     // Např. získá '?model=https%3A%2F%2Ffirebase.zip&name=muj_dil.zip'
@@ -1707,6 +1690,7 @@ function loadModel(model, name, scale, colored) {
                 resolve(mesh);	
 
                 lastSelectedObject=mesh;  
+                addMainGui();
             } );
         } );					
     });
@@ -1760,6 +1744,7 @@ function loadGlbModel(model, name, scale, colored) {
             
             render();
             resolve(gltf.scene);
+            addMainGui();
         }, undefined, function (error) {
             reject(error); // Doporučuji přidat i error handling
         });
@@ -2324,7 +2309,7 @@ function saveArrayBuffer(buffer, filename) {
 
 function exportAllModels() {
     if (loadedModels.length === 0) {
-        console.warn('No models to export.');
+        console.warn('Žádné modely k exportu.');
         return;
     }
     const defaultName = 'export_all.glb';
@@ -2382,368 +2367,6 @@ function exportSelectedObject() {
         console.error('Chyba při exportu:', error);
     }, { binary: true, onlyVisible: false });
 }
-
-// ===== Import / Export / Reset =================================================================================
-
-/**
- * Serialize assemblyData to a plain JSON-safe object.
- * objectRef (THREE.Object3D) is replaced by the object's name string.
- */
-function serializeWorkflow() {
-    return {
-        modelFile: assemblyData.modelFile,
-        description: assemblyData.description,
-        steps: assemblyData.steps.map(step => ({
-            id: step.id,
-            name: step.name,
-            description: step.description,
-            transformations: step.transformations.map(t => ({
-                objectName: t.objectRef ? t.objectRef.name : '',
-                initPosition:    t.initPosition,
-                finalPosition:   t.finalPosition,
-                initQuaternion:  t.initQuaternion,
-                finalQuaternion: t.finalQuaternion,
-                initScale:       t.initScale,
-                finalScale:      t.finalScale,
-            }))
-        }))
-    };
-}
-
-/**
- * Export: pack the current model (all loadedModels) + workflow into a single ZIP file.
- */
-async function exportSceneAsZip() {
-    if (loadedModels.length === 0) {
-        alert('No models to export.');
-        return;
-    }
-
-    const defaultName = 'scene_export';
-    const baseName = window.prompt('Export file base name (without extension):', defaultName);
-    if (baseName === null) return;
-    const finalBase = baseName.trim() || defaultName;
-
-    // 1. Export model as GLB (ArrayBuffer)
-    const exporter = new GLTFExporter();
-    const group = new THREE.Group();
-    loadedModels.forEach(model => group.add(model.clone(true)));
-
-    const glbBuffer = await new Promise((resolve, reject) => {
-        exporter.parse(group, resolve, reject, { binary: true, onlyVisible: false });
-    });
-
-    // 2. Serialize workflow
-    const workflowJson = JSON.stringify(serializeWorkflow(), null, 2);
-
-    // 3. Pack into ZIP
-    const zip = new JSZip();
-    zip.file(`${finalBase}.glb`, glbBuffer);
-    zip.file(`${finalBase}_workflow.json`, workflowJson);
-
-    const zipBlob = await zip.generateAsync({ type: 'blob' });
-
-    // 4. Trigger download
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(zipBlob);
-    link.download = `${finalBase}.zip`;
-    link.click();
-    URL.revokeObjectURL(link.href);
-    console.log(`[Export] ZIP saved as ${finalBase}.zip`);
-}
-
-/**
- * Import everything from a ZIP (model GLB + workflow JSON).
- * New model is ADDED to any existing models.
- */
-async function importSceneFromZip() {
-    const file = await pickFile('.zip');
-    if (!file) return;
-
-    const arrayBuffer = await file.arrayBuffer();
-    const zip = await JSZip.loadAsync(arrayBuffer);
-
-    // Find GLB and JSON files inside the zip
-    const glbEntry      = Object.values(zip.files).find(f => f.name.endsWith('.glb'));
-    const workflowEntry = Object.values(zip.files).find(f => f.name.endsWith('.json'));
-
-    if (!glbEntry) {
-        alert('ZIP does not contain any GLB file.');
-        return;
-    }
-
-    // Load model
-    const glbBuffer = await glbEntry.async('arraybuffer');
-    const glbBlob   = new Blob([glbBuffer], { type: 'model/gltf-binary' });
-    const glbUrl    = URL.createObjectURL(glbBlob);
-
-    await loadGlbModel(glbUrl, glbEntry.name, 0.001, true);
-    URL.revokeObjectURL(glbUrl);
-    recalibrateOrthoCamera();
-    fitView();
-
-    // Load workflow (optional) – scoped to the newly loaded model, existing workflow is preserved
-    if (workflowEntry) {
-        const newModel = loadedModels[loadedModels.length - 1];
-        const jsonText = await workflowEntry.async('string');
-        try {
-            const data = JSON.parse(jsonText);
-            const unresolved = _deserializeWorkflowScoped(data, newModel);
-            if (unresolved > 0) {
-                console.warn(`[Import ZIP] ${unresolved} workflow objectRef(s) could not be resolved.`);
-            } else {
-                console.log('[Import ZIP] Workflow loaded and mapped to new model.');
-            }
-        } catch (e) {
-            console.error('[Import ZIP] Failed to parse workflow JSON:', e);
-        }
-    }
-}
-
-/**
- * Import only a GLB model file.
- * Adds it to the existing scene. Then attempts to remap any unresolved workflow references.
- */
-async function importModelGlb() {
-    const file = await pickFile('.glb');
-    if (!file) return;
-
-    const url = URL.createObjectURL(file);
-    await loadGlbModel(url, file.name, 0.001, true);
-    URL.revokeObjectURL(url);
-    recalibrateOrthoCamera();
-    fitView();
-
-    // After loading a new model, try to remap workflow references that matched by name
-    _remapWorkflowAfterModelLoad();
-}
-
-/**
- * Import only a workflow JSON file. Applies it to objects already in the scene.
- * If multiple models are loaded, the user is asked to select one.
- */
-async function importWorkflowJson() {
-    if (loadedModels.length === 0) {
-        alert('No model loaded. Import a model first.');
-        return;
-    }
-
-    // Pick the file first – the browser requires a direct user gesture for the file dialog
-    const file = await pickFile('.json');
-    if (!file) return;
-
-    // If multiple models, prompt user to choose one
-    let scopeRoot;
-    if (loadedModels.length === 1) {
-        scopeRoot = loadedModels[0];
-    } else {
-        const lines = loadedModels.map((m, i) => `${i + 1}: ${m.name || '(unnamed)'}`);
-        const choice = window.prompt(
-            'Multiple models are loaded. Enter the number of the model to map the workflow to:\n' +
-            lines.join('\n'),
-            '1'
-        );
-        if (choice === null) return;
-        const idx = parseInt(choice, 10) - 1;
-        if (isNaN(idx) || idx < 0 || idx >= loadedModels.length) {
-            alert('Invalid selection.');
-            return;
-        }
-        scopeRoot = loadedModels[idx];
-    }
-
-    const text = await file.text();
-    try {
-        const data = JSON.parse(text);
-        const unresolved = _deserializeWorkflowScoped(data, scopeRoot);
-        if (unresolved > 0) {
-            alert(`Workflow loaded, but ${unresolved} object(s) were not found in the selected model.\nCheck the console.`);
-        } else {
-            console.log(`[Import Workflow] Workflow fully resolved against "${scopeRoot.name || '(unnamed)"'}.`);
-        }
-    } catch (e) {
-        alert('Error reading JSON file.');
-        console.error(e);
-    }
-}
-
-/**
- * Reset the scene: remove all loadedModels (and their meshObjects) + clear workflow.
- * Lights, cameras, helpers etc. are preserved.
- */
-function clearScene() {
-    if (!confirm('Clear scene? All loaded models and workflow will be removed.')) return;
-
-    // Stop any running animation
-    if (assemblyAnimation) {
-        cancelAnimationFrame(assemblyAnimation);
-        assemblyAnimation = null;
-    }
-
-    // Deselect current object
-    deselectObject();
-
-    // Clear multi-selection
-    clearMultiSelect();
-
-    // Remove all loadedModels from scene
-    const modelsToRemove = [...loadedModels];
-    modelsToRemove.forEach(model => {
-        // Remove meshObjects that belong to this model
-        model.traverse(child => {
-            const idx = meshObjects.indexOf(child);
-            if (idx !== -1) meshObjects.splice(idx, 1);
-        });
-        scene.remove(model);
-    });
-    loadedModels.length = 0;
-
-    // Clear assembly workflow
-    assemblyData.modelFile   = '';
-    assemblyData.description = '';
-    assemblyData.steps.length = 0;
-    assemblyAnchors.clear();
-    assemblyState.currentStepIndex = -1;
-    assemblyState.editMode = false;
-    assemblyGui.editMode = false;
-
-    // Clear hidden objects lists
-    hiddenObjects.length = 0;
-    temporarilyShownObjects.length = 0;
-
-    // Clear selection helpers
-    multiSelectionHelpers.forEach(h => scene.remove(h));
-    multiSelectionHelpers.length = 0;
-    selectedObjects.length = 0;
-    multiOriginalParents.length = 0;
-
-    // Clear cross-section lines
-    if (crossSectionLines) {
-        scene.remove(crossSectionLines);
-        crossSectionLines = null;
-    }
-
-    updateAssemblyGuiInfo();
-    render();
-    console.log('[Clear Scene] Scene cleared.');
-}
-
-/**
- * Helper: after loading a new model, re-resolve any workflow objectRef that was previously
- * unresolved (objectRef === null) by matching object names in the freshly loaded model.
- * Only applies when an existing workflow exists with serialized object names.
- * This is a best-effort remap – it operates in-place on assemblyData.
- */
-function _remapWorkflowAfterModelLoad() {
-    if (assemblyData.steps.length === 0) return;
-
-    const nameMap = new Map();
-    scene.traverse(obj => {
-        if (obj.name && obj.name.trim() !== '') nameMap.set(obj.name, obj);
-    });
-
-    let remapped = 0;
-    assemblyData.steps.forEach(step => {
-        step.transformations.forEach(t => {
-            if (!t.objectRef && t._pendingName) {
-                const obj = nameMap.get(t._pendingName);
-                if (obj) {
-                    t.objectRef = obj;
-                    delete t._pendingName;
-                    remapped++;
-                }
-            }
-        });
-    });
-    if (remapped > 0) {
-        updateAssemblyGuiInfo();
-        console.log(`[Remap] ${remapped} workflow reference(s) remapped to newly loaded objects.`);
-    }
-}
-
-/**
- * Scoped, additive workflow deserialization.
- * Resolves object names only within scopeRoot subtree and APPENDS steps to existing workflow.
- * Existing steps are preserved.
- * @param {Object} data  – parsed workflow JSON
- * @param {THREE.Object3D} scopeRoot – the model subtree to resolve names against
- * @returns {number} number of unresolved references
- */
-function _deserializeWorkflowScoped(data, scopeRoot) {
-    // Build a name→object map only from the scope subtree
-    const nameMap = new Map();
-    scopeRoot.traverse(obj => {
-        if (obj.name && obj.name.trim() !== '') {
-            nameMap.set(obj.name, obj);
-        }
-    });
-
-    let unresolved = 0;
-
-    // Determine next step ID (continue numbering from existing steps)
-    let nextId = assemblyData.steps.length > 0
-        ? Math.max(...assemblyData.steps.map(s => s.id)) + 1
-        : 1;
-
-    const newSteps = (data.steps || []).map(step => {
-        const mappedStep = {
-            id:          nextId++,
-            name:        step.name,
-            description: step.description,
-            transformations: (step.transformations || []).reduce((acc, t) => {
-                const obj = nameMap.get(t.objectName);
-                if (!obj) {
-                    console.warn(`[Import Workflow] Object "${t.objectName}" not found in model "${scopeRoot.name || '(unnamed)'}" – stored as pending.`);
-                    unresolved++;
-                    acc.push({
-                        objectRef:       null,
-                        _pendingName:    t.objectName,
-                        initPosition:    t.initPosition,
-                        finalPosition:   t.finalPosition,
-                        initQuaternion:  t.initQuaternion,
-                        finalQuaternion: t.finalQuaternion,
-                        initScale:       t.initScale,
-                        finalScale:      t.finalScale,
-                    });
-                    return acc;
-                }
-                acc.push({
-                    objectRef:       obj,
-                    initPosition:    t.initPosition,
-                    finalPosition:   t.finalPosition,
-                    initQuaternion:  t.initQuaternion,
-                    finalQuaternion: t.finalQuaternion,
-                    initScale:       t.initScale,
-                    finalScale:      t.finalScale,
-                });
-                return acc;
-            }, [])
-        };
-        return mappedStep;
-    });
-
-    // Append new steps to existing workflow
-    assemblyData.steps.push(...newSteps);
-    updateAssemblyGuiInfo();
-
-    return unresolved;
-}
-
-/**
- * Utility: open a native file picker and return the chosen File, or null on cancel.
- */
-function pickFile(accept) {
-    return new Promise(resolve => {
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = accept;
-        input.onchange = () => resolve(input.files[0] || null);
-        input.oncancel  = () => resolve(null);
-        input.click();
-    });
-}
-
-// ===============================================================================================================
 
 function separateMesh(meshToSeparate) {
     if (!meshToSeparate || !meshToSeparate.geometry) return;
