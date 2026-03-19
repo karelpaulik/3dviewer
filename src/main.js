@@ -138,6 +138,7 @@ const viewProp = {
     bakeWholeModelRotation: function() { bakeWholeModelRotation(); },
     exportAll: function() { exportAllModels(); },
     exportSelected: function() { exportSelectedObject(); },
+    importGlb: function() { importGlbFile(); },
     transformSpace: true,  // true = world, false = local
     snapEnabled: true,     // true = snap vždy aktivní, false = snap jen při Shift
     snapTranslation: 10,   // krok translace
@@ -220,6 +221,7 @@ if (import.meta.env.DEV) {
     //OK, reference na objekty jsou dostupné v konzoli pro ladění
     window.meshObjects = meshObjects;
     window.clipPlanes = clipPlanes;
+    window.loadedModels = loadedModels;
     window.assemblyData = assemblyData;
     window.assemblyState = assemblyState;
 
@@ -603,6 +605,9 @@ function init() {
                 break;
         }
     } );
+
+    addMainGui();
+    addAssemblyGui();
 } //End init 
 
 // Přepočítá frustum ortografické kamery podle aktuálního obsahu meshObjects.
@@ -719,7 +724,8 @@ function addMainGui() {
             snapFolder.add(viewProp, 'snapRotationDeg', 1, 90, 1).name('Rotation (°)').onChange(function() { applySnapSettings(); }).listen();
             snapFolder.add(viewProp, 'snapScale', 0.01, 2, 0.01).name('Scale').onChange(function() { applySnapSettings(); }).listen();
             snapFolder.close();
-        const exportFolder = folderProp.addFolder("Export GLB");
+        const exportFolder = folderProp.addFolder("Export / Import GLB");
+            exportFolder.add(viewProp, 'importGlb').name('Import GLB…');
             exportFolder.add(viewProp, 'exportAll').name('Export all models');
             exportFolder.add(viewProp, 'exportSelected').name('Export selected object');
             exportFolder.close();
@@ -754,7 +760,6 @@ function addMainGui() {
     });
 
     folderProp.close();
-    addAssemblyGui();
 }	
 
 function refreshSelectedObjGui(obj) {
@@ -1690,7 +1695,6 @@ function loadModel(model, name, scale, colored) {
                 resolve(mesh);	
 
                 lastSelectedObject=mesh;  
-                addMainGui();
             } );
         } );					
     });
@@ -1741,10 +1745,11 @@ function loadGlbModel(model, name, scale, colored) {
                 }
             });
             
+            // Import assembly workflow stored in userData (if any)
+            importAssemblyFromGltfScene(gltf.scene);
             
             render();
             resolve(gltf.scene);
-            addMainGui();
         }, undefined, function (error) {
             reject(error); // Doporučuji přidat i error handling
         });
@@ -2307,6 +2312,169 @@ function saveArrayBuffer(buffer, filename) {
     URL.revokeObjectURL(link.href);
 }
 
+// Open a file-picker dialog and load the chosen GLB file.
+function importGlbFile() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.glb';
+    input.addEventListener('change', function() {
+        const file = input.files[0];
+        if (!file) return;
+        const url = URL.createObjectURL(file);
+        loadGlbModel(url, file.name, 0.001, true).then(() => {
+            URL.revokeObjectURL(url);
+            recalibrateOrthoCamera();
+            fitView();
+            console.log(`[Import] GLB "${file.name}" loaded successfully.`);
+        }).catch(err => {
+            URL.revokeObjectURL(url);
+            console.error(`[Import] Failed to load "${file.name}":`, err);
+        });
+    });
+    input.click();
+}
+
+// ===== Assembly Workflow Export/Import Helpers =================================================
+
+// Write assemblyData.steps into each objectRef's userData.assemblyTransformations
+// so the data survives GLB export/import. Call immediately before cloning for export.
+function assemblyWriteToUserData() {
+    // Reset assembly arrays on all referenced objects
+    const allObjects = new Set();
+    assemblyData.steps.forEach(step => {
+        step.transformations.forEach(t => allObjects.add(t.objectRef));
+    });
+    allObjects.forEach(obj => { obj.userData.assemblyTransformations = []; });
+
+    // Populate per-object arrays indexed by step
+    assemblyData.steps.forEach(step => {
+        step.transformations.forEach(t => {
+            t.objectRef.userData.assemblyTransformations.push({
+                step_id:          step.id,
+                step_name:        step.name,
+                step_description: step.description,
+                initPosition:     { ...t.initPosition },
+                finalPosition:    { ...t.finalPosition },
+                initQuaternion:   t.initQuaternion  ? { ...t.initQuaternion }  : null,
+                finalQuaternion:  t.finalQuaternion ? { ...t.finalQuaternion } : null,
+                initScale:        t.initScale       ? { ...t.initScale }       : null,
+                finalScale:       t.finalScale      ? { ...t.finalScale }      : null,
+            });
+        });
+    });
+}
+
+// Remove assemblyTransformations from userData of all objects referenced in assemblyData.
+// Call on originals immediately after cloning — clones already carry the data.
+function assemblyClearUserData() {
+    assemblyData.steps.forEach(step => {
+        step.transformations.forEach(t => {
+            delete t.objectRef.userData.assemblyTransformations;
+        });
+    });
+}
+
+// Read userData.assemblyTransformations from an imported GLTF scene and
+// integrate the resulting steps into assemblyData according to user choice.
+function importAssemblyFromGltfScene(gltfScene) {
+    // Collect per-object assembly records from userData
+    const importedSteps = new Map(); // step_id → step object
+    gltfScene.traverse(function(child) {
+        const arr = child.userData.assemblyTransformations;
+        if (!Array.isArray(arr) || arr.length === 0) return;
+
+        arr.forEach(entry => {
+            if (!importedSteps.has(entry.step_id)) {
+                importedSteps.set(entry.step_id, {
+                    id:          entry.step_id,
+                    name:        entry.step_name        || `Step ${entry.step_id}`,
+                    description: entry.step_description || '',
+                    transformations: [],
+                });
+            }
+            importedSteps.get(entry.step_id).transformations.push({
+                objectRef:       child,
+                initPosition:    entry.initPosition,
+                finalPosition:   entry.finalPosition,
+                initQuaternion:  entry.initQuaternion  || null,
+                finalQuaternion: entry.finalQuaternion || null,
+                initScale:       entry.initScale       || null,
+                finalScale:      entry.finalScale      || null,
+            });
+        });
+
+        // Remove from userData — no longer needed at runtime
+        delete child.userData.assemblyTransformations;
+    });
+
+    const sortedImportedSteps = [...importedSteps.values()].sort((a, b) => a.id - b.id);
+    if (sortedImportedSteps.length === 0) return;
+
+    if (assemblyData.steps.length === 0) {
+        // No conflict — load directly
+        assemblyData.steps.push(...sortedImportedSteps);
+        repairChain();
+        console.log(`[Assembly] Imported ${sortedImportedSteps.length} step(s) from GLB.`);
+        updateAssemblyGuiInfo();
+        return;
+    }
+
+    // Existing workflow — ask user how to handle the conflict
+    const existingCount = assemblyData.steps.length;
+    const importedCount = sortedImportedSteps.length;
+    const choice = window.prompt(
+        `Imported model contains Assembly Workflow (${importedCount} step(s)).\n` +
+        `Existing workflow: ${existingCount} step(s).\n\n` +
+        `Choose action:\n` +
+        `  1 — Merge   (combine transformations of steps with matching IDs; keep existing step names)\n` +
+        `  2 — Append  (add imported steps after existing steps)\n` +
+        `  3 — Replace (overwrite existing workflow with imported)\n` +
+        `  4 — Ignore  (discard imported workflow)`,
+        '1'
+    );
+
+    const action = choice !== null ? choice.trim() : '4';
+
+    if (action === '1') {
+        // Merge by step_id — existing step metadata (name/description) is preserved
+        sortedImportedSteps.forEach(importedStep => {
+            const existing = assemblyData.steps.find(s => s.id === importedStep.id);
+            if (existing) {
+                existing.transformations.push(...importedStep.transformations);
+                console.log(`[Assembly] Merge: added ${importedStep.transformations.length} transformation(s) to step ${importedStep.id} "${existing.name}".`);
+            } else {
+                assemblyData.steps.push(importedStep);
+                assemblyData.steps.sort((a, b) => a.id - b.id);
+                console.log(`[Assembly] Merge: new step ${importedStep.id} "${importedStep.name}" inserted.`);
+            }
+        });
+        repairChain();
+    } else if (action === '2') {
+        // Append — remap step IDs to continue after existing ones
+        const maxId = Math.max(...assemblyData.steps.map(s => s.id));
+        sortedImportedSteps.forEach((step, i) => {
+            step.id = maxId + i + 1;
+            assemblyData.steps.push(step);
+        });
+        repairChain();
+        console.log(`[Assembly] Append: ${sortedImportedSteps.length} step(s) added (IDs ${maxId + 1}–${maxId + sortedImportedSteps.length}).`);
+    } else if (action === '3') {
+        // Replace — overwrite entirely
+        assemblyData.steps.length = 0;
+        assemblyData.steps.push(...sortedImportedSteps);
+        assemblyAnchors.clear();
+        repairChain();
+        console.log(`[Assembly] Replace: workflow replaced with ${sortedImportedSteps.length} imported step(s).`);
+    } else {
+        // action === '4' or dialog cancelled — ignore
+        console.log('[Assembly] Import: workflow ignored.');
+    }
+
+    updateAssemblyGuiInfo();
+}
+
+// ================================================================================================
+
 function exportAllModels() {
     if (loadedModels.length === 0) {
         console.warn('Žádné modely k exportu.');
@@ -2316,11 +2484,19 @@ function exportAllModels() {
     const filename = window.prompt('Název souboru pro export:', defaultName);
     if (filename === null) return; // uživatel stiskl Cancel
     const finalName = filename.trim() || defaultName;
+
+    // Write assembly workflow into userData before cloning
+    assemblyWriteToUserData();
+
     const exporter = new GLTFExporter();
     const group = new THREE.Group();
     loadedModels.forEach(model => {
         group.add(model.clone(true));
     });
+
+    // Clean up originals — clones already carry the assembly data
+    assemblyClearUserData();
+
     exporter.parse(group, function(result) {
         saveArrayBuffer(result, finalName);
         console.log('Export all: hotovo.');
@@ -2346,9 +2522,16 @@ function exportSelectedObject() {
         }
     });
 
+    // Write assembly workflow into userData before cloning
+    assemblyWriteToUserData();
+
     const exporter = new GLTFExporter();
     const clone = lastSelectedObject.clone(true);
 
+    // Clean up originals — clone already carries the assembly data
+    assemblyClearUserData();
+
+    // Apply world transform to the clone so it appears in the same position after re-import
     // Aplikujeme world transform na klon, aby se po importu zobrazil ve stejné pozici
     // jako originál (i když je originál child otočeného/posunutého parenta)
     lastSelectedObject.updateWorldMatrix(true, false);// Aktualizujeme world matici, aby obsahovala aktuální pozici, rotaci a měřítko včetně rodičů. true pro update pozice rodičů, false pro neupdate pozice dětí (nechceme měnit pozici klonu)
