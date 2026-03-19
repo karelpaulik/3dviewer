@@ -767,6 +767,24 @@ function refreshSelectedObjGui(obj) {
         selectedFolder.destroy();
         selectedFolder = null;
     }
+
+    // Write selected material color into GUI: Specif. color
+    (function syncPartColor(o) {
+        let mat = null;
+        if (o.material) {
+            mat = Array.isArray(o.material) ? o.material[0] : o.material;
+        }
+        if (!mat) {
+            o.traverse((child) => {
+                if (!mat && child.isMesh && child.material) {
+                    mat = Array.isArray(child.material) ? child.material[0] : child.material;
+                }
+            });
+        }
+        if (mat && mat.color) {
+            part.color = '#' + mat.color.getHexString();
+        }
+    })(obj);
                 
     selectedFolder = gui.addFolder( 'Selected part: ' + (obj.name || 'Unnamed') );
     selectedFolder.add(obj, 'name').name('Name').listen();
