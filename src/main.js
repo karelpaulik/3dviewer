@@ -129,6 +129,7 @@ const viewProp = {
     showHiddenObjects: function() { showHiddenObjects() },
     switchHiddenObjects: function() { toggleHiddenObjects() },
     resetWholeModel: function() { resetWholeModel() },
+    cleanupModel: function() { cleanupModel(); },
     rotateXPlus: function() { rotateAllModels('x', Math.PI / 2) },
     rotateXMinus: function() { rotateAllModels('x', -Math.PI / 2) },
     rotateYPlus: function() { rotateAllModels('y', Math.PI / 2) },
@@ -471,6 +472,7 @@ function init() {
         switch ( event.key ) {
             case 'Escape':
                 deselectObject();
+                selectionHistory.length = 0;
                 clearHistoryPreviewHelpers();
                 if (selectedObjects.length > 0) {
                     addCurrentGroupToHistory();
@@ -673,6 +675,7 @@ function addMainGui() {
     const folderProp = gui.addFolder( 'View' );
         folderProp.add(viewProp, 'fit').name('Fit View');
         folderProp.add(viewProp, 'resetWholeModel').name('Reset whole model');
+        folderProp.add(viewProp, 'cleanupModel').name('Cleanup (flatten unnamed nodes)');
         folderProp.add(viewProp, 'showHiddenObjects').name('Show hidden objects');
         folderProp.add(viewProp, 'switchHiddenObjects').name('Switch hidden objects');
         let fsCtrl = folderProp.add(viewProp, 'fullscreen').name('Fullscreen').onChange(function(value){// Fullscreen toggle (false = windowed, true = fullscreen)
@@ -1787,8 +1790,73 @@ function fileNameWithoutExtension(path) {
     return nameParts[0];			
 }
 
+function cleanupModel() {
+    if (!confirm('Flatten all unnamed nodes in the model?')) return;
+    // Detach TransformControls and clear GUI before restructuring the scene graph
+    deselectObject();
+
+    // Collect all unnamed Object3D nodes (skip scene root, meshes, lights, cameras)
+    // Traverse only loadedModels subtrees – this naturally avoids TransformControls,
+    // helpers and other scene-level objects that don't belong to user content.
+    const toProcess = [];
+    loadedModels.forEach(function(root) {
+        if (!root) return;
+        root.traverse(function(node) {
+            if (node.isMesh || node.isLight || node.isCamera) return;
+            if (!node.name || node.name.trim() === '') {
+                toProcess.push(node);
+            }
+        });
+    });
+
+    if (toProcess.length === 0) {
+        console.log('cleanupModel: no unnamed nodes found.');
+        return;
+    }
+
+    // Reverse pre-order → post-order: children are processed before their parents.
+    // This correctly handles nested unnamed nodes.
+    toProcess.reverse();
+
+    let count = 0;
+    for (const node of toProcess) {
+        if (!node.parent) continue; // already detached by an earlier iteration
+
+        const parent = node.parent;
+        const children = [...node.children];
+
+        // Move all children to grandparent, preserving world-space transform
+        for (const child of children) {
+            parent.attach(child);
+        }
+
+        // Remove the now-empty (or childless) unnamed node
+        parent.remove(node);
+
+        // Remove from meshObjects if tracked
+        const idx = meshObjects.indexOf(node);
+        if (idx !== -1) meshObjects.splice(idx, 1);
+
+        // If it was a root model, replace its entry in loadedModels with its promoted children
+        const lmIdx = loadedModels.indexOf(node);
+        if (lmIdx !== -1) {
+            loadedModels.splice(lmIdx, 1, ...children);
+        }
+
+        count++;
+    }
+
+    console.log(`cleanupModel: removed ${count} unnamed node(s).`);
+
+    if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) {
+        updateCrossSectionLines();
+    }
+    render();
+}
+
 function flattenHierarchy(obj) {
     if (!obj) return;
+    if (!confirm('Remove this node and move its children to the parent?')) return;
     const parent = obj.parent;
     if (!parent) {
         console.warn('flattenHierarchy: object has no parent, cannot flatten.');
@@ -2245,6 +2313,7 @@ function onClick( event ) {
     } else {
         INTERSECTED = null;
         deselectObject();
+        selectionHistory.length = 0;
         clearHistoryPreviewHelpers();
         if (selectedObjects.length > 0) {
             addCurrentGroupToHistory();
@@ -2360,6 +2429,7 @@ function onTouchEnd( event ) {
         } else {
             INTERSECTED = null;
             deselectObject();
+            selectionHistory.length = 0;
             clearHistoryPreviewHelpers();
             if (selectedObjects.length > 0) {
                 addCurrentGroupToHistory();
