@@ -790,7 +790,7 @@ function refreshSelectedObjGui(obj) {
     selectedFolder.add(obj, 'name').name('Name').listen();
     selectedFolder.addColor(part, 'color').name('Specif. color').onChange(function(value){ changeColor(obj, value); });
     selectedFolder.add(part, 'randomColor').name('Random color');
-    //selectedFolder.add(part, 'remove').name('Remove');	
+    selectedFolder.add(part, 'remove').name('Remove Object');	
     //selectedFolder.add(part, 'separate').name('Separate Part');
     selectedFolder.add(part, 'hideObject').name('Hide Object');
     //selectedFolder.add(part, 'deselect').name('Deselect');
@@ -1782,8 +1782,9 @@ function fileNameWithoutExtension(path) {
 }
 
 function removeModel(part) {
+    if (!confirm('Do you really want to permanently remove object?')) return;
     try {				
-        transformControls.detach( part );
+        deselectObject();
         
         // Pokud je součástí skupiny (např. z GLB modelu), odstraníme z rodiče
         if (part.parent) {
