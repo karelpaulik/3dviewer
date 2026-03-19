@@ -213,6 +213,11 @@ const part = {
         if (lastSelectedObject && previousTransformState) {
             undoLastTransform(lastSelectedObject);
         }
+    },
+    flattenObject: function() {
+        if (lastSelectedObject) {
+            flattenHierarchy(lastSelectedObject);
+        }
     }
 };	
 
@@ -791,6 +796,7 @@ function refreshSelectedObjGui(obj) {
     selectedFolder.addColor(part, 'color').name('Specif. color').onChange(function(value){ changeColor(obj, value); });
     selectedFolder.add(part, 'randomColor').name('Random color');
     selectedFolder.add(part, 'remove').name('Remove Object');	
+    selectedFolder.add(part, 'flattenObject').name('Flatten (remove node, keep children)');
     //selectedFolder.add(part, 'separate').name('Separate Part');
     selectedFolder.add(part, 'hideObject').name('Hide Object');
     //selectedFolder.add(part, 'deselect').name('Deselect');
@@ -1779,6 +1785,50 @@ function fileNameWithoutExtension(path) {
     const myStr = myArr[ myArr.length-1 ];
     const nameParts = myStr.split('.');
     return nameParts[0];			
+}
+
+function flattenHierarchy(obj) {
+    if (!obj) return;
+    const parent = obj.parent;
+    if (!parent) {
+        console.warn('flattenHierarchy: object has no parent, cannot flatten.');
+        return;
+    }
+
+    // Collect children snapshot (iterate copy because attach() modifies children array)
+    const children = [...obj.children];
+
+    if (children.length === 0) {
+        console.warn('flattenHierarchy: object has no children, use Remove Object instead.');
+        return;
+    }
+
+    deselectObject();
+
+    // Re-parent each child to grandparent while preserving world transform
+    for (const child of children) {
+        parent.attach(child);
+    }
+
+    // Remove the now-empty node
+    parent.remove(obj);
+
+    // Remove from meshObjects if it was tracked (usually only meshes are tracked)
+    const idx = meshObjects.indexOf(obj);
+    if (idx !== -1) meshObjects.splice(idx, 1);
+
+    // If obj was a root model (directly under scene), replace it in loadedModels with its children
+    const lmIdx = loadedModels.indexOf(obj);
+    if (lmIdx !== -1) {
+        loadedModels.splice(lmIdx, 1, ...children);
+    }
+
+    // Update cross-section lines if needed
+    if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) {
+        updateCrossSectionLines();
+    }
+
+    render();
 }
 
 function removeModel(part) {
