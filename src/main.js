@@ -2831,7 +2831,7 @@ function rebuildAssemblyStepsList() {
 
     // Button 0: assembled (base) state
     const isAssembled = assemblyState.currentStepIndex === -1;
-    const assembledBtn = { go: function() { assemblyResetToStart(); } };
+    const assembledBtn = { go: function() { assemblyGoToAssembled(); } };
     assemblyStepsListFolder.add(assembledBtn, 'go').name(`${isAssembled ? '▶ ' : '   '}0:  Assembled`);
 
     assemblyData.steps.forEach((step, i) => {
@@ -2844,49 +2844,46 @@ function rebuildAssemblyStepsList() {
     assemblyStepsListFolder.open();
 }
 
-// Jump directly to a given step index (0-based), animating only the final move.
-function assemblyGoToStep(targetIndex) {
-    if (targetIndex < 0 || targetIndex >= assemblyData.steps.length) return;
-    if (targetIndex === assemblyState.currentStepIndex) return;
-
-    // Cancel any running animation
-    if (assemblyAnimation) {
-        cancelAnimationFrame(assemblyAnimation);
-        assemblyAnimation = null;
-    }
-
-    // Reset all objects to their init (assembled) positions
+// Animate to the fully assembled state (step 0 plays backward, final → init).
+// Snap scene to the state just before step at snapIndex (all steps 0..snapIndex applied),
+// then delegate to assemblyPrevStep() or assemblyNextStep() for the animated boundary move.
+function _snapAndAnimate(snapIndex, goingForward) {
+    // Reset all objects to assembled (init) positions
     [...assemblyData.steps].reverse().forEach(step => {
         step.transformations.forEach(t => {
             t.objectRef.position.set(t.initPosition.x, t.initPosition.y, t.initPosition.z);
         });
     });
-
-    // Apply steps 0 .. targetIndex-1 instantly
-    for (let i = 0; i < targetIndex; i++) {
+    // Apply steps 0..snapIndex instantly
+    for (let i = 0; i <= snapIndex; i++) {
         assemblyData.steps[i].transformations.forEach(t => {
             t.objectRef.position.set(t.finalPosition.x, t.finalPosition.y, t.finalPosition.z);
         });
     }
+    assemblyState.currentStepIndex = snapIndex;
+    render();
+    goingForward ? assemblyNextStep() : assemblyPrevStep();
+}
 
-    // Set index to one before target so animateAssemblyStep callback is correct
-    assemblyState.currentStepIndex = targetIndex - 1;
+// Animate to the fully assembled state (step 0 plays backward).
+function assemblyGoToAssembled() {
+    if (assemblyState.currentStepIndex === -1) return;
+    _snapAndAnimate(0, false);
+}
 
-    // Animate the target step
-    const step = assemblyData.steps[targetIndex];
-    if (step.transformations.length === 0) {
-        assemblyState.currentStepIndex = targetIndex;
-        updateAssemblyGuiInfo();
-        render();
-        if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) updateCrossSectionLines();
-        render();
+// Jump directly to a given step index (0-based), animating only the boundary move.
+function assemblyGoToStep(targetIndex) {
+    if (targetIndex < 0 || targetIndex >= assemblyData.steps.length) return;
+    if (targetIndex === assemblyState.currentStepIndex) return;
+
+    if (assemblyAnimation) { cancelAnimationFrame(assemblyAnimation); assemblyAnimation = null; }
+
+    if (targetIndex > assemblyState.currentStepIndex) {
+        // Forward: snap to targetIndex-1, animate targetIndex forward
+        _snapAndAnimate(targetIndex - 1, true);
     } else {
-        render(); // Show instant reposition before animation
-        animateAssemblyStep(step.transformations, true, () => {
-            assemblyState.currentStepIndex = targetIndex;
-            updateAssemblyGuiInfo();
-            console.log(`[Assembly] → Jump to step ${targetIndex + 1}: "${step.name}"`);
-        });
+        // Backward: snap to targetIndex+1, animate targetIndex+1 backward
+        _snapAndAnimate(targetIndex + 1, false);
     }
 }
 
