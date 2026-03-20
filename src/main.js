@@ -2829,6 +2829,11 @@ function rebuildAssemblyStepsList() {
         return;
     }
 
+    // Button 0: assembled (base) state
+    const isAssembled = assemblyState.currentStepIndex === -1;
+    const assembledBtn = { go: function() { assemblyResetToStart(); } };
+    assemblyStepsListFolder.add(assembledBtn, 'go').name(`${isAssembled ? '▶ ' : '   '}0:  Assembled`);
+
     assemblyData.steps.forEach((step, i) => {
         const isActive = i === assemblyState.currentStepIndex;
         const label = `${isActive ? '▶ ' : '   '}${i + 1}:  ${step.name}`;
