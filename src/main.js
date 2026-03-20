@@ -60,8 +60,10 @@ const assemblyGui = {
     deleteStep: function() { assemblyDeleteStep(); },
     removeObjectFromStep: function() { assemblyRemoveObjectFromStep(); },
     resetToStart: function() { assemblyResetToStart(); },
+    animateToStart: function() { assemblyAnimateToStart(); },
     prevStep: function() { assemblyPrevStep(); },
     nextStep: function() { assemblyNextStep(); },
+    animateToFinish: function() { assemblyAnimateToFinish(); },
     resetToFinish: function() { assemblyResetToFinish(); },
     animationDuration: 600,
     animationEase: 'power1.inOut',
@@ -574,12 +576,20 @@ function init() {
                 break;
 
             case 'PageUp':
-                assemblyPrevStep();
+                if (event.shiftKey) {
+                    assemblyAnimateToStart();
+                } else {
+                    assemblyPrevStep();
+                }
                 event.preventDefault();
                 break;
 
             case 'PageDown':
-                assemblyNextStep();
+                if (event.shiftKey) {
+                    assemblyAnimateToFinish();
+                } else {
+                    assemblyNextStep();
+                }
                 event.preventDefault();
                 break;
 
@@ -2757,12 +2767,14 @@ function addAssemblyGui() {
     const playbackFolder = assemblyFolder.addFolder('Playback');
     playbackFolder.add(assemblyGui, 'stepInfo').name('Status').disable().listen();
     playbackFolder.add(assemblyGui, 'resetToStart').name('⏮  Reset to start  [Home]');
+    playbackFolder.add(assemblyGui, 'animateToStart').name('◀◀  Animate to start  [Shift+PgUp]');
     playbackFolder.add(assemblyGui, 'prevStep').name('◀  Previous step  [PageUp]');
     playbackFolder.add(assemblyGui, 'nextStep').name('Next step  ▶  [PageDown]');
+    playbackFolder.add(assemblyGui, 'animateToFinish').name('Animate to finish  ▶▶  [Shift+PgDn]');
     playbackFolder.add(assemblyGui, 'resetToFinish').name('Reset to finish  ⏭  [End]');
 
-    // --- GSAP ---
-    const gsapFolder = playbackFolder.addFolder('GSAP');
+    // --- Animation Settings ---
+    const gsapFolder = playbackFolder.addFolder('Animation Settings');
     gsapFolder.add(assemblyGui, 'animationDuration', 0, 2000, 50).name('Duration (ms)');
     gsapFolder.add(assemblyGui, 'animationEase', [
         'none',
@@ -3243,6 +3255,61 @@ function assemblyResetToStart() {
     render();
     if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) updateCrossSectionLines();
     render();
+}
+
+// Animate all remaining steps forward from current position to the last step.
+function assemblyAnimateToFinish() {
+    const totalSteps = assemblyData.steps.length;
+    if (totalSteps === 0 || assemblyState.currentStepIndex >= totalSteps - 1) return;
+
+    let cancelled = false;
+
+    function animateNext() {
+        if (cancelled) return;
+        const nextIndex = assemblyState.currentStepIndex + 1;
+        if (nextIndex >= totalSteps) return;
+
+        const step = assemblyData.steps[nextIndex];
+        if (step.transformations.length === 0) {
+            assemblyState.currentStepIndex = nextIndex;
+            updateAssemblyGuiInfo();
+            animateNext();
+            return;
+        }
+
+        animateAssemblyStep(step.transformations, true, () => {
+            assemblyState.currentStepIndex = nextIndex;
+            updateAssemblyGuiInfo();
+            animateNext();
+        });
+    }
+
+    animateNext();
+}
+
+// Animate all remaining steps backward from current position to the assembled state.
+function assemblyAnimateToStart() {
+    if (assemblyState.currentStepIndex < 0) return;
+
+    function animatePrev() {
+        if (assemblyState.currentStepIndex < 0) return;
+
+        const step = assemblyData.steps[assemblyState.currentStepIndex];
+        if (step.transformations.length === 0) {
+            assemblyState.currentStepIndex--;
+            updateAssemblyGuiInfo();
+            animatePrev();
+            return;
+        }
+
+        animateAssemblyStep(step.transformations, false, () => {
+            assemblyState.currentStepIndex--;
+            updateAssemblyGuiInfo();
+            animatePrev();
+        });
+    }
+
+    animatePrev();
 }
 
 // Apply the next disassembly step (move objects to finalPosition).
