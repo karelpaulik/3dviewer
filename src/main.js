@@ -1911,7 +1911,18 @@ function removeModel(part) {
     if (!confirm('Do you really want to permanently remove object?')) return;
     try {				
         deselectObject();
-        
+
+        // Odstraníme part i všechny jeho potomky z meshObjects a hiddenObjects.
+        // V GLB hierarchii jsou v meshObjects pouze leaf-meshe, nikoli skupiny –
+        // pouhý indexOf(part) by neostranil potomky, kteří by pak zůstali aktivní
+        // v raycastu i po odebrání rodiče ze scény.
+        part.traverse(obj => {
+            const mi = meshObjects.indexOf(obj);
+            if (mi !== -1) meshObjects.splice(mi, 1);
+            const hi = hiddenObjects.indexOf(obj);
+            if (hi !== -1) hiddenObjects.splice(hi, 1);
+        });
+
         // Pokud je součástí skupiny (např. z GLB modelu), odstraníme z rodiče
         if (part.parent) {
             part.parent.remove( part );
@@ -1919,10 +1930,11 @@ function removeModel(part) {
             // Jinak odstraníme ze scény
             scene.remove( part );
         }
-        
-        const partIndex = meshObjects.indexOf(part);
-        if (partIndex !== -1) meshObjects.splice(partIndex, 1);			
-        
+
+        // Pokud šlo o kořenový model, odebereme i z loadedModels
+        const lmIdx = loadedModels.indexOf(part);
+        if (lmIdx !== -1) loadedModels.splice(lmIdx, 1);
+
         // Aktualizace průřezových čar
         if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) {
             updateCrossSectionLines();
