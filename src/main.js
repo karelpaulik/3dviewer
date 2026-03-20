@@ -1,5 +1,6 @@
 //main.js
 import * as THREE from 'three';
+import gsap from 'gsap';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
@@ -43,7 +44,7 @@ const assemblyState = {
     currentStepIndex: -1,  // -1 = fully assembled; N = steps[0..N] have been applied (also used as the edit target)
 };
 
-let assemblyAnimation = null;  // requestAnimationFrame handle for step animation
+let assemblyAnimation = null;  // GSAP tween handle for step animation
 let assemblyStepsListFolder = null; // Dynamicky přebudovávaný subfolder seznamu kroků
 let _assemblyFolderRef = null;      // Reference na hlavní Assembly Workflow folder (pro rebuild)
 
@@ -63,6 +64,13 @@ const assemblyGui = {
     nextStep: function() { assemblyNextStep(); },
     resetToFinish: function() { assemblyResetToFinish(); },
     animationDuration: 600,
+    animationEase: 'power1.inOut',
+    animationRepeat: 0,
+    animationDelay: 0,
+    animationRepeatDelay: 0,
+    animationYoyo: false,
+    animationStagger: 0,
+    animationOverwrite: 'auto',
 };
 // ============================================
 
@@ -2740,7 +2748,30 @@ function addAssemblyGui() {
     playbackFolder.add(assemblyGui, 'prevStep').name('◀  Previous step  [PageUp]');
     playbackFolder.add(assemblyGui, 'nextStep').name('Next step  ▶  [PageDown]');
     playbackFolder.add(assemblyGui, 'resetToFinish').name('Reset to finish  ⏭  [End]');
-    playbackFolder.add(assemblyGui, 'animationDuration', 0, 2000, 50).name('Animation (ms)');
+
+    // --- GSAP ---
+    const gsapFolder = playbackFolder.addFolder('GSAP');
+    gsapFolder.add(assemblyGui, 'animationDuration', 0, 2000, 50).name('Duration (ms)');
+    gsapFolder.add(assemblyGui, 'animationEase', [
+        'none',
+        'power1.in', 'power1.out', 'power1.inOut',
+        'power2.in', 'power2.out', 'power2.inOut',
+        'power3.in', 'power3.out', 'power3.inOut',
+        'power4.in', 'power4.out', 'power4.inOut',
+        'back.in', 'back.out', 'back.inOut',
+        'bounce.in', 'bounce.out', 'bounce.inOut',
+        'elastic.in', 'elastic.out', 'elastic.inOut',
+        'circ.in', 'circ.out', 'circ.inOut',
+        'expo.in', 'expo.out', 'expo.inOut',
+        'sine.in', 'sine.out', 'sine.inOut',
+    ]).name('Ease');
+    gsapFolder.add(assemblyGui, 'animationRepeat', -1, 10, 1).name('Repeat (-1=∞)');
+    gsapFolder.add(assemblyGui, 'animationDelay', 0, 2000, 50).name('Delay (ms)');
+    gsapFolder.add(assemblyGui, 'animationRepeatDelay', 0, 2000, 50).name('Repeat delay (ms)');
+    gsapFolder.add(assemblyGui, 'animationYoyo').name('Yoyo');
+    gsapFolder.add(assemblyGui, 'animationStagger', 0, 1000, 10).name('Stagger (ms)');
+    gsapFolder.add(assemblyGui, 'animationOverwrite', ['auto', 'true', 'false']).name('Overwrite');
+
     playbackFolder.open();
 
     // --- Edit ---
@@ -2876,7 +2907,7 @@ function assemblyGoToStep(targetIndex) {
     if (targetIndex < 0 || targetIndex >= assemblyData.steps.length) return;
     if (targetIndex === assemblyState.currentStepIndex) return;
 
-    if (assemblyAnimation) { cancelAnimationFrame(assemblyAnimation); assemblyAnimation = null; }
+    if (assemblyAnimation) { assemblyAnimation.kill(); assemblyAnimation = null; }
 
     if (targetIndex > assemblyState.currentStepIndex) {
         // Forward: snap to targetIndex-1, animate targetIndex forward
@@ -3046,13 +3077,13 @@ function repairChain() {
 // Animate all transformations in a step forward (disassembly) or backward (assembly).
 function animateAssemblyStep(transformations, forward, onComplete) {
     if (assemblyAnimation) {
-        cancelAnimationFrame(assemblyAnimation);
+        assemblyAnimation.kill();
         assemblyAnimation = null;
     }
 
     const duration = assemblyGui.animationDuration;
 
-    // Helper: apply all transform components instantly at a given interpolation alpha
+    // Helper: apply all transform components at a given interpolation alpha
     function applyTransforms(tList, startStates, alpha) {
         tList.forEach((tr, i) => {
             const s = startStates[i];
@@ -3090,34 +3121,73 @@ function animateAssemblyStep(transformations, forward, onComplete) {
         return;
     }
 
-    const start = performance.now();
+    // GSAP tween: animate a progress proxy from 0 → 1 and apply transforms in onUpdate
+    const overwriteVal = assemblyGui.animationOverwrite === 'true'  ? true
+                       : assemblyGui.animationOverwrite === 'false' ? false
+                       : 'auto';
+    const durationSec     = duration / 1000;
+    const delaySec        = assemblyGui.animationDelay / 1000;
+    const repeatDelaySec  = assemblyGui.animationRepeatDelay / 1000;
+    const staggerSec      = assemblyGui.animationStagger / 1000;
 
-    function step(now) {
-        const elapsed = now - start;
-        const alpha = Math.min(elapsed / duration, 1);
-        // Smoothstep ease-in-out
-        const eased = alpha * alpha * (3 - 2 * alpha);
+    const sharedCfg = {
+        duration:     durationSec,
+        ease:         assemblyGui.animationEase,
+        repeat:       assemblyGui.animationRepeat,
+        repeatDelay:  repeatDelaySec,
+        yoyo:         assemblyGui.animationYoyo,
+        overwrite:    overwriteVal,
+    };
 
-        applyTransforms(transformations, startStates, eased);
-
-        if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) updateCrossSectionLines();
-        render();
-
-        if (alpha < 1) {
-            assemblyAnimation = requestAnimationFrame(step);
-        } else {
-            assemblyAnimation = null;
-            if (onComplete) onComplete();
-        }
+    if (staggerSec <= 0) {
+        // Single proxy – all objects animate in lock-step
+        const proxy = { t: 0 };
+        assemblyAnimation = gsap.to(proxy, {
+            ...sharedCfg,
+            t: 1,
+            delay: delaySec,
+            onUpdate() {
+                applyTransforms(transformations, startStates, proxy.t);
+                if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) updateCrossSectionLines();
+                render();
+            },
+            onComplete() {
+                assemblyAnimation = null;
+                if (onComplete) onComplete();
+            },
+        });
+    } else {
+        // Timeline – each object animates with a stagger offset
+        const tl = gsap.timeline({
+            delay: delaySec,
+            onComplete() {
+                assemblyAnimation = null;
+                if (onComplete) onComplete();
+            },
+        });
+        transformations.forEach((tr, i) => {
+            const proxy = { t: 0 };
+            const s = startStates[i];
+            tl.to(proxy, {
+                ...sharedCfg,
+                t: 1,
+                onUpdate() {
+                    tr.objectRef.position.lerpVectors(s.pos, s.targetPos, proxy.t);
+                    if (s.hasRot)   tr.objectRef.quaternion.slerpQuaternions(s.quat, s.targetQuat, proxy.t);
+                    if (s.hasScale) tr.objectRef.scale.lerpVectors(s.scale, s.targetScale, proxy.t);
+                    if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) updateCrossSectionLines();
+                    render();
+                },
+            }, i * staggerSec);
+        });
+        assemblyAnimation = tl;
     }
-
-    assemblyAnimation = requestAnimationFrame(step);
 }
 
 // Reset to the fully disassembled state (all steps applied).
 function assemblyResetToFinish() {
     if (assemblyAnimation) {
-        cancelAnimationFrame(assemblyAnimation);
+        assemblyAnimation.kill();
         assemblyAnimation = null;
     }
     if (assemblyData.steps.length === 0) return;
@@ -3141,7 +3211,7 @@ function assemblyResetToFinish() {
 // Reset every object to its original loaded position (fully assembled state).
 function assemblyResetToStart() {
     if (assemblyAnimation) {
-        cancelAnimationFrame(assemblyAnimation);
+        assemblyAnimation.kill();
         assemblyAnimation = null;
     }
 
