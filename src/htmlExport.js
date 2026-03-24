@@ -33,10 +33,18 @@ export function exportToHTML(loadedModels, assemblyGui, assemblyWriteToUserData,
         const base64 = btoa(binary);
 
         // Get current animation settings
-        const animDuration = assemblyGui.animationDuration;
-        const animEase = assemblyGui.animationEase;
+        const animSettings = {
+            duration:    assemblyGui.animationDuration,
+            ease:        assemblyGui.animationEase,
+            repeat:      assemblyGui.animationRepeat,
+            delay:       assemblyGui.animationDelay,
+            repeatDelay: assemblyGui.animationRepeatDelay,
+            yoyo:        assemblyGui.animationYoyo,
+            stagger:     assemblyGui.animationStagger,
+            overwrite:   assemblyGui.animationOverwrite,
+        };
 
-        const htmlContent = generateStandaloneHTML(base64, animDuration, animEase);
+        const htmlContent = generateStandaloneHTML(base64, animSettings);
 
         const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
         const link = document.createElement('a');
@@ -50,7 +58,7 @@ export function exportToHTML(loadedModels, assemblyGui, assemblyWriteToUserData,
     }, { binary: true, onlyVisible: false });
 }
 
-function generateStandaloneHTML(glbBase64, animDuration, animEase) {
+function generateStandaloneHTML(glbBase64, animSettings) {
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -163,20 +171,27 @@ canvas { display: block; width: 100%; height: 100%; }
 {
     "imports": {
         "three": "https://esm.sh/three@0.182.0",
-        "three/addons/": "https://esm.sh/three@0.182.0/examples/jsm/"
+        "three/addons/": "https://esm.sh/three@0.182.0/examples/jsm/",
+        "gsap": "https://esm.sh/gsap@3.12.5"
     }
 }
 </script>
-<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"><\/script>
 <script type="module">
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+import gsap from 'gsap';
 
 // ---- Config ----
-const ANIM_DURATION = ${animDuration};
-const ANIM_EASE = '${animEase}';
+const ANIM_DURATION    = ${animSettings.duration};
+const ANIM_EASE        = '${animSettings.ease}';
+const ANIM_REPEAT      = ${animSettings.repeat};
+const ANIM_DELAY       = ${animSettings.delay};
+const ANIM_REPEAT_DELAY = ${animSettings.repeatDelay};
+const ANIM_YOYO        = ${animSettings.yoyo};
+const ANIM_STAGGER     = ${animSettings.stagger};
+const ANIM_OVERWRITE   = '${animSettings.overwrite}';
 const GLB_BASE64 = '${glbBase64}';
 
 // ---- Scene setup ----
@@ -388,8 +403,14 @@ function animateStep(transformations, forward, onComplete) {
     const proxy = { t: 0 };
     activeAnimation = gsap.to(proxy, {
         t: 1,
-        duration: ANIM_DURATION / 1000,
-        ease: ANIM_EASE,
+        duration:    ANIM_DURATION    / 1000,
+        ease:        ANIM_EASE,
+        repeat:      ANIM_REPEAT,
+        delay:       ANIM_DELAY       / 1000,
+        repeatDelay: ANIM_REPEAT_DELAY / 1000,
+        yoyo:        ANIM_YOYO,
+        stagger:     ANIM_STAGGER    / 1000,
+        overwrite:   ANIM_OVERWRITE,
         onUpdate() {
             transformations.forEach((tr, i) => {
                 const s = startStates[i];
@@ -562,10 +583,18 @@ export function exportToHTMLObfuscated(loadedModels, assemblyGui, assemblyWriteT
         }
         const base64 = btoa(binary);
 
-        const animDuration = assemblyGui.animationDuration;
-        const animEase = assemblyGui.animationEase;
+        const animSettings = {
+            duration:    assemblyGui.animationDuration,
+            ease:        assemblyGui.animationEase,
+            repeat:      assemblyGui.animationRepeat,
+            delay:       assemblyGui.animationDelay,
+            repeatDelay: assemblyGui.animationRepeatDelay,
+            yoyo:        assemblyGui.animationYoyo,
+            stagger:     assemblyGui.animationStagger,
+            overwrite:   assemblyGui.animationOverwrite,
+        };
 
-        const htmlContent = generateObfuscatedHTML(base64, animDuration, animEase);
+        const htmlContent = generateObfuscatedHTML(base64, animSettings);
 
         const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
         const link = document.createElement('a');
@@ -579,10 +608,10 @@ export function exportToHTMLObfuscated(loadedModels, assemblyGui, assemblyWriteT
     }, { binary: true, onlyVisible: false });
 }
 
-function generateObfuscatedHTML(glbBase64, animDuration, animEase) {
+function generateObfuscatedHTML(glbBase64, animSettings) {
     // Generate the readable standalone HTML with a placeholder for GLB data
     const GLB_PLACEHOLDER = '__GLB_BASE64_PLACEHOLDER__';
-    const sourceHTML = generateStandaloneHTML(GLB_PLACEHOLDER, animDuration, animEase);
+    const sourceHTML = generateStandaloneHTML(GLB_PLACEHOLDER, animSettings);
 
     // ID / class mapping for obfuscation
     const idMap = {
@@ -607,6 +636,7 @@ function generateObfuscatedHTML(glbBase64, animDuration, animEase) {
     // Absolute URLs for blob-URL context (importmap does not apply to blob modules)
     js = js.replace(/from 'three';/g, "from 'https://esm.sh/three@0.182.0';");
     js = js.replace(/from 'three\/addons\//g, "from 'https://esm.sh/three@0.182.0/examples/jsm/");
+    js = js.replace(/from 'gsap';/g, "from 'https://esm.sh/gsap@3.12.5';");
 
     // Rename element IDs in JS
     for (const [readable, obf] of Object.entries(idMap)) {
