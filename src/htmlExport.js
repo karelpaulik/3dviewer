@@ -42,6 +42,7 @@ export function exportToHTML(loadedModels, assemblyGui, assemblyWriteToUserData,
             yoyo:        assemblyGui.animationYoyo,
             stagger:     assemblyGui.animationStagger,
             overwrite:   assemblyGui.animationOverwrite,
+            loop:        assemblyGui.animationLoop,
         };
 
         const htmlContent = generateStandaloneHTML(base64, animSettings);
@@ -106,9 +107,28 @@ canvas { display: block; width: 100%; height: 100%; }
 }
 #controls button:active { background: rgba(80,80,80,0.95); }
 #controls button:disabled { opacity: 0.4; cursor: default; }
+#controls .chk-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    background: rgba(50,50,50,0.85);
+    border-radius: 8px;
+    cursor: pointer;
+    color: #fff;
+    font-size: 14px;
+    font-weight: bold;
+    user-select: none;
+    -webkit-user-select: none;
+    backdrop-filter: blur(4px);
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+}
+#controls .chk-label input[type=checkbox] { cursor: pointer; width: 15px; height: 15px; accent-color: #0a8; flex-shrink: 0; }
 @media (max-width: 480px) {
-    #controls button { padding: 10px 12px; font-size: 14px; min-width: 54px; }
-    #controls { bottom: max(10px, env(safe-area-inset-bottom)); gap: 6px; }
+    #controls button { padding: 8px 10px; font-size: 13px; min-width: 48px; }
+    #controls .chk-label { padding: 8px 10px; font-size: 13px; }
+    #controls { bottom: max(10px, env(safe-area-inset-bottom)); gap: 5px; }
 }
 #status-bar {
     position: fixed;
@@ -156,14 +176,14 @@ canvas { display: block; width: 100%; height: 100%; }
     <div class="row">
         <button id="btn-start" title="Reset to start [Home]">⏮ Start</button>
         <button id="btn-finish" title="Reset to finish [End]">Finish ⏭</button>
+        <button id="btn-anim-start" title="Animate to start [Shift+PageUp]">&#x23EA; Anim</button>
+        <button id="btn-anim-finish" title="Animate to finish [Shift+PageDown]">Anim &#x23E9;</button>
     </div>
     <div class="row">
-        <button id="btn-prev" title="Previous step [PageUp / ←]">◀ Step</button>
-        <button id="btn-next" title="Next step [PageDown / →]">Step ▶</button>
-    </div>
-    <div class="row">
-        <button id="btn-anim-start" title="Animate to start [Shift+PageUp]">◀◀ Anim</button>
-        <button id="btn-anim-finish" title="Animate to finish [Shift+PageDown]">Anim ▶▶</button>
+        <button id="btn-prev" title="Previous step [PageUp / ←]">&#x25C4; Step</button>
+        <button id="btn-next" title="Next step [PageDown / →]">Step &#x25BA;</button>
+        <label class="chk-label"><input type="checkbox" id="chk-loop"${animSettings.loop ? ' checked' : ''}> &#x221E; Loop</label>
+        <label class="chk-label"><input type="checkbox" id="chk-fullscreen"> &#x26F6; Full</label>
     </div>
 </div>
 
@@ -192,6 +212,7 @@ const ANIM_REPEAT_DELAY = ${animSettings.repeatDelay};
 const ANIM_YOYO        = ${animSettings.yoyo};
 const ANIM_STAGGER     = ${animSettings.stagger};
 const ANIM_OVERWRITE   = '${animSettings.overwrite}';
+const ANIM_LOOP        = ${animSettings.loop};
 const GLB_BASE64 = '${glbBase64}';
 
 // ---- Scene setup ----
@@ -290,6 +311,7 @@ window.addEventListener('resize', () => {
 const assemblySteps = []; // { id, name, description, transformations[] }
 let currentStepIndex = -1;
 let activeAnimation = null;
+let loopEnabled = ANIM_LOOP;
 
 function updateStatus() {
     const el = document.getElementById('step-info');
@@ -484,7 +506,10 @@ function animateToFinish() {
     if (assemblySteps.length === 0 || currentStepIndex >= assemblySteps.length - 1) return;
     function next() {
         const ni = currentStepIndex + 1;
-        if (ni >= assemblySteps.length) return;
+        if (ni >= assemblySteps.length) {
+            if (loopEnabled) animateToStart();
+            return;
+        }
         const step = assemblySteps[ni];
         if (step.transformations.length === 0) {
             currentStepIndex = ni;
@@ -500,7 +525,10 @@ function animateToFinish() {
 function animateToStart() {
     if (currentStepIndex < 0) return;
     function prev() {
-        if (currentStepIndex < 0) return;
+        if (currentStepIndex < 0) {
+            if (loopEnabled) animateToFinish();
+            return;
+        }
         const step = assemblySteps[currentStepIndex];
         if (step.transformations.length === 0) {
             currentStepIndex--;
@@ -520,6 +548,19 @@ document.getElementById('btn-prev').addEventListener('click', prevStep);
 document.getElementById('btn-next').addEventListener('click', nextStep);
 document.getElementById('btn-anim-start').addEventListener('click', animateToStart);
 document.getElementById('btn-anim-finish').addEventListener('click', animateToFinish);
+document.getElementById('chk-loop').addEventListener('change', function() {
+    loopEnabled = this.checked;
+});
+document.getElementById('chk-fullscreen').addEventListener('change', function() {
+    if (this.checked) {
+        document.documentElement.requestFullscreen().catch(() => { this.checked = false; });
+    } else {
+        document.exitFullscreen();
+    }
+});
+document.addEventListener('fullscreenchange', function() {
+    document.getElementById('chk-fullscreen').checked = !!document.fullscreenElement;
+});
 
 // ---- Keyboard shortcuts ----
 window.addEventListener('keydown', function(e) {
@@ -592,6 +633,7 @@ export function exportToHTMLObfuscated(loadedModels, assemblyGui, assemblyWriteT
             yoyo:        assemblyGui.animationYoyo,
             stagger:     assemblyGui.animationStagger,
             overwrite:   assemblyGui.animationOverwrite,
+            loop:        assemblyGui.animationLoop,
         };
 
         const htmlContent = generateObfuscatedHTML(base64, animSettings);
@@ -618,9 +660,9 @@ function generateObfuscatedHTML(glbBase64, animSettings) {
         'status-bar': '_a', 'step-info': '_b', 'step-desc': '_c',
         'canvas-container': '_d', 'controls': '_e',
         'btn-start': '_1', 'btn-finish': '_2', 'btn-prev': '_3',
-        'btn-next': '_4', 'btn-anim-start': '_5', 'btn-anim-finish': '_6',
+        'btn-next': '_4', 'btn-anim-start': '_5', 'btn-anim-finish': '_6', 'chk-loop': '_7', 'chk-fullscreen': '_8',
     };
-    const classMap = { 'row': '_r' };
+    const classMap = { 'row': '_r', 'chk-label': '_cl' };
 
     // ── Extract JS module from standalone HTML ──
     const moduleMatch = sourceHTML.match(/<script type="module">([\s\S]*?)<\/script>/);
@@ -678,9 +720,8 @@ function generateObfuscatedHTML(glbBase64, animSettings) {
         `<div id="_a"><div id="_b"></div><div id="_c"></div></div>` +
         `<div id="_d"></div>` +
         `<div id="_e">` +
-        `<div class="_r"><button id="_1">&#x23EE; Start</button><button id="_2">Finish &#x23ED;</button></div>` +
-        `<div class="_r"><button id="_3">&#x25C0; Step</button><button id="_4">Step &#x25B6;</button></div>` +
-        `<div class="_r"><button id="_5">&#x25C0;&#x25C0; Anim</button><button id="_6">Anim &#x25B6;&#x25B6;</button></div>` +
+        `<div class="_r"><button id="_1">&#x23EE; Start</button><button id="_2">Finish &#x23ED;</button><button id="_5">&#x23EA; Anim</button><button id="_6">Anim &#x23E9;</button></div>` +
+        `<div class="_r"><button id="_3">&#x25C0; Step</button><button id="_4">Step &#x25B6;</button><label class="_cl"><input type="checkbox" id="_7"${animSettings.loop ? ' checked' : ''}> &#x221E; Loop</label><label class="_cl"><input type="checkbox" id="_8"> &#x26F6; Full</label></div>` +
         `</div>` +
         `<script id="_g" type="text/plain">${glbBase64}<\/script>` +
         `<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"><\/script>` +

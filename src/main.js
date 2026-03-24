@@ -74,6 +74,7 @@ const assemblyGui = {
     animationYoyo: false,
     animationStagger: 0,
     animationOverwrite: 'auto',
+    animationLoop: false,
 };
 // ============================================
 
@@ -2772,6 +2773,7 @@ function addAssemblyGui() {
     // --- Playback ---
     const playbackFolder = assemblyFolder.addFolder('Playback');
     playbackFolder.add(assemblyGui, 'stepInfo').name('Status').disable().listen();
+    playbackFolder.add(assemblyGui, 'animationLoop').name('Loop  ∞  (start ↔ finish)').listen();
     playbackFolder.add(assemblyGui, 'resetToStart').name('⏮  Reset to start  [Home]');
     playbackFolder.add(assemblyGui, 'animateToStart').name('◀◀  Animate to start  [Shift+PgUp]');
     playbackFolder.add(assemblyGui, 'prevStep').name('◀  Previous step  [PageUp]');
@@ -3273,7 +3275,13 @@ function assemblyAnimateToFinish() {
     function animateNext() {
         if (cancelled) return;
         const nextIndex = assemblyState.currentStepIndex + 1;
-        if (nextIndex >= totalSteps) return;
+        if (nextIndex >= totalSteps) {
+            // Reached finish — if loop enabled, bounce back to start
+            if (assemblyGui.animationLoop) {
+                assemblyAnimateToStart();
+            }
+            return;
+        }
 
         const step = assemblyData.steps[nextIndex];
         if (step.transformations.length === 0) {
@@ -3298,7 +3306,13 @@ function assemblyAnimateToStart() {
     if (assemblyState.currentStepIndex < 0) return;
 
     function animatePrev() {
-        if (assemblyState.currentStepIndex < 0) return;
+        if (assemblyState.currentStepIndex < 0) {
+            // Reached start — if loop enabled, bounce forward to finish
+            if (assemblyGui.animationLoop) {
+                assemblyAnimateToFinish();
+            }
+            return;
+        }
 
         const step = assemblyData.steps[assemblyState.currentStepIndex];
         if (step.transformations.length === 0) {
