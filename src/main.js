@@ -150,6 +150,7 @@ const viewProp = {
     exportAll: function() { exportAllModels(); },
     exportSelected: function() { exportSelectedObject(); },
     exportToHTML: function() { exportToHTML(); },
+    exportToHTMLObfuscated: function() { exportToHTMLObfuscated(); },
     importGlb: function() { importGlbFile(); },
     transformSpace: true,  // true = world, false = local
     snapEnabled: true,     // true = snap vždy aktivní, false = snap jen při Shift
@@ -756,6 +757,7 @@ function addMainGui() {
             exportFolder.add(viewProp, 'exportAll').name('Export all models');
             exportFolder.add(viewProp, 'exportSelected').name('Export selected object');
             exportFolder.add(viewProp, 'exportToHTML').name('Export to HTML (assembly)');
+            exportFolder.add(viewProp, 'exportToHTMLObfuscated').name('Export to HTML obfuscated');
             exportFolder.close();
         const helpersFolder = folderProp.addFolder("Helpers");
             helpersFolder.add(viewProp, 'showAxesHelper').name('axes').onChange(function() { updateAxesHelper(); }).listen();
@@ -2919,8 +2921,8 @@ canvas { display: block; width: 100%; height: 100%; }
 <script type="importmap">
 {
     "imports": {
-        "three": "https://cdn.jsdelivr.net/npm/three@0.182.0/build/three.module.js",
-        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.182.0/examples/jsm/"
+        "three": "https://esm.sh/three@0.182.0",
+        "three/addons/": "https://esm.sh/three@0.182.0/examples/jsm/"
     }
 }
 </script>
@@ -3289,6 +3291,130 @@ window.addEventListener('keydown', function(e) {
 <\/script>
 </body>
 </html>`;
+}
+
+// ===== Obfuscated HTML Export ===================================================================
+
+function exportToHTMLObfuscated() {
+    if (loadedModels.length === 0) {
+        alert('No models to export.');
+        return;
+    }
+    const defaultName = 'assembly_viewer_obf.html';
+    const filename = window.prompt('File name for obfuscated HTML export:', defaultName);
+    if (filename === null) return;
+    const finalName = filename.trim() || defaultName;
+
+    assemblyWriteToUserData();
+
+    const exporter = new GLTFExporter();
+    const group = new THREE.Group();
+    loadedModels.forEach(model => group.add(model.clone(true)));
+
+    assemblyClearUserData();
+
+    exporter.parse(group, function(glbBuffer) {
+        const bytes = new Uint8Array(glbBuffer);
+        let binary = '';
+        for (let i = 0; i < bytes.byteLength; i++) {
+            binary += String.fromCharCode(bytes[i]);
+        }
+        const base64 = btoa(binary);
+
+        const animDuration = assemblyGui.animationDuration;
+        const animEase = assemblyGui.animationEase;
+
+        const htmlContent = generateObfuscatedHTML(base64, animDuration, animEase);
+
+        const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = finalName;
+        link.click();
+        URL.revokeObjectURL(link.href);
+        console.log('Export to obfuscated HTML: done.');
+    }, function(error) {
+        console.error('Obfuscated HTML export error:', error);
+    }, { binary: true, onlyVisible: false });
+}
+
+function generateObfuscatedHTML(glbBase64, animDuration, animEase) {
+    // Generate the readable standalone HTML with a placeholder for GLB data
+    const GLB_PLACEHOLDER = '__GLB_BASE64_PLACEHOLDER__';
+    const sourceHTML = generateStandaloneHTML(GLB_PLACEHOLDER, animDuration, animEase);
+
+    // ID / class mapping for obfuscation
+    const idMap = {
+        'status-bar': '_a', 'step-info': '_b', 'step-desc': '_c',
+        'canvas-container': '_d', 'controls': '_e',
+        'btn-start': '_1', 'btn-finish': '_2', 'btn-prev': '_3',
+        'btn-next': '_4', 'btn-anim-start': '_5', 'btn-anim-finish': '_6',
+    };
+    const classMap = { 'row': '_r' };
+
+    // ── Extract JS module from standalone HTML ──
+    const moduleMatch = sourceHTML.match(/<script type="module">([\s\S]*?)<\/script>/);
+    if (!moduleMatch) throw new Error('Cannot extract module script from standalone HTML');
+    let js = moduleMatch[1];
+
+    // Replace inline GLB constant with DOM element read (GLB stored in a separate script tag)
+    js = js.replace(
+        /const GLB_BASE64 = '[^']*';/,
+        "const GLB_BASE64 = document.getElementById('_g').textContent;"
+    );
+
+    // Absolute URLs for blob-URL context (importmap does not apply to blob modules)
+    js = js.replace(/from 'three';/g, "from 'https://esm.sh/three@0.182.0';");
+    js = js.replace(/from 'three\/addons\//g, "from 'https://esm.sh/three@0.182.0/examples/jsm/");
+
+    // Rename element IDs in JS
+    for (const [readable, obf] of Object.entries(idMap)) {
+        js = js.replaceAll("'" + readable + "'", "'" + obf + "'");
+    }
+
+    // Minify JS: strip full-line comments, collapse blank lines
+    js = js.replace(/^[ \t]*\/\/.*$/gm, '');
+    js = js.replace(/\n{2,}/g, '\n');
+    js = js.trim();
+
+    // ── XOR encrypt JS ──
+    const key = Math.floor(Math.random() * 254) + 1;
+    let encrypted = '';
+    for (let i = 0; i < js.length; i++) {
+        encrypted += String.fromCharCode(js.charCodeAt(i) ^ key);
+    }
+    const encoded = btoa(encrypted);
+
+    // ── Minify & obfuscate CSS ──
+    const cssMatch = sourceHTML.match(/<style>([\s\S]*?)<\/style>/);
+    let css = cssMatch ? cssMatch[1] : '';
+    for (const [readable, obf] of Object.entries(idMap)) {
+        css = css.replaceAll('#' + readable, '#' + obf);
+    }
+    for (const [readable, obf] of Object.entries(classMap)) {
+        css = css.replaceAll('.' + readable, '.' + obf);
+    }
+    css = css.replace(/\n\s*/g, '');
+    css = css.replace(/\s*\{\s*/g, '{');
+    css = css.replace(/\s*\}\s*/g, '}');
+    css = css.replace(/\s*;\s*/g, ';');
+    css = css.replace(/:\s+/g, ':');
+    css = css.replace(/,\s+/g, ',');
+    css = css.trim();
+
+    // ── Assemble obfuscated HTML ──
+    return `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no"><style>${css}</style></head><body>` +
+        `<div id="_a"><div id="_b"></div><div id="_c"></div></div>` +
+        `<div id="_d"></div>` +
+        `<div id="_e">` +
+        `<div class="_r"><button id="_1">&#x23EE; Start</button><button id="_2">Finish &#x23ED;</button></div>` +
+        `<div class="_r"><button id="_3">&#x25C0; Step</button><button id="_4">Step &#x25B6;</button></div>` +
+        `<div class="_r"><button id="_5">&#x25C0;&#x25C0; Anim</button><button id="_6">Anim &#x25B6;&#x25B6;</button></div>` +
+        `</div>` +
+        `<script id="_g" type="text/plain">${glbBase64}<\/script>` +
+        `<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"><\/script>` +
+        `<script>(function(){var _0x=${key},_0e=atob('${encoded}'),_0r='';for(var _0i=0;_0i<_0e.length;_0i++)_0r+=String.fromCharCode(_0e.charCodeAt(_0i)^_0x);import(URL.createObjectURL(new Blob([_0r],{type:'application/javascript'})))})()<\/script>` +
+        `</body></html>`;
 }
 
 // ===== Assembly / Disassembly Functions =========================================================
