@@ -1932,12 +1932,44 @@ function removeModel(part) {
         // V GLB hierarchii jsou v meshObjects pouze leaf-meshe, nikoli skupiny –
         // pouhý indexOf(part) by neostranil potomky, kteří by pak zůstali aktivní
         // v raycastu i po odebrání rodiče ze scény.
+        const removedObjects = new Set();
         part.traverse(obj => {
+            removedObjects.add(obj);
             const mi = meshObjects.indexOf(obj);
             if (mi !== -1) meshObjects.splice(mi, 1);
             const hi = hiddenObjects.indexOf(obj);
             if (hi !== -1) hiddenObjects.splice(hi, 1);
         });
+
+        // Vyčistíme assemblyData — odstraníme transformace odkazující na odebrané objekty.
+        // Poté odebereme kroky, které nemají žádné transformace, a opravíme chain.
+        const affectedChainObjects = new Set();
+        assemblyData.steps.forEach(step => {
+            const before = step.transformations.length;
+            step.transformations = step.transformations.filter(t => {
+                if (removedObjects.has(t.objectRef)) {
+                    return false;
+                }
+                return true;
+            });
+            if (step.transformations.length !== before) {
+                // Žádné chain objekty k opravě — odebrané objekty již neexistují.
+                // Ale zbývající objekty ve stejném kroku mohou mít správné init díky chain.
+            }
+        });
+
+        // Odstraníme kroky, které jsou nyní zcela prázdné.
+        const nonEmptySteps = assemblyData.steps.filter(s => s.transformations.length > 0);
+        if (nonEmptySteps.length !== assemblyData.steps.length) {
+            assemblyData.steps.length = 0;
+            nonEmptySteps.forEach((s, i) => { s.id = i + 1; assemblyData.steps.push(s); });
+            if (assemblyState.currentStepIndex >= assemblyData.steps.length) {
+                assemblyState.currentStepIndex = assemblyData.steps.length - 1;
+            }
+        }
+
+        // Odstraníme z assemblyAnchors
+        removedObjects.forEach(obj => assemblyAnchors.delete(obj));
 
         // Pokud je součástí skupiny (např. z GLB modelu), odstraníme z rodiče
         if (part.parent) {
@@ -1950,6 +1982,9 @@ function removeModel(part) {
         // Pokud šlo o kořenový model, odebereme i z loadedModels
         const lmIdx = loadedModels.indexOf(part);
         if (lmIdx !== -1) loadedModels.splice(lmIdx, 1);
+
+        // Aktualizujeme GUI assembly po vyčištění dat
+        if (_assemblyFolderRef) updateAssemblyGuiInfo();
 
         // Aktualizace průřezových čar
         if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) {
