@@ -152,8 +152,8 @@ const viewProp = {
     bakeWholeModelRotation: function() { bakeWholeModelRotation(); },
     exportAll: function() { exportAllModels(); },
     exportSelected: function() { exportSelectedObject(); },
-    exportToHTML: function() { exportToHTML(loadedModels, assemblyGui, assemblyWriteToUserData, assemblyClearUserData); },
-    exportToHTMLObfuscated: function() { exportToHTMLObfuscated(loadedModels, assemblyGui, assemblyWriteToUserData, assemblyClearUserData); },
+    exportToHTML: function() { exportToHTML(loadedModels, assemblyGui, viewProp, assemblyWriteToUserData, assemblyClearUserData); },
+    exportToHTMLObfuscated: function() { exportToHTMLObfuscated(loadedModels, assemblyGui, viewProp, assemblyWriteToUserData, assemblyClearUserData); },
     importGlb: function() { importGlbFile(); },
     transformSpace: true,  // true = world, false = local
     snapEnabled: true,     // true = snap vždy aktivní, false = snap jen při Shift

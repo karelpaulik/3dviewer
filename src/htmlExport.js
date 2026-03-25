@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 
 // ===== Export to standalone HTML with embedded GLB =====
-export function exportToHTML(loadedModels, assemblyGui, assemblyWriteToUserData, assemblyClearUserData) {
+export function exportToHTML(loadedModels, assemblyGui, viewProp, assemblyWriteToUserData, assemblyClearUserData) {
     if (loadedModels.length === 0) {
         alert('No models to export.');
         return;
@@ -45,7 +45,15 @@ export function exportToHTML(loadedModels, assemblyGui, assemblyWriteToUserData,
             loop:        assemblyGui.animationLoop,
         };
 
-        const htmlContent = generateStandaloneHTML(base64, animSettings);
+        const sectionSettings = {
+            section:         viewProp.section,
+            showSectionMesh: viewProp.showSectionMesh,
+            px: viewProp.px,
+            py: viewProp.py,
+            pz: viewProp.pz,
+        };
+
+        const htmlContent = generateStandaloneHTML(base64, animSettings, sectionSettings);
 
         const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
         const link = document.createElement('a');
@@ -59,7 +67,7 @@ export function exportToHTML(loadedModels, assemblyGui, assemblyWriteToUserData,
     }, { binary: true, onlyVisible: false });
 }
 
-function generateStandaloneHTML(glbBase64, animSettings) {
+function generateStandaloneHTML(glbBase64, animSettings, sectionSettings) {
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -164,12 +172,92 @@ canvas { display: block; width: 100%; height: 100%; }
     text-align: center;
     display: none;
 }
+#section-panel {
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    z-index: 10;
+    min-width: 190px;
+    background: rgba(50,50,50,0.85);
+    border-radius: 8px;
+    backdrop-filter: blur(4px);
+    color: #fff;
+    font-family: Arial, sans-serif;
+    font-size: 14px;
+}
+#section-panel-hdr {
+    padding: 8px 12px;
+    cursor: pointer;
+    font-weight: bold;
+    user-select: none;
+    -webkit-user-select: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-radius: 8px;
+    transition: background 0.15s;
+}
+#section-panel-hdr:hover { background: rgba(80,80,80,0.9); }
+#section-panel-body {
+    display: none;
+    flex-direction: column;
+    gap: 6px;
+    padding: 0 10px 10px;
+}
+#section-panel-body.open { display: flex; }
+#section-panel-body .chk-label { font-size: 13px; }
+.sec-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+}
+.sec-row .sec-axis { min-width: 14px; font-weight: bold; }
+.sec-row input[type=range] { flex: 1; accent-color: #0a8; cursor: pointer; }
+.sec-row input[type=number] {
+    width: 58px;
+    background: rgba(30,30,30,0.8);
+    border: 1px solid #555;
+    border-radius: 4px;
+    color: #fff;
+    padding: 2px 4px;
+    font-size: 12px;
+}
+#btn-sec-reset {
+    margin-top: 2px;
+    padding: 6px 10px;
+    font-size: 13px;
+    font-weight: bold;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    color: #fff;
+    background: rgba(80,80,80,0.9);
+    touch-action: manipulation;
+    transition: background 0.15s;
+}
+#btn-sec-reset:active { background: rgba(120,120,120,0.95); }
+@media (max-width: 480px) {
+    #section-panel { min-width: 150px; font-size: 12px; }
+    .sec-row input[type=number] { width: 46px; }
+}
 </style>
 </head>
 <body>
 <div id="status-bar">
     <div id="step-info">Assembled</div>
     <div id="step-desc"></div>
+</div>
+<div id="section-panel">
+    <div id="section-panel-hdr">&#x2702; Section &#x25BE;</div>
+    <div id="section-panel-body">
+        <label class="chk-label"><input type="checkbox" id="chk-section"> Section</label>
+        <label class="chk-label"><input type="checkbox" id="chk-section-mesh"> Section Mesh</label>
+        <div class="sec-row"><span class="sec-axis">X</span><input type="range" id="sld-px" step="1"><input type="number" id="num-px" step="1"></div>
+        <div class="sec-row"><span class="sec-axis">Y</span><input type="range" id="sld-py" step="1"><input type="number" id="num-py" step="1"></div>
+        <div class="sec-row"><span class="sec-axis">Z</span><input type="range" id="sld-pz" step="1"><input type="number" id="num-pz" step="1"></div>
+        <button id="btn-sec-reset">&#x21BA; Reset</button>
+    </div>
 </div>
 <div id="canvas-container"></div>
 <div id="controls">
@@ -223,6 +311,7 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 2;
+renderer.localClippingEnabled = ${sectionSettings.section};
 container.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
@@ -236,6 +325,15 @@ scene.add(dl1);
 const dl2 = new THREE.DirectionalLight(0xffaa00, 1);
 dl2.position.set(0.5, 1, -1);
 scene.add(dl2);
+
+// Clip planes (section view)
+const clipPlanes = [
+    new THREE.Plane(new THREE.Vector3(-1, 0, 0), ${sectionSettings.px}),
+    new THREE.Plane(new THREE.Vector3(0, -1, 0), ${sectionSettings.py}),
+    new THREE.Plane(new THREE.Vector3(0, 0, -1), ${sectionSettings.pz}),
+];
+let sectionMeshEnabled = ${sectionSettings.showSectionMesh};
+let sceneRoot = null;
 
 // Ortho camera
 let orthoHalf = 500;
@@ -385,6 +483,16 @@ loader.parse(glbBuffer, '', function(gltf) {
     fitView(model);
     resetToStart();
     updateStatus();
+
+    // Section view setup
+    sceneRoot = model;
+    applyClipPlanesToMaterials(model);
+    if (sectionMeshEnabled) updateSectionMeshes();
+    const _secBox = new THREE.Box3().setFromObject(model);
+    const _secSize = _secBox.getSize(new THREE.Vector3());
+    const _secRange = Math.ceil(Math.max(_secSize.x, _secSize.y, _secSize.z) * 2);
+    setSectionSliderRange(_secRange);
+
     render();
 }, function(error) {
     console.error('GLB load error:', error);
@@ -581,6 +689,123 @@ document.addEventListener('fullscreenchange', function() {
     document.getElementById('chk-fullscreen').checked = !!document.fullscreenElement;
 });
 
+// ---- Section view functions ----
+function applyClipPlanesToMaterials(root) {
+    root.traverse(function(child) {
+        if (child.isMesh && !child.isSectionMesh) {
+            const mats = Array.isArray(child.material) ? child.material : [child.material];
+            mats.forEach(mat => {
+                mat.clippingPlanes = clipPlanes;
+                mat.clipIntersection = true;
+                mat.side = THREE.DoubleSide;
+                mat.needsUpdate = true;
+            });
+        }
+    });
+}
+
+function createSectionMesh(mesh) {
+    if (mesh.children.some(c => c.isSectionMesh)) return;
+    const sm = mesh.clone(false);
+    const mats = Array.isArray(sm.material) ? sm.material : [sm.material];
+    const newMats = mats.map(mat => new THREE.MeshBasicMaterial({
+        side: THREE.BackSide,
+        clippingPlanes: clipPlanes,
+        clipIntersection: true,
+        color: mat.color,
+        polygonOffset: true,
+        polygonOffsetFactor: -1,
+    }));
+    sm.material = Array.isArray(mesh.material) ? newMats : newMats[0];
+    sm.position.set(0, 0, 0);
+    sm.rotation.set(0, 0, 0);
+    sm.scale.set(1, 1, 1);
+    sm.isSectionMesh = true;
+    mesh.add(sm);
+}
+
+function removeSectionMeshes(root) {
+    root.traverse(function(child) {
+        if (child.isMesh && !child.isSectionMesh) {
+            [...child.children].filter(c => c.isSectionMesh).forEach(sm => {
+                child.remove(sm);
+                if (sm.geometry) sm.geometry.dispose();
+                (Array.isArray(sm.material) ? sm.material : [sm.material]).forEach(m => m.dispose());
+            });
+        }
+    });
+}
+
+function updateSectionMeshes() {
+    if (!sceneRoot) return;
+    if (sectionMeshEnabled) {
+        sceneRoot.traverse(c => { if (c.isMesh && !c.isSectionMesh) createSectionMesh(c); });
+    } else {
+        removeSectionMeshes(sceneRoot);
+    }
+}
+
+function setSectionSliderRange(range) {
+    ['px', 'py', 'pz'].forEach(ax => {
+        const sld = document.getElementById('sld-' + ax);
+        const num = document.getElementById('num-' + ax);
+        sld.min = -range; sld.max = range;
+        num.min = -range; num.max = range;
+    });
+}
+
+// ---- Section UI wiring ----
+document.getElementById('section-panel-hdr').addEventListener('click', function() {
+    const body = document.getElementById('section-panel-body');
+    body.classList.toggle('open');
+    this.innerHTML = body.classList.contains('open') ? '&#x2702; Section &#x25B4;' : '&#x2702; Section &#x25BE;';
+});
+
+// Auto-open panel if section was active on export
+${sectionSettings.section ? `document.getElementById('section-panel-body').classList.add('open');
+document.getElementById('section-panel-hdr').innerHTML = '&#x2702; Section &#x25B4;';` : ''}
+
+const chkSection = document.getElementById('chk-section');
+chkSection.checked = renderer.localClippingEnabled;
+chkSection.addEventListener('change', function() {
+    renderer.localClippingEnabled = this.checked;
+    render();
+});
+
+const chkSectionMesh = document.getElementById('chk-section-mesh');
+chkSectionMesh.checked = sectionMeshEnabled;
+chkSectionMesh.addEventListener('change', function() {
+    sectionMeshEnabled = this.checked;
+    updateSectionMeshes();
+    render();
+});
+
+function wireAxisSlider(axis, idx) {
+    const sld = document.getElementById('sld-' + axis);
+    const num = document.getElementById('num-' + axis);
+    sld.value = clipPlanes[idx].constant;
+    num.value = clipPlanes[idx].constant;
+    function update(v) {
+        clipPlanes[idx].constant = v;
+        sld.value = v; num.value = v;
+        render();
+    }
+    sld.addEventListener('input', () => update(parseFloat(sld.value)));
+    num.addEventListener('change', () => update(parseFloat(num.value) || 0));
+}
+wireAxisSlider('px', 0);
+wireAxisSlider('py', 1);
+wireAxisSlider('pz', 2);
+
+document.getElementById('btn-sec-reset').addEventListener('click', function() {
+    clipPlanes[0].constant = 0; clipPlanes[1].constant = 0; clipPlanes[2].constant = 0;
+    ['px', 'py', 'pz'].forEach(ax => {
+        document.getElementById('sld-' + ax).value = 0;
+        document.getElementById('num-' + ax).value = 0;
+    });
+    render();
+});
+
 // ---- Keyboard shortcuts ----
 window.addEventListener('keydown', function(e) {
     switch (e.key) {
@@ -617,7 +842,7 @@ window.addEventListener('keydown', function(e) {
 
 // ===== Obfuscated HTML Export ===================================================================
 
-export function exportToHTMLObfuscated(loadedModels, assemblyGui, assemblyWriteToUserData, assemblyClearUserData) {
+export function exportToHTMLObfuscated(loadedModels, assemblyGui, viewProp, assemblyWriteToUserData, assemblyClearUserData) {
     if (loadedModels.length === 0) {
         alert('No models to export.');
         return;
@@ -655,7 +880,15 @@ export function exportToHTMLObfuscated(loadedModels, assemblyGui, assemblyWriteT
             loop:        assemblyGui.animationLoop,
         };
 
-        const htmlContent = generateObfuscatedHTML(base64, animSettings);
+        const sectionSettings = {
+            section:         viewProp.section,
+            showSectionMesh: viewProp.showSectionMesh,
+            px: viewProp.px,
+            py: viewProp.py,
+            pz: viewProp.pz,
+        };
+
+        const htmlContent = generateObfuscatedHTML(base64, animSettings, sectionSettings);
 
         const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
         const link = document.createElement('a');
@@ -669,10 +902,10 @@ export function exportToHTMLObfuscated(loadedModels, assemblyGui, assemblyWriteT
     }, { binary: true, onlyVisible: false });
 }
 
-function generateObfuscatedHTML(glbBase64, animSettings) {
+function generateObfuscatedHTML(glbBase64, animSettings, sectionSettings) {
     // Generate the readable standalone HTML with a placeholder for GLB data
     const GLB_PLACEHOLDER = '__GLB_BASE64_PLACEHOLDER__';
-    const sourceHTML = generateStandaloneHTML(GLB_PLACEHOLDER, animSettings);
+    const sourceHTML = generateStandaloneHTML(GLB_PLACEHOLDER, animSettings, sectionSettings);
 
     // ID / class mapping for obfuscation
     const idMap = {
@@ -680,8 +913,14 @@ function generateObfuscatedHTML(glbBase64, animSettings) {
         'canvas-container': '_d', 'controls': '_e',
         'btn-start': '_1', 'btn-finish': '_2', 'btn-prev': '_3',
         'btn-next': '_4', 'btn-anim-start': '_5', 'btn-anim-finish': '_6', 'chk-loop': '_7', 'chk-fullscreen': '_8',
+        'section-panel': '_sa', 'section-panel-hdr': '_sb', 'section-panel-body': '_sc',
+        'chk-section': '_s1', 'chk-section-mesh': '_s2',
+        'sld-px': '_s3', 'num-px': '_s4',
+        'sld-py': '_s5', 'num-py': '_s6',
+        'sld-pz': '_s7', 'num-pz': '_s8',
+        'btn-sec-reset': '_s9',
     };
-    const classMap = { 'row': '_r', 'chk-label': '_cl' };
+    const classMap = { 'row': '_r', 'chk-label': '_cl', 'sec-row': '_sr', 'sec-axis': '_sx' };
 
     // ── Extract JS module from standalone HTML ──
     const moduleMatch = sourceHTML.match(/<script type="module">([\s\S]*?)<\/script>/);
@@ -734,9 +973,21 @@ function generateObfuscatedHTML(glbBase64, animSettings) {
     css = css.replace(/,\s+/g, ',');
     css = css.trim();
 
+    const secPanelOpen = sectionSettings.section ? ' open' : '';
+    const secPanelArrow = sectionSettings.section ? '&#x2702; Section &#x25B4;' : '&#x2702; Section &#x25BE;';
+    const secChecked = sectionSettings.section ? ' checked' : '';
+    const secMeshChecked = sectionSettings.showSectionMesh ? ' checked' : '';
+
     // ── Assemble obfuscated HTML ──
     return `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no"><style>${css}</style></head><body>` +
         `<div id="_a"><div id="_b"></div><div id="_c"></div></div>` +
+        `<div id="_sa"><div id="_sb">${secPanelArrow}</div><div id="_sc"${secPanelOpen ? ' class="open"' : ''}>` +
+        `<label class="_cl"><input type="checkbox" id="_s1"${secChecked}> Section</label>` +
+        `<label class="_cl"><input type="checkbox" id="_s2"${secMeshChecked}> Section Mesh</label>` +
+        `<div class="_sr"><span class="_sx">X</span><input type="range" id="_s3" step="1"><input type="number" id="_s4" step="1"></div>` +
+        `<div class="_sr"><span class="_sx">Y</span><input type="range" id="_s5" step="1"><input type="number" id="_s6" step="1"></div>` +
+        `<div class="_sr"><span class="_sx">Z</span><input type="range" id="_s7" step="1"><input type="number" id="_s8" step="1"></div>` +
+        `<button id="_s9">&#x21BA; Reset</button></div></div>` +
         `<div id="_d"></div>` +
         `<div id="_e">` +
         `<div class="_r"><button id="_1">&#x23EE; Start</button><button id="_2">Finish &#x23ED;</button><button id="_5">&#x23EA; Anim</button><button id="_6">Anim &#x23E9;</button></div>` +
