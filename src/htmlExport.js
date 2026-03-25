@@ -311,6 +311,7 @@ window.addEventListener('resize', () => {
 const assemblySteps = []; // { id, name, description, transformations[] }
 let currentStepIndex = -1;
 let activeAnimation = null;
+let animationFinalize = null;
 let loopEnabled = ANIM_LOOP;
 
 function updateStatus() {
@@ -411,13 +412,18 @@ function animateStep(transformations, forward, onComplete) {
         };
     });
 
-    if (ANIM_DURATION <= 0) {
+    animationFinalize = () => {
         startStates.forEach((s, i) => {
             transformations[i].objectRef.position.copy(s.targetPos);
             if (s.hasRot) transformations[i].objectRef.quaternion.copy(s.targetQuat);
             if (s.hasScale) transformations[i].objectRef.scale.copy(s.targetScale);
         });
         render();
+    };
+
+    if (ANIM_DURATION <= 0) {
+        animationFinalize();
+        animationFinalize = null;
         if (onComplete) onComplete();
         return;
     }
@@ -444,6 +450,7 @@ function animateStep(transformations, forward, onComplete) {
         },
         onComplete() {
             activeAnimation = null;
+            animationFinalize = null;
             if (onComplete) onComplete();
         },
     });
@@ -480,6 +487,7 @@ function resetToFinish() {
 }
 
 function nextStep() {
+    animationFinalize?.(); animationFinalize = null;
     const ni = currentStepIndex + 1;
     if (ni >= assemblySteps.length) return;
     const step = assemblySteps[ni];
@@ -488,10 +496,13 @@ function nextStep() {
         updateStatus();
         return;
     }
-    animateStep(step.transformations, true, () => { currentStepIndex = ni; updateStatus(); });
+    currentStepIndex = ni;
+    updateStatus();
+    animateStep(step.transformations, true, () => { updateStatus(); });
 }
 
 function prevStep() {
+    animationFinalize?.(); animationFinalize = null;
     if (currentStepIndex < 0) return;
     const step = assemblySteps[currentStepIndex];
     if (step.transformations.length === 0) {
@@ -499,10 +510,13 @@ function prevStep() {
         updateStatus();
         return;
     }
-    animateStep(step.transformations, false, () => { currentStepIndex--; updateStatus(); });
+    currentStepIndex--;
+    updateStatus();
+    animateStep(step.transformations, false, () => { updateStatus(); });
 }
 
 function animateToFinish() {
+    animationFinalize?.(); animationFinalize = null;
     if (assemblySteps.length === 0 || currentStepIndex >= assemblySteps.length - 1) return;
     function next() {
         const ni = currentStepIndex + 1;
@@ -517,12 +531,15 @@ function animateToFinish() {
             next();
             return;
         }
-        animateStep(step.transformations, true, () => { currentStepIndex = ni; updateStatus(); next(); });
+        currentStepIndex = ni;
+        updateStatus();
+        animateStep(step.transformations, true, () => { updateStatus(); next(); });
     }
     next();
 }
 
 function animateToStart() {
+    animationFinalize?.(); animationFinalize = null;
     if (currentStepIndex < 0) return;
     function prev() {
         if (currentStepIndex < 0) {
@@ -536,7 +553,9 @@ function animateToStart() {
             prev();
             return;
         }
-        animateStep(step.transformations, false, () => { currentStepIndex--; updateStatus(); prev(); });
+        currentStepIndex--;
+        updateStatus();
+        animateStep(step.transformations, false, () => { updateStatus(); prev(); });
     }
     prev();
 }
