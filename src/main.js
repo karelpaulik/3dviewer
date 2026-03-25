@@ -45,7 +45,8 @@ const assemblyState = {
     currentStepIndex: -1,  // -1 = fully assembled; N = steps[0..N] have been applied (also used as the edit target)
 };
 
-let assemblyAnimation = null;  // GSAP tween handle for step animation
+let assemblyAnimation = null;         // GSAP tween handle for step animation
+let assemblyAnimationFinalize = null;  // Snaps in-flight animation to its end state
 let assemblyStepsListFolder = null; // Dynamicky přebudovávaný subfolder seznamu kroků
 let _assemblyFolderRef = null;      // Reference na hlavní Assembly Workflow folder (pro rebuild)
 
@@ -3147,6 +3148,7 @@ function animateAssemblyStep(transformations, forward, onComplete) {
         assemblyAnimation.kill();
         assemblyAnimation = null;
     }
+    assemblyAnimationFinalize = null;
 
     const duration = assemblyGui.animationDuration;
 
@@ -3179,11 +3181,20 @@ function animateAssemblyStep(transformations, forward, onComplete) {
         };
     });
 
+    // Store finalizer: call to snap objects to their target positions (useful when interrupting).
+    // Nemůže být definovaná jako globální. Neměla by přístup k ""
+    assemblyAnimationFinalize = () => {
+        applyTransforms(transformations, startStates, 1);
+        if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) updateCrossSectionLines();
+        render();
+    };
+
     // Instant move when duration === 0
     if (duration <= 0) {
         applyTransforms(transformations, startStates, 1);
         if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) updateCrossSectionLines();
         render();
+        assemblyAnimationFinalize = null;
         if (onComplete) onComplete();
         return;
     }
@@ -3220,6 +3231,7 @@ function animateAssemblyStep(transformations, forward, onComplete) {
             },
             onComplete() {
                 assemblyAnimation = null;
+                assemblyAnimationFinalize = null;
                 if (onComplete) onComplete();
             },
         });
@@ -3229,6 +3241,7 @@ function animateAssemblyStep(transformations, forward, onComplete) {
             delay: delaySec,
             onComplete() {
                 assemblyAnimation = null;
+                assemblyAnimationFinalize = null;
                 if (onComplete) onComplete();
             },
         });
@@ -3369,6 +3382,10 @@ function assemblyAnimateToStart() {
 
 // Apply the next disassembly step (move objects to finalPosition).
 function assemblyNextStep() {
+    // Snap any in-flight animation to its end state before advancing to the next step.
+    assemblyAnimationFinalize?.(); // Volá funkci assemblyAnimationFinalize pouze pokud assemblyAnimationFinalize není null nebo undefined. 
+    assemblyAnimationFinalize = null;
+
     const nextIndex = assemblyState.currentStepIndex + 1;
     if (nextIndex >= assemblyData.steps.length) {
         console.log('[Assembly] No more steps – end of disassembly.');
@@ -3383,15 +3400,20 @@ function assemblyNextStep() {
         return;
     }
 
+    // Commit state before animating so mid-animation reversals always have correct currentStepIndex.
+    assemblyState.currentStepIndex = nextIndex;
+    updateAssemblyGuiInfo();
     animateAssemblyStep(step.transformations, true, () => {
-        assemblyState.currentStepIndex = nextIndex;
-        updateAssemblyGuiInfo();
         console.log(`[Assembly] → Step ${nextIndex + 1}/${assemblyData.steps.length}: "${step.name}"`);
     });
 }
 
 // Undo the current disassembly step (move objects back to initPosition).
 function assemblyPrevStep() {
+    // Snap any in-flight animation to its end state before reversing to the previous step.
+    assemblyAnimationFinalize?.(); // Volá funkci assemblyAnimationFinalize pouze pokud assemblyAnimationFinalize není null nebo undefined. 
+    assemblyAnimationFinalize = null;
+
     if (assemblyState.currentStepIndex < 0) {
         console.log('[Assembly] Already at the start.');
         return;
@@ -3404,9 +3426,10 @@ function assemblyPrevStep() {
         return;
     }
 
+    // Commit state before animating so mid-animation reversals always have correct currentStepIndex.
+    assemblyState.currentStepIndex--;
+    updateAssemblyGuiInfo();
     animateAssemblyStep(step.transformations, false, () => {
-        assemblyState.currentStepIndex--;
-        updateAssemblyGuiInfo();
         const label = assemblyState.currentStepIndex < 0
             ? 'Assembled'
             : `Step ${assemblyState.currentStepIndex + 1}: "${assemblyData.steps[assemblyState.currentStepIndex].name}"`;
