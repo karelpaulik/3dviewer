@@ -61,6 +61,8 @@ const assemblyGui = {
     moveStepDown: function() { assemblyMoveStepDown(); },
     deleteStep: function() { assemblyDeleteStep(); },
     removeObjectFromStep: function() { assemblyRemoveObjectFromStep(); },
+    saveCameraView: function() { assemblySaveCameraView(); },
+    clearCameraView: function() { assemblyClearCameraView(); },
     resetToStart: function() { assemblyResetToStart(); },
     animateToStart: function() { assemblyAnimateToStart(); },
     prevStep: function() { assemblyPrevStep(); },
@@ -2872,6 +2874,8 @@ function addAssemblyGui() {
     editControls.push( editFolder.add(assemblyGui, 'moveStepUp').name('↑  Move step up') );
     editControls.push( editFolder.add(assemblyGui, 'moveStepDown').name('↓  Move step down') );
     editControls.push( editFolder.add(assemblyGui, 'removeObjectFromStep').name('✕  Remove object from step') );
+    editControls.push( editFolder.add(assemblyGui, 'saveCameraView').name('📷  Save camera view') );
+    editControls.push( editFolder.add(assemblyGui, 'clearCameraView').name('✕  Clear camera view') );
 
     // Start disabled (editMode defaults to false)
     editControls.forEach(c => c.disable());
@@ -2896,8 +2900,8 @@ function updateAssemblyGuiInfo() {
     // Edit status — mirrors current playback step
     const ei = assemblyState.currentStepIndex;
     if (ei >= 0 && ei < n) {
-        const es = assemblyData.steps[ei];
-        assemblyGui.editStepInfo = `${ei + 1}/${n}: ${es.name} (${es.transformations.length} move${es.transformations.length === 1 ? '' : 's'})`;
+        const es = assemblyData.steps[ei];    
+        assemblyGui.editStepInfo = `${ei + 1}/${n}: (${es.transformations.length} move${es.transformations.length === 1 ? '' : 's'})${es.camera ? ' 📷' : ''}`;
         assemblyGui.stepName = es.name;
         assemblyGui.stepDescription = es.description;
     } else {
@@ -2935,9 +2939,17 @@ function rebuildAssemblyStepsList() {
 
     assemblyData.steps.forEach((step, i) => {
         const isActive = i === assemblyState.currentStepIndex;
-        const label = `${isActive ? '▶ ' : '   '}${i + 1}:  ${step.name}`;
+        const camIcon  = step.camera ? '  📷' : '';
+        const label = `${isActive ? '▶ ' : '   '}${i + 1}:  ${step.name}${camIcon}`;
         const btn = { go: function() { assemblyGoToStep(i); } };
-        assemblyStepsListFolder.add(btn, 'go').name(label);
+        const ctrl = assemblyStepsListFolder.add(btn, 'go').name(label);
+        if (step.camera) {
+            const btnEl = ctrl.domElement.querySelector('button');
+            if (btnEl) {
+                btnEl.style.color = '#f0c040';
+                btnEl.style.fontWeight = 'bold';
+            }
+        }
     });
 
     assemblyStepsListFolder.open();
@@ -3335,6 +3347,7 @@ function assemblyAnimateToFinish() {
         if (step.transformations.length === 0) {
             assemblyState.currentStepIndex = nextIndex;
             updateAssemblyGuiInfo();
+            if (step.camera) animateCameraToView(step.camera);
             animateNext();
             return;
         }
@@ -3342,6 +3355,7 @@ function assemblyAnimateToFinish() {
         animateAssemblyStep(step.transformations, true, () => {
             assemblyState.currentStepIndex = nextIndex;
             updateAssemblyGuiInfo();
+            if (step.camera) animateCameraToView(step.camera);
             animateNext();
         });
     }
@@ -3366,6 +3380,8 @@ function assemblyAnimateToStart() {
         if (step.transformations.length === 0) {
             assemblyState.currentStepIndex--;
             updateAssemblyGuiInfo();
+            const prevCam0 = assemblyState.currentStepIndex >= 0 ? assemblyData.steps[assemblyState.currentStepIndex].camera : null;
+            if (prevCam0) animateCameraToView(prevCam0);
             animatePrev();
             return;
         }
@@ -3373,6 +3389,8 @@ function assemblyAnimateToStart() {
         animateAssemblyStep(step.transformations, false, () => {
             assemblyState.currentStepIndex--;
             updateAssemblyGuiInfo();
+            const prevCam = assemblyState.currentStepIndex >= 0 ? assemblyData.steps[assemblyState.currentStepIndex].camera : null;
+            if (prevCam) animateCameraToView(prevCam);
             animatePrev();
         });
     }
@@ -3396,6 +3414,7 @@ function assemblyNextStep() {
     if (step.transformations.length === 0) {
         assemblyState.currentStepIndex = nextIndex;
         updateAssemblyGuiInfo();
+        if (step.camera) animateCameraToView(step.camera);
         console.log(`[Assembly] → Step ${nextIndex + 1}: "${step.name}" (no moves)`);
         return;
     }
@@ -3403,9 +3422,18 @@ function assemblyNextStep() {
     // Commit state before animating so mid-animation reversals always have correct currentStepIndex.
     assemblyState.currentStepIndex = nextIndex;
     updateAssemblyGuiInfo();
-    animateAssemblyStep(step.transformations, true, () => {
-        console.log(`[Assembly] → Step ${nextIndex + 1}/${assemblyData.steps.length}: "${step.name}"`);
-    });
+    if (step.camera) {
+        // Camera animates first, then parts move.
+        animateCameraToView(step.camera, () => {
+            animateAssemblyStep(step.transformations, true, () => {
+                console.log(`[Assembly] → Step ${nextIndex + 1}/${assemblyData.steps.length}: "${step.name}"`);
+            });
+        });
+    } else {
+        animateAssemblyStep(step.transformations, true, () => {
+            console.log(`[Assembly] → Step ${nextIndex + 1}/${assemblyData.steps.length}: "${step.name}"`);
+        });
+    }
 }
 
 // Undo the current disassembly step (move objects back to initPosition).
@@ -3423,17 +3451,105 @@ function assemblyPrevStep() {
     if (step.transformations.length === 0) {
         assemblyState.currentStepIndex--;
         updateAssemblyGuiInfo();
+        if (step.camera) animateCameraToView(step.camera);
         return;
     }
 
     // Commit state before animating so mid-animation reversals always have correct currentStepIndex.
     assemblyState.currentStepIndex--;
     updateAssemblyGuiInfo();
-    animateAssemblyStep(step.transformations, false, () => {
+    const logBack = () => {
         const label = assemblyState.currentStepIndex < 0
             ? 'Assembled'
             : `Step ${assemblyState.currentStepIndex + 1}: "${assemblyData.steps[assemblyState.currentStepIndex].name}"`;
         console.log(`[Assembly] ← Back → ${label}`);
+    };
+    if (step.camera) {
+        // Camera animates first, then parts move back.
+        animateCameraToView(step.camera, () => {
+            animateAssemblyStep(step.transformations, false, logBack);
+        });
+    } else {
+        animateAssemblyStep(step.transformations, false, logBack);
+    }
+}
+
+// Save the current camera position + orbit target into the active step.
+function assemblySaveCameraView() {
+    const ci = assemblyState.currentStepIndex;
+    if (ci < 0 || ci >= assemblyData.steps.length) {
+        console.log('[Assembly] No step selected – select a step first.');
+        return;
+    }
+    const step = assemblyData.steps[ci];
+    step.camera = {
+        position: { x: currentCamera.position.x, y: currentCamera.position.y, z: currentCamera.position.z },
+        target:   { x: orbitControls.target.x,   y: orbitControls.target.y,   z: orbitControls.target.z   },
+        zoom:     currentCamera.zoom,
+    };
+    updateAssemblyGuiInfo();
+    console.log(`[Assembly] Camera view saved to step "${step.name}".`);
+}
+
+// Remove the saved camera view from the active step.
+function assemblyClearCameraView() {
+    const ci = assemblyState.currentStepIndex;
+    if (ci < 0 || ci >= assemblyData.steps.length) return;
+    const step = assemblyData.steps[ci];
+    delete step.camera;
+    updateAssemblyGuiInfo();
+    console.log(`[Assembly] Camera view cleared from step "${step.name}".`);
+}
+
+// Animate (or snap) the camera to a saved camera view { position, target, zoom }.
+// onComplete is called when the animation finishes (or immediately when duration === 0).
+function animateCameraToView(camData, onComplete) {
+    if (!camData) { onComplete?.(); return; }
+    const duration = assemblyGui.animationDuration;
+    const startPos    = currentCamera.position.clone();
+    const startTarget = orbitControls.target.clone();
+    const endPos    = new THREE.Vector3(camData.position.x, camData.position.y, camData.position.z);
+    const endTarget = new THREE.Vector3(camData.target.x,   camData.target.y,   camData.target.z);
+
+    const startZoom = currentCamera.zoom;
+    const endZoom   = (camData.zoom != null) ? camData.zoom : startZoom;
+
+    // Skip animation if camera is already at the target view.
+    const EPS = 1e-6;
+    if (
+        startPos.distanceToSquared(endPos)       < EPS &&
+        startTarget.distanceToSquared(endTarget) < EPS &&
+        Math.abs(startZoom - endZoom)            < EPS
+    ) {
+        onComplete?.();
+        return;
+    }
+
+    if (duration <= 0) {
+        currentCamera.position.copy(endPos);
+        orbitControls.target.copy(endTarget);
+        currentCamera.zoom = endZoom;
+        currentCamera.updateProjectionMatrix();
+        orbitControls.update();
+        render();
+        onComplete?.();
+        return;
+    }
+
+    const proxy = { t: 0 };
+    gsap.to(proxy, {
+        t: 1,
+        duration: duration / 1000,
+        ease: assemblyGui.animationEase,
+        onUpdate() {
+            currentCamera.position.lerpVectors(startPos, endPos, proxy.t);
+            orbitControls.target.lerpVectors(startTarget, endTarget, proxy.t);
+            currentCamera.zoom = startZoom + (endZoom - startZoom) * proxy.t;
+            currentCamera.updateProjectionMatrix();
+            orbitControls.update();
+            render();
+        },
+        onComplete() { onComplete?.(); },
     });
 }
 
