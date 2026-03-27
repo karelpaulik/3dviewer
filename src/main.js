@@ -2568,6 +2568,7 @@ function assemblyWriteToUserData() {
                 step_id:          step.id,
                 step_name:        step.name,
                 step_description: step.description,
+                step_camera:      step.camera ? { ...step.camera } : null,
                 initPosition:     { ...t.initPosition },
                 finalPosition:    { ...t.finalPosition },
                 initQuaternion:   t.initQuaternion  ? { ...t.initQuaternion }  : null,
@@ -2604,6 +2605,7 @@ function importAssemblyFromGltfScene(gltfScene) {
                     id:          entry.step_id,
                     name:        entry.step_name        || `Step ${entry.step_id}`,
                     description: entry.step_description || '',
+                    camera:      entry.step_camera       || null,
                     transformations: [],
                 });
             }

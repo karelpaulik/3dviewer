@@ -1,4 +1,4 @@
-﻿// htmlExport.js
+// htmlExport.js
 import * as THREE from 'three';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 
@@ -408,8 +408,10 @@ window.addEventListener('resize', () => {
 // ---- Assembly data ----
 const assemblySteps = []; // { id, name, description, transformations[] }
 let currentStepIndex = -1;
-let activeAnimation = null;
-let animationFinalize = null;
+let assemblyAnimation = null;
+let assemblyAnimationFinalize = null;
+let cameraAnimation = null;
+let cameraAnimationFinalize = null;
 let loopEnabled = ANIM_LOOP;
 
 function updateStatus() {
@@ -461,6 +463,7 @@ loader.parse(glbBuffer, '', function(gltf) {
                     id: entry.step_id,
                     name: entry.step_name || ('Step ' + entry.step_id),
                     description: entry.step_description || '',
+                    camera: entry.step_camera || null,
                     transformations: [],
                 });
             }
@@ -501,7 +504,7 @@ loader.parse(glbBuffer, '', function(gltf) {
 
 // ---- Animation helpers ----
 function animateStep(transformations, forward, onComplete) {
-    if (activeAnimation) { activeAnimation.kill(); activeAnimation = null; }
+    if (assemblyAnimation) { assemblyAnimation.kill(); assemblyAnimation = null; }
 
     const startStates = transformations.map(tr => {
         const tgtP = forward ? tr.finalPosition : tr.initPosition;
@@ -520,24 +523,26 @@ function animateStep(transformations, forward, onComplete) {
         };
     });
 
-    animationFinalize = () => {
+    assemblyAnimationFinalize = () => {
+        if (assemblyAnimation) { assemblyAnimation.kill(); assemblyAnimation = null; }
         startStates.forEach((s, i) => {
             transformations[i].objectRef.position.copy(s.targetPos);
             if (s.hasRot) transformations[i].objectRef.quaternion.copy(s.targetQuat);
             if (s.hasScale) transformations[i].objectRef.scale.copy(s.targetScale);
         });
         render();
+        assemblyAnimationFinalize = null;
     };
 
     if (ANIM_DURATION <= 0) {
-        animationFinalize();
-        animationFinalize = null;
+        assemblyAnimationFinalize();
+        assemblyAnimationFinalize = null;
         if (onComplete) onComplete();
         return;
     }
 
     const proxy = { t: 0 };
-    activeAnimation = gsap.to(proxy, {
+    assemblyAnimation = gsap.to(proxy, {
         t: 1,
         duration:    ANIM_DURATION    / 1000,
         ease:        ANIM_EASE,
@@ -557,8 +562,65 @@ function animateStep(transformations, forward, onComplete) {
             render();
         },
         onComplete() {
-            activeAnimation = null;
-            animationFinalize = null;
+            assemblyAnimation = null;
+            assemblyAnimationFinalize = null;
+            if (onComplete) onComplete();
+        },
+    });
+}
+
+function animateCameraToView(camData, onComplete) {
+    if (!camData) { if (onComplete) onComplete(); return; }
+    if (cameraAnimation) { cameraAnimation.kill(); cameraAnimation = null; }
+    cameraAnimationFinalize = null;
+    const startPos    = camera.position.clone();
+    const startTarget = controls.target.clone();
+    const endPos    = new THREE.Vector3(camData.position.x, camData.position.y, camData.position.z);
+    const endTarget = new THREE.Vector3(camData.target.x,   camData.target.y,   camData.target.z);
+    const startZoom = camera.zoom;
+    const endZoom   = (camData.zoom != null) ? camData.zoom : startZoom;
+    const EPS = 1e-6;
+    if (startPos.distanceToSquared(endPos) < EPS && startTarget.distanceToSquared(endTarget) < EPS && Math.abs(startZoom - endZoom) < EPS) {
+        if (onComplete) onComplete(); return;
+    }
+    cameraAnimationFinalize = () => {
+        if (cameraAnimation) { cameraAnimation.kill(); cameraAnimation = null; }
+        camera.position.copy(endPos);
+        controls.target.copy(endTarget);
+        camera.zoom = endZoom;
+        camera.updateProjectionMatrix();
+        controls.update();
+        render();
+        cameraAnimationFinalize = null;
+        if (onComplete) onComplete();
+    };
+    if (ANIM_DURATION <= 0) {
+        camera.position.copy(endPos);
+        controls.target.copy(endTarget);
+        camera.zoom = endZoom;
+        camera.updateProjectionMatrix();
+        controls.update();
+        render();
+        cameraAnimationFinalize = null;
+        if (onComplete) onComplete();
+        return;
+    }
+    const proxy = { t: 0 };
+    cameraAnimation = gsap.to(proxy, {
+        t: 1,
+        duration: ANIM_DURATION / 1000,
+        ease: ANIM_EASE,
+        onUpdate() {
+            camera.position.lerpVectors(startPos, endPos, proxy.t);
+            controls.target.lerpVectors(startTarget, endTarget, proxy.t);
+            camera.zoom = startZoom + (endZoom - startZoom) * proxy.t;
+            camera.updateProjectionMatrix();
+            controls.update();
+            render();
+        },
+        onComplete() {
+            cameraAnimation = null;
+            cameraAnimationFinalize = null;
             if (onComplete) onComplete();
         },
     });
@@ -566,7 +628,10 @@ function animateStep(transformations, forward, onComplete) {
 
 // ---- Playback functions ----
 function resetToStart() {
-    if (activeAnimation) { activeAnimation.kill(); activeAnimation = null; }
+    if (assemblyAnimation) { assemblyAnimation.kill(); assemblyAnimation = null; }
+    if (cameraAnimation) { cameraAnimation.kill(); cameraAnimation = null; }
+    assemblyAnimationFinalize = null;
+    cameraAnimationFinalize = null;
     [...assemblySteps].reverse().forEach(step => {
         step.transformations.forEach(t => {
             t.objectRef.position.set(t.initPosition.x, t.initPosition.y, t.initPosition.z);
@@ -580,7 +645,10 @@ function resetToStart() {
 }
 
 function resetToFinish() {
-    if (activeAnimation) { activeAnimation.kill(); activeAnimation = null; }
+    if (assemblyAnimation) { assemblyAnimation.kill(); assemblyAnimation = null; }
+    if (cameraAnimation) { cameraAnimation.kill(); cameraAnimation = null; }
+    assemblyAnimationFinalize = null;
+    cameraAnimationFinalize = null;
     if (!assemblySteps.length) return;
     assemblySteps.forEach(step => {
         step.transformations.forEach(t => {
@@ -595,36 +663,49 @@ function resetToFinish() {
 }
 
 function nextStep() {
-    animationFinalize?.(); animationFinalize = null;
+    cameraAnimationFinalize?.(); cameraAnimationFinalize = null;
+    assemblyAnimationFinalize?.(); assemblyAnimationFinalize = null;
     const ni = currentStepIndex + 1;
     if (ni >= assemblySteps.length) return;
     const step = assemblySteps[ni];
-    if (step.transformations.length === 0) {
-        currentStepIndex = ni;
-        updateStatus();
-        return;
-    }
     currentStepIndex = ni;
     updateStatus();
-    animateStep(step.transformations, true, () => { updateStatus(); });
+    if (step.transformations.length === 0) {
+        if (step.camera) { animateCameraToView(step.camera); }
+        return;
+    }
+    if (step.camera) {
+        animateCameraToView(step.camera, () => {
+            animateStep(step.transformations, true, () => { updateStatus(); });
+        });
+    } else {
+        animateStep(step.transformations, true, () => { updateStatus(); });
+    }
 }
 
 function prevStep() {
-    animationFinalize?.(); animationFinalize = null;
+    cameraAnimationFinalize?.(); cameraAnimationFinalize = null;
+    assemblyAnimationFinalize?.(); assemblyAnimationFinalize = null;
     if (currentStepIndex < 0) return;
     const step = assemblySteps[currentStepIndex];
-    if (step.transformations.length === 0) {
-        currentStepIndex--;
-        updateStatus();
-        return;
-    }
     currentStepIndex--;
     updateStatus();
-    animateStep(step.transformations, false, () => { updateStatus(); });
+    if (step.transformations.length === 0) {
+        if (step.camera) { animateCameraToView(step.camera); }
+        return;
+    }
+    if (step.camera) {
+        animateCameraToView(step.camera, () => {
+            animateStep(step.transformations, false, () => { updateStatus(); });
+        });
+    } else {
+        animateStep(step.transformations, false, () => { updateStatus(); });
+    }
 }
 
 function animateToFinish() {
-    animationFinalize?.(); animationFinalize = null;
+    cameraAnimationFinalize?.(); cameraAnimationFinalize = null;
+    assemblyAnimationFinalize?.(); assemblyAnimationFinalize = null;
     if (assemblySteps.length === 0 || currentStepIndex >= assemblySteps.length - 1) return;
     function next() {
         const ni = currentStepIndex + 1;
@@ -633,21 +714,30 @@ function animateToFinish() {
             return;
         }
         const step = assemblySteps[ni];
-        if (step.transformations.length === 0) {
-            currentStepIndex = ni;
-            updateStatus();
-            next();
-            return;
-        }
         currentStepIndex = ni;
         updateStatus();
-        animateStep(step.transformations, true, () => { updateStatus(); next(); });
+        if (step.transformations.length === 0) {
+            if (step.camera) {
+                animateCameraToView(step.camera, () => next());
+            } else {
+                next();
+            }
+            return;
+        }
+        if (step.camera) {
+            animateCameraToView(step.camera, () => {
+                animateStep(step.transformations, true, () => { updateStatus(); next(); });
+            });
+        } else {
+            animateStep(step.transformations, true, () => { updateStatus(); next(); });
+        }
     }
     next();
 }
 
 function animateToStart() {
-    animationFinalize?.(); animationFinalize = null;
+    cameraAnimationFinalize?.(); cameraAnimationFinalize = null;
+    assemblyAnimationFinalize?.(); assemblyAnimationFinalize = null;
     if (currentStepIndex < 0) return;
     function prev() {
         if (currentStepIndex < 0) {
@@ -655,15 +745,26 @@ function animateToStart() {
             return;
         }
         const step = assemblySteps[currentStepIndex];
-        if (step.transformations.length === 0) {
+        const afterTransforms = () => {
             currentStepIndex--;
             updateStatus();
             prev();
+        };
+        if (step.transformations.length === 0) {
+            if (step.camera) {
+                animateCameraToView(step.camera, () => afterTransforms());
+            } else {
+                afterTransforms();
+            }
             return;
         }
-        currentStepIndex--;
-        updateStatus();
-        animateStep(step.transformations, false, () => { updateStatus(); prev(); });
+        if (step.camera) {
+            animateCameraToView(step.camera, () => {
+                animateStep(step.transformations, false, () => { updateStatus(); afterTransforms(); });
+            });
+        } else {
+            animateStep(step.transformations, false, () => { updateStatus(); afterTransforms(); });
+        }
     }
     prev();
 }
@@ -746,12 +847,12 @@ function updateSectionMeshes() {
 }
 
 function setSectionSliderRange(range) {
-    ['px', 'py', 'pz'].forEach(ax => {
-        const sld = document.getElementById('sld-' + ax);
-        const num = document.getElementById('num-' + ax);
-        sld.min = -range; sld.max = range;
-        num.min = -range; num.max = range;
-    });
+    document.getElementById('sld-px').min = -range; document.getElementById('sld-px').max = range;
+    document.getElementById('num-px').min = -range; document.getElementById('num-px').max = range;
+    document.getElementById('sld-py').min = -range; document.getElementById('sld-py').max = range;
+    document.getElementById('num-py').min = -range; document.getElementById('num-py').max = range;
+    document.getElementById('sld-pz').min = -range; document.getElementById('sld-pz').max = range;
+    document.getElementById('num-pz').min = -range; document.getElementById('num-pz').max = range;
 }
 
 // ---- Section UI wiring ----
@@ -780,9 +881,9 @@ chkSectionMesh.addEventListener('change', function() {
     render();
 });
 
-function wireAxisSlider(axis, idx) {
-    const sld = document.getElementById('sld-' + axis);
-    const num = document.getElementById('num-' + axis);
+function wireAxisSlider(sldId, numId, idx) {
+    const sld = document.getElementById(sldId);
+    const num = document.getElementById(numId);
     sld.value = clipPlanes[idx].constant;
     num.value = clipPlanes[idx].constant;
     function update(v) {
@@ -793,16 +894,15 @@ function wireAxisSlider(axis, idx) {
     sld.addEventListener('input', () => update(parseFloat(sld.value)));
     num.addEventListener('change', () => update(parseFloat(num.value) || 0));
 }
-wireAxisSlider('px', 0);
-wireAxisSlider('py', 1);
-wireAxisSlider('pz', 2);
+wireAxisSlider('sld-px', 'num-px', 0);
+wireAxisSlider('sld-py', 'num-py', 1);
+wireAxisSlider('sld-pz', 'num-pz', 2);
 
 document.getElementById('btn-sec-reset').addEventListener('click', function() {
     clipPlanes[0].constant = 0; clipPlanes[1].constant = 0; clipPlanes[2].constant = 0;
-    ['px', 'py', 'pz'].forEach(ax => {
-        document.getElementById('sld-' + ax).value = 0;
-        document.getElementById('num-' + ax).value = 0;
-    });
+    document.getElementById('sld-px').value = 0; document.getElementById('num-px').value = 0;
+    document.getElementById('sld-py').value = 0; document.getElementById('num-py').value = 0;
+    document.getElementById('sld-pz').value = 0; document.getElementById('num-pz').value = 0;
     render();
 });
 
@@ -959,10 +1059,14 @@ function generateObfuscatedHTML(glbBase64, animSettings, sectionSettings) {
     // ── Minify & obfuscate CSS ──
     const cssMatch = sourceHTML.match(/<style>([\s\S]*?)<\/style>/);
     let css = cssMatch ? cssMatch[1] : '';
-    for (const [readable, obf] of Object.entries(idMap)) {
+    // Sort by key length (longest first) to prevent substring collisions
+    // e.g. 'section-panel' must not match inside 'section-panel-hdr'
+    const sortedIdEntries = Object.entries(idMap).sort((a, b) => b[0].length - a[0].length);
+    for (const [readable, obf] of sortedIdEntries) {
         css = css.replaceAll('#' + readable, '#' + obf);
     }
-    for (const [readable, obf] of Object.entries(classMap)) {
+    const sortedClassEntries = Object.entries(classMap).sort((a, b) => b[0].length - a[0].length);
+    for (const [readable, obf] of sortedClassEntries) {
         css = css.replaceAll('.' + readable, '.' + obf);
     }
     css = css.replace(/\n\s*/g, '');
