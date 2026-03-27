@@ -43,6 +43,7 @@ export function exportToHTML(loadedModels, assemblyGui, viewProp, assemblyWriteT
             stagger:     assemblyGui.animationStagger,
             overwrite:   assemblyGui.animationOverwrite,
             loop:        assemblyGui.animationLoop,
+            camera:      assemblyGui.animationCamera,
         };
 
         const sectionSettings = {
@@ -271,6 +272,7 @@ canvas { display: block; width: 100%; height: 100%; }
         <button id="btn-prev" title="Previous step [PageUp / ←]">&#x25C4; Step</button>
         <button id="btn-next" title="Next step [PageDown / →]">Step &#x25BA;</button>
         <label class="chk-label"><input type="checkbox" id="chk-loop"${animSettings.loop ? ' checked' : ''}> &#x221E; Loop</label>
+        <label class="chk-label"><input type="checkbox" id="chk-camera"${animSettings.camera ? ' checked' : ''}> &#x1F3A5; Cam</label>
         <label class="chk-label"><input type="checkbox" id="chk-fullscreen"> &#x26F6; Full</label>
     </div>
 </div>
@@ -301,6 +303,7 @@ const ANIM_YOYO        = ${animSettings.yoyo};
 const ANIM_STAGGER     = ${animSettings.stagger};
 const ANIM_OVERWRITE   = '${animSettings.overwrite}';
 const ANIM_LOOP        = ${animSettings.loop};
+const ANIM_CAMERA      = ${animSettings.camera};
 const GLB_BASE64 = '${glbBase64}';
 
 // ---- Scene setup ----
@@ -413,6 +416,7 @@ let assemblyAnimationFinalize = null;
 let cameraAnimation = null;
 let cameraAnimationFinalize = null;
 let loopEnabled = ANIM_LOOP;
+let cameraEnabled = ANIM_CAMERA;
 
 function updateStatus() {
     const el = document.getElementById('step-info');
@@ -670,11 +674,12 @@ function nextStep() {
     const step = assemblySteps[ni];
     currentStepIndex = ni;
     updateStatus();
+    const useCam = step.camera && cameraEnabled;
     if (step.transformations.length === 0) {
-        if (step.camera) { animateCameraToView(step.camera); }
+        if (useCam) { animateCameraToView(step.camera); }
         return;
     }
-    if (step.camera) {
+    if (useCam) {
         animateCameraToView(step.camera, () => {
             animateStep(step.transformations, true, () => { updateStatus(); });
         });
@@ -690,11 +695,12 @@ function prevStep() {
     const step = assemblySteps[currentStepIndex];
     currentStepIndex--;
     updateStatus();
+    const useCam = step.camera && cameraEnabled;
     if (step.transformations.length === 0) {
-        if (step.camera) { animateCameraToView(step.camera); }
+        if (useCam) { animateCameraToView(step.camera); }
         return;
     }
-    if (step.camera) {
+    if (useCam) {
         animateCameraToView(step.camera, () => {
             animateStep(step.transformations, false, () => { updateStatus(); });
         });
@@ -716,15 +722,16 @@ function animateToFinish() {
         const step = assemblySteps[ni];
         currentStepIndex = ni;
         updateStatus();
+        const useCam = step.camera && cameraEnabled;
         if (step.transformations.length === 0) {
-            if (step.camera) {
+            if (useCam) {
                 animateCameraToView(step.camera, () => next());
             } else {
                 next();
             }
             return;
         }
-        if (step.camera) {
+        if (useCam) {
             animateCameraToView(step.camera, () => {
                 animateStep(step.transformations, true, () => { updateStatus(); next(); });
             });
@@ -750,15 +757,16 @@ function animateToStart() {
             updateStatus();
             prev();
         };
+        const useCam = step.camera && cameraEnabled;
         if (step.transformations.length === 0) {
-            if (step.camera) {
+            if (useCam) {
                 animateCameraToView(step.camera, () => afterTransforms());
             } else {
                 afterTransforms();
             }
             return;
         }
-        if (step.camera) {
+        if (useCam) {
             animateCameraToView(step.camera, () => {
                 animateStep(step.transformations, false, () => { updateStatus(); afterTransforms(); });
             });
@@ -778,6 +786,9 @@ document.getElementById('btn-anim-start').addEventListener('click', animateToSta
 document.getElementById('btn-anim-finish').addEventListener('click', animateToFinish);
 document.getElementById('chk-loop').addEventListener('change', function() {
     loopEnabled = this.checked;
+});
+document.getElementById('chk-camera').addEventListener('change', function() {
+    cameraEnabled = this.checked;
 });
 document.getElementById('chk-fullscreen').addEventListener('change', function() {
     if (this.checked) {
@@ -978,6 +989,7 @@ export function exportToHTMLObfuscated(loadedModels, assemblyGui, viewProp, asse
             stagger:     assemblyGui.animationStagger,
             overwrite:   assemblyGui.animationOverwrite,
             loop:        assemblyGui.animationLoop,
+            camera:      assemblyGui.animationCamera,
         };
 
         const sectionSettings = {
@@ -1012,7 +1024,7 @@ function generateObfuscatedHTML(glbBase64, animSettings, sectionSettings) {
         'status-bar': '_a', 'step-info': '_b', 'step-desc': '_c',
         'canvas-container': '_d', 'controls': '_e',
         'btn-start': '_1', 'btn-finish': '_2', 'btn-prev': '_3',
-        'btn-next': '_4', 'btn-anim-start': '_5', 'btn-anim-finish': '_6', 'chk-loop': '_7', 'chk-fullscreen': '_8',
+        'btn-next': '_4', 'btn-anim-start': '_5', 'btn-anim-finish': '_6', 'chk-loop': '_7', 'chk-fullscreen': '_8', 'chk-camera': '_9',
         'section-panel': '_sa', 'section-panel-hdr': '_sb', 'section-panel-body': '_sc',
         'chk-section': '_s1', 'chk-section-mesh': '_s2',
         'sld-px': '_s3', 'num-px': '_s4',
@@ -1095,7 +1107,7 @@ function generateObfuscatedHTML(glbBase64, animSettings, sectionSettings) {
         `<div id="_d"></div>` +
         `<div id="_e">` +
         `<div class="_r"><button id="_1">&#x23EE; Start</button><button id="_2">Finish &#x23ED;</button><button id="_5">&#x23EA; Anim</button><button id="_6">Anim &#x23E9;</button></div>` +
-        `<div class="_r"><button id="_3">&#x25C0; Step</button><button id="_4">Step &#x25B6;</button><label class="_cl"><input type="checkbox" id="_7"${animSettings.loop ? ' checked' : ''}> &#x221E; Loop</label><label class="_cl"><input type="checkbox" id="_8"> &#x26F6; Full</label></div>` +
+        `<div class="_r"><button id="_3">&#x25C0; Step</button><button id="_4">Step &#x25B6;</button><label class="_cl"><input type="checkbox" id="_7"${animSettings.loop ? ' checked' : ''}> &#x221E; Loop</label><label class="_cl"><input type="checkbox" id="_9"${animSettings.camera ? ' checked' : ''}> &#x1F3A5; Cam</label><label class="_cl"><input type="checkbox" id="_8"> &#x26F6; Full</label></div>` +
         `</div>` +
         `<script id="_g" type="text/plain">${glbBase64}<\/script>` +
         `<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"><\/script>` +

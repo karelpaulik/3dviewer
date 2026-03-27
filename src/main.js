@@ -80,6 +80,7 @@ const assemblyGui = {
     animationStagger: 0,
     animationOverwrite: 'auto',
     animationLoop: false,
+    animationCamera: true,
 };
 // ============================================
 
@@ -2816,6 +2817,7 @@ function addAssemblyGui() {
     const playbackFolder = assemblyFolder.addFolder('Playback');
     playbackFolder.add(assemblyGui, 'stepInfo').name('Status').disable().listen();
     playbackFolder.add(assemblyGui, 'animationLoop').name('Loop  ∞  (start ↔ finish)').listen();
+    playbackFolder.add(assemblyGui, 'animationCamera').name('Camera  🎥  (animate camera)').listen();
     playbackFolder.add(assemblyGui, 'resetToStart').name('⏮  Reset to start  [Home]');
     playbackFolder.add(assemblyGui, 'animateToStart').name('◀◀  Animate to start  [Shift+PgUp]');
     playbackFolder.add(assemblyGui, 'prevStep').name('◀  Previous step  [PageUp]');
@@ -3356,8 +3358,10 @@ function assemblyAnimateToFinish() {
         assemblyState.currentStepIndex = nextIndex;
         updateAssemblyGuiInfo();
 
+        const useCamera = step.camera && assemblyGui.animationCamera;
+
         if (step.transformations.length === 0) {
-            if (step.camera) {
+            if (useCamera) {
                 animateCameraToView(step.camera, () => animateNext());
             } else {
                 animateNext();
@@ -3365,7 +3369,7 @@ function assemblyAnimateToFinish() {
             return;
         }
 
-        if (step.camera) {
+        if (useCamera) {
             // Camera animates first, then parts move.
             animateCameraToView(step.camera, () => {
                 animateAssemblyStep(step.transformations, true, () => animateNext());
@@ -3399,8 +3403,10 @@ function assemblyAnimateToStart() {
             animatePrev();
         };
 
+        const useCamera = step.camera && assemblyGui.animationCamera;
+
         if (step.transformations.length === 0) {
-            if (step.camera) {
+            if (useCamera) {
                 animateCameraToView(step.camera, () => afterTransforms());
             } else {
                 afterTransforms();
@@ -3408,7 +3414,7 @@ function assemblyAnimateToStart() {
             return;
         }
 
-        if (step.camera) {
+        if (useCamera) {
             // Camera animates first, then parts move back.
             animateCameraToView(step.camera, () => {
                 animateAssemblyStep(step.transformations, false, () => afterTransforms());
@@ -3438,10 +3444,11 @@ function assemblyNextStep() {
     }
 
     const step = assemblyData.steps[nextIndex];
+    const useCamera = step.camera && assemblyGui.animationCamera;
     if (step.transformations.length === 0) {
         assemblyState.currentStepIndex = nextIndex;
         updateAssemblyGuiInfo();
-        if (step.camera) animateCameraToView(step.camera);
+        if (useCamera) animateCameraToView(step.camera);
         console.log(`[Assembly] → Step ${nextIndex + 1}: "${step.name}" (no moves)`);
         return;
     }
@@ -3449,7 +3456,7 @@ function assemblyNextStep() {
     // Commit state before animating so mid-animation reversals always have correct currentStepIndex.
     assemblyState.currentStepIndex = nextIndex;
     updateAssemblyGuiInfo();
-    if (step.camera) {
+    if (useCamera) {
         // Camera animates first, then parts move.
         animateCameraToView(step.camera, () => {
             animateAssemblyStep(step.transformations, true, () => {
@@ -3479,10 +3486,11 @@ function assemblyPrevStep() {
     }
 
     const step = assemblyData.steps[assemblyState.currentStepIndex];
+    const useCamera = step.camera && assemblyGui.animationCamera;
     if (step.transformations.length === 0) {
         assemblyState.currentStepIndex--;
         updateAssemblyGuiInfo();
-        if (step.camera) animateCameraToView(step.camera);
+        if (useCamera) animateCameraToView(step.camera);
         return;
     }
 
@@ -3495,7 +3503,7 @@ function assemblyPrevStep() {
             : `Step ${assemblyState.currentStepIndex + 1}: "${assemblyData.steps[assemblyState.currentStepIndex].name}"`;
         console.log(`[Assembly] ← Back → ${label}`);
     };
-    if (step.camera) {
+    if (useCamera) {
         // Camera animates first, then parts move back.
         animateCameraToView(step.camera, () => {
             animateAssemblyStep(step.transformations, false, logBack);
