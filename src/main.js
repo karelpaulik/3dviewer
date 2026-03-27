@@ -47,6 +47,8 @@ const assemblyState = {
 
 let assemblyAnimation = null;         // GSAP tween handle for step animation
 let assemblyAnimationFinalize = null;  // Snaps in-flight animation to its end state
+let cameraAnimation = null;            // GSAP tween handle for camera animation
+let cameraAnimationFinalize = null;    // Snaps in-flight camera animation to its end state
 let assemblyStepsListFolder = null; // Dynamicky přebudovávaný subfolder seznamu kroků
 let _assemblyFolderRef = null;      // Reference na hlavní Assembly Workflow folder (pro rebuild)
 
@@ -3196,9 +3198,14 @@ function animateAssemblyStep(transformations, forward, onComplete) {
     // Store finalizer: call to snap objects to their target positions (useful when interrupting).
     // Nemůže být definovaná jako globální. Neměla by přístup k ""
     assemblyAnimationFinalize = () => {
+        if (assemblyAnimation) {
+            assemblyAnimation.kill();
+            assemblyAnimation = null;
+        }
         applyTransforms(transformations, startStates, 1);
         if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) updateCrossSectionLines();
         render();
+        assemblyAnimationFinalize = null;
     };
 
     // Instant move when duration === 0
@@ -3400,8 +3407,12 @@ function assemblyAnimateToStart() {
 
 // Apply the next disassembly step (move objects to finalPosition).
 function assemblyNextStep() {
-    // Snap any in-flight animation to its end state before advancing to the next step.
-    assemblyAnimationFinalize?.(); // Volá funkci assemblyAnimationFinalize pouze pokud assemblyAnimationFinalize není null nebo undefined. 
+    // Snap any in-flight animations to their end state before advancing to the next step.
+    // Camera first: its finalizer calls onComplete which may start the assembly animation.
+    cameraAnimationFinalize?.();
+    cameraAnimationFinalize = null;
+    // Then snap any (possibly just-started) assembly animation.
+    assemblyAnimationFinalize?.();
     assemblyAnimationFinalize = null;
 
     const nextIndex = assemblyState.currentStepIndex + 1;
@@ -3438,8 +3449,12 @@ function assemblyNextStep() {
 
 // Undo the current disassembly step (move objects back to initPosition).
 function assemblyPrevStep() {
-    // Snap any in-flight animation to its end state before reversing to the previous step.
-    assemblyAnimationFinalize?.(); // Volá funkci assemblyAnimationFinalize pouze pokud assemblyAnimationFinalize není null nebo undefined. 
+    // Snap any in-flight animations to their end state before reversing to the previous step.
+    // Camera first: its finalizer calls onComplete which may start the assembly animation.
+    cameraAnimationFinalize?.();
+    cameraAnimationFinalize = null;
+    // Then snap any (possibly just-started) assembly animation.
+    assemblyAnimationFinalize?.();
     assemblyAnimationFinalize = null;
 
     if (assemblyState.currentStepIndex < 0) {
@@ -3505,6 +3520,11 @@ function assemblyClearCameraView() {
 // onComplete is called when the animation finishes (or immediately when duration === 0).
 function animateCameraToView(camData, onComplete) {
     if (!camData) { onComplete?.(); return; }
+    if (cameraAnimation) {
+        cameraAnimation.kill();
+        cameraAnimation = null;
+    }
+    cameraAnimationFinalize = null;
     const duration = assemblyGui.animationDuration;
     const startPos    = currentCamera.position.clone();
     const startTarget = orbitControls.target.clone();
@@ -3525,6 +3545,22 @@ function animateCameraToView(camData, onComplete) {
         return;
     }
 
+    // Store finalizer: snap camera to its target state and call onComplete (useful when interrupting).
+    cameraAnimationFinalize = () => {
+        if (cameraAnimation) {
+            cameraAnimation.kill();
+            cameraAnimation = null;
+        }
+        currentCamera.position.copy(endPos);
+        orbitControls.target.copy(endTarget);
+        currentCamera.zoom = endZoom;
+        currentCamera.updateProjectionMatrix();
+        orbitControls.update();
+        render();
+        cameraAnimationFinalize = null;
+        onComplete?.();
+    };
+
     if (duration <= 0) {
         currentCamera.position.copy(endPos);
         orbitControls.target.copy(endTarget);
@@ -3532,12 +3568,13 @@ function animateCameraToView(camData, onComplete) {
         currentCamera.updateProjectionMatrix();
         orbitControls.update();
         render();
+        cameraAnimationFinalize = null;
         onComplete?.();
         return;
     }
 
     const proxy = { t: 0 };
-    gsap.to(proxy, {
+    cameraAnimation = gsap.to(proxy, {
         t: 1,
         duration: duration / 1000,
         ease: assemblyGui.animationEase,
@@ -3549,7 +3586,11 @@ function animateCameraToView(camData, onComplete) {
             orbitControls.update();
             render();
         },
-        onComplete() { onComplete?.(); },
+        onComplete() {
+            cameraAnimation = null;
+            cameraAnimationFinalize = null;
+            onComplete?.();
+        },
     });
 }
 
