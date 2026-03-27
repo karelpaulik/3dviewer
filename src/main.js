@@ -3351,20 +3351,26 @@ function assemblyAnimateToFinish() {
         }
 
         const step = assemblyData.steps[nextIndex];
+        assemblyState.currentStepIndex = nextIndex;
+        updateAssemblyGuiInfo();
+
         if (step.transformations.length === 0) {
-            assemblyState.currentStepIndex = nextIndex;
-            updateAssemblyGuiInfo();
-            if (step.camera) animateCameraToView(step.camera);
-            animateNext();
+            if (step.camera) {
+                animateCameraToView(step.camera, () => animateNext());
+            } else {
+                animateNext();
+            }
             return;
         }
 
-        animateAssemblyStep(step.transformations, true, () => {
-            assemblyState.currentStepIndex = nextIndex;
-            updateAssemblyGuiInfo();
-            if (step.camera) animateCameraToView(step.camera);
-            animateNext();
-        });
+        if (step.camera) {
+            // Camera animates first, then parts move.
+            animateCameraToView(step.camera, () => {
+                animateAssemblyStep(step.transformations, true, () => animateNext());
+            });
+        } else {
+            animateAssemblyStep(step.transformations, true, () => animateNext());
+        }
     }
 
     animateNext();
@@ -3384,22 +3390,30 @@ function assemblyAnimateToStart() {
         }
 
         const step = assemblyData.steps[assemblyState.currentStepIndex];
-        if (step.transformations.length === 0) {
+
+        const afterTransforms = () => {
             assemblyState.currentStepIndex--;
             updateAssemblyGuiInfo();
-            const prevCam0 = assemblyState.currentStepIndex >= 0 ? assemblyData.steps[assemblyState.currentStepIndex].camera : null;
-            if (prevCam0) animateCameraToView(prevCam0);
             animatePrev();
+        };
+
+        if (step.transformations.length === 0) {
+            if (step.camera) {
+                animateCameraToView(step.camera, () => afterTransforms());
+            } else {
+                afterTransforms();
+            }
             return;
         }
 
-        animateAssemblyStep(step.transformations, false, () => {
-            assemblyState.currentStepIndex--;
-            updateAssemblyGuiInfo();
-            const prevCam = assemblyState.currentStepIndex >= 0 ? assemblyData.steps[assemblyState.currentStepIndex].camera : null;
-            if (prevCam) animateCameraToView(prevCam);
-            animatePrev();
-        });
+        if (step.camera) {
+            // Camera animates first, then parts move back.
+            animateCameraToView(step.camera, () => {
+                animateAssemblyStep(step.transformations, false, () => afterTransforms());
+            });
+        } else {
+            animateAssemblyStep(step.transformations, false, () => afterTransforms());
+        }
     }
 
     animatePrev();
