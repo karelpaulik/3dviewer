@@ -1,6 +1,7 @@
 // htmlExport.js
 import * as THREE from 'three';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+import exportLibsBundle from 'virtual:export-libs-bundle';
 
 // ===== Export to standalone HTML with embedded GLB =====
 export function exportToHTML(loadedModels, assemblyGui, viewProp, assemblyWriteToUserData, assemblyClearUserData) {
@@ -69,6 +70,7 @@ export function exportToHTML(loadedModels, assemblyGui, viewProp, assemblyWriteT
 }
 
 function generateStandaloneHTML(glbBase64, animSettings, sectionSettings) {
+    const safeLibsBundle = exportLibsBundle.replace(/<\/script/gi, '<\\/script');
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -277,21 +279,12 @@ canvas { display: block; width: 100%; height: 100%; }
     </div>
 </div>
 
-<script type="importmap">
-{
-    "imports": {
-        "three": "https://esm.sh/three@0.182.0",
-        "three/addons/": "https://esm.sh/three@0.182.0/examples/jsm/",
-        "gsap": "https://esm.sh/gsap@3.12.5"
-    }
-}
-</script>
+<script>${safeLibsBundle}<\/script>
 <script type="module">
-import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import gsap from 'gsap';
+const THREE = window.THREE;
+const GLTFLoader = window.GLTFLoader;
+const OrbitControls = window.OrbitControls;
+const gsap = window.gsap;
 
 // ---- Config ----
 const ANIM_DURATION    = ${animSettings.duration};
@@ -447,9 +440,6 @@ function base64ToArrayBuffer(b64) {
 }
 
 const loader = new GLTFLoader();
-const dracoLoader = new DRACOLoader();
-dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.7/');
-loader.setDRACOLoader(dracoLoader);
 
 const glbBuffer = base64ToArrayBuffer(GLB_BASE64);
 loader.parse(glbBuffer, '', function(gltf) {
@@ -1045,11 +1035,6 @@ function generateObfuscatedHTML(glbBase64, animSettings, sectionSettings) {
         "const GLB_BASE64 = document.getElementById('_g').textContent;"
     );
 
-    // Absolute URLs for blob-URL context (importmap does not apply to blob modules)
-    js = js.replace(/from 'three';/g, "from 'https://esm.sh/three@0.182.0';");
-    js = js.replace(/from 'three\/addons\//g, "from 'https://esm.sh/three@0.182.0/examples/jsm/");
-    js = js.replace(/from 'gsap';/g, "from 'https://esm.sh/gsap@3.12.5';");
-
     // Rename element IDs in JS
     for (const [readable, obf] of Object.entries(idMap)) {
         js = js.replaceAll("'" + readable + "'", "'" + obf + "'");
@@ -1110,7 +1095,7 @@ function generateObfuscatedHTML(glbBase64, animSettings, sectionSettings) {
         `<div class="_r"><button id="_3">&#x25C0; Step</button><button id="_4">Step &#x25B6;</button><label class="_cl"><input type="checkbox" id="_7"${animSettings.loop ? ' checked' : ''}> &#x221E; Loop</label><label class="_cl"><input type="checkbox" id="_9"${animSettings.camera ? ' checked' : ''}> &#x1F3A5; Cam</label><label class="_cl"><input type="checkbox" id="_8"> &#x26F6; Full</label></div>` +
         `</div>` +
         `<script id="_g" type="text/plain">${glbBase64}<\/script>` +
-        `<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"><\/script>` +
+        `<script>${exportLibsBundle.replace(/<\/script/gi, '<\\/script')}<\/script>` +
         `<script>(function(){var _0x=${key},_0e=atob('${encoded}'),_0r='';for(var _0i=0;_0i<_0e.length;_0i++)_0r+=String.fromCharCode(_0e.charCodeAt(_0i)^_0x);import(URL.createObjectURL(new Blob([_0r],{type:'application/javascript'})))})()<\/script>` +
         `</body></html>`;
 }
