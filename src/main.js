@@ -1279,8 +1279,8 @@ function applyCadStyle(obj, randomColors = false) {
         });
 
         // Nastavit PBR vlastnosti
-        if (mat.roughness !== undefined) mat.roughness = 0.6;
-        if (mat.metalness !== undefined) mat.metalness = 0.4;
+        if (mat.roughness !== undefined) mat.roughness = 0.4;
+        if (mat.metalness !== undefined) mat.metalness = 0.6;
 
         // Barva: náhodná pro každý mesh, nebo původní (bílou nahradit náhodnou)
         if (mat.color) {
