@@ -242,11 +242,13 @@ const part = {
     },
     cadStyle: function() {
         if (lastSelectedObject) {
+            lastSelectedMeshes.forEach(child => applyEmissive(child, 0x000000)); render();
             toggleCadStyle(lastSelectedObject, false);
         }
     },
     cadStyleRandom: function() {
         if (lastSelectedObject) {
+            lastSelectedMeshes.forEach(child => applyEmissive(child, 0x000000)); render();
             toggleCadStyle(lastSelectedObject, true);
         }
     }
@@ -850,9 +852,9 @@ function refreshSelectedObjGui(obj) {
 
     // Material inspector – only for Mesh objects
     if (obj.isMesh && obj.material) {
-        const matBtn = { showMaterial: function() { buildMaterialFolder(obj, selectedFolder); } };
+        const matBtn = { showMaterial: function() { lastSelectedMeshes.forEach(child => applyEmissive(child, 0x000000)); render(); buildMaterialFolder(obj, selectedFolder); } };
         selectedFolder.add(matBtn, 'showMaterial').name('Show Material Properties');
-        const matBtnAll = { showAllMaterial: function() { buildMaterialFolderAll(obj, selectedFolder); } };
+        const matBtnAll = { showAllMaterial: function() { lastSelectedMeshes.forEach(child => applyEmissive(child, 0x000000)); render(); buildMaterialFolderAll(obj, selectedFolder); } };
         selectedFolder.add(matBtnAll, 'showAllMaterial').name('Show ALL Material Properties');
     }
 
