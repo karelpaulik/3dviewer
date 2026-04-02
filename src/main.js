@@ -1315,12 +1315,14 @@ function fitView() {
         } else {
             // Pro ortografickou kameru - nastavíme zoom
             cameraDistance = maxDim * 1.5;
-            // Nastavíme zoom tak, aby byl model vidět v celé šířce s malou rezervou
+            // zoom je bezrozměrný faktor frustumu: zoom=1 → viditelná výška = 2×orthoHalfSize world units.
+            // Pixel-based výpočet (pixels/frameSize) je špatně – používáme poloměr ohraničující koule,
+            // aby model vždy vyplnil pohled i z isometrického směru.
+            const sphereRadius = Math.sqrt(size.x * size.x + size.y * size.y + size.z * size.z) / 2;
             const aspect = window.innerWidth / window.innerHeight;
-            const frameSize = Math.max(size.x, size.y) * 1.5; // 50% rezerva
             currentCamera.zoom = Math.min(
-                window.innerWidth / frameSize,
-                window.innerHeight / frameSize
+                orthoHalfSize * aspect / (sphereRadius * 1.05),
+                orthoHalfSize           / (sphereRadius * 1.05)
             );
             currentCamera.updateProjectionMatrix();
         }
@@ -3782,6 +3784,10 @@ function assemblyMoveStepDown() {
             hideAll();
         });
         m.appendChild(itemSel);
+
+        m.appendChild(separator());
+
+        m.appendChild(simpleItem('Fit view', () => { fitView(); hideAll(); }));
 
         m.appendChild(separator());
 
