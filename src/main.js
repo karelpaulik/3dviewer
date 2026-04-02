@@ -239,6 +239,16 @@ const part = {
         if (lastSelectedObject) {
             flattenHierarchy(lastSelectedObject);
         }
+    },
+    cadStyle: function() {
+        if (lastSelectedObject) {
+            toggleCadStyle(lastSelectedObject, false);
+        }
+    },
+    cadStyleRandom: function() {
+        if (lastSelectedObject) {
+            toggleCadStyle(lastSelectedObject, true);
+        }
     }
 };	
 
@@ -834,6 +844,8 @@ function refreshSelectedObjGui(obj) {
     selectedFolder.add(part, 'flattenObject').name('Flatten (remove node, keep children)');
     //selectedFolder.add(part, 'separate').name('Separate Part');
     selectedFolder.add(part, 'hideObject').name('Hide Object');
+    selectedFolder.add(part, 'cadStyle').name('CAD Style (original colors)');
+    selectedFolder.add(part, 'cadStyleRandom').name('CAD Style (random colors)');
     //selectedFolder.add(part, 'deselect').name('Deselect');
 
     // Material inspector – only for Mesh objects
@@ -1226,6 +1238,127 @@ function setPolygonOffsetFactor(obj, value) {
         if (obj.children[0] && obj.children[0].material[i]) {
             obj.children[0].material[i].polygonOffsetFactor = value;
         }
+    }
+}
+
+// Seznam všech texture map vlastností, které se mají odstranit pro CAD styl
+const _textureMapProps = [
+    'map', 'normalMap', 'bumpMap', 'roughnessMap', 'metalnessMap',
+    'aoMap', 'emissiveMap', 'alphaMap', 'lightMap', 'envMap',
+    'displacementMap', 'specularMap', 'clearcoatMap', 'clearcoatNormalMap',
+    'clearcoatRoughnessMap', 'sheenColorMap', 'sheenRoughnessMap',
+    'transmissionMap', 'thicknessMap'
+];
+
+function applyCadStyle(obj, randomColors = false) {
+    if (!obj) return;
+
+    const isWhite = (color) => {
+        return color.r > 0.9 && color.g > 0.9 && color.b > 0.9;
+    };
+
+    const applyToMaterial = (mat) => {
+        if (!mat) return;
+
+        // Uložení původních hodnot pro možnost revertu
+        if (!mat.userData) mat.userData = {};
+        if (!mat.userData._cadStyleBackup) {
+            const backup = {};
+            _textureMapProps.forEach(prop => {
+                if (mat[prop] !== undefined) backup[prop] = mat[prop];
+            });
+            backup.roughness = mat.roughness;
+            backup.metalness = mat.metalness;
+            if (mat.color) backup.color = mat.color.clone();
+            mat.userData._cadStyleBackup = backup;
+        }
+
+        // Odstranit všechny texture mapy
+        _textureMapProps.forEach(prop => {
+            if (mat[prop]) mat[prop] = null;
+        });
+
+        // Nastavit PBR vlastnosti
+        if (mat.roughness !== undefined) mat.roughness = 0.6;
+        if (mat.metalness !== undefined) mat.metalness = 0.4;
+
+        // Barva: náhodná pro každý mesh, nebo původní (bílou nahradit náhodnou)
+        if (mat.color) {
+            if (randomColors) {
+                mat.color.setHSL(Math.random(), 1.0, 0.5);
+            } else if (isWhite(mat.color)) {
+                mat.color.setHSL(Math.random(), 1.0, 0.5);
+            }
+        }
+
+        mat.needsUpdate = true;
+    };
+
+    obj.traverse((child) => {
+        if (child.isMesh && child.material) {
+            if (Array.isArray(child.material)) {
+                child.material.forEach(applyToMaterial);
+            } else {
+                applyToMaterial(child.material);
+            }
+        }
+    });
+
+    render();
+}
+
+function revertCadStyle(obj) {
+    if (!obj) return;
+
+    const revertMaterial = (mat) => {
+        if (!mat || !mat.userData || !mat.userData._cadStyleBackup) return;
+        const backup = mat.userData._cadStyleBackup;
+
+        _textureMapProps.forEach(prop => {
+            if (prop in backup) mat[prop] = backup[prop];
+        });
+
+        if (backup.roughness !== undefined) mat.roughness = backup.roughness;
+        if (backup.metalness !== undefined) mat.metalness = backup.metalness;
+        if (backup.color) mat.color.copy(backup.color);
+
+        delete mat.userData._cadStyleBackup;
+        mat.needsUpdate = true;
+    };
+
+    obj.traverse((child) => {
+        if (child.isMesh && child.material) {
+            if (Array.isArray(child.material)) {
+                child.material.forEach(revertMaterial);
+            } else {
+                revertMaterial(child.material);
+            }
+        }
+    });
+
+    render();
+}
+
+function hasCadStyle(obj) {
+    let found = false;
+    if (!obj) return false;
+    obj.traverse((child) => {
+        if (child.isMesh && child.material) {
+            const mats = Array.isArray(child.material) ? child.material : [child.material];
+            mats.forEach(mat => {
+                if (mat.userData && mat.userData._cadStyleBackup) found = true;
+            });
+        }
+    });
+    return found;
+}
+
+function toggleCadStyle(obj, randomColors = false) {
+    if (!obj) return;
+    if (hasCadStyle(obj)) {
+        revertCadStyle(obj);
+    } else {
+        applyCadStyle(obj, randomColors);
     }
 }
 
