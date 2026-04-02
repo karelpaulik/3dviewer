@@ -805,6 +805,8 @@ function refreshSelectedObjGui(obj) {
         selectedFolder.destroy();
         selectedFolder = null;
     }
+    _materialFolder = null;
+    _materialFolderAll = null;
 
     // Write selected material color into GUI: Specif. color
     (function syncPartColor(o) {
@@ -833,6 +835,14 @@ function refreshSelectedObjGui(obj) {
     //selectedFolder.add(part, 'separate').name('Separate Part');
     selectedFolder.add(part, 'hideObject').name('Hide Object');
     //selectedFolder.add(part, 'deselect').name('Deselect');
+
+    // Material inspector – only for Mesh objects
+    if (obj.isMesh && obj.material) {
+        const matBtn = { showMaterial: function() { buildMaterialFolder(obj, selectedFolder); } };
+        selectedFolder.add(matBtn, 'showMaterial').name('Show Material Properties');
+        const matBtnAll = { showAllMaterial: function() { buildMaterialFolderAll(obj, selectedFolder); } };
+        selectedFolder.add(matBtnAll, 'showAllMaterial').name('Show ALL Material Properties');
+    }
 
     const folder2 = selectedFolder.addFolder("Location");
         folder2.add(part, 'resetLocation').name('Reset init. location');
@@ -902,6 +912,254 @@ function refreshSelectedObjGui(obj) {
         navFolder.open();
 
     selectedFolder.open();
+}
+
+// Builds a lil-gui folder with all editable material properties for a Mesh.
+// If the folder already exists it is removed and recreated (toggle behaviour).
+let _materialFolder = null;
+function buildMaterialFolder(meshObj, parentFolder) {
+    // Toggle – if already open, remove it
+    if (_materialFolder) {
+        _materialFolder.destroy();
+        _materialFolder = null;
+        return;
+    }
+
+    const materials = Array.isArray(meshObj.material) ? meshObj.material : [meshObj.material];
+
+    materials.forEach((mat, idx) => {
+        const label = materials.length > 1 ? `Material [${idx}]: ${mat.type}` : `Material: ${mat.type}`;
+        const mf = parentFolder.addFolder(label);
+
+        // --- Color properties (THREE.Color) ---
+        const colorProps = ['color', 'emissive', 'specular', 'sheenColor', 'attenuationColor'];
+        colorProps.forEach(prop => {
+            if (mat[prop] && mat[prop].isColor) {
+                const proxy = { [prop]: '#' + mat[prop].getHexString() };
+                mf.addColor(proxy, prop).name(prop).onChange(v => { mat[prop].set(v); mat.needsUpdate = true; render(); });
+            }
+        });
+
+        // --- Numeric properties (0–1 range) ---
+        const zeroOneProps = ['opacity', 'roughness', 'metalness', 'clearcoat', 'clearcoatRoughness',
+            'transmission', 'ior', 'sheen', 'sheenRoughness', 'reflectivity',
+            'alphaTest', 'displacementScale', 'displacementBias', 'envMapIntensity',
+            'lightMapIntensity', 'aoMapIntensity', 'bumpScale', 'normalScale',
+            'emissiveIntensity', 'thickness', 'attenuationDistance', 'specularIntensity'];
+        zeroOneProps.forEach(prop => {
+            if (mat[prop] !== undefined && typeof mat[prop] === 'number') {
+                const lo = (prop === 'ior') ? 1 : (prop === 'attenuationDistance' ? 0 : 0);
+                const hi = (prop === 'ior') ? 2.333 : (prop === 'attenuationDistance' ? 1000 : (['envMapIntensity', 'lightMapIntensity', 'aoMapIntensity', 'emissiveIntensity', 'thickness'].includes(prop) ? 10 : 1));
+                const step = (hi - lo) > 100 ? 1 : 0.01;
+                mf.add(mat, prop, lo, hi, step).name(prop).onChange(() => { mat.needsUpdate = true; render(); }).listen();
+            }
+        });
+
+        // --- Boolean properties ---
+        const boolProps = ['transparent', 'wireframe', 'flatShading', 'visible', 'fog',
+            'depthTest', 'depthWrite', 'colorWrite', 'stencilWrite',
+            'polygonOffset', 'alphaToCoverage', 'premultipliedAlpha', 'dithering',
+            'toneMapped', 'vertexColors'];
+        boolProps.forEach(prop => {
+            if (mat[prop] !== undefined && typeof mat[prop] === 'boolean') {
+                mf.add(mat, prop).name(prop).onChange(() => { mat.needsUpdate = true; render(); }).listen();
+            }
+        });
+
+        // --- Enum / select properties ---
+        const sideOptions = { FrontSide: THREE.FrontSide, BackSide: THREE.BackSide, DoubleSide: THREE.DoubleSide };
+        if (mat.side !== undefined) {
+            mf.add(mat, 'side', sideOptions).name('side').onChange(() => { mat.needsUpdate = true; render(); }).listen();
+        }
+
+        const blendingOptions = { No: THREE.NoBlending, Normal: THREE.NormalBlending, Additive: THREE.AdditiveBlending, Subtractive: THREE.SubtractiveBlending, Multiply: THREE.MultiplyBlending, Custom: THREE.CustomBlending };
+        if (mat.blending !== undefined) {
+            mf.add(mat, 'blending', blendingOptions).name('blending').onChange(() => { mat.needsUpdate = true; render(); }).listen();
+        }
+
+        // polygonOffset numeric params
+        if (mat.polygonOffset) {
+            if (mat.polygonOffsetFactor !== undefined) mf.add(mat, 'polygonOffsetFactor', -10, 10, 0.1).name('polygonOffsetFactor').onChange(() => { mat.needsUpdate = true; render(); }).listen();
+            if (mat.polygonOffsetUnits !== undefined) mf.add(mat, 'polygonOffsetUnits', -10, 10, 0.1).name('polygonOffsetUnits').onChange(() => { mat.needsUpdate = true; render(); }).listen();
+        }
+
+        // --- Texture maps (show info + individual remove button) ---
+        const mapProps = ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap',
+            'emissiveMap', 'bumpMap', 'displacementMap', 'alphaMap', 'envMap',
+            'lightMap', 'specularMap', 'clearcoatMap', 'clearcoatNormalMap',
+            'clearcoatRoughnessMap', 'sheenColorMap', 'sheenRoughnessMap',
+            'transmissionMap', 'thicknessMap', 'iridescenceMap', 'iridescenceThicknessMap',
+            'anisotropyMap', 'specularIntensityMap', 'specularColorMap'];
+        mapProps.forEach(prop => {
+            if (mat[prop] && mat[prop].isTexture) {
+                const texInfo = { [prop]: mat[prop].name || mat[prop].uuid || '(texture)' };
+                mf.add(texInfo, prop).name(prop).disable();
+                const removeBtn = { fn: function() {
+                    mat[prop] = null;
+                    mat.needsUpdate = true;
+                    render();
+                    // Rebuild folder to reflect change
+                    buildMaterialFolder(meshObj, parentFolder);
+                    buildMaterialFolder(meshObj, parentFolder);
+                }};
+                mf.add(removeBtn, 'fn').name('✕ remove ' + prop);
+            }
+        });
+
+        // --- Remove ALL textures at once ---
+        const hasAnyMap = mapProps.some(prop => mat[prop] && mat[prop].isTexture);
+        if (hasAnyMap) {
+            const removeAllBtn = { fn: function() {
+                mapProps.forEach(prop => {
+                    if (mat[prop] && mat[prop].isTexture) {
+                        mat[prop] = null;
+                    }
+                });
+                mat.needsUpdate = true;
+                render();
+                // Rebuild folder to reflect changes
+                buildMaterialFolder(meshObj, parentFolder);
+                buildMaterialFolder(meshObj, parentFolder);
+            }};
+            mf.add(removeAllBtn, 'fn').name('✕ Remove ALL textures');
+        }
+
+        mf.open();
+        if (idx === 0) _materialFolder = mf; else _materialFolder = _materialFolder || mf;
+    });
+
+    // Store reference so we can toggle / destroy later
+    if (materials.length > 1) {
+        // When multiple materials exist, each has its own folder – wrap in a parent
+        // _materialFolder already points to the first one; that's sufficient for toggle
+    }
+}
+
+// Shows ALL material properties including null values – flat list like console.log.
+let _materialFolderAll = null;
+function buildMaterialFolderAll(meshObj, parentFolder) {
+    if (_materialFolderAll) {
+        _materialFolderAll.destroy();
+        _materialFolderAll = null;
+        return;
+    }
+
+    const materials = Array.isArray(meshObj.material) ? meshObj.material : [meshObj.material];
+
+    const enumMaps = {
+        side: { FrontSide: THREE.FrontSide, BackSide: THREE.BackSide, DoubleSide: THREE.DoubleSide },
+        blending: { No: THREE.NoBlending, Normal: THREE.NormalBlending, Additive: THREE.AdditiveBlending, Subtractive: THREE.SubtractiveBlending, Multiply: THREE.MultiplyBlending, Custom: THREE.CustomBlending },
+        depthFunc: { Never: THREE.NeverDepth, Always: THREE.AlwaysDepth, Less: THREE.LessDepth, LessEqual: THREE.LessEqualDepth, Equal: THREE.EqualDepth, GreaterEqual: THREE.GreaterEqualDepth, Greater: THREE.GreaterDepth, NotEqual: THREE.NotEqualDepth },
+        stencilFunc: { Never: THREE.NeverStencilFunc, Always: THREE.AlwaysStencilFunc, Less: THREE.LessStencilFunc, LessEqual: THREE.LessEqualStencilFunc, Equal: THREE.EqualStencilFunc, GreaterEqual: THREE.GreaterEqualStencilFunc, Greater: THREE.GreaterStencilFunc, NotEqual: THREE.NotEqualStencilFunc },
+        stencilFail: { Zero: THREE.ZeroStencilOp, Keep: THREE.KeepStencilOp, Replace: THREE.ReplaceStencilOp, Incr: THREE.IncrementStencilOp, Decr: THREE.DecrementStencilOp, IncrWrap: THREE.IncrementWrapStencilOp, DecrWrap: THREE.DecrementWrapStencilOp, Invert: THREE.InvertStencilOp },
+        stencilZFail: { Zero: THREE.ZeroStencilOp, Keep: THREE.KeepStencilOp, Replace: THREE.ReplaceStencilOp, Incr: THREE.IncrementStencilOp, Decr: THREE.DecrementStencilOp, IncrWrap: THREE.IncrementWrapStencilOp, DecrWrap: THREE.DecrementWrapStencilOp, Invert: THREE.InvertStencilOp },
+        stencilZPass: { Zero: THREE.ZeroStencilOp, Keep: THREE.KeepStencilOp, Replace: THREE.ReplaceStencilOp, Incr: THREE.IncrementStencilOp, Decr: THREE.DecrementStencilOp, IncrWrap: THREE.IncrementWrapStencilOp, DecrWrap: THREE.DecrementWrapStencilOp, Invert: THREE.InvertStencilOp },
+        combine: { Multiply: THREE.MultiplyOperation, Mix: THREE.MixOperation, Add: THREE.AddOperation },
+    };
+
+    materials.forEach((mat, idx) => {
+        const label = materials.length > 1 ? `ALL [${idx}]: ${mat.type}` : `ALL: ${mat.type}`;
+        const mf = parentFolder.addFolder(label);
+
+        // Collect all own + prototype properties (getters)
+        const allKeys = new Set();
+        for (const key of Object.keys(mat)) allKeys.add(key);
+        let proto = Object.getPrototypeOf(mat);
+        while (proto && proto !== Object.prototype) {
+            for (const key of Object.getOwnPropertyNames(proto)) {
+                const desc = Object.getOwnPropertyDescriptor(proto, key);
+                if (desc && desc.get) allKeys.add(key);
+            }
+            proto = Object.getPrototypeOf(proto);
+        }
+
+        const sorted = [...allKeys].sort();
+
+        for (const key of sorted) {
+            if (key.startsWith('_')) continue;
+
+            let val;
+            try { val = mat[key]; } catch (e) { continue; }
+            if (typeof val === 'function') continue;
+
+            // Enum dropdown
+            if (enumMaps[key] !== undefined) {
+                try { mf.add(mat, key, enumMaps[key]).name(key).onChange(() => { mat.needsUpdate = true; render(); }).listen(); } catch(e) {}
+                continue;
+            }
+
+            // THREE.Color
+            if (val && val.isColor) {
+                const proxy = { [key]: '#' + val.getHexString() };
+                try { mf.addColor(proxy, key).name(key).onChange(v => { mat[key].set(v); mat.needsUpdate = true; render(); }); } catch(e) {}
+                continue;
+            }
+
+            // THREE.Vector2
+            if (val && val.isVector2) {
+                const vf = mf.addFolder(key);
+                try { vf.add(val, 'x').name('x').onChange(() => { mat.needsUpdate = true; render(); }).listen(); } catch(e) {}
+                try { vf.add(val, 'y').name('y').onChange(() => { mat.needsUpdate = true; render(); }).listen(); } catch(e) {}
+                vf.close();
+                continue;
+            }
+
+            // THREE.Vector3
+            if (val && val.isVector3) {
+                const vf = mf.addFolder(key);
+                try { vf.add(val, 'x').name('x').onChange(() => { mat.needsUpdate = true; render(); }).listen(); } catch(e) {}
+                try { vf.add(val, 'y').name('y').onChange(() => { mat.needsUpdate = true; render(); }).listen(); } catch(e) {}
+                try { vf.add(val, 'z').name('z').onChange(() => { mat.needsUpdate = true; render(); }).listen(); } catch(e) {}
+                vf.close();
+                continue;
+            }
+
+            // THREE.Texture
+            if (val && val.isTexture) {
+                const texInfo = { [key]: val.name || val.uuid || '(texture)' };
+                try { mf.add(texInfo, key).name(key).disable(); } catch(e) {}
+                continue;
+            }
+
+            // Boolean
+            if (typeof val === 'boolean') {
+                try { mf.add(mat, key).name(key).onChange(() => { mat.needsUpdate = true; render(); }).listen(); } catch(e) {}
+                continue;
+            }
+
+            // Number
+            if (typeof val === 'number') {
+                try { mf.add(mat, key).name(key).onChange(() => { mat.needsUpdate = true; render(); }).listen(); } catch(e) {}
+                continue;
+            }
+
+            // String
+            if (typeof val === 'string') {
+                try { mf.add(mat, key).name(key).onChange(() => { mat.needsUpdate = true; render(); }).listen(); } catch(e) {}
+                continue;
+            }
+
+            // null / undefined
+            if (val === null || val === undefined) {
+                const proxy = { [key]: 'null' };
+                try { mf.add(proxy, key).name(key).disable(); } catch(e) {}
+                continue;
+            }
+
+            // Object/Array
+            if (typeof val === 'object') {
+                let str;
+                try { str = JSON.stringify(val); } catch(e) { str = String(val); }
+                if (str && str.length > 200) str = str.substring(0, 200) + '…';
+                const proxy = { [key]: str };
+                try { mf.add(proxy, key).name(key).disable(); } catch(e) {}
+                continue;
+            }
+        }
+
+        mf.open();
+        if (idx === 0) _materialFolderAll = mf;
+    });
 }
 
 function initLoad() {		    
