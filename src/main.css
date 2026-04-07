@@ -158,12 +158,15 @@ a, button, input, select {
     top: 28px;
     right: 0;
     z-index: 1001;
-    max-height: calc(100vh - 28px);
-    overflow-y: auto;
+    display: flex;
+    flex-direction: row-reverse;
+    align-items: flex-start;
 }
 #gui-container > .lil-gui {
     width: 300px !important;
     flex: 0 0 auto;
+    max-height: calc(100vh - 28px);
+    overflow-y: auto;
 }
 
 /* Root-level panel titles – hidden (toolbar replaces them) */

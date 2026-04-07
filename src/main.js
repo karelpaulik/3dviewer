@@ -88,16 +88,17 @@ let guiAssembly = null;
 
 // --- Toolbar panel switching ---
 const guiPanels = {};   // { name: { gui, btn } }
-let activePanel = null; // currently visible panel name
+let activePanel = null; // currently visible panel name (excludes 'Selected')
 
-// Pre-create all toolbar buttons in desired order: File, Edit, Selected, View, Assembly
-['File', 'Edit', 'Selected', 'View', 'Assembly'].forEach(name => {
+// Pre-create all toolbar buttons in desired order: Selected, File, Edit, View, Assembly
+['Selected', 'File', 'Edit', 'View', 'Assembly'].forEach(name => {
     const btn = document.createElement('button');
     btn.className = 'gui-toolbar-btn';
     btn.textContent = name;
     btn.addEventListener('click', () => showGuiPanel(name));
     guiToolbar.appendChild(btn);
     guiPanels[name] = { gui: null, btn };
+    if (name === 'Selected') btn.style.display = 'none';
 });
 
 function registerGuiPanel(name, guiInstance) {
@@ -107,20 +108,29 @@ function registerGuiPanel(name, guiInstance) {
 
 function showGuiPanel(name) {
     const panel = guiPanels[name];
-    if (!panel || !panel.gui) return; // no panel to show (e.g. nothing selected)
+    if (!panel || !panel.gui) return;
+
+    // Selected panel is independent — toggles without affecting others
+    if (name === 'Selected') {
+        const isVisible = panel.gui.domElement.style.display !== 'none';
+        panel.gui.domElement.style.display = isVisible ? 'none' : '';
+        panel.btn.classList.toggle('active', !isVisible);
+        return;
+    }
+
+    // Other panels: only one visible at a time (toggle among themselves)
     if (activePanel === name) {
-        // clicking the already-active button hides it (toggle off)
         panel.gui.domElement.style.display = 'none';
         panel.btn.classList.remove('active');
         activePanel = null;
         return;
     }
-    // hide all
+    // hide all except Selected
     for (const key in guiPanels) {
+        if (key === 'Selected') continue;
         if (guiPanels[key].gui) guiPanels[key].gui.domElement.style.display = 'none';
         guiPanels[key].btn.classList.remove('active');
     }
-    // show requested
     panel.gui.domElement.style.display = '';
     panel.btn.classList.add('active');
     activePanel = name;
@@ -804,7 +814,9 @@ function refreshSelectedObjGui(obj) {
     selectedFolder = new GUI({ container: guiContainer, title: 'Selected part: ' + (obj.name || 'Unnamed') });
     // Link to permanent toolbar button and auto-show
     guiPanels['Selected'].gui = selectedFolder;
-    showGuiPanel('Selected');
+    guiPanels['Selected'].btn.style.display = '';
+    selectedFolder.domElement.style.display = '';
+    guiPanels['Selected'].btn.classList.add('active');
     selectedFolder.add(obj, 'name').name('Name').listen();
     selectedFolder.addColor(part, 'color').name('Specif. color').onChange(function(value){ changeColor(obj, value); });
     selectedFolder.add({ fn() { if (lastSelectedObject) changeColor(lastSelectedObject); } }, 'fn').name('Random color');
@@ -2601,10 +2613,8 @@ function deselectObject() {
         selectedFolder.destroy();
         selectedFolder = null;
         guiPanels['Selected'].gui = null;
-        if (activePanel === 'Selected') {
-            guiPanels['Selected'].btn.classList.remove('active');
-            activePanel = null;
-        }
+        guiPanels['Selected'].btn.classList.remove('active');
+        guiPanels['Selected'].btn.style.display = 'none';
     }                
     // Volitelné: vynulování pomocných proměnných
     lastSelectedMeshes.forEach(child => applyEmissive(child, 0x000000));
