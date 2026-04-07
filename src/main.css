@@ -136,7 +136,7 @@ a, button, input, select {
     background: #1a1a1a;
     color: #aaa;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 700;
     text-transform: uppercase;
     cursor: pointer;
@@ -179,11 +179,12 @@ a, button, input, select {
     background-color: #333 !important;
     font-weight: 600 !important;
     text-transform: none !important;
-    font-size: 11px !important;
     color: #c8a96e !important;
     border-left: 3px solid #c8a96e !important;
     padding-left: 6px !important;
 }
+
+/* GUI panel dimensions – controlled dynamically by JS (applyToolbarPreferences) */
 
 /* Context menu ------------------------------------ */
 .ctx-menu {

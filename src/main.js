@@ -206,6 +206,16 @@ const viewProp = {
     historyInfo: '– žádný záznam –',
 };
 
+const toolbarDefaults = {
+    toolbarFontSize: 12,    // px – toolbar button font size
+    toolbarHeight: 28,      // px – toolbar bar height
+    fontSize: 12,           // px – font size for panels and folder titles
+    rowHeight: 26,          // px – row height for panels and folder titles
+    panelWidth: 300,        // px – panel width
+};
+
+const toolbarInitDefaults = { ...toolbarDefaults };
+
 const extent = {
     pn: -1000,
     pp: +1000,
@@ -623,6 +633,7 @@ function init() {
 
     addMainGui();
     addAssemblyGui();
+    applyToolbarPreferences(); // Apply initial toolbar CSS from viewProp defaults
 } //End init 
 
 // Přepočítá frustum ortografické kamery podle aktuálního obsahu meshObjects.
@@ -653,6 +664,38 @@ function recalibrateOrthoCamera() {
     cameraOrtho.updateProjectionMatrix();
 
     console.log(`[recalibrateOrthoCamera] maxDim=${maxDim.toFixed(1)}, orthoHalfSize=${orthoHalfSize.toFixed(1)}, near=${cameraOrtho.near.toFixed(2)}, far=${cameraOrtho.far.toFixed(1)}`);
+}
+
+function applyToolbarPreferences() {
+    // GUI panels – lil-gui CSS custom properties applied to ALL .lil-gui elements
+    // (nested folders re-declare variables, so we must set on every level)
+    document.querySelectorAll('#gui-container .lil-gui').forEach(el => {
+        el.style.setProperty('--font-size', toolbarDefaults.fontSize + 'px');
+        el.style.setProperty('--input-font-size', toolbarDefaults.fontSize + 'px');
+        el.style.setProperty('--widget-height', toolbarDefaults.rowHeight + 'px');
+        el.style.setProperty('--title-height', toolbarDefaults.rowHeight + 'px');
+        el.style.setProperty('--padding', Math.round(toolbarDefaults.rowHeight * 0.23) + 'px');
+    });
+    // Root panels: width
+    document.querySelectorAll('#gui-container > .lil-gui').forEach(el => {
+        el.style.setProperty('width', toolbarDefaults.panelWidth + 'px', 'important');
+    });
+    // Sub-folder titles font size
+    document.querySelectorAll('#gui-container .lil-gui .lil-gui > .lil-title').forEach(el => {
+        el.style.fontSize = toolbarDefaults.fontSize + 'px';
+    });
+    // Toolbar buttons
+    document.querySelectorAll('.gui-toolbar-btn').forEach(el => {
+        el.style.fontSize = toolbarDefaults.toolbarFontSize + 'px';
+        el.style.height = toolbarDefaults.toolbarHeight + 'px';
+        el.style.lineHeight = toolbarDefaults.toolbarHeight + 'px';
+    });
+    // Toolbar bar itself
+    const tb = document.getElementById('gui-toolbar');
+    if (tb) tb.style.height = toolbarDefaults.toolbarHeight + 'px';
+    // Panel container offset below toolbar
+    const gc = document.getElementById('gui-container');
+    if (gc) gc.style.top = toolbarDefaults.toolbarHeight + 'px';
 }
 
 function applySnapSettings() {
@@ -741,6 +784,17 @@ function addMainGui() {
             historyFolder.add({ fn: restoreGroupFromHistory }, 'fn').name('Restore  [8]');
             historyFolder.add({ fn: removeFromGroupHistory }, 'fn').name('Remove from history');
             historyFolder.close();
+        const toolbarPrefFolder = folderProp.addFolder('Toolbar Preferences');
+            toolbarPrefFolder.add(toolbarDefaults, 'toolbarFontSize', 9, 18, 1).name('Toolbar font size').onChange(applyToolbarPreferences).listen();
+            toolbarPrefFolder.add(toolbarDefaults, 'toolbarHeight', 20, 50, 1).name('Toolbar height').onChange(applyToolbarPreferences).listen();
+            toolbarPrefFolder.add(toolbarDefaults, 'fontSize', 9, 18, 1).name('Font size').onChange(applyToolbarPreferences).listen();
+            toolbarPrefFolder.add(toolbarDefaults, 'rowHeight', 14, 44, 1).name('Row height').onChange(applyToolbarPreferences).listen();
+            toolbarPrefFolder.add(toolbarDefaults, 'panelWidth', 200, 500, 10).name('Panel width').onChange(applyToolbarPreferences).listen();
+            toolbarPrefFolder.add({ fn() {
+                Object.assign(toolbarDefaults, toolbarInitDefaults);
+                applyToolbarPreferences();
+            } }, 'fn').name('Set to default');
+            toolbarPrefFolder.close();
 
     // Když by toto nebylo, tak při ukončení fullscreenu escapem, by "fulscreen" zůstalo zartřené. Funkčně by se moc nestalo.
     document.addEventListener('fullscreenchange', function(){
@@ -817,6 +871,7 @@ function refreshSelectedObjGui(obj) {
     guiPanels['Selected'].btn.style.display = '';
     selectedFolder.domElement.style.display = '';
     guiPanels['Selected'].btn.classList.add('active');
+    applyToolbarPreferences(); // Apply current toolbar CSS to the new Selected panel
     selectedFolder.add(obj, 'name').name('Name').listen();
     selectedFolder.addColor(part, 'color').name('Specif. color').onChange(function(value){ changeColor(obj, value); });
     selectedFolder.add({ fn() { if (lastSelectedObject) changeColor(lastSelectedObject); } }, 'fn').name('Random color');
@@ -3202,6 +3257,7 @@ function addAssemblyGui() {
 
     // --- Animation Settings ---
     const gsapFolder = playbackFolder.addFolder('Animation Settings');
+    gsapFolder.close();
     gsapFolder.add(assemblyGui, 'animationDuration', 0, 2000, 50).name('Duration (ms)');
     gsapFolder.add(assemblyGui, 'animationEase', [
         'none',
@@ -3223,7 +3279,7 @@ function addAssemblyGui() {
     gsapFolder.add(assemblyGui, 'animationStagger', 0, 1000, 10).name('Stagger (ms)');
     gsapFolder.add(assemblyGui, 'animationOverwrite', ['auto', 'true', 'false']).name('Overwrite');
 
-    playbackFolder.open();
+    playbackFolder.close();
 
     // --- Edit ---
     const editFolder = assemblyFolder.addFolder('Edit');
@@ -3261,7 +3317,7 @@ function addAssemblyGui() {
     // Start disabled (editMode defaults to false)
     editControls.forEach(c => c.disable());
 
-    editFolder.open();
+    editFolder.close();
 
     registerGuiPanel('Assembly', assemblyFolder);
     updateAssemblyGuiInfo();
@@ -3309,7 +3365,7 @@ function rebuildAssemblyStepsList() {
     assemblyStepsListFolder = _assemblyFolderRef.addFolder(folderTitle);
 
     if (n === 0) {
-        assemblyStepsListFolder.open();
+        assemblyStepsListFolder.close();
         return;
     }
 
