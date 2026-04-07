@@ -56,21 +56,8 @@ const assemblyGui = {
     stepInfo: '\u2013 no step \u2013',
     editMode: false,
     editStepInfo: '\u2013 no step \u2013',
-    newStep: function() { assemblyNewStep(); },
     stepName: '',
     stepDescription: '',
-    moveStepUp: function() { assemblyMoveStepUp(); },
-    moveStepDown: function() { assemblyMoveStepDown(); },
-    deleteStep: function() { assemblyDeleteStep(); },
-    removeObjectFromStep: function() { assemblyRemoveObjectFromStep(); },
-    saveCameraView: function() { assemblySaveCameraView(); },
-    clearCameraView: function() { assemblyClearCameraView(); },
-    resetToStart: function() { assemblyResetToStart(); },
-    animateToStart: function() { assemblyAnimateToStart(); },
-    prevStep: function() { assemblyPrevStep(); },
-    nextStep: function() { assemblyNextStep(); },
-    animateToFinish: function() { assemblyAnimateToFinish(); },
-    resetToFinish: function() { assemblyResetToFinish(); },
     animationDuration: 600,
     animationEase: 'power1.inOut',
     animationRepeat: 0,
@@ -192,27 +179,6 @@ const viewProp = {
     crossSectionColor: "#ff0000",
     showSectionMesh: false, // Toggle pro zobrazení/skrytí sectionMesh
     autoUpdateSectionLines: false, // Automaticky aktualizovat průřezové čáry při změnách scény
-    reset: function() { resetSection() },
-    fit: function() { fitView() },
-    viewx: function() { viewFromPoint(1000, 0, 0) },
-    viewy: function() { viewFromPoint(0, 1000, 0) },
-    viewz: function() { viewFromPoint(0, 0, 1000) },
-    showHiddenObjects: function() { showHiddenObjects() },
-    switchHiddenObjects: function() { toggleHiddenObjects() },
-    resetWholeModel: function() { resetWholeModel() },
-    cleanupModel: function() { cleanupModel(); },
-    rotateXPlus: function() { rotateAllModels('x', Math.PI / 2) },
-    rotateXMinus: function() { rotateAllModels('x', -Math.PI / 2) },
-    rotateYPlus: function() { rotateAllModels('y', Math.PI / 2) },
-    rotateYMinus: function() { rotateAllModels('y', -Math.PI / 2) },
-    rotateZPlus: function() { rotateAllModels('z', Math.PI / 2) },
-    rotateZMinus: function() { rotateAllModels('z', -Math.PI / 2) },
-    bakeWholeModelRotation: function() { bakeWholeModelRotation(); },
-    exportAll: function() { exportAllModels(); },
-    exportSelected: function() { exportSelectedObject(); },
-    exportToHTML: function() { exportToHTML(loadedModels, assemblyGui, viewProp, assemblyWriteToUserData, assemblyClearUserData); },
-    exportToHTMLObfuscated: function() { exportToHTMLObfuscated(loadedModels, assemblyGui, viewProp, assemblyWriteToUserData, assemblyClearUserData); },
-    importGlb: function() { importGlbFile(); },
     transformSpace: true,  // true = world, false = local
     snapEnabled: true,     // true = snap vždy aktivní, false = snap jen při Shift
     snapTranslation: 10,   // krok translace
@@ -226,17 +192,8 @@ const viewProp = {
     raycastHelperSize: 20000,  // Délka paprsku raycasting helperu
     cadSelection: 'CAD', // CAD selection: 'CAD' = vybere pojmenovaného předka meshe, 'Detailed' = vybere mesh přímo
     multiSelectBoxPadding: 3, // Rozšíření PaddedBoxHelperu pro multiselect (world-units)
-    // Group Selection
-    addToMulti: function() { addCurrentToMultiSelect(); },
     isGroupTransformActive: false,
-    clearMulti: function() { clearMultiSelect(); },
-    // Group History
-    addGroupToHistory: function() { addCurrentGroupToHistory(); },
     historyInfo: '– žádný záznam –',
-    historyPrev: function() { navigateGroupHistory(-1); },
-    historyNext: function() { navigateGroupHistory(+1); },
-    historyRestore: function() { restoreGroupFromHistory(); },
-    historyRemove: function() { removeFromGroupHistory(); },
 };
 
 const extent = {
@@ -252,60 +209,8 @@ const extent = {
 }
     
 const part = {
-    remove: function() { removeModel(lastSelectedObject); },
     color: "#888888",
-    separate: function() { 
-        if (lastSelectedObject) {
-            separateMesh(lastSelectedObject); 
-        }									
-    },
-    deselect: function() { // Přidáno: tlačítko pro zrušení selekce
-        deselectObject();
-    },
-    randomColor: function() {
-        if (lastSelectedObject) {
-            changeColor(lastSelectedObject);
-        }
-    },
-    resetLocation: function() {
-        if (lastSelectedObject) {
-            setDefPosRotScale(lastSelectedObject);
-        }
-    },
-    selectParent: function() {
-        selectParent();
-    },
-    selectPrevious: function() {   
-        selectPrevious(); 
-    },
-    hideObject: function() {
-        if (lastSelectedObject) {
-            hideObject(lastSelectedObject);
-        }
-    },
-    undoTransform: function() {
-        if (lastSelectedObject && previousTransformState) {
-            undoLastTransform(lastSelectedObject);
-        }
-    },
-    flattenObject: function() {
-        if (lastSelectedObject) {
-            flattenHierarchy(lastSelectedObject);
-        }
-    },
-    cadStyle: function() {
-        if (lastSelectedObject) {
-            lastSelectedMeshes.forEach(child => applyEmissive(child, 0x000000)); render();
-            toggleCadStyle(lastSelectedObject, false);
-        }
-    },
-    cadStyleRandom: function() {
-        if (lastSelectedObject) {
-            lastSelectedMeshes.forEach(child => applyEmissive(child, 0x000000)); render();
-            toggleCadStyle(lastSelectedObject, true);
-        }
-    }
-};	
+};
 
 // Možnost zobrazení následujících objektů v konzoli pouze v režimu "npx vite"
 if (import.meta.env.DEV) {
@@ -767,7 +672,7 @@ function addMainGui() {
     //View
     const folderProp = new GUI({ container: guiContainer, title: 'View' });
     guiView = folderProp;
-        folderProp.add(viewProp, 'fit').name('Fit View');
+        folderProp.add({ fn: fitView }, 'fn').name('Fit View');
         let fsCtrl = folderProp.add(viewProp, 'fullscreen').name('Fullscreen').onChange(function(value){// Fullscreen toggle (false = windowed, true = fullscreen)
             if (value) {
                 document.getElementById('body').requestFullscreen().catch((err) => {console.warn('Fullscreen not available: ', err.message)});
@@ -786,7 +691,7 @@ function addMainGui() {
             sectionFolder.add(viewProp, 'px', extent.pn, extent.pp, extent.pStep).name('Pos. x').onChange(function(value){clipPlanes[0].constant=value; render(); }).listen();
             sectionFolder.add(viewProp, 'py', extent.pn, extent.pp, extent.pStep).name('Pos. y').onChange(function(value){clipPlanes[1].constant=value; render(); }).listen();
             sectionFolder.add(viewProp, 'pz', extent.pn, extent.pp, extent.pStep).name('Pos. z').onChange(function(value){clipPlanes[2].constant=value; render(); }).listen();
-            sectionFolder.add(viewProp, 'reset').name('Reset section');
+            sectionFolder.add({ fn: resetSection }, 'fn').name('Reset section');
             
             const crossSectionFolder = sectionFolder.addFolder("Cross Section Lines");
             crossSectionFolder.add(viewProp, 'showCrossSection').name('Show Lines').onChange(function(value){updateCrossSectionLines(); render(); });
@@ -798,9 +703,9 @@ function addMainGui() {
             
             sectionFolder.close();
         const oritationFolder = folderProp.addFolder("View orientation");
-            oritationFolder.add(viewProp, 'viewx').name('View from X');
-            oritationFolder.add(viewProp, 'viewy').name('View from Y');
-            oritationFolder.add(viewProp, 'viewz').name('View from Z');
+            oritationFolder.add({ fn() { viewFromPoint(1000, 0, 0); } }, 'fn').name('View from X');
+            oritationFolder.add({ fn() { viewFromPoint(0, 1000, 0); } }, 'fn').name('View from Y');
+            oritationFolder.add({ fn() { viewFromPoint(0, 0, 1000); } }, 'fn').name('View from Z');
             oritationFolder.close();
         const helpersFolder = folderProp.addFolder("Helpers");
             helpersFolder.add(viewProp, 'showAxesHelper').name('axes').onChange(function() { updateAxesHelper(); }).listen();
@@ -819,30 +724,30 @@ function addMainGui() {
 
     // --- File panel (Export / Import) ---
     const fileGui = new GUI({ container: guiContainer, title: 'File' });
-    fileGui.add(viewProp, 'importGlb').name('Import GLB…');
-    fileGui.add(viewProp, 'exportAll').name('Export all models');
-    fileGui.add(viewProp, 'exportSelected').name('Export selected object');
-    fileGui.add(viewProp, 'exportToHTML').name('Export to HTML (assembly)');
-    fileGui.add(viewProp, 'exportToHTMLObfuscated').name('Export to HTML obfuscated');
+    fileGui.add({ fn: importGlbFile }, 'fn').name('Import GLB…');
+    fileGui.add({ fn: exportAllModels }, 'fn').name('Export all models');
+    fileGui.add({ fn: exportSelectedObject }, 'fn').name('Export selected object');
+    fileGui.add({ fn() { exportToHTML(loadedModels, assemblyGui, viewProp, assemblyWriteToUserData, assemblyClearUserData); } }, 'fn').name('Export to HTML (assembly)');
+    fileGui.add({ fn() { exportToHTMLObfuscated(loadedModels, assemblyGui, viewProp, assemblyWriteToUserData, assemblyClearUserData); } }, 'fn').name('Export to HTML obfuscated');
     registerGuiPanel('File', fileGui);
 
     // --- Edit panel ---
     const editGui = new GUI({ container: guiContainer, title: 'Edit' });
-    editGui.add(viewProp, 'resetWholeModel').name('Reset whole model');
-    editGui.add(viewProp, 'cleanupModel').name('Cleanup (flatten unnamed nodes)');
-    editGui.add(viewProp, 'showHiddenObjects').name('Show hidden objects');
-    editGui.add(viewProp, 'switchHiddenObjects').name('Switch hidden objects');
+    editGui.add({ fn: resetWholeModel }, 'fn').name('Reset whole model');
+    editGui.add({ fn: cleanupModel }, 'fn').name('Cleanup (flatten unnamed nodes)');
+    editGui.add({ fn: showHiddenObjects }, 'fn').name('Show hidden objects');
+    editGui.add({ fn: toggleHiddenObjects }, 'fn').name('Switch hidden objects');
     editGui.add(viewProp, 'transformSpace').name('Transform: World space').onChange(function(value) {
         transformControls.setSpace( value ? 'world' : 'local' );
     }).listen();
         const rotationFolder = editGui.addFolder("Whole Model Rotation");
-            rotationFolder.add(viewProp, 'rotateXPlus').name('Rotate X +90°');
-            rotationFolder.add(viewProp, 'rotateXMinus').name('Rotate X -90°');
-            rotationFolder.add(viewProp, 'rotateYPlus').name('Rotate Y +90°');
-            rotationFolder.add(viewProp, 'rotateYMinus').name('Rotate Y -90°');
-            rotationFolder.add(viewProp, 'rotateZPlus').name('Rotate Z +90°');
-            rotationFolder.add(viewProp, 'rotateZMinus').name('Rotate Z -90°');
-            rotationFolder.add(viewProp, 'bakeWholeModelRotation').name('Bake rotation');
+            rotationFolder.add({ fn() { rotateAllModels('x', Math.PI / 2); } }, 'fn').name('Rotate X +90°');
+            rotationFolder.add({ fn() { rotateAllModels('x', -Math.PI / 2); } }, 'fn').name('Rotate X -90°');
+            rotationFolder.add({ fn() { rotateAllModels('y', Math.PI / 2); } }, 'fn').name('Rotate Y +90°');
+            rotationFolder.add({ fn() { rotateAllModels('y', -Math.PI / 2); } }, 'fn').name('Rotate Y -90°');
+            rotationFolder.add({ fn() { rotateAllModels('z', Math.PI / 2); } }, 'fn').name('Rotate Z +90°');
+            rotationFolder.add({ fn() { rotateAllModels('z', -Math.PI / 2); } }, 'fn').name('Rotate Z -90°');
+            rotationFolder.add({ fn: bakeWholeModelRotation }, 'fn').name('Bake rotation');
             rotationFolder.close();
         const snapFolder = editGui.addFolder("Snap");
             snapFolder.add(viewProp, 'transformMode', ['translate', 'rotate', 'scale']).name('Mode').onChange(function(value) { transformControls.setMode(value); }).listen();
@@ -856,15 +761,15 @@ function addMainGui() {
                 if (value) activateMultiSelect(); else deactivateMultiSelect();
             }).listen();
             multiFolder.add(viewProp, 'multiSelectBoxPadding', 0, 200, 1).name('Box padding').listen();
-            multiFolder.add(viewProp, 'addToMulti').name('Add/remove selected (/)');
-            multiFolder.add(viewProp, 'clearMulti').name('Clear group');
-            multiFolder.add(viewProp, 'addGroupToHistory').name('Add to history');
+            multiFolder.add({ fn: addCurrentToMultiSelect }, 'fn').name('Add/remove selected (/)');
+            multiFolder.add({ fn: clearMultiSelect }, 'fn').name('Clear group');
+            multiFolder.add({ fn: addCurrentGroupToHistory }, 'fn').name('Add to history');
             const historyFolder = multiFolder.addFolder('Group History');
                 historyFolder.add(viewProp, 'historyInfo').name('Entry').listen().disable();
-                historyFolder.add(viewProp, 'historyPrev').name('← Previous  [7]');
-                historyFolder.add(viewProp, 'historyNext').name('→ Next  [9]');
-                historyFolder.add(viewProp, 'historyRestore').name('Restore  [8]');
-                historyFolder.add(viewProp, 'historyRemove').name('Remove from history');
+                historyFolder.add({ fn() { navigateGroupHistory(-1); } }, 'fn').name('← Previous  [7]');
+                historyFolder.add({ fn() { navigateGroupHistory(+1); } }, 'fn').name('→ Next  [9]');
+                historyFolder.add({ fn: restoreGroupFromHistory }, 'fn').name('Restore  [8]');
+                historyFolder.add({ fn: removeFromGroupHistory }, 'fn').name('Remove from history');
                 historyFolder.close();
             multiFolder.close();
     registerGuiPanel('Edit', editGui);
@@ -902,14 +807,12 @@ function refreshSelectedObjGui(obj) {
     showGuiPanel('Selected');
     selectedFolder.add(obj, 'name').name('Name').listen();
     selectedFolder.addColor(part, 'color').name('Specif. color').onChange(function(value){ changeColor(obj, value); });
-    selectedFolder.add(part, 'randomColor').name('Random color');
-    selectedFolder.add(part, 'remove').name('Remove Object');	
-    selectedFolder.add(part, 'flattenObject').name('Flatten (remove node, keep children)');
-    //selectedFolder.add(part, 'separate').name('Separate Part');
-    selectedFolder.add(part, 'hideObject').name('Hide Object');
-    selectedFolder.add(part, 'cadStyle').name('CAD Style (original colors)');
-    selectedFolder.add(part, 'cadStyleRandom').name('CAD Style (random colors)');
-    //selectedFolder.add(part, 'deselect').name('Deselect');
+    selectedFolder.add({ fn() { if (lastSelectedObject) changeColor(lastSelectedObject); } }, 'fn').name('Random color');
+    selectedFolder.add({ fn() { removeModel(lastSelectedObject); } }, 'fn').name('Remove Object');
+    selectedFolder.add({ fn() { if (lastSelectedObject) flattenHierarchy(lastSelectedObject); } }, 'fn').name('Flatten (remove node, keep children)');
+    selectedFolder.add({ fn() { if (lastSelectedObject) hideObject(lastSelectedObject); } }, 'fn').name('Hide Object');
+    selectedFolder.add({ fn() { if (lastSelectedObject) { lastSelectedMeshes.forEach(child => applyEmissive(child, 0x000000)); render(); toggleCadStyle(lastSelectedObject, false); } } }, 'fn').name('CAD Style (original colors)');
+    selectedFolder.add({ fn() { if (lastSelectedObject) { lastSelectedMeshes.forEach(child => applyEmissive(child, 0x000000)); render(); toggleCadStyle(lastSelectedObject, true); } } }, 'fn').name('CAD Style (random colors)');
 
     // Material inspector – only for Mesh objects
     if (obj.isMesh && obj.material) {
@@ -920,8 +823,8 @@ function refreshSelectedObjGui(obj) {
     }
 
     const folder2 = selectedFolder.addFolder("Location");
-        folder2.add(part, 'resetLocation').name('Reset init. location');
-        folder2.add(part, 'undoTransform').name('Undo last transform');
+        folder2.add({ fn() { if (lastSelectedObject) setDefPosRotScale(lastSelectedObject); } }, 'fn').name('Reset init. location');
+        folder2.add({ fn() { if (lastSelectedObject && previousTransformState) undoLastTransform(lastSelectedObject); } }, 'fn').name('Undo last transform');
 
         // Capture "before" state when the object is selected (TransformControl is already attached).
         savePreviousTransformState();
@@ -982,8 +885,8 @@ function refreshSelectedObjGui(obj) {
 
     // Navigation buttons: Arrow Up / Arrow Down
     const navFolder = selectedFolder.addFolder("Navigation");
-        navFolder.add(part, 'selectParent').name('Select parent (Arrow Up)');
-        navFolder.add(part, 'selectPrevious').name('Select previous (Arrow Down)');
+        navFolder.add({ fn: selectParent }, 'fn').name('Select parent (Arrow Up)');
+        navFolder.add({ fn: selectPrevious }, 'fn').name('Select previous (Arrow Down)');
         navFolder.open();
 
     selectedFolder.open();
@@ -3280,12 +3183,12 @@ function addAssemblyGui() {
     playbackFolder.add(assemblyGui, 'stepInfo').name('Status').disable().listen();
     playbackFolder.add(assemblyGui, 'animationLoop').name('Loop  ∞  (start ↔ finish)').listen();
     playbackFolder.add(assemblyGui, 'animationCamera').name('Camera  🎥  (animate camera)').listen();
-    playbackFolder.add(assemblyGui, 'resetToStart').name('⏮  Reset to start  [Home]');
-    playbackFolder.add(assemblyGui, 'animateToStart').name('◀◀  Animate to start  [Shift+PgUp]');
-    playbackFolder.add(assemblyGui, 'prevStep').name('◀  Previous step  [PageUp]');
-    playbackFolder.add(assemblyGui, 'nextStep').name('Next step  ▶  [PageDown]');
-    playbackFolder.add(assemblyGui, 'animateToFinish').name('Animate to finish  ▶▶  [Shift+PgDn]');
-    playbackFolder.add(assemblyGui, 'resetToFinish').name('Reset to finish  ⏭  [End]');
+    playbackFolder.add({ fn: assemblyResetToStart }, 'fn').name('⏮  Reset to start  [Home]');
+    playbackFolder.add({ fn: assemblyAnimateToStart }, 'fn').name('◀◀  Animate to start  [Shift+PgUp]');
+    playbackFolder.add({ fn: assemblyPrevStep }, 'fn').name('◀  Previous step  [PageUp]');
+    playbackFolder.add({ fn: assemblyNextStep }, 'fn').name('Next step  ▶  [PageDown]');
+    playbackFolder.add({ fn: assemblyAnimateToFinish }, 'fn').name('Animate to finish  ▶▶  [Shift+PgDn]');
+    playbackFolder.add({ fn: assemblyResetToFinish }, 'fn').name('Reset to finish  ⏭  [End]');
 
     // --- Animation Settings ---
     const gsapFolder = playbackFolder.addFolder('Animation Settings');
@@ -3337,13 +3240,13 @@ function addAssemblyGui() {
             assemblyData.steps[ci].description = value;
         }
     }).listen() );
-    editControls.push( editFolder.add(assemblyGui, 'newStep').name('+ New step') );
-    editControls.push( editFolder.add(assemblyGui, 'deleteStep').name('✕  Delete step') );
-    editControls.push( editFolder.add(assemblyGui, 'moveStepUp').name('↑  Move step up') );
-    editControls.push( editFolder.add(assemblyGui, 'moveStepDown').name('↓  Move step down') );
-    editControls.push( editFolder.add(assemblyGui, 'removeObjectFromStep').name('✕  Remove object from step') );
-    editControls.push( editFolder.add(assemblyGui, 'saveCameraView').name('📷  Save camera view') );
-    editControls.push( editFolder.add(assemblyGui, 'clearCameraView').name('✕  Clear camera view') );
+    editControls.push( editFolder.add({ fn: assemblyNewStep }, 'fn').name('+ New step') );
+    editControls.push( editFolder.add({ fn: assemblyDeleteStep }, 'fn').name('✕  Delete step') );
+    editControls.push( editFolder.add({ fn: assemblyMoveStepUp }, 'fn').name('↑  Move step up') );
+    editControls.push( editFolder.add({ fn: assemblyMoveStepDown }, 'fn').name('↓  Move step down') );
+    editControls.push( editFolder.add({ fn: assemblyRemoveObjectFromStep }, 'fn').name('✕  Remove object from step') );
+    editControls.push( editFolder.add({ fn: assemblySaveCameraView }, 'fn').name('📷  Save camera view') );
+    editControls.push( editFolder.add({ fn: assemblyClearCameraView }, 'fn').name('✕  Clear camera view') );
 
     // Start disabled (editMode defaults to false)
     editControls.forEach(c => c.disable());
