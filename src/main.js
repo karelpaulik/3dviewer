@@ -683,6 +683,8 @@ function addMainGui() {
     const folderProp = new GUI({ container: guiContainer, title: 'View' });
     guiView = folderProp;
         folderProp.add({ fn: fitView }, 'fn').name('Fit View');
+        folderProp.add({ fn: showHiddenObjects }, 'fn').name('Show hidden objects');
+        folderProp.add({ fn: toggleHiddenObjects }, 'fn').name('Switch hidden objects');
         let fsCtrl = folderProp.add(viewProp, 'fullscreen').name('Fullscreen').onChange(function(value){// Fullscreen toggle (false = windowed, true = fullscreen)
             if (value) {
                 document.getElementById('body').requestFullscreen().catch((err) => {console.warn('Fullscreen not available: ', err.message)});
@@ -723,6 +725,22 @@ function addMainGui() {
             helpersFolder.add(viewProp, 'showRaycastHelper').name('raycast').onChange(function() { if (!viewProp.showRaycastHelper && raycastArrowHelper) { scene.remove(raycastArrowHelper); raycastArrowHelper = null; render(); } }).listen();
             helpersFolder.add(viewProp, 'raycastHelperSize', 100, 100000, 100).name('raycast size').listen();
             helpersFolder.close();
+        const multiFolder = folderProp.addFolder("Group Selection");
+            multiFolder.add(viewProp, 'isGroupTransformActive').name('Group transform active (*)').onChange(function(value) {
+                if (value) activateMultiSelect(); else deactivateMultiSelect();
+            }).listen();
+            multiFolder.add(viewProp, 'multiSelectBoxPadding', 0, 200, 1).name('Box padding').listen();
+            multiFolder.add({ fn: addCurrentToMultiSelect }, 'fn').name('Add/remove selected (/)');
+            multiFolder.add({ fn: clearMultiSelect }, 'fn').name('Clear group');
+            multiFolder.add({ fn: addCurrentGroupToHistory }, 'fn').name('Add to history');
+            multiFolder.close();
+        const historyFolder = folderProp.addFolder('Group History');
+            historyFolder.add(viewProp, 'historyInfo').name('Entry').listen().disable();
+            historyFolder.add({ fn() { navigateGroupHistory(-1); } }, 'fn').name('← Previous  [7]');
+            historyFolder.add({ fn() { navigateGroupHistory(+1); } }, 'fn').name('→ Next  [9]');
+            historyFolder.add({ fn: restoreGroupFromHistory }, 'fn').name('Restore  [8]');
+            historyFolder.add({ fn: removeFromGroupHistory }, 'fn').name('Remove from history');
+            historyFolder.close();
 
     // Když by toto nebylo, tak při ukončení fullscreenu escapem, by "fulscreen" zůstalo zartřené. Funkčně by se moc nestalo.
     document.addEventListener('fullscreenchange', function(){
@@ -745,8 +763,6 @@ function addMainGui() {
     const editGui = new GUI({ container: guiContainer, title: 'Edit' });
     editGui.add({ fn: resetWholeModel }, 'fn').name('Reset whole model');
     editGui.add({ fn: cleanupModel }, 'fn').name('Cleanup (flatten unnamed nodes)');
-    editGui.add({ fn: showHiddenObjects }, 'fn').name('Show hidden objects');
-    editGui.add({ fn: toggleHiddenObjects }, 'fn').name('Switch hidden objects');
     editGui.add(viewProp, 'transformSpace').name('Transform: World space').onChange(function(value) {
         transformControls.setSpace( value ? 'world' : 'local' );
     }).listen();
@@ -766,22 +782,6 @@ function addMainGui() {
             snapFolder.add(viewProp, 'snapRotationDeg', 1, 90, 1).name('Rotation (°)').onChange(function() { applySnapSettings(); }).listen();
             snapFolder.add(viewProp, 'snapScale', 0.01, 2, 0.01).name('Scale').onChange(function() { applySnapSettings(); }).listen();
             snapFolder.close();
-        const multiFolder = editGui.addFolder("Group Selection");
-            multiFolder.add(viewProp, 'isGroupTransformActive').name('Group transform active (*)').onChange(function(value) {
-                if (value) activateMultiSelect(); else deactivateMultiSelect();
-            }).listen();
-            multiFolder.add(viewProp, 'multiSelectBoxPadding', 0, 200, 1).name('Box padding').listen();
-            multiFolder.add({ fn: addCurrentToMultiSelect }, 'fn').name('Add/remove selected (/)');
-            multiFolder.add({ fn: clearMultiSelect }, 'fn').name('Clear group');
-            multiFolder.add({ fn: addCurrentGroupToHistory }, 'fn').name('Add to history');
-            const historyFolder = multiFolder.addFolder('Group History');
-                historyFolder.add(viewProp, 'historyInfo').name('Entry').listen().disable();
-                historyFolder.add({ fn() { navigateGroupHistory(-1); } }, 'fn').name('← Previous  [7]');
-                historyFolder.add({ fn() { navigateGroupHistory(+1); } }, 'fn').name('→ Next  [9]');
-                historyFolder.add({ fn: restoreGroupFromHistory }, 'fn').name('Restore  [8]');
-                historyFolder.add({ fn: removeFromGroupHistory }, 'fn').name('Remove from history');
-                historyFolder.close();
-            multiFolder.close();
     registerGuiPanel('Edit', editGui);
 }	
 
