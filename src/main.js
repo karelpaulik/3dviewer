@@ -84,7 +84,60 @@ const assemblyGui = {
 };
 // ============================================
 
-const gui = new GUI();				
+// GUI toolbar (full-width top bar) + panel container (right-aligned below)
+const guiToolbar = document.createElement('div');
+guiToolbar.id = 'gui-toolbar';
+document.body.appendChild(guiToolbar);
+
+const guiContainer = document.createElement('div');
+guiContainer.id = 'gui-container';
+document.body.appendChild(guiContainer);
+
+// Wrapper reference for hit-testing (toolbar + panels)
+const guiWrapper = { contains(el) { return guiToolbar.contains(el) || guiContainer.contains(el); } };
+
+let guiView = null;
+let guiAssembly = null;
+
+// --- Toolbar panel switching ---
+const guiPanels = {};   // { name: { gui, btn } }
+let activePanel = null; // currently visible panel name
+
+// Pre-create all toolbar buttons in desired order: File, Edit, Selected, View, Assembly
+['File', 'Edit', 'Selected', 'View', 'Assembly'].forEach(name => {
+    const btn = document.createElement('button');
+    btn.className = 'gui-toolbar-btn';
+    btn.textContent = name;
+    btn.addEventListener('click', () => showGuiPanel(name));
+    guiToolbar.appendChild(btn);
+    guiPanels[name] = { gui: null, btn };
+});
+
+function registerGuiPanel(name, guiInstance) {
+    guiInstance.domElement.style.display = 'none';
+    guiPanels[name].gui = guiInstance;
+}
+
+function showGuiPanel(name) {
+    const panel = guiPanels[name];
+    if (!panel || !panel.gui) return; // no panel to show (e.g. nothing selected)
+    if (activePanel === name) {
+        // clicking the already-active button hides it (toggle off)
+        panel.gui.domElement.style.display = 'none';
+        panel.btn.classList.remove('active');
+        activePanel = null;
+        return;
+    }
+    // hide all
+    for (const key in guiPanels) {
+        if (guiPanels[key].gui) guiPanels[key].gui.domElement.style.display = 'none';
+        guiPanels[key].btn.classList.remove('active');
+    }
+    // show requested
+    panel.gui.domElement.style.display = '';
+    panel.btn.classList.add('active');
+    activePanel = name;
+}
 let lastSelectedObject = null;
 const lastSelectedMeshes = [];
 const selectionHistory = [];
@@ -712,12 +765,9 @@ function toggleWireframeAll(value) {
 //GUI----------------------------------------------------------------------------------------------------------------
 function addMainGui() {
     //View
-    const folderProp = gui.addFolder( 'View' );
+    const folderProp = new GUI({ container: guiContainer, title: 'View' });
+    guiView = folderProp;
         folderProp.add(viewProp, 'fit').name('Fit View');
-        folderProp.add(viewProp, 'resetWholeModel').name('Reset whole model');
-        folderProp.add(viewProp, 'cleanupModel').name('Cleanup (flatten unnamed nodes)');
-        folderProp.add(viewProp, 'showHiddenObjects').name('Show hidden objects');
-        folderProp.add(viewProp, 'switchHiddenObjects').name('Switch hidden objects');
         let fsCtrl = folderProp.add(viewProp, 'fullscreen').name('Fullscreen').onChange(function(value){// Fullscreen toggle (false = windowed, true = fullscreen)
             if (value) {
                 document.getElementById('body').requestFullscreen().catch((err) => {console.warn('Fullscreen not available: ', err.message)});
@@ -727,9 +777,6 @@ function addMainGui() {
         }).listen();
         folderProp.add(viewProp, 'isSelectAllowed').name('Allow selection').listen();
         folderProp.add(viewProp, 'wireframe').name('Wireframe').onChange(function(value){ toggleWireframeAll(value); }).listen();
-        folderProp.add(viewProp, 'transformSpace').name('Transform: World space').onChange(function(value) {
-            transformControls.setSpace( value ? 'world' : 'local' );
-        }).listen();
         folderProp.add(viewProp, 'cadSelection', ['CAD', 'Detailed']).name('Selection').listen();
         folderProp.addColor(viewProp, 'backgroundColor').name('Background').onChange(function(value){ scene.background = new THREE.Color(value); render(); });
         //folderProp.add(viewProp, 'perspCam').name('Persp. camera').onChange(function(value){setCamera(); render(); });
@@ -755,8 +802,40 @@ function addMainGui() {
             oritationFolder.add(viewProp, 'viewy').name('View from Y');
             oritationFolder.add(viewProp, 'viewz').name('View from Z');
             oritationFolder.close();
-        
-        const rotationFolder = folderProp.addFolder("Whole Model Rotation");
+        const helpersFolder = folderProp.addFolder("Helpers");
+            helpersFolder.add(viewProp, 'showAxesHelper').name('axes').onChange(function() { updateAxesHelper(); }).listen();
+            helpersFolder.add(viewProp, 'axesHelperSize', 1, 2000, 1).name('axes size').onChange(function() { updateAxesHelper(); }).listen();
+            helpersFolder.add(viewProp, 'showRaycastHelper').name('raycast').onChange(function() { if (!viewProp.showRaycastHelper && raycastArrowHelper) { scene.remove(raycastArrowHelper); raycastArrowHelper = null; render(); } }).listen();
+            helpersFolder.add(viewProp, 'raycastHelperSize', 100, 100000, 100).name('raycast size').listen();
+            helpersFolder.close();
+
+    // Když by toto nebylo, tak při ukončení fullscreenu escapem, by "fulscreen" zůstalo zartřené. Funkčně by se moc nestalo.
+    document.addEventListener('fullscreenchange', function(){
+        viewProp.fullscreen = !!document.fullscreenElement;
+        if (fsCtrl && fsCtrl.updateDisplay) fsCtrl.updateDisplay();
+    });
+
+    registerGuiPanel('View', folderProp);
+
+    // --- File panel (Export / Import) ---
+    const fileGui = new GUI({ container: guiContainer, title: 'File' });
+    fileGui.add(viewProp, 'importGlb').name('Import GLB…');
+    fileGui.add(viewProp, 'exportAll').name('Export all models');
+    fileGui.add(viewProp, 'exportSelected').name('Export selected object');
+    fileGui.add(viewProp, 'exportToHTML').name('Export to HTML (assembly)');
+    fileGui.add(viewProp, 'exportToHTMLObfuscated').name('Export to HTML obfuscated');
+    registerGuiPanel('File', fileGui);
+
+    // --- Edit panel ---
+    const editGui = new GUI({ container: guiContainer, title: 'Edit' });
+    editGui.add(viewProp, 'resetWholeModel').name('Reset whole model');
+    editGui.add(viewProp, 'cleanupModel').name('Cleanup (flatten unnamed nodes)');
+    editGui.add(viewProp, 'showHiddenObjects').name('Show hidden objects');
+    editGui.add(viewProp, 'switchHiddenObjects').name('Switch hidden objects');
+    editGui.add(viewProp, 'transformSpace').name('Transform: World space').onChange(function(value) {
+        transformControls.setSpace( value ? 'world' : 'local' );
+    }).listen();
+        const rotationFolder = editGui.addFolder("Whole Model Rotation");
             rotationFolder.add(viewProp, 'rotateXPlus').name('Rotate X +90°');
             rotationFolder.add(viewProp, 'rotateXMinus').name('Rotate X -90°');
             rotationFolder.add(viewProp, 'rotateYPlus').name('Rotate Y +90°');
@@ -765,27 +844,14 @@ function addMainGui() {
             rotationFolder.add(viewProp, 'rotateZMinus').name('Rotate Z -90°');
             rotationFolder.add(viewProp, 'bakeWholeModelRotation').name('Bake rotation');
             rotationFolder.close();
-        const snapFolder = folderProp.addFolder("Snap");
+        const snapFolder = editGui.addFolder("Snap");
             snapFolder.add(viewProp, 'transformMode', ['translate', 'rotate', 'scale']).name('Mode').onChange(function(value) { transformControls.setMode(value); }).listen();
             snapFolder.add(viewProp, 'snapEnabled').name('Snap enabled').onChange(function() { applySnapSettings(); }).listen();
             snapFolder.add(viewProp, 'snapTranslation', 1, 1000, 1).name('Translation').onChange(function() { applySnapSettings(); }).listen();
             snapFolder.add(viewProp, 'snapRotationDeg', 1, 90, 1).name('Rotation (°)').onChange(function() { applySnapSettings(); }).listen();
             snapFolder.add(viewProp, 'snapScale', 0.01, 2, 0.01).name('Scale').onChange(function() { applySnapSettings(); }).listen();
             snapFolder.close();
-        const exportFolder = folderProp.addFolder("Export / Import GLB");
-            exportFolder.add(viewProp, 'importGlb').name('Import GLB…');
-            exportFolder.add(viewProp, 'exportAll').name('Export all models');
-            exportFolder.add(viewProp, 'exportSelected').name('Export selected object');
-            exportFolder.add(viewProp, 'exportToHTML').name('Export to HTML (assembly)');
-            exportFolder.add(viewProp, 'exportToHTMLObfuscated').name('Export to HTML obfuscated');
-            exportFolder.close();
-        const helpersFolder = folderProp.addFolder("Helpers");
-            helpersFolder.add(viewProp, 'showAxesHelper').name('axes').onChange(function() { updateAxesHelper(); }).listen();
-            helpersFolder.add(viewProp, 'axesHelperSize', 1, 2000, 1).name('axes size').onChange(function() { updateAxesHelper(); }).listen();
-            helpersFolder.add(viewProp, 'showRaycastHelper').name('raycast').onChange(function() { if (!viewProp.showRaycastHelper && raycastArrowHelper) { scene.remove(raycastArrowHelper); raycastArrowHelper = null; render(); } }).listen();
-            helpersFolder.add(viewProp, 'raycastHelperSize', 100, 100000, 100).name('raycast size').listen();
-            helpersFolder.close();
-        const multiFolder = folderProp.addFolder("Group Selection");
+        const multiFolder = editGui.addFolder("Group Selection");
             multiFolder.add(viewProp, 'isGroupTransformActive').name('Group transform active (*)').onChange(function(value) {
                 if (value) activateMultiSelect(); else deactivateMultiSelect();
             }).listen();
@@ -801,15 +867,7 @@ function addMainGui() {
                 historyFolder.add(viewProp, 'historyRemove').name('Remove from history');
                 historyFolder.close();
             multiFolder.close();
-        //folderProp.add(part, 'randomColor').name('Random color');	
-
-    // Když by toto nebylo, tak při ukončení fullscreenu escapem, by "fulscreen" zůstalo zartřené. Funkčně by se moc nestalo.
-    document.addEventListener('fullscreenchange', function(){
-        viewProp.fullscreen = !!document.fullscreenElement;
-        if (fsCtrl && fsCtrl.updateDisplay) fsCtrl.updateDisplay();
-    });
-
-    folderProp.close();
+    registerGuiPanel('Edit', editGui);
 }	
 
 function refreshSelectedObjGui(obj) {
@@ -838,7 +896,10 @@ function refreshSelectedObjGui(obj) {
         }
     })(obj);
                 
-    selectedFolder = gui.addFolder( 'Selected part: ' + (obj.name || 'Unnamed') );
+    selectedFolder = new GUI({ container: guiContainer, title: 'Selected part: ' + (obj.name || 'Unnamed') });
+    // Link to permanent toolbar button and auto-show
+    guiPanels['Selected'].gui = selectedFolder;
+    showGuiPanel('Selected');
     selectedFolder.add(obj, 'name').name('Name').listen();
     selectedFolder.addColor(part, 'color').name('Specif. color').onChange(function(value){ changeColor(obj, value); });
     selectedFolder.add(part, 'randomColor').name('Random color');
@@ -2636,6 +2697,11 @@ function deselectObject() {
     if (selectedFolder) {
         selectedFolder.destroy();
         selectedFolder = null;
+        guiPanels['Selected'].gui = null;
+        if (activePanel === 'Selected') {
+            guiPanels['Selected'].btn.classList.remove('active');
+            activePanel = null;
+        }
     }                
     // Volitelné: vynulování pomocných proměnných
     lastSelectedMeshes.forEach(child => applyEmissive(child, 0x000000));
@@ -2827,7 +2893,7 @@ function onTouchMove( event ) {
 
 function isMouseOnGUI(event) { // return: true/false
     const element = document.elementFromPoint(event.clientX, event.clientY);
-    return gui.domElement.contains(element);
+    return guiWrapper.contains(element);
 }
 
 // Provádí čerstvý raycast a vrací nejblíže ležící viditelný mesh pod kurzorem, nebo null.
@@ -2849,7 +2915,7 @@ function isTouchOnGUI(event) { // return: true/false
     if (event.changedTouches.length > 0) {
         const touch = event.changedTouches[0];
         const elementAtTouch = document.elementFromPoint(touch.clientX, touch.clientY);
-        return gui.domElement.contains(elementAtTouch);
+        return guiWrapper.contains(elementAtTouch);
     }
     return false;
 }
@@ -3205,7 +3271,8 @@ function separateMesh(meshToSeparate) {
 // ===== Assembly / Disassembly Functions =========================================================
 
 function addAssemblyGui() {
-    const assemblyFolder = gui.addFolder('Assembly Workflow');
+    const assemblyFolder = new GUI({ container: guiContainer, title: 'Assembly Workflow' });
+    guiAssembly = assemblyFolder;
     _assemblyFolderRef = assemblyFolder;
 
     // --- Playback ---
@@ -3283,7 +3350,7 @@ function addAssemblyGui() {
 
     editFolder.open();
 
-    assemblyFolder.close();
+    registerGuiPanel('Assembly', assemblyFolder);
     updateAssemblyGuiInfo();
 }
 
@@ -4353,7 +4420,7 @@ function assemblyMoveStepDown() {
         const touch = event.touches[0];
         // Skip if touch is on GUI
         const el = document.elementFromPoint(touch.clientX, touch.clientY);
-        if (gui.domElement.contains(el)) return;
+        if (guiWrapper.contains(el)) return;
 
         longPressStartPos.set(touch.clientX, touch.clientY);
         longPressTimer = setTimeout(() => {

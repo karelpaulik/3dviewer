@@ -113,19 +113,66 @@ a, button, input, select {
 	font-size: 12px;
 }
 
-/* Root-level folders (View, Selected part…) */
-.lil-gui.root > .children > .lil-gui > .title,
-.lil-gui.lil-root > .lil-children > .lil-gui > .lil-title {
-    background-color: black !important;
-    font-weight: 800 !important;
-    text-transform: uppercase !important;
-    font-size: 12px !important;
-    color: red !important;
+/* Top bar – full width */
+#gui-toolbar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 1002;
+    display: flex;
+    flex-direction: row;
+    justify-content: flex-end;
+    background: #111;
+    border-bottom: 1px solid #333;
+    height: 28px;
+}
+.gui-toolbar-btn {
+    padding: 0 16px;
+    height: 28px;
+    line-height: 28px;
+    border: none;
+    border-left: 1px solid #333;
+    background: #1a1a1a;
+    color: #aaa;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    cursor: pointer;
+    letter-spacing: 0.5px;
+    transition: background 0.15s, color 0.15s;
+}
+.gui-toolbar-btn:hover {
+    background: #2a2a2a;
+    color: #ddd;
+}
+.gui-toolbar-btn.active {
+    background: #000;
+    color: red;
 }
 
-/* Sub-folders at any depth (all folders below root-level) */
-.lil-gui.root .lil-gui .lil-gui > .title,
-.lil-gui.lil-root .lil-gui .lil-gui > .lil-title {
+/* Panel area – fixed below toolbar, right-aligned */
+#gui-container {
+    position: fixed;
+    top: 28px;
+    right: 0;
+    z-index: 1001;
+    max-height: calc(100vh - 28px);
+    overflow-y: auto;
+}
+#gui-container > .lil-gui {
+    width: 300px !important;
+    flex: 0 0 auto;
+}
+
+/* Root-level panel titles – hidden (toolbar replaces them) */
+#gui-container > .lil-gui > .lil-title {
+    display: none !important;
+}
+
+/* Sub-folders at any depth */
+#gui-container .lil-gui .lil-gui > .lil-title {
     background-color: #333 !important;
     font-weight: 600 !important;
     text-transform: none !important;
