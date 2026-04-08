@@ -11,7 +11,7 @@ import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 //import { GUI } from 'dat.gui';
 import { GUI } from 'lil-gui';
 import ZipLoader from 'zip-loader';
-import { updateCrossSectionLines as updateCrossSectionLinesCore } from './crossSectionUtils.js';
+import { updateCrossSectionLines as updateCrossSectionLinesCore, updateSectionCrossLines as updateSectionCrossLinesCore } from './crossSectionUtils.js';
 import { exportToHTML, exportToHTMLDraco, exportToHTMLObfuscated, exportToHTMLObfuscatedDraco } from './htmlExport.js';
 import { initOutliner, toggleOutliner, rebuildTree, highlightObject as outlinerHighlight, updateVisibilityIcon, isOutlinerOpen } from './sceneOutliner.js';
 
@@ -21,6 +21,7 @@ let camera, cameraTarget, scene, renderer;
 
 const clipPlanes = [];		
 let crossSectionLines = null; // Pro uchování průřezových čar
+let sectionCrossSectionLines = null; // Pro uchování průřezových čar vázaných na section view
 
 let cameraPersp, cameraOrtho, currentCamera;
 let transformControls, orbitControls;
@@ -207,6 +208,7 @@ const viewProp = {
     crossSectionColor: "#ff0000",
     showSectionMesh: false, // Toggle pro zobrazení/skrytí sectionMesh
     autoUpdateSectionLines: false, // Automaticky aktualizovat průřezové čáry při změnách scény
+    sectionCrossLines: false, // Průřezové čáry vázané na section view clip planes
     transformSpace: true,  // true = world, false = local
     snapEnabled: true,     // true = snap vždy aktivní, false = snap jen při Shift
     snapTranslation: 10,   // krok translace
@@ -439,6 +441,9 @@ function init() {
         }
         if (isTransformDragging && viewProp.showCrossSection && viewProp.autoUpdateSectionLines) {
             updateCrossSectionLines();
+        }
+        if (isTransformDragging && viewProp.sectionCrossLines) {
+            updateSectionCrossLines();
         }
         render();
     } );
@@ -777,11 +782,12 @@ function addMainGui() {
         folderProp.addColor(viewProp, 'backgroundColor').name('Background').onChange(function(value){ scene.background = new THREE.Color(value); render(); });
         //folderProp.add(viewProp, 'perspCam').name('Persp. camera').onChange(function(value){setCamera(); render(); });
         const sectionFolder = folderProp.addFolder("Section view");   
-            sectionFolder.add(viewProp, 'section').name('Section').onChange(function(value){renderer.localClippingEnabled = value; render(); });
+            sectionFolder.add(viewProp, 'section').name('Section').onChange(function(value){renderer.localClippingEnabled = value; updateSectionCrossLines(); render(); });
+            sectionFolder.add(viewProp, 'sectionCrossLines').name('Cross Section Lines').onChange(function(value){updateSectionCrossLines(); render(); });
             sectionFolder.add(viewProp, 'showSectionMesh').name('Show Section Mesh').onChange(function(value){toggleSectionMeshAll(); });
-            sectionFolder.add(viewProp, 'px', extent.pn, extent.pp, extent.pStep).name('Pos. x').onChange(function(value){clipPlanes[0].constant=value; render(); }).listen();
-            sectionFolder.add(viewProp, 'py', extent.pn, extent.pp, extent.pStep).name('Pos. y').onChange(function(value){clipPlanes[1].constant=value; render(); }).listen();
-            sectionFolder.add(viewProp, 'pz', extent.pn, extent.pp, extent.pStep).name('Pos. z').onChange(function(value){clipPlanes[2].constant=value; render(); }).listen();
+            sectionFolder.add(viewProp, 'px', extent.pn, extent.pp, extent.pStep).name('Pos. x').onChange(function(value){clipPlanes[0].constant=value; if(viewProp.sectionCrossLines) updateSectionCrossLines(); render(); }).listen();
+            sectionFolder.add(viewProp, 'py', extent.pn, extent.pp, extent.pStep).name('Pos. y').onChange(function(value){clipPlanes[1].constant=value; if(viewProp.sectionCrossLines) updateSectionCrossLines(); render(); }).listen();
+            sectionFolder.add(viewProp, 'pz', extent.pn, extent.pp, extent.pStep).name('Pos. z').onChange(function(value){clipPlanes[2].constant=value; if(viewProp.sectionCrossLines) updateSectionCrossLines(); render(); }).listen();
             sectionFolder.add({ fn: resetSection }, 'fn').name('Reset section');
             
             const crossSectionFolder = sectionFolder.addFolder("Cross Section Lines");
@@ -1724,11 +1730,19 @@ function resetSection() {
     if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) {
         updateCrossSectionLines();
     }
+    if (viewProp.sectionCrossLines) {
+        updateSectionCrossLines();
+    }
 }
 
 // Wrapper funkce pro aktualizaci průřezových čar
 function updateCrossSectionLines() {
     crossSectionLines = updateCrossSectionLinesCore(scene, crossSectionLines, viewProp, meshObjects);
+}
+
+// Wrapper funkce pro aktualizaci průřezových čar vázaných na section view
+function updateSectionCrossLines() {
+    sectionCrossSectionLines = updateSectionCrossLinesCore(scene, sectionCrossSectionLines, viewProp, meshObjects, clipPlanes);
 }
     
 function viewFromPoint(x, y, z) {

@@ -185,3 +185,64 @@ export function updateCrossSectionLines(scene, currentCrossSectionLines, viewPro
     
     return null;
 }
+
+// Funkce pro aktualizaci průřezových čar vázaných na section view (clip planes)
+export function updateSectionCrossLines(scene, currentLines, viewProp, meshObjects, clipPlanes) {
+    // Odstraníme staré čáry
+    if (currentLines) {
+        scene.remove(currentLines);
+        currentLines.geometry.dispose();
+        currentLines.material.dispose();
+    }
+
+    if (!viewProp.sectionCrossLines || !viewProp.section) {
+        return null;
+    }
+
+    const allLines = [];
+
+    // Pro každý clip plane vygenerujeme průřezové čáry
+    for (let i = 0; i < clipPlanes.length; i++) {
+        const plane = clipPlanes[i];
+
+        meshObjects.forEach(obj => {
+            obj.traverse((child) => {
+                if (child.isMesh && child.visible) {
+                    const lines = createCrossSectionLines(child, plane, viewProp.crossSectionColor);
+                    if (lines && lines.geometry.attributes.position.count > 0) {
+                        allLines.push(lines);
+                    }
+                }
+            });
+        });
+    }
+
+    // Spojíme všechny čáry do jednoho objektu
+    if (allLines.length > 0) {
+        const combinedGeometry = new THREE.BufferGeometry();
+        const positions = [];
+
+        allLines.forEach(lineObj => {
+            const pos = lineObj.geometry.attributes.position;
+            for (let i = 0; i < pos.count; i++) {
+                positions.push(pos.getX(i), pos.getY(i), pos.getZ(i));
+            }
+            lineObj.geometry.dispose();
+            lineObj.material.dispose();
+        });
+
+        combinedGeometry.setAttribute('position',
+            new THREE.Float32BufferAttribute(positions, 3));
+
+        const lineMaterial = new THREE.LineBasicMaterial({
+            color: new THREE.Color(viewProp.crossSectionColor),
+            linewidth: 2
+        });
+
+        const newLines = new THREE.LineSegments(combinedGeometry, lineMaterial);
+        scene.add(newLines);
+        return newLines;
+    }
+
+    return null;
+}
