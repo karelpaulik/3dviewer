@@ -81,6 +81,12 @@ const guiContainer = document.createElement('div');
 guiContainer.id = 'gui-container';
 document.body.appendChild(guiContainer);
 
+// Status bar (footer)
+const statusBar = document.createElement('div');
+statusBar.id = 'status-bar';
+statusBar.innerHTML = `<span class="status-brand"><i>BE &amp; DO BETTER</i></span><span class="status-copy">&copy; 2026 Bedobe</span><span class="status-version">v${__APP_VERSION__}</span>`;
+document.body.appendChild(statusBar);
+
 // Wrapper reference for hit-testing (toolbar + panels + outliner)
 let outlinerPanelEl = null;
 const guiWrapper = { contains(el) { return guiToolbar.contains(el) || guiContainer.contains(el) || (outlinerPanelEl && outlinerPanelEl.contains(el)); } };
