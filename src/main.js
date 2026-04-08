@@ -844,6 +844,7 @@ function addMainGui() {
     const fileGui = new GUI({ container: guiContainer, title: 'File' });
     fileGui.add({ fn: importGlbFile }, 'fn').name('Import GLB…');
     fileGui.add({ fn: exportAllModels }, 'fn').name('Export all models');
+    fileGui.add({ fn: exportAllModelsDraco }, 'fn').name('Export all models (Draco)');
     fileGui.add({ fn: exportSelectedObject }, 'fn').name('Export selected object');
     fileGui.add({ fn() { exportToHTML(loadedModels, assemblyGui, viewProp, assemblyWriteToUserData, assemblyClearUserData); } }, 'fn').name('Export to HTML (assembly)');
     fileGui.add({ fn() { exportToHTMLObfuscated(loadedModels, assemblyGui, viewProp, assemblyWriteToUserData, assemblyClearUserData); } }, 'fn').name('Export to HTML obfuscated');
@@ -3198,6 +3199,100 @@ function exportAllModels() {
         saveArrayBuffer(result, finalName);
         console.log('Export all: hotovo.');
     }, function(error) {
+        console.error('Chyba při exportu:', error);
+    }, { binary: true, onlyVisible: false });
+}
+
+async function exportAllModelsDraco() {
+    if (loadedModels.length === 0) {
+        console.warn('Žádné modely k exportu.');
+        return;
+    }
+    const defaultName = 'export_all_draco.glb';
+    const filename = window.prompt('Název souboru pro export (Draco):', defaultName);
+    if (filename === null) return;
+    const finalName = filename.trim() || defaultName;
+
+    // Zobrazíme overlay
+    let overlay = document.getElementById('dracoOverlay');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'dracoOverlay';
+        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:99999;color:#fff;font-size:22px;font-family:sans-serif;';
+        overlay.textContent = 'Draco compressing… please wait';
+        document.body.appendChild(overlay);
+    }
+    overlay.style.display = 'flex';
+
+    assemblyWriteToUserData();
+
+    const exporter = new GLTFExporter();
+    const group = new THREE.Group();
+    loadedModels.forEach(model => {
+        group.add(model.clone(true));
+    });
+
+    assemblyClearUserData();
+
+    exporter.parse(group, function(result) {
+        // setTimeout dá prohlížeči čas vykreslit overlay
+        setTimeout(async () => {
+            try {
+                const { WebIO } = await import('@gltf-transform/core');
+                const { KHRDracoMeshCompression } = await import('@gltf-transform/extensions');
+                const { draco } = await import('@gltf-transform/functions');
+
+                // Dynamicky načteme Draco encoder/decoder z public/draco/
+                const loadDracoScript = (url) => new Promise((resolve, reject) => {
+                    const id = url.includes('encoder') ? 'DracoEncoderModule' : 'DracoDecoderModule';
+                    if (window[id]) { resolve(); return; }
+                    const s = document.createElement('script');
+                    s.src = url;
+                    s.onload = resolve;
+                    s.onerror = () => reject(new Error('Failed to load ' + url));
+                    document.head.appendChild(s);
+                });
+
+                await loadDracoScript('./draco/draco_encoder_wasm.js');
+                await loadDracoScript('./draco/draco_decoder_wasm.js');
+
+                const encoder = await window.DracoEncoderModule();
+                const decoder = await window.DracoDecoderModule();
+
+                const io = new WebIO()
+                    .registerExtensions([KHRDracoMeshCompression])
+                    .registerDependencies({
+                        'draco3d.decoder': decoder,
+                        'draco3d.encoder': encoder,
+                    });
+
+                const gltfDoc = await io.readBinary(new Uint8Array(result));
+                // Draco compression settings (defaults shown):
+                // await gltfDoc.transform(draco({
+                //     method: 'edgebreaker',   // 'edgebreaker' | 'sequential'
+                //     encodeSpeed: 5,           // 0–10 (higher = faster, worse compression)
+                //     decodeSpeed: 5,           // 0–10 (higher = faster decode)
+                //     quantizePosition: 14,     // bits for vertex positions
+                //     quantizeNormal: 10,       // bits for normals
+                //     quantizeColor: 8,         // bits for vertex colors
+                //     quantizeTexcoord: 12,     // bits for UV coordinates
+                //     quantizeGeneric: 12,      // bits for other attributes
+                // }));
+                await gltfDoc.transform(draco());
+                const compressedGlb = await io.writeBinary(gltfDoc);
+
+                saveArrayBuffer(compressedGlb, finalName);
+                console.log('Export all (Draco): hotovo.');
+            } catch (err) {
+                console.error('Chyba při Draco kompresi:', err);
+                saveArrayBuffer(result, finalName);
+                console.warn('Uloženo bez Draco komprese (fallback).');
+            } finally {
+                overlay.style.display = 'none';
+            }
+        }, 50);
+    }, function(error) {
+        overlay.style.display = 'none';
         console.error('Chyba při exportu:', error);
     }, { binary: true, onlyVisible: false });
 }
