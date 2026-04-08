@@ -13,6 +13,7 @@ import { GUI } from 'lil-gui';
 import ZipLoader from 'zip-loader';
 import { updateCrossSectionLines as updateCrossSectionLinesCore } from './crossSectionUtils.js';
 import { exportToHTML, exportToHTMLObfuscated } from './htmlExport.js';
+import { initOutliner, toggleOutliner, rebuildTree, highlightObject as outlinerHighlight, updateVisibilityIcon, isOutlinerOpen } from './sceneOutliner.js';
 
 // Proměnné globálního rozsahu----------------------------------------------------------------------------------------
 let container, stats;
@@ -80,8 +81,9 @@ const guiContainer = document.createElement('div');
 guiContainer.id = 'gui-container';
 document.body.appendChild(guiContainer);
 
-// Wrapper reference for hit-testing (toolbar + panels)
-const guiWrapper = { contains(el) { return guiToolbar.contains(el) || guiContainer.contains(el); } };
+// Wrapper reference for hit-testing (toolbar + panels + outliner)
+let outlinerPanelEl = null;
+const guiWrapper = { contains(el) { return guiToolbar.contains(el) || guiContainer.contains(el) || (outlinerPanelEl && outlinerPanelEl.contains(el)); } };
 
 let guiView = null;
 let guiAssembly = null;
@@ -89,6 +91,16 @@ let guiAssembly = null;
 // --- Toolbar panel switching ---
 const guiPanels = {};   // { name: { gui, btn } }
 let activePanel = null; // currently visible panel name (excludes 'Selected')
+
+// Outliner toggle button (left-aligned in toolbar)
+const outlinerBtn = document.createElement('button');
+outlinerBtn.className = 'gui-toolbar-btn outliner-toolbar-btn';
+outlinerBtn.textContent = '☰ Scene';
+outlinerBtn.addEventListener('click', () => {
+    const open = toggleOutliner();
+    outlinerBtn.classList.toggle('active', open);
+});
+guiToolbar.insertBefore(outlinerBtn, guiToolbar.firstChild);
 
 // Pre-create all toolbar buttons in desired order: Selected, File, Edit, View, Assembly
 ['Selected', 'File', 'Edit', 'View', 'Assembly'].forEach(name => {
@@ -251,6 +263,24 @@ isTouchScreen = isTouchDevice();
 
 init();
 render();
+
+// Initialize scene outliner
+outlinerPanelEl = initOutliner({
+    onSelect: (obj) => selectObject(obj),
+    onToggleVisibility: (obj) => {
+        if (obj.visible) {
+            hideObject(obj);
+        } else {
+            // Show a hidden object
+            obj.visible = true;
+            const hi = hiddenObjects.indexOf(obj);
+            if (hi !== -1) hiddenObjects.splice(hi, 1);
+            render();
+        }
+        updateVisibilityIcon(obj);
+    }
+});
+
 initLoad();
 
 // Funkce----------------------------------------------------------------------------------------------------------------
@@ -2204,6 +2234,7 @@ function loadGlbModel(model, name, scale, colored) {
             // Rotace byla odstraněna - lze nyní nastavit pomocí GUI tlačítek
 
             scene.add(gltf.scene);
+            gltf.scene.userData.fileName = name || fileNameWithoutExtension(model);
             loadedModels.push(gltf.scene); // Uložení reference na načtený model
             console.log(gltf.scene);
 
@@ -2231,6 +2262,7 @@ function loadGlbModel(model, name, scale, colored) {
             // Import assembly workflow stored in userData (if any)
             importAssemblyFromGltfScene(gltf.scene);
             
+            rebuildTree(loadedModels);
             render();
             resolve(gltf.scene);
         }, undefined, function (error) {
@@ -2307,6 +2339,7 @@ function cleanupModel() {
     if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) {
         updateCrossSectionLines();
     }
+    rebuildTree(loadedModels);
     render();
 }
 
@@ -2352,6 +2385,7 @@ function flattenHierarchy(obj) {
         updateCrossSectionLines();
     }
 
+    rebuildTree(loadedModels);
     render();
 }
 
@@ -2423,6 +2457,7 @@ function removeModel(part) {
             updateCrossSectionLines();
         }
         
+        rebuildTree(loadedModels);
         render();
     } catch(err) {
         console.log("Error: removeModel " + err.message);
@@ -2451,6 +2486,9 @@ function hideObject(part) {
         // Zrušíme selekci skrytého objektu
         deselectObject();
         
+        // Aktualizace ikony v outlineru
+        updateVisibilityIcon(part);
+        
         // Aktualizace průřezových čar
         if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) {
             updateCrossSectionLines();
@@ -2467,6 +2505,7 @@ function showHiddenObjects() {
         // Projdeme všechny skryté objekty a zobrazíme je
         hiddenObjects.forEach(obj => {
             obj.visible = true;
+            updateVisibilityIcon(obj);
             console.log(`Object ${obj.name || 'Unnamed'} shown.`);
         });
         
@@ -2495,12 +2534,14 @@ function toggleHiddenObjects() {
         // Všechny objekty v hiddenObjects nastavíme jako neviditelné
         hiddenObjects.forEach(obj => {
             obj.visible = false;
+            updateVisibilityIcon(obj);
             console.log(`Object ${obj.name || 'Unnamed'} is hidden.`);
         });
         
         // Všechny objekty v temporarilyShownObjects nastavíme jako viditelné
         temporarilyShownObjects.forEach(obj => {
             obj.visible = true;
+            updateVisibilityIcon(obj);
             console.log(`Object ${obj.name || 'Unnamed'} is visible.`);
         });
         
@@ -2628,7 +2669,8 @@ function selectObject(object) {
 
     if (object) {        
         lastSelectedObject = object;// Nastavíme nové reference             
-        transformControls.attach(object);// Připojíme TransformControls   
+        transformControls.attach(object);// Připojíme TransformControls
+        outlinerHighlight(object);// Zvýraznění uzlu v scene outlineru   
              
         selectionHistory.push(object); // Přidáme do historie vybraných objektů
         if (selectionHistory.length > 30) { // Omezíme velikost historie (např. 30 záznamů), aby nezabírala paměť
@@ -2677,6 +2719,8 @@ function deselectObject() {
     lastSelectedMeshes.length = 0; // empty the array
 
     lastSelectedObject = null;
+    highlightObject(null); // Zrušení zvýraznění v outlineru
+    outlinerHighlight(null); // Zrušení zvýraznění uzlu v scene outlineru
 
     setTimeout(() => { //render uvnitř setTimeout, pro deselekci objektu, kdy je nějaký objekt pod kurzorem.
         render();

@@ -151,6 +151,9 @@ a, button, input, select {
     background: #000;
     color: red;
 }
+.outliner-toolbar-btn {
+    margin-right: auto;
+}
 
 /* Panel area – fixed below toolbar, right-aligned */
 #gui-container {
@@ -264,6 +267,133 @@ a, button, input, select {
 
 .ctx-item:hover > .ctx-submenu {
     display: block;
+}
+
+/* ===== Scene Outliner Panel ===== */
+#outliner-panel {
+    position: fixed;
+    top: 28px;
+    left: 0;
+    bottom: 0;
+    width: 260px;
+    background: #1a1a1a;
+    border-right: 1px solid #333;
+    z-index: 1001;
+    display: flex;
+    flex-direction: column;
+    transition: transform 0.2s ease;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    font-size: 12px;
+    color: #ccc;
+    user-select: none;
+}
+#outliner-panel.outliner-closed {
+    transform: translateX(-100%);
+}
+
+.outliner-header {
+    padding: 6px 10px;
+    background: #111;
+    border-bottom: 1px solid #333;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #aaa;
+    flex: 0 0 auto;
+}
+
+.outliner-tree {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    overflow-x: hidden;
+    margin: 0;
+    padding: 4px 0;
+    list-style: none;
+}
+.outliner-tree ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.outliner-node {
+    list-style: none;
+}
+
+.outliner-row {
+    display: flex;
+    align-items: center;
+    height: 24px;
+    cursor: default;
+    white-space: nowrap;
+}
+.outliner-row:hover {
+    background: #2a2a2a;
+}
+
+.outliner-node.outliner-selected > .outliner-row {
+    background: #3a3a5a;
+}
+
+.outliner-arrow {
+    flex: 0 0 16px;
+    text-align: center;
+    font-size: 9px;
+    color: #888;
+    cursor: pointer;
+    line-height: 24px;
+}
+.outliner-arrow:hover {
+    color: #ddd;
+}
+
+.outliner-label {
+    flex: 1 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 0 4px;
+    cursor: pointer;
+    line-height: 24px;
+}
+.outliner-label:hover {
+    color: #fff;
+}
+
+.outliner-eye {
+    flex: 0 0 28px;
+    text-align: center;
+    cursor: pointer;
+    font-size: 13px;
+    line-height: 24px;
+    opacity: 0.6;
+}
+.outliner-eye:hover {
+    opacity: 1;
+}
+
+.outliner-resize {
+    position: absolute;
+    top: 0;
+    right: -3px;
+    width: 6px;
+    height: 100%;
+    cursor: col-resize;
+    z-index: 2;
+}
+
+/* Scrollbar styling */
+.outliner-tree::-webkit-scrollbar {
+    width: 6px;
+}
+.outliner-tree::-webkit-scrollbar-track {
+    background: #111;
+}
+.outliner-tree::-webkit-scrollbar-thumb {
+    background: #444;
+    border-radius: 3px;
+}
+.outliner-tree::-webkit-scrollbar-thumb:hover {
+    background: #666;
 }
 
 /* Number input rows in submenu */
