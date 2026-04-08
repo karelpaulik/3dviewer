@@ -12,7 +12,7 @@ import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { GUI } from 'lil-gui';
 import ZipLoader from 'zip-loader';
 import { updateCrossSectionLines as updateCrossSectionLinesCore } from './crossSectionUtils.js';
-import { exportToHTML, exportToHTMLObfuscated } from './htmlExport.js';
+import { exportToHTML, exportToHTMLDraco, exportToHTMLObfuscated, exportToHTMLObfuscatedDraco } from './htmlExport.js';
 import { initOutliner, toggleOutliner, rebuildTree, highlightObject as outlinerHighlight, updateVisibilityIcon, isOutlinerOpen } from './sceneOutliner.js';
 
 // Proměnné globálního rozsahu----------------------------------------------------------------------------------------
@@ -843,11 +843,13 @@ function addMainGui() {
     // --- File panel (Export / Import) ---
     const fileGui = new GUI({ container: guiContainer, title: 'File' });
     fileGui.add({ fn: importGlbFile }, 'fn').name('Import GLB…');
-    fileGui.add({ fn: exportAllModels }, 'fn').name('Export all models');
-    fileGui.add({ fn: exportAllModelsDraco }, 'fn').name('Export all models (Draco)');
-    fileGui.add({ fn: exportSelectedObject }, 'fn').name('Export selected object');
-    fileGui.add({ fn() { exportToHTML(loadedModels, assemblyGui, viewProp, assemblyWriteToUserData, assemblyClearUserData); } }, 'fn').name('Export to HTML (assembly)');
+    fileGui.add({ fn: exportAllModels }, 'fn').name('Export all to GLB');
+    fileGui.add({ fn: exportAllModelsDraco }, 'fn').name('Export all to GLB (Draco)');
+    fileGui.add({ fn: exportSelectedObject }, 'fn').name('Export selected to GLB');
+    fileGui.add({ fn() { exportToHTML(loadedModels, assemblyGui, viewProp, assemblyWriteToUserData, assemblyClearUserData); } }, 'fn').name('Export to HTML');
+    fileGui.add({ fn() { exportToHTMLDraco(loadedModels, assemblyGui, viewProp, assemblyWriteToUserData, assemblyClearUserData); } }, 'fn').name('Export to HTML (Draco)');
     fileGui.add({ fn() { exportToHTMLObfuscated(loadedModels, assemblyGui, viewProp, assemblyWriteToUserData, assemblyClearUserData); } }, 'fn').name('Export to HTML obfuscated');
+    fileGui.add({ fn() { exportToHTMLObfuscatedDraco(loadedModels, assemblyGui, viewProp, assemblyWriteToUserData, assemblyClearUserData); } }, 'fn').name('Export to HTML obfuscated (Draco)');
     registerGuiPanel('File', fileGui);
 
     // --- Edit panel ---

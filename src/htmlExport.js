@@ -55,7 +55,7 @@ export function exportToHTML(loadedModels, assemblyGui, viewProp, assemblyWriteT
             pz: viewProp.pz,
         };
 
-        const htmlContent = generateStandaloneHTML(base64, animSettings, sectionSettings);
+        const htmlContent = generateStandaloneHTML(base64, animSettings, sectionSettings, '');
 
         const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
         const link = document.createElement('a');
@@ -69,7 +69,138 @@ export function exportToHTML(loadedModels, assemblyGui, viewProp, assemblyWriteT
     }, { binary: true, onlyVisible: false });
 }
 
-function generateStandaloneHTML(glbBase64, animSettings, sectionSettings) {
+// ===== Export to standalone HTML with Draco compression =====
+export function exportToHTMLDraco(loadedModels, assemblyGui, viewProp, assemblyWriteToUserData, assemblyClearUserData) {
+    if (loadedModels.length === 0) {
+        alert('No models to export.');
+        return;
+    }
+    const defaultName = 'assembly_viewer_draco.html';
+    const filename = window.prompt('File name for HTML export (Draco):', defaultName);
+    if (filename === null) return;
+    const finalName = filename.trim() || defaultName;
+
+    // Write assembly workflow into userData before cloning
+    assemblyWriteToUserData();
+
+    const exporter = new GLTFExporter();
+    const group = new THREE.Group();
+    loadedModels.forEach(model => group.add(model.clone(true)));
+
+    // Clean up originals
+    assemblyClearUserData();
+
+    exporter.parse(group, async function(glbBuffer) {
+        // Show overlay
+        let overlay = document.getElementById('dracoOverlay');
+        if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.id = 'dracoOverlay';
+            overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:99999;color:#fff;font-size:22px;font-family:sans-serif;';
+            overlay.textContent = 'Draco compressing… please wait';
+            document.body.appendChild(overlay);
+        }
+        overlay.style.display = 'flex';
+        // Let browser paint overlay before CPU-intensive work
+        await new Promise(r => setTimeout(r, 50));
+
+        try {
+        // --- Draco compression ---
+        let finalGlb = glbBuffer;
+        try {
+            const { WebIO } = await import('@gltf-transform/core');
+            const { KHRDracoMeshCompression } = await import('@gltf-transform/extensions');
+            const { draco } = await import('@gltf-transform/functions');
+
+            const loadDracoScript = (url) => new Promise((resolve, reject) => {
+                const id = url.includes('encoder') ? 'DracoEncoderModule' : 'DracoDecoderModule';
+                if (window[id]) { resolve(); return; }
+                const s = document.createElement('script');
+                s.src = url;
+                s.onload = resolve;
+                s.onerror = () => reject(new Error('Failed to load ' + url));
+                document.head.appendChild(s);
+            });
+
+            await loadDracoScript('./draco/draco_encoder_wasm.js');
+            await loadDracoScript('./draco/draco_decoder_wasm.js');
+
+            const encoder = await window.DracoEncoderModule();
+            const decoder = await window.DracoDecoderModule();
+
+            const io = new WebIO()
+                .registerExtensions([KHRDracoMeshCompression])
+                .registerDependencies({
+                    'draco3d.decoder': decoder,
+                    'draco3d.encoder': encoder,
+                });
+
+            const gltfDoc = await io.readBinary(new Uint8Array(glbBuffer));
+            await gltfDoc.transform(draco());
+            finalGlb = await io.writeBinary(gltfDoc);
+            console.log('HTML export (Draco): compression done.');
+        } catch (err) {
+            console.warn('HTML export (Draco): compression failed, using uncompressed.', err);
+        }
+
+        // Convert ArrayBuffer to base64
+        const bytes = new Uint8Array(finalGlb);
+        let binary = '';
+        for (let i = 0; i < bytes.byteLength; i++) {
+            binary += String.fromCharCode(bytes[i]);
+        }
+        const base64 = btoa(binary);
+
+        // Get current animation settings
+        const animSettings = {
+            duration:    assemblyGui.animationDuration,
+            ease:        assemblyGui.animationEase,
+            repeat:      assemblyGui.animationRepeat,
+            delay:       assemblyGui.animationDelay,
+            repeatDelay: assemblyGui.animationRepeatDelay,
+            yoyo:        assemblyGui.animationYoyo,
+            stagger:     assemblyGui.animationStagger,
+            overwrite:   assemblyGui.animationOverwrite,
+            loop:        assemblyGui.animationLoop,
+            camera:      assemblyGui.animationCamera,
+        };
+
+        const sectionSettings = {
+            section:         viewProp.section,
+            showSectionMesh: viewProp.showSectionMesh,
+            px: viewProp.px,
+            py: viewProp.py,
+            pz: viewProp.pz,
+        };
+
+        // Fetch Draco decoder JS for embedding in standalone HTML
+        let dracoDecoderBase64 = '';
+        try {
+            const resp = await fetch('./draco/draco_decoder.js');
+            const text = await resp.text();
+            dracoDecoderBase64 = btoa(unescape(encodeURIComponent(text)));
+        } catch (err) {
+            console.warn('Could not fetch draco_decoder.js for HTML embed:', err);
+        }
+
+        const htmlContent = generateStandaloneHTML(base64, animSettings, sectionSettings, dracoDecoderBase64);
+
+        const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = finalName;
+        link.click();
+        URL.revokeObjectURL(link.href);
+        console.log('Export to HTML (Draco): done.');
+        } finally {
+            overlay.style.display = 'none';
+        }
+    }, function(error) {
+        console.error('HTML export error:', error);
+    }, { binary: true, onlyVisible: false });
+}
+
+function generateStandaloneHTML(glbBase64, animSettings, sectionSettings, dracoDecoderBase64) {
     const safeLibsBundle = exportLibsBundle.replace(/<\/script/gi, '<\\/script');
     return `<!DOCTYPE html>
 <html lang="en">
@@ -283,6 +414,7 @@ canvas { display: block; width: 100%; height: 100%; }
 <script type="module">
 const THREE = window.THREE;
 const GLTFLoader = window.GLTFLoader;
+const DRACOLoader = window.DRACOLoader;
 const OrbitControls = window.OrbitControls;
 const gsap = window.gsap;
 
@@ -440,6 +572,20 @@ function base64ToArrayBuffer(b64) {
 }
 
 const loader = new GLTFLoader();
+
+// Draco decoder embedded as base64 for offline use
+const DRACO_DECODER_BASE64 = '${dracoDecoderBase64}';
+if (DRACO_DECODER_BASE64) {
+    const dracoLoader = new DRACOLoader();
+    dracoLoader.setDecoderConfig({ type: 'js' });
+    // Override internal library loading to use embedded decoder
+    const decoderText = decodeURIComponent(escape(atob(DRACO_DECODER_BASE64)));
+    dracoLoader._loadLibrary = function(url, responseType) {
+        if (url === 'draco_decoder.js') return Promise.resolve(decoderText);
+        return Promise.reject(new Error('Unexpected Draco library: ' + url));
+    };
+    loader.setDRACOLoader(dracoLoader);
+}
 
 const glbBuffer = base64ToArrayBuffer(GLB_BASE64);
 loader.parse(glbBuffer, '', function(gltf) {
@@ -990,7 +1136,7 @@ export function exportToHTMLObfuscated(loadedModels, assemblyGui, viewProp, asse
             pz: viewProp.pz,
         };
 
-        const htmlContent = generateObfuscatedHTML(base64, animSettings, sectionSettings);
+        const htmlContent = generateObfuscatedHTML(base64, animSettings, sectionSettings, '');
 
         const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
         const link = document.createElement('a');
@@ -1004,10 +1150,135 @@ export function exportToHTMLObfuscated(loadedModels, assemblyGui, viewProp, asse
     }, { binary: true, onlyVisible: false });
 }
 
-function generateObfuscatedHTML(glbBase64, animSettings, sectionSettings) {
+// ===== Export to obfuscated standalone HTML with Draco compression =====
+export function exportToHTMLObfuscatedDraco(loadedModels, assemblyGui, viewProp, assemblyWriteToUserData, assemblyClearUserData) {
+    if (loadedModels.length === 0) {
+        alert('No models to export.');
+        return;
+    }
+    const defaultName = 'assembly_viewer_obf_draco.html';
+    const filename = window.prompt('File name for obfuscated HTML export (Draco):', defaultName);
+    if (filename === null) return;
+    const finalName = filename.trim() || defaultName;
+
+    assemblyWriteToUserData();
+
+    const exporter = new GLTFExporter();
+    const group = new THREE.Group();
+    loadedModels.forEach(model => group.add(model.clone(true)));
+
+    assemblyClearUserData();
+
+    exporter.parse(group, async function(glbBuffer) {
+        // Show overlay
+        let overlay = document.getElementById('dracoOverlay');
+        if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.id = 'dracoOverlay';
+            overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:99999;color:#fff;font-size:22px;font-family:sans-serif;';
+            overlay.textContent = 'Draco compressing… please wait';
+            document.body.appendChild(overlay);
+        }
+        overlay.style.display = 'flex';
+        await new Promise(r => setTimeout(r, 50));
+
+        try {
+        // --- Draco compression ---
+        let finalGlb = glbBuffer;
+        try {
+            const { WebIO } = await import('@gltf-transform/core');
+            const { KHRDracoMeshCompression } = await import('@gltf-transform/extensions');
+            const { draco } = await import('@gltf-transform/functions');
+
+            const loadDracoScript = (url) => new Promise((resolve, reject) => {
+                const id = url.includes('encoder') ? 'DracoEncoderModule' : 'DracoDecoderModule';
+                if (window[id]) { resolve(); return; }
+                const s = document.createElement('script');
+                s.src = url;
+                s.onload = resolve;
+                s.onerror = () => reject(new Error('Failed to load ' + url));
+                document.head.appendChild(s);
+            });
+
+            await loadDracoScript('./draco/draco_encoder_wasm.js');
+            await loadDracoScript('./draco/draco_decoder_wasm.js');
+
+            const encoder = await window.DracoEncoderModule();
+            const decoder = await window.DracoDecoderModule();
+
+            const io = new WebIO()
+                .registerExtensions([KHRDracoMeshCompression])
+                .registerDependencies({
+                    'draco3d.decoder': decoder,
+                    'draco3d.encoder': encoder,
+                });
+
+            const gltfDoc = await io.readBinary(new Uint8Array(glbBuffer));
+            await gltfDoc.transform(draco());
+            finalGlb = await io.writeBinary(gltfDoc);
+            console.log('Obfuscated HTML export (Draco): compression done.');
+        } catch (err) {
+            console.warn('Obfuscated HTML export (Draco): compression failed, using uncompressed.', err);
+        }
+
+        const bytes = new Uint8Array(finalGlb);
+        let binary = '';
+        for (let i = 0; i < bytes.byteLength; i++) {
+            binary += String.fromCharCode(bytes[i]);
+        }
+        const base64 = btoa(binary);
+
+        const animSettings = {
+            duration:    assemblyGui.animationDuration,
+            ease:        assemblyGui.animationEase,
+            repeat:      assemblyGui.animationRepeat,
+            delay:       assemblyGui.animationDelay,
+            repeatDelay: assemblyGui.animationRepeatDelay,
+            yoyo:        assemblyGui.animationYoyo,
+            stagger:     assemblyGui.animationStagger,
+            overwrite:   assemblyGui.animationOverwrite,
+            loop:        assemblyGui.animationLoop,
+            camera:      assemblyGui.animationCamera,
+        };
+
+        const sectionSettings = {
+            section:         viewProp.section,
+            showSectionMesh: viewProp.showSectionMesh,
+            px: viewProp.px,
+            py: viewProp.py,
+            pz: viewProp.pz,
+        };
+
+        let dracoDecoderBase64 = '';
+        try {
+            const resp = await fetch('./draco/draco_decoder.js');
+            const text = await resp.text();
+            dracoDecoderBase64 = btoa(unescape(encodeURIComponent(text)));
+        } catch (err) {
+            console.warn('Could not fetch draco_decoder.js for HTML embed:', err);
+        }
+
+        const htmlContent = generateObfuscatedHTML(base64, animSettings, sectionSettings, dracoDecoderBase64);
+
+        const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = finalName;
+        link.click();
+        URL.revokeObjectURL(link.href);
+        console.log('Export to obfuscated HTML (Draco): done.');
+        } finally {
+            overlay.style.display = 'none';
+        }
+    }, function(error) {
+        console.error('Obfuscated HTML export error:', error);
+    }, { binary: true, onlyVisible: false });
+}
+
+function generateObfuscatedHTML(glbBase64, animSettings, sectionSettings, dracoDecoderBase64) {
     // Generate the readable standalone HTML with a placeholder for GLB data
     const GLB_PLACEHOLDER = '__GLB_BASE64_PLACEHOLDER__';
-    const sourceHTML = generateStandaloneHTML(GLB_PLACEHOLDER, animSettings, sectionSettings);
+    const sourceHTML = generateStandaloneHTML(GLB_PLACEHOLDER, animSettings, sectionSettings, dracoDecoderBase64 || '');
 
     // ID / class mapping for obfuscation
     const idMap = {
