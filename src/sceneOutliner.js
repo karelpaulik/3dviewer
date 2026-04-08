@@ -311,5 +311,28 @@ function setupResize(handle) {
         document.removeEventListener('mouseup', onMouseUp);
     }
 
+    function onTouchStart(e) {
+        if (e.touches.length !== 1) return;
+        e.preventDefault();
+        startX = e.touches[0].clientX;
+        startWidth = panelEl.offsetWidth;
+        document.addEventListener('touchmove', onTouchMove, { passive: false });
+        document.addEventListener('touchend', onTouchEnd);
+    }
+
+    function onTouchMove(e) {
+        if (e.touches.length !== 1) return;
+        e.preventDefault();
+        const delta = e.touches[0].clientX - startX;
+        const newWidth = Math.max(180, Math.min(600, startWidth + delta));
+        panelEl.style.width = newWidth + 'px';
+    }
+
+    function onTouchEnd() {
+        document.removeEventListener('touchmove', onTouchMove);
+        document.removeEventListener('touchend', onTouchEnd);
+    }
+
     handle.addEventListener('mousedown', onMouseDown);
+    handle.addEventListener('touchstart', onTouchStart, { passive: false });
 }

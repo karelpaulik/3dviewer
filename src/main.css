@@ -133,16 +133,19 @@ a, button, input, select {
     z-index: 1002;
     display: flex;
     flex-direction: row;
-    justify-content: flex-end;
     background: #111;
     border-bottom: 1px solid #333;
     height: 28px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
 }
 .gui-toolbar-btn {
     padding: 0 16px;
     height: 28px;
     line-height: 28px;
     border: none;
+    flex-shrink: 0;
     border-left: 1px solid #333;
     background: #1a1a1a;
     color: #aaa;
@@ -385,8 +388,8 @@ a, button, input, select {
 .outliner-resize {
     position: absolute;
     top: 0;
-    right: -3px;
-    width: 6px;
+    right: -8px;
+    width: 16px;
     height: 100%;
     cursor: col-resize;
     z-index: 2;
