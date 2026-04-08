@@ -201,6 +201,11 @@ a, button, input, select {
     padding-left: 6px !important;
 }
 
+/* Indent nested sub-folders (folder inside folder) */
+#gui-container .lil-gui .lil-gui .lil-gui {
+    margin-left: 12px;
+}
+
 /* GUI panel dimensions – controlled dynamically by JS (applyToolbarPreferences) */
 
 /* Context menu ------------------------------------ */
