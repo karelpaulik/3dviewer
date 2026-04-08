@@ -50,6 +50,8 @@ export function exportToHTML(loadedModels, assemblyGui, viewProp, assemblyWriteT
         const sectionSettings = {
             section:         viewProp.section,
             showSectionMesh: viewProp.showSectionMesh,
+            sectionCrossLines: viewProp.sectionCrossLines,
+            crossSectionColor: viewProp.crossSectionColor,
             px: viewProp.px,
             py: viewProp.py,
             pz: viewProp.pz,
@@ -168,6 +170,8 @@ export function exportToHTMLDraco(loadedModels, assemblyGui, viewProp, assemblyW
         const sectionSettings = {
             section:         viewProp.section,
             showSectionMesh: viewProp.showSectionMesh,
+            sectionCrossLines: viewProp.sectionCrossLines,
+            crossSectionColor: viewProp.crossSectionColor,
             px: viewProp.px,
             py: viewProp.py,
             pz: viewProp.pz,
@@ -387,6 +391,7 @@ canvas { display: block; width: 100%; height: 100%; }
     <div id="section-panel-body">
         <label class="chk-label"><input type="checkbox" id="chk-section"> Section</label>
         <label class="chk-label"><input type="checkbox" id="chk-section-mesh"> Section Mesh</label>
+        <label class="chk-label"><input type="checkbox" id="chk-section-cross"> Cross Section Lines</label>
         <div class="sec-row"><span class="sec-axis">X</span><input type="range" id="sld-px" step="1"><input type="number" id="num-px" step="1"></div>
         <div class="sec-row"><span class="sec-axis">Y</span><input type="range" id="sld-py" step="1"><input type="number" id="num-py" step="1"></div>
         <div class="sec-row"><span class="sec-axis">Z</span><input type="range" id="sld-pz" step="1"><input type="number" id="num-pz" step="1"></div>
@@ -461,6 +466,8 @@ const clipPlanes = [
     new THREE.Plane(new THREE.Vector3(0, 0, -1), ${sectionSettings.pz}),
 ];
 let sectionMeshEnabled = ${sectionSettings.showSectionMesh};
+let sectionCrossLinesEnabled = ${sectionSettings.sectionCrossLines};
+let sectionCrossLinesObj = null;
 let sceneRoot = null;
 
 // Ortho camera
@@ -993,6 +1000,79 @@ function updateSectionMeshes() {
     }
 }
 
+function checkEdgeSec(v1, v2, plane, pts) {
+    const eps = 1e-6;
+    const d1 = plane.distanceToPoint(v1);
+    const d2 = plane.distanceToPoint(v2);
+    if (Math.abs(d1) < eps && Math.abs(d2) < eps) { pts.push(v1.clone(), v2.clone()); return; }
+    if (Math.abs(d1) < eps) { pts.push(v1.clone()); return; }
+    if (Math.abs(d2) < eps) { pts.push(v2.clone()); return; }
+    if ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) {
+        const t = d1 / (d1 - d2);
+        pts.push(new THREE.Vector3().lerpVectors(v1, v2, t));
+    }
+}
+
+function createMeshCrossLines(mesh, plane, color) {
+    const geom = mesh.geometry;
+    if (!geom || !geom.attributes.position) return null;
+    const pos = geom.attributes.position;
+    const idx = geom.index ? geom.index.array : null;
+    const verts = [];
+    for (let i = 0; i < pos.count; i++) {
+        verts.push(new THREE.Vector3(pos.getX(i), pos.getY(i), pos.getZ(i)).applyMatrix4(mesh.matrixWorld));
+    }
+    const triCount = idx ? idx.length / 3 : verts.length / 3;
+    const lines = [];
+    for (let i = 0; i < triCount; i++) {
+        const i0 = idx ? idx[i*3] : i*3, i1 = idx ? idx[i*3+1] : i*3+1, i2 = idx ? idx[i*3+2] : i*3+2;
+        const pts = [];
+        checkEdgeSec(verts[i0], verts[i1], plane, pts);
+        checkEdgeSec(verts[i1], verts[i2], plane, pts);
+        checkEdgeSec(verts[i2], verts[i0], plane, pts);
+        const eps = 1e-6;
+        const uniq = [];
+        for (const p of pts) { if (!uniq.some(u => u.distanceToSquared(p) < eps*eps)) uniq.push(p); }
+        if (uniq.length >= 2) { lines.push(uniq[0], uniq[1]); }
+    }
+    if (lines.length === 0) return null;
+    const lg = new THREE.BufferGeometry().setFromPoints(lines);
+    return new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: new THREE.Color(color), linewidth: 2 }));
+}
+
+function updateSectionCrossLines() {
+    if (sectionCrossLinesObj) {
+        scene.remove(sectionCrossLinesObj);
+        sectionCrossLinesObj.geometry.dispose();
+        sectionCrossLinesObj.material.dispose();
+        sectionCrossLinesObj = null;
+    }
+    if (!sectionCrossLinesEnabled || !renderer.localClippingEnabled || !sceneRoot) return;
+    const allLines = [];
+    for (let ci = 0; ci < clipPlanes.length; ci++) {
+        const plane = clipPlanes[ci];
+        sceneRoot.traverse(function(child) {
+            if (child.isMesh && child.visible && !child.isSectionMesh) {
+                const l = createMeshCrossLines(child, plane, '${sectionSettings.crossSectionColor}');
+                if (l && l.geometry.attributes.position.count > 0) allLines.push(l);
+            }
+        });
+    }
+    if (allLines.length > 0) {
+        const positions = [];
+        allLines.forEach(function(lo) {
+            const p = lo.geometry.attributes.position;
+            for (let i = 0; i < p.count; i++) positions.push(p.getX(i), p.getY(i), p.getZ(i));
+            lo.geometry.dispose(); lo.material.dispose();
+        });
+        const cg = new THREE.BufferGeometry();
+        cg.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        sectionCrossLinesObj = new THREE.LineSegments(cg, new THREE.LineBasicMaterial({ color: new THREE.Color('${sectionSettings.crossSectionColor}'), linewidth: 2 }));
+        scene.add(sectionCrossLinesObj);
+    }
+    render();
+}
+
 function setSectionSliderRange(range) {
     document.getElementById('sld-px').min = -range; document.getElementById('sld-px').max = range;
     document.getElementById('num-px').min = -range; document.getElementById('num-px').max = range;
@@ -1017,6 +1097,7 @@ const chkSection = document.getElementById('chk-section');
 chkSection.checked = renderer.localClippingEnabled;
 chkSection.addEventListener('change', function() {
     renderer.localClippingEnabled = this.checked;
+    updateSectionCrossLines();
     render();
 });
 
@@ -1028,6 +1109,13 @@ chkSectionMesh.addEventListener('change', function() {
     render();
 });
 
+const chkSectionCross = document.getElementById('chk-section-cross');
+chkSectionCross.checked = sectionCrossLinesEnabled;
+chkSectionCross.addEventListener('change', function() {
+    sectionCrossLinesEnabled = this.checked;
+    updateSectionCrossLines();
+});
+
 function wireAxisSlider(sldId, numId, idx) {
     const sld = document.getElementById(sldId);
     const num = document.getElementById(numId);
@@ -1036,6 +1124,7 @@ function wireAxisSlider(sldId, numId, idx) {
     function update(v) {
         clipPlanes[idx].constant = v;
         sld.value = v; num.value = v;
+        if (sectionCrossLinesEnabled) updateSectionCrossLines();
         render();
     }
     sld.addEventListener('input', () => update(parseFloat(sld.value)));
@@ -1050,6 +1139,7 @@ document.getElementById('btn-sec-reset').addEventListener('click', function() {
     document.getElementById('sld-px').value = 0; document.getElementById('num-px').value = 0;
     document.getElementById('sld-py').value = 0; document.getElementById('num-py').value = 0;
     document.getElementById('sld-pz').value = 0; document.getElementById('num-pz').value = 0;
+    if (sectionCrossLinesEnabled) updateSectionCrossLines();
     render();
 });
 
@@ -1131,6 +1221,8 @@ export function exportToHTMLObfuscated(loadedModels, assemblyGui, viewProp, asse
         const sectionSettings = {
             section:         viewProp.section,
             showSectionMesh: viewProp.showSectionMesh,
+            sectionCrossLines: viewProp.sectionCrossLines,
+            crossSectionColor: viewProp.crossSectionColor,
             px: viewProp.px,
             py: viewProp.py,
             pz: viewProp.pz,
@@ -1244,6 +1336,8 @@ export function exportToHTMLObfuscatedDraco(loadedModels, assemblyGui, viewProp,
         const sectionSettings = {
             section:         viewProp.section,
             showSectionMesh: viewProp.showSectionMesh,
+            sectionCrossLines: viewProp.sectionCrossLines,
+            crossSectionColor: viewProp.crossSectionColor,
             px: viewProp.px,
             py: viewProp.py,
             pz: viewProp.pz,
@@ -1287,7 +1381,7 @@ function generateObfuscatedHTML(glbBase64, animSettings, sectionSettings, dracoD
         'btn-start': '_1', 'btn-finish': '_2', 'btn-prev': '_3',
         'btn-next': '_4', 'btn-anim-start': '_5', 'btn-anim-finish': '_6', 'chk-loop': '_7', 'chk-fullscreen': '_8', 'chk-camera': '_9',
         'section-panel': '_sa', 'section-panel-hdr': '_sb', 'section-panel-body': '_sc',
-        'chk-section': '_s1', 'chk-section-mesh': '_s2',
+        'chk-section': '_s1', 'chk-section-mesh': '_s2', 'chk-section-cross': '_s2b',
         'sld-px': '_s3', 'num-px': '_s4',
         'sld-py': '_s5', 'num-py': '_s6',
         'sld-pz': '_s7', 'num-pz': '_s8',
@@ -1349,6 +1443,7 @@ function generateObfuscatedHTML(glbBase64, animSettings, sectionSettings, dracoD
     const secPanelArrow = sectionSettings.section ? '&#x2702; Section &#x25B4;' : '&#x2702; Section &#x25BE;';
     const secChecked = sectionSettings.section ? ' checked' : '';
     const secMeshChecked = sectionSettings.showSectionMesh ? ' checked' : '';
+    const secCrossChecked = sectionSettings.sectionCrossLines ? ' checked' : '';
 
     // ── Assemble obfuscated HTML ──
     return `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no"><style>${css}</style></head><body>` +
@@ -1356,6 +1451,7 @@ function generateObfuscatedHTML(glbBase64, animSettings, sectionSettings, dracoD
         `<div id="_sa"><div id="_sb">${secPanelArrow}</div><div id="_sc"${secPanelOpen ? ' class="open"' : ''}>` +
         `<label class="_cl"><input type="checkbox" id="_s1"${secChecked}> Section</label>` +
         `<label class="_cl"><input type="checkbox" id="_s2"${secMeshChecked}> Section Mesh</label>` +
+        `<label class="_cl"><input type="checkbox" id="_s2b"${secCrossChecked}> Cross Section Lines</label>` +
         `<div class="_sr"><span class="_sx">X</span><input type="range" id="_s3" step="1"><input type="number" id="_s4" step="1"></div>` +
         `<div class="_sr"><span class="_sx">Y</span><input type="range" id="_s5" step="1"><input type="number" id="_s6" step="1"></div>` +
         `<div class="_sr"><span class="_sx">Z</span><input type="range" id="_s7" step="1"><input type="number" id="_s8" step="1"></div>` +
