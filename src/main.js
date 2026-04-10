@@ -255,7 +255,7 @@ outlinerPanelEl = initOutliner({
     }
 });
 
-initLoad();
+//initLoad();
 
 // Funkce----------------------------------------------------------------------------------------------------------------
 
@@ -849,6 +849,12 @@ function addMainGui() {
 
     // --- File panel (Export / Import) ---
     const fileGui = new GUI({ container: guiContainer, title: 'File' });
+    fileGui.add({ fn() {
+        loadGlbModel('./models/demo.glb', 'demo.glb', 0.001, true).then(() => {
+            recalibrateOrthoCamera();
+            fitView();
+        });
+    } }, 'fn').name('Import demo GLB');
     fileGui.add({ fn: importGlbFile }, 'fn').name('Import GLB…');
     fileGui.add({ fn: exportAllModels }, 'fn').name('Export all to GLB');
     fileGui.add({ fn: exportAllModelsDraco }, 'fn').name('Export all to GLB (Draco)');
@@ -1309,6 +1315,7 @@ function initLoad() {
         });
     }
 }
+
 
 function setPolygonOffsetFactor(obj, value) {
     if (!obj || !obj.material) return;
