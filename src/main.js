@@ -120,40 +120,6 @@ guiToolbar.insertBefore(outlinerBtn, guiToolbar.firstChild);
     if (name === 'Selected') btn.style.display = 'none';
 });
 
-function registerGuiPanel(name, guiInstance) {
-    guiInstance.domElement.style.display = 'none';
-    guiPanels[name].gui = guiInstance;
-}
-
-function showGuiPanel(name) {
-    const panel = guiPanels[name];
-    if (!panel || !panel.gui) return;
-
-    // Selected panel is independent — toggles without affecting others
-    if (name === 'Selected') {
-        const isVisible = panel.gui.domElement.style.display !== 'none';
-        panel.gui.domElement.style.display = isVisible ? 'none' : '';
-        panel.btn.classList.toggle('active', !isVisible);
-        return;
-    }
-
-    // Other panels: only one visible at a time (toggle among themselves)
-    if (activePanel === name) {
-        panel.gui.domElement.style.display = 'none';
-        panel.btn.classList.remove('active');
-        activePanel = null;
-        return;
-    }
-    // hide all except Selected
-    for (const key in guiPanels) {
-        if (key === 'Selected') continue;
-        if (guiPanels[key].gui) guiPanels[key].gui.domElement.style.display = 'none';
-        guiPanels[key].btn.classList.remove('active');
-    }
-    panel.gui.domElement.style.display = '';
-    panel.btn.classList.add('active');
-    activePanel = name;
-}
 let lastSelectedObject = null;
 const lastSelectedMeshes = [];
 const selectionHistory = [];
@@ -346,6 +312,41 @@ class PaddedBoxHelper extends THREE.LineSegments {
         this.geometry.dispose();
         this.material.dispose();
     }
+}
+
+function registerGuiPanel(name, guiInstance) {
+    guiInstance.domElement.style.display = 'none';
+    guiPanels[name].gui = guiInstance;
+}
+
+function showGuiPanel(name) {
+    const panel = guiPanels[name];
+    if (!panel || !panel.gui) return;
+
+    // Selected panel is independent — toggles without affecting others
+    if (name === 'Selected') {
+        const isVisible = panel.gui.domElement.style.display !== 'none';
+        panel.gui.domElement.style.display = isVisible ? 'none' : '';
+        panel.btn.classList.toggle('active', !isVisible);
+        return;
+    }
+
+    // Other panels: only one visible at a time (toggle among themselves)
+    if (activePanel === name) {
+        panel.gui.domElement.style.display = 'none';
+        panel.btn.classList.remove('active');
+        activePanel = null;
+        return;
+    }
+    // hide all except Selected
+    for (const key in guiPanels) {
+        if (key === 'Selected') continue;
+        if (guiPanels[key].gui) guiPanels[key].gui.domElement.style.display = 'none';
+        guiPanels[key].btn.classList.remove('active');
+    }
+    panel.gui.domElement.style.display = '';
+    panel.btn.classList.add('active');
+    activePanel = name;
 }
 
 function init() {   
