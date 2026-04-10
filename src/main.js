@@ -109,8 +109,8 @@ outlinerBtn.addEventListener('click', () => {
 });
 guiToolbar.insertBefore(outlinerBtn, guiToolbar.firstChild);
 
-// Pre-create all toolbar buttons in desired order: Selected, File, Edit, View, Assembly
-['Selected', 'File', 'Edit', 'View', 'Assembly'].forEach(name => {
+// Pre-create all toolbar buttons in desired order: Selected, File, Edit, View, Assembly, Help
+['Selected', 'File', 'Edit', 'View', 'Assembly', 'Help'].forEach(name => {
     const btn = document.createElement('button');
     btn.className = 'gui-toolbar-btn';
     btn.textContent = name;
@@ -675,6 +675,7 @@ function init() {
 
     addMainGui();
     addAssemblyGui();
+    addHelpGui();
     applyToolbarPreferences(); // Apply initial toolbar CSS from viewProp defaults
 } //End init 
 
@@ -3490,6 +3491,23 @@ function addAssemblyGui() {
 
     registerGuiPanel('Assembly', assemblyFolder);
     updateAssemblyGuiInfo();
+}
+
+function addHelpGui() {
+        // Create <dialog> element once
+    const aboutDialog = document.createElement('dialog');
+    aboutDialog.id = 'about-dialog';
+    aboutDialog.innerHTML =
+        '<h2>BEDOBE</h2>'
+        + '<p>3D Studio</p>'
+        + '<p>BEDOBE is a web-based 3D model viewer and assembly workflow editor built with Three.js. It allows you to load GLB models, explore their structure, create step-by-step assembly instructions with smooth animations and much much more.</p>'
+        + '<form method="dialog"><button>OK</button></form>';
+    aboutDialog.addEventListener('click', e => { if (e.target === aboutDialog) aboutDialog.close(); });
+    document.body.appendChild(aboutDialog);
+
+    const helpGui = new GUI({ container: guiContainer, title: 'Help' });
+    helpGui.add({ fn() { aboutDialog.showModal(); } }, 'fn').name('About');
+    registerGuiPanel('Help', helpGui);
 }
 
 function updateAssemblyGuiInfo() {

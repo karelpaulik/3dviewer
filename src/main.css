@@ -24,6 +24,44 @@ a:hover {
 	text-decoration: underline;
 }
 
+#about-dialog {
+	background: #2a2a2a;
+	color: #eee;
+	padding: 32px 44px;
+	border-radius: 10px;
+	text-align: center;
+	font-family: sans-serif;
+	box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+	width: fit-content;
+	max-width: min(480px, calc(100vw - 150px));
+	margin: auto;
+	border: none;
+}
+
+#about-dialog::backdrop {
+	background: rgba(0, 0, 0, 0.45);
+}
+
+#about-dialog h2 {
+	margin: 0 0 12px;
+}
+
+#about-dialog p {
+	margin: 0 0 18px;
+	font-size: 15px;
+}
+
+#about-dialog button {
+	padding: 6px 24px;
+	cursor: pointer;
+	border: none;
+	border-radius: 4px;
+	background: #555;
+	color: #eee;
+	font-size: 14px;
+	text-transform: none;
+}
+
 button {
 	cursor: pointer;
 	text-transform: uppercase;
