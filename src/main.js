@@ -70,6 +70,7 @@ const assemblyGui = {
     animationOverwrite: 'auto',
     animationLoop: false,
     animationCamera: true,
+    zoomCoeff: 1,
 };
 // ============================================
 
@@ -3418,6 +3419,7 @@ function addAssemblyGui() {
     playbackFolder.add(assemblyGui, 'stepInfo').name('Status').disable().listen();
     playbackFolder.add(assemblyGui, 'animationLoop').name('Loop  ∞  (start ↔ finish)').listen();
     playbackFolder.add(assemblyGui, 'animationCamera').name('Camera  🎥  (animate camera)').listen();
+    playbackFolder.add(assemblyGui, 'zoomCoeff', 0.1, 5.0, 0.05).name('Zoom coeff  🔍  (ortho only)').listen();
     playbackFolder.add({ fn: assemblyResetToStart }, 'fn').name('⏮  Reset to start  [Home]');
     playbackFolder.add({ fn: assemblyAnimateToStart }, 'fn').name('◀◀  Animate to start  [Shift+PgUp]');
     playbackFolder.add({ fn: assemblyPrevStep }, 'fn').name('◀  Previous step  [PageUp]');
@@ -4174,7 +4176,8 @@ function animateCameraToView(camData, onComplete) {
     const endTarget = new THREE.Vector3(camData.target.x,   camData.target.y,   camData.target.z);
 
     const startZoom = currentCamera.zoom;
-    const endZoom   = (camData.zoom != null) ? camData.zoom : startZoom;
+    const zoomCoeff = (currentCamera === cameraOrtho && camData.zoom != null) ? assemblyGui.zoomCoeff : 1;
+    const endZoom   = (camData.zoom != null) ? camData.zoom * zoomCoeff : startZoom;
 
     // Skip animation if camera is already at the target view.
     const EPS = 1e-6;

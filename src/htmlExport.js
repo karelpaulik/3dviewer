@@ -45,6 +45,7 @@ export function exportToHTML(loadedModels, assemblyGui, viewProp, assemblyWriteT
             overwrite:   assemblyGui.animationOverwrite,
             loop:        assemblyGui.animationLoop,
             camera:      assemblyGui.animationCamera,
+            zoomCoeff:   assemblyGui.zoomCoeff,
         };
 
         const sectionSettings = {
@@ -165,6 +166,7 @@ export function exportToHTMLDraco(loadedModels, assemblyGui, viewProp, assemblyW
             overwrite:   assemblyGui.animationOverwrite,
             loop:        assemblyGui.animationLoop,
             camera:      assemblyGui.animationCamera,
+            zoomCoeff:   assemblyGui.zoomCoeff,
         };
 
         const sectionSettings = {
@@ -413,6 +415,9 @@ canvas { display: block; width: 100%; height: 100%; }
         <label class="chk-label"><input type="checkbox" id="chk-camera"${animSettings.camera ? ' checked' : ''}> &#x1F3A5; Cam</label>
         <label class="chk-label"><input type="checkbox" id="chk-fullscreen"> &#x26F6; Full</label>
     </div>
+    <div class="row">
+        <label class="chk-label">&#x1F50D; Zoom coeff: <input type="number" id="zoom-coeff" value="${animSettings.zoomCoeff}" min="0.1" max="5" step="0.05" style="width:60px"></label>
+    </div>
 </div>
 
 <script>${safeLibsBundle}<\/script>
@@ -434,6 +439,7 @@ const ANIM_STAGGER     = ${animSettings.stagger};
 const ANIM_OVERWRITE   = '${animSettings.overwrite}';
 const ANIM_LOOP        = ${animSettings.loop};
 const ANIM_CAMERA      = ${animSettings.camera};
+const ANIM_ZOOM_COEFF  = ${animSettings.zoomCoeff};
 const GLB_BASE64 = '${glbBase64}';
 
 // ---- Scene setup ----
@@ -549,6 +555,7 @@ let cameraAnimation = null;
 let cameraAnimationFinalize = null;
 let loopEnabled = ANIM_LOOP;
 let cameraEnabled = ANIM_CAMERA;
+let zoomCoeff = ANIM_ZOOM_COEFF;
 
 function updateStatus() {
     const el = document.getElementById('step-info');
@@ -725,7 +732,7 @@ function animateCameraToView(camData, onComplete) {
     const endPos    = new THREE.Vector3(camData.position.x, camData.position.y, camData.position.z);
     const endTarget = new THREE.Vector3(camData.target.x,   camData.target.y,   camData.target.z);
     const startZoom = camera.zoom;
-    const endZoom   = (camData.zoom != null) ? camData.zoom : startZoom;
+    const endZoom   = (camData.zoom != null) ? camData.zoom * zoomCoeff : startZoom;
     const EPS = 1e-6;
     if (startPos.distanceToSquared(endPos) < EPS && startTarget.distanceToSquared(endTarget) < EPS && Math.abs(startZoom - endZoom) < EPS) {
         if (onComplete) onComplete(); return;
@@ -932,6 +939,10 @@ document.getElementById('chk-loop').addEventListener('change', function() {
 });
 document.getElementById('chk-camera').addEventListener('change', function() {
     cameraEnabled = this.checked;
+});
+document.getElementById('zoom-coeff').addEventListener('input', function() {
+    const v = parseFloat(this.value);
+    if (!isNaN(v) && v >= 0.1 && v <= 5) zoomCoeff = v;
 });
 document.getElementById('chk-fullscreen').addEventListener('change', function() {
     if (this.checked) {
@@ -1216,6 +1227,7 @@ export function exportToHTMLObfuscated(loadedModels, assemblyGui, viewProp, asse
             overwrite:   assemblyGui.animationOverwrite,
             loop:        assemblyGui.animationLoop,
             camera:      assemblyGui.animationCamera,
+            zoomCoeff:   assemblyGui.zoomCoeff,
         };
 
         const sectionSettings = {
@@ -1331,6 +1343,7 @@ export function exportToHTMLObfuscatedDraco(loadedModels, assemblyGui, viewProp,
             overwrite:   assemblyGui.animationOverwrite,
             loop:        assemblyGui.animationLoop,
             camera:      assemblyGui.animationCamera,
+            zoomCoeff:   assemblyGui.zoomCoeff,
         };
 
         const sectionSettings = {
@@ -1386,6 +1399,7 @@ function generateObfuscatedHTML(glbBase64, animSettings, sectionSettings, dracoD
         'sld-py': '_s5', 'num-py': '_s6',
         'sld-pz': '_s7', 'num-pz': '_s8',
         'btn-sec-reset': '_s9',
+        'zoom-coeff': '_zc',
     };
     const classMap = { 'row': '_r', 'chk-label': '_cl', 'sec-row': '_sr', 'sec-axis': '_sx' };
 
@@ -1460,6 +1474,7 @@ function generateObfuscatedHTML(glbBase64, animSettings, sectionSettings, dracoD
         `<div id="_e">` +
         `<div class="_r"><button id="_1">&#x23EE; Start</button><button id="_2">Finish &#x23ED;</button><button id="_5">&#x23EA; Anim</button><button id="_6">Anim &#x23E9;</button></div>` +
         `<div class="_r"><button id="_3">&#x25C0; Step</button><button id="_4">Step &#x25B6;</button><label class="_cl"><input type="checkbox" id="_7"${animSettings.loop ? ' checked' : ''}> &#x221E; Loop</label><label class="_cl"><input type="checkbox" id="_9"${animSettings.camera ? ' checked' : ''}> &#x1F3A5; Cam</label><label class="_cl"><input type="checkbox" id="_8"> &#x26F6; Full</label></div>` +
+        `<div class="_r"><label class="_cl">&#x1F50D; Zoom coeff: <input type="number" id="_zc" value="${animSettings.zoomCoeff}" min="0.1" max="5" step="0.05" style="width:60px"></label></div>` +
         `</div>` +
         `<script id="_g" type="text/plain">${glbBase64}<\/script>` +
         `<script>${exportLibsBundle.replace(/<\/script/gi, '<\\/script')}<\/script>` +
