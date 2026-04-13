@@ -16,6 +16,7 @@ import { updateCrossSectionLines as updateCrossSectionLinesCore, updateSectionCr
 import { exportToHTML, exportToHTMLDraco, exportToHTMLObfuscated, exportToHTMLObfuscatedDraco } from './htmlExport.js';
 import { initOutliner, toggleOutliner, rebuildTree, highlightObject as outlinerHighlight, updateVisibilityIcon, isOutlinerOpen } from './sceneOutliner.js';
 import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales } from './measurementUtils.js';
+import { detectCircleCenterFromHit } from './circleDetectionUtils.js';
 
 // Proměnné globálního rozsahu----------------------------------------------------------------------------------------
 let container, stats;
@@ -195,6 +196,7 @@ const viewProp = {
     isGroupTransformActive: false,
     historyInfo: '– žádný záznam –',
     measureMode: false, // Point-to-point measurement mode
+    detectCircleCenter: false, // Snap measurement points to detected circle centers
     orientedSelectionBox: 'local',
 };
 
@@ -898,6 +900,7 @@ function addMainGui() {
                 else viewProp.isSelectAllowed = true;
                 render();
             }).listen();
+            analysisFolder.add(viewProp, 'detectCircleCenter').name('Detect circle center');
             analysisFolder.add({ fn() {
                 clearMeasurements(render);
             } }, 'fn').name('Clear measurements');
@@ -2902,7 +2905,16 @@ function render() {
         const mVisible = (renderer.localClippingEnabled && clipPlanes.length > 0)
             ? mIntersects.filter(hit => mIsFullyVisible(hit.object) && clipPlanes.some(plane => plane.distanceToPoint(hit.point) >= 0))
             : mIntersects.filter(hit => mIsFullyVisible(hit.object));
-        updateMeasurePreview(mVisible.length > 0 ? mVisible[0].point : null);
+        if (mVisible.length > 0) {
+            let previewPoint = mVisible[0].point;
+            if (viewProp.detectCircleCenter) {
+                const center = detectCircleCenterFromHit(mVisible[0]);
+                if (center) previewPoint = center;
+            }
+            updateMeasurePreview(previewPoint);
+        } else {
+            updateMeasurePreview(null);
+        }
     } else {
         updateMeasurePreview(null);
     }
@@ -2963,7 +2975,12 @@ function onClick( event ) {
             ? intersects.filter(hit => isFullyVisible(hit.object) && clipPlanes.some(plane => plane.distanceToPoint(hit.point) >= 0))
             : intersects.filter(hit => isFullyVisible(hit.object));
         if (visibleIntersects.length > 0) {
-            addMeasurePoint(visibleIntersects[0].point, render);
+            let point = visibleIntersects[0].point;
+            if (viewProp.detectCircleCenter) {
+                const center = detectCircleCenterFromHit(visibleIntersects[0]);
+                if (center) point = center;
+            }
+            addMeasurePoint(point, render);
         }
         return;
     }
