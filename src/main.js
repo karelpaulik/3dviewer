@@ -7,6 +7,7 @@ import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+import { CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer.js';
 
 //import { GUI } from 'dat.gui';
 import { GUI } from 'lil-gui';
@@ -14,10 +15,12 @@ import ZipLoader from 'zip-loader';
 import { updateCrossSectionLines as updateCrossSectionLinesCore, updateSectionCrossLines as updateSectionCrossLinesCore } from './crossSectionUtils.js';
 import { exportToHTML, exportToHTMLDraco, exportToHTMLObfuscated, exportToHTMLObfuscatedDraco } from './htmlExport.js';
 import { initOutliner, toggleOutliner, rebuildTree, highlightObject as outlinerHighlight, updateVisibilityIcon, isOutlinerOpen } from './sceneOutliner.js';
+import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales } from './measurementUtils.js';
 
 // Proměnné globálního rozsahu----------------------------------------------------------------------------------------
 let container, stats;
-let camera, cameraTarget, scene, renderer;			
+let camera, cameraTarget, scene, renderer;
+let css2DRenderer;			
 
 const clipPlanes = [];		
 let crossSectionLines = null; // Pro uchování průřezových čar
@@ -191,6 +194,8 @@ const viewProp = {
     multiSelectBoxPadding: 3, // Rozšíření PaddedBoxHelperu pro multiselect (world-units)
     isGroupTransformActive: false,
     historyInfo: '– žádný záznam –',
+    measureMode: false, // Point-to-point measurement mode
+    orientedSelectionBox: 'local',
 };
 
 const toolbarDefaults = {
@@ -233,32 +238,6 @@ if (import.meta.env.DEV) {
     window.lastSelectedObject = lastSelectedObject;
 }
 
-// Inicializace--------------------------------------------------------------------------------------------------------
-isTouchScreen = isTouchDevice();
-
-init();
-render();
-
-// Initialize scene outliner
-outlinerPanelEl = initOutliner({
-    onSelect: (obj) => selectObject(obj),
-    onToggleVisibility: (obj) => {
-        if (obj.visible) {
-            hideObject(obj);
-        } else {
-            // Show a hidden object
-            obj.visible = true;
-            const hi = hiddenObjects.indexOf(obj);
-            if (hi !== -1) hiddenObjects.splice(hi, 1);
-            render();
-        }
-        updateVisibilityIcon(obj);
-    }
-});
-
-//initLoad();
-
-// Funkce----------------------------------------------------------------------------------------------------------------
 
 /**
  * PaddedBoxHelper – stejné chování jako THREE.BoxHelper, ale s nastavitelným
@@ -286,10 +265,37 @@ class PaddedBoxHelper extends THREE.LineSegments {
     update(object) {
         if (object !== undefined) this.object = object;
         if (this.object === undefined) return;
-        const box = new THREE.Box3().setFromObject(this.object);
-        if (box.isEmpty()) return;
-        if (this.padding !== 0) box.expandByScalar(this.padding);
-        const { min, max } = box;
+
+        const min = new THREE.Vector3(Infinity, Infinity, Infinity);
+        const max = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
+        const v = new THREE.Vector3();
+
+        if (viewProp.orientedSelectionBox === 'local') {
+            // Compute bounding box from vertices in the object's local space (OBB)
+            const invMatrix = new THREE.Matrix4().copy(this.object.matrixWorld).invert();
+            this.object.traverse(child => {
+                if (child.geometry && child.geometry.attributes.position) {
+                    const pos = child.geometry.attributes.position;
+                    const toLocal = new THREE.Matrix4().multiplyMatrices(invMatrix, child.matrixWorld);
+                    for (let i = 0; i < pos.count; i++) {
+                        v.fromBufferAttribute(pos, i).applyMatrix4(toLocal);
+                        min.min(v); max.max(v);
+                    }
+                }
+            });
+        } else {
+            // World-space AABB
+            const box = new THREE.Box3().setFromObject(this.object);
+            min.copy(box.min); max.copy(box.max);
+        }
+
+        if (min.x === Infinity) return;
+
+        if (this.padding !== 0) {
+            min.addScalar(-this.padding);
+            max.addScalar(this.padding);
+        }
+
         const arr = this.geometry.attributes.position.array;
         arr[ 0]=max.x; arr[ 1]=max.y; arr[ 2]=max.z;
         arr[ 3]=min.x; arr[ 4]=max.y; arr[ 5]=max.z;
@@ -301,6 +307,13 @@ class PaddedBoxHelper extends THREE.LineSegments {
         arr[21]=max.x; arr[22]=min.y; arr[23]=min.z;
         this.geometry.attributes.position.needsUpdate = true;
         this.geometry.computeBoundingSphere();
+
+        // Local mode: orient helper with object; World mode: identity matrix
+        if (viewProp.orientedSelectionBox === 'local') {
+            this.matrix.copy(this.object.matrixWorld);
+        } else {
+            this.matrix.identity();
+        }
     }
 
     setFromObject(object) {
@@ -314,6 +327,33 @@ class PaddedBoxHelper extends THREE.LineSegments {
         this.material.dispose();
     }
 }
+
+// Inicializace--------------------------------------------------------------------------------------------------------
+isTouchScreen = isTouchDevice();
+
+init();
+render();
+
+// Initialize scene outliner
+outlinerPanelEl = initOutliner({
+    onSelect: (obj) => selectObject(obj),
+    onToggleVisibility: (obj) => {
+        if (obj.visible) {
+            hideObject(obj);
+        } else {
+            // Show a hidden object
+            obj.visible = true;
+            const hi = hiddenObjects.indexOf(obj);
+            if (hi !== -1) hiddenObjects.splice(hi, 1);
+            render();
+        }
+        updateVisibilityIcon(obj);
+    }
+});
+
+//initLoad();
+
+// Funkce----------------------------------------------------------------------------------------------------------------
 
 function registerGuiPanel(name, guiInstance) {
     guiInstance.domElement.style.display = 'none';
@@ -375,6 +415,14 @@ function init() {
     // });
 
     container.appendChild( renderer.domElement );
+
+    // CSS2DRenderer for measurement labels
+    css2DRenderer = new CSS2DRenderer();
+    css2DRenderer.setSize(window.innerWidth, window.innerHeight);
+    css2DRenderer.domElement.style.position = 'absolute';
+    css2DRenderer.domElement.style.top = '0px';
+    css2DRenderer.domElement.style.pointerEvents = 'none';
+    container.appendChild(css2DRenderer.domElement);
     
     //currentCamera
     const aspect = window.innerWidth / window.innerHeight;
@@ -508,7 +556,7 @@ function init() {
     } );	
     
 
-    selectionHelper = new THREE.BoxHelper(new THREE.Mesh(), 0xffff00);
+    selectionHelper = new PaddedBoxHelper(new THREE.Mesh(), 0xffff00, 0);
     selectionHelper.visible = false;
     scene.add(selectionHelper);
     
@@ -678,6 +726,7 @@ function init() {
     addAssemblyGui();
     addHelpGui();
     applyToolbarPreferences(); // Apply initial toolbar CSS from viewProp defaults
+    initMeasurement(scene);
 } //End init 
 
 // Přepočítá frustum ortografické kamery podle aktuálního obsahu meshObjects.
@@ -782,6 +831,7 @@ function addMainGui() {
         folderProp.add(viewProp, 'isSelectAllowed').name('Allow selection').listen();
         folderProp.add(viewProp, 'wireframe').name('Wireframe').onChange(function(value){ toggleWireframeAll(value); }).listen();
         folderProp.add(viewProp, 'cadSelection', ['CAD', 'Detailed']).name('Selection').listen();
+        folderProp.add(viewProp, 'orientedSelectionBox', ['local', 'world']).name('Selection box').onChange(function(){ render(); }).listen();
         folderProp.addColor(viewProp, 'backgroundColor').name('Background').onChange(function(value){ scene.background = new THREE.Color(value); render(); });
         //folderProp.add(viewProp, 'perspCam').name('Persp. camera').onChange(function(value){setCamera(); render(); });
         const sectionFolder = folderProp.addFolder("Section view");   
@@ -840,6 +890,18 @@ function addMainGui() {
                 applyToolbarPreferences();
             } }, 'fn').name('Set to default');
             toolbarPrefFolder.close();
+
+        const analysisFolder = folderProp.addFolder('Analysis');
+            analysisFolder.add(viewProp, 'measureMode').name('Measure (point-to-point)').onChange(function(value) {
+                setMeasureActive(value);
+                if (value) viewProp.isSelectAllowed = false;
+                else viewProp.isSelectAllowed = true;
+                render();
+            }).listen();
+            analysisFolder.add({ fn() {
+                clearMeasurements(render);
+            } }, 'fn').name('Clear measurements');
+            analysisFolder.close();
 
     // Když by toto nebylo, tak při ukončení fullscreenu escapem, by "fulscreen" zůstalo zartřené. Funkčně by se moc nestalo.
     document.addEventListener('fullscreenchange', function(){
@@ -2636,6 +2698,7 @@ function onWindowResize() {
     
     currentCamera.updateProjectionMatrix();
     renderer.setSize( window.innerWidth, window.innerHeight );
+    if (css2DRenderer) css2DRenderer.setSize(window.innerWidth, window.innerHeight);
     render();
 }
 
@@ -2830,11 +2893,27 @@ function render() {
         clearHighlight();
         INTERSECTED = null;
     }
+
+    // Measurement hover preview – raycast for point preview when in measure mode
+    if (viewProp.measureMode && isMeasureActive() && !isMouseOverGui && !isMouseDown) {
+        raycaster.setFromCamera(mouse, currentCamera);
+        const mIntersects = raycaster.intersectObjects(meshObjects);
+        const mIsFullyVisible = (obj) => { let o = obj; while (o) { if (!o.visible) return false; o = o.parent; } return true; };
+        const mVisible = (renderer.localClippingEnabled && clipPlanes.length > 0)
+            ? mIntersects.filter(hit => mIsFullyVisible(hit.object) && clipPlanes.some(plane => plane.distanceToPoint(hit.point) >= 0))
+            : mIntersects.filter(hit => mIsFullyVisible(hit.object));
+        updateMeasurePreview(mVisible.length > 0 ? mVisible[0].point : null);
+    } else {
+        updateMeasurePreview(null);
+    }
     
     // Pokud se objekty ve scéně hýbou, odkomentuj řádek níže pro plynulý rámeček:
     // if (selectionHelper && selectionHelper.visible) selectionHelper.update();
 
+    updateMarkerScales(currentCamera);
+
     renderer.render(scene, currentCamera);
+    if (css2DRenderer) css2DRenderer.render(scene, currentCamera);
 }
 
 
@@ -2868,6 +2947,27 @@ function onClick( event ) {
     if (elAtClick && elAtClick.closest('.ctx-menu')) {
         return;
     }
+
+    // --- Measurement mode ---
+    if (viewProp.measureMode && isMeasureActive()) {
+        // Umožníme drag-detekci i v měřicím režimu
+        mouseUpPos.x = event.clientX;
+        mouseUpPos.y = event.clientY;
+        const dragDistance = mouseDownPos.distanceTo(mouseUpPos);
+        if (dragDistance > 3) return;
+
+        raycaster.setFromCamera(mouse, currentCamera);
+        const intersects = raycaster.intersectObjects(meshObjects);
+        const isFullyVisible = (obj) => { let o = obj; while (o) { if (!o.visible) return false; o = o.parent; } return true; };
+        const visibleIntersects = (renderer.localClippingEnabled && clipPlanes.length > 0)
+            ? intersects.filter(hit => isFullyVisible(hit.object) && clipPlanes.some(plane => plane.distanceToPoint(hit.point) >= 0))
+            : intersects.filter(hit => isFullyVisible(hit.object));
+        if (visibleIntersects.length > 0) {
+            addMeasurePoint(visibleIntersects[0].point, render);
+        }
+        return;
+    }
+
     // Pokud je selekce zakázána v GUI, ignorujeme click
     if (!viewProp.isSelectAllowed) return;
     if (viewProp.isGroupTransformActive) return;
