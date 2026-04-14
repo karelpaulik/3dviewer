@@ -224,7 +224,11 @@ const extent = {
     
 const part = {
     color: "#888888",
+    bbSize: "",
+    showBBox: false,
 };
+let bbHelper = null; // Dedicated PaddedBoxHelper for bounding box display toggle
+let bbAxesHelper = null; // AxesHelper shown together with bbHelper
 
 // Možnost zobrazení následujících objektů v konzoli pouze v režimu "npx vite"
 if (import.meta.env.DEV) {
@@ -956,7 +960,38 @@ function addMainGui() {
             snapFolder.add(viewProp, 'snapScale', 0.01, 2, 0.01).name('Scale').onChange(function() { applySnapSettings(); }).listen();
             snapFolder.close();
     registerGuiPanel('Edit', editGui);
-}	
+}
+
+/** Compute bounding box dimensions of obj respecting orientedSelectionBox setting and update part.bbSize */
+function updateBBoxSize(obj) {
+    const min = new THREE.Vector3(Infinity, Infinity, Infinity);
+    const max = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
+    const v = new THREE.Vector3();
+
+    if (viewProp.orientedSelectionBox === 'local') {
+        const invMatrix = new THREE.Matrix4().copy(obj.matrixWorld).invert();
+        obj.traverse(child => {
+            if (child.geometry && child.geometry.attributes.position) {
+                const pos = child.geometry.attributes.position;
+                const toLocal = new THREE.Matrix4().multiplyMatrices(invMatrix, child.matrixWorld);
+                for (let i = 0; i < pos.count; i++) {
+                    v.fromBufferAttribute(pos, i).applyMatrix4(toLocal);
+                    min.min(v); max.max(v);
+                }
+            }
+        });
+    } else {
+        const box = new THREE.Box3().setFromObject(obj);
+        min.copy(box.min); max.copy(box.max);
+    }
+
+    if (min.x === Infinity) {
+        part.bbSize = '–';
+        return;
+    }
+    const size = new THREE.Vector3().subVectors(max, min);
+    part.bbSize = size.x.toFixed(2) + ' × ' + size.y.toFixed(2) + ' × ' + size.z.toFixed(2);
+}
 
 function refreshSelectedObjGui(obj) {
     if (selectedFolder) {
@@ -993,6 +1028,69 @@ function refreshSelectedObjGui(obj) {
     applyToolbarPreferences(); // Apply current toolbar CSS to the new Selected panel
     selectedFolder.add(obj, 'name').name('Name').listen();
     selectedFolder.addColor(part, 'color').name('Specif. color').onChange(function(value){ changeColor(obj, value); });
+
+    // Bounding box dimensions text
+    updateBBoxSize(obj);
+    selectedFolder.add(part, 'bbSize').name('Bounding box').disable().listen();
+
+    // Toggle to show/hide bounding box wireframe
+    part.showBBox = false;
+    selectedFolder.add(part, 'showBBox').name('Show BBox').onChange(function(value) {
+        if (value && lastSelectedObject) {
+            if (!bbHelper) {
+                bbHelper = new PaddedBoxHelper(lastSelectedObject, 0x00ff00, 0);
+                scene.add(bbHelper);
+            } else {
+                bbHelper.setFromObject(lastSelectedObject);
+            }
+            bbHelper.visible = true;
+
+            // Compute bbox size to determine axes helper length
+            const bMin = new THREE.Vector3(Infinity, Infinity, Infinity);
+            const bMax = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
+            const bv = new THREE.Vector3();
+            if (viewProp.orientedSelectionBox === 'local') {
+                const inv = new THREE.Matrix4().copy(lastSelectedObject.matrixWorld).invert();
+                lastSelectedObject.traverse(ch => {
+                    if (ch.geometry && ch.geometry.attributes.position) {
+                        const pos = ch.geometry.attributes.position;
+                        const toL = new THREE.Matrix4().multiplyMatrices(inv, ch.matrixWorld);
+                        for (let i = 0; i < pos.count; i++) { bv.fromBufferAttribute(pos, i).applyMatrix4(toL); bMin.min(bv); bMax.max(bv); }
+                    }
+                });
+            } else {
+                const box = new THREE.Box3().setFromObject(lastSelectedObject);
+                bMin.copy(box.min); bMax.copy(box.max);
+            }
+            const bSize = new THREE.Vector3().subVectors(bMax, bMin);
+            const axLen = Math.max(bSize.x, bSize.y, bSize.z) * 0.5;
+            const axOffset = new THREE.Vector3(
+                -bSize.x * 0.1,
+                -bSize.y * 0.1,
+                -bSize.z * 0.1
+            );
+            const axOrigin = new THREE.Vector3().copy(bMin).add(axOffset);
+
+            // Remove old axes helper
+            if (bbAxesHelper) { scene.remove(bbAxesHelper); bbAxesHelper.dispose(); bbAxesHelper = null; }
+            bbAxesHelper = new THREE.AxesHelper(axLen);
+            if (viewProp.orientedSelectionBox === 'local') {
+                // Position offset outside bbox min in object's local space, then apply object's world matrix
+                bbAxesHelper.matrixAutoUpdate = false;
+                const m = new THREE.Matrix4().makeTranslation(axOrigin.x, axOrigin.y, axOrigin.z);
+                bbAxesHelper.matrix.multiplyMatrices(lastSelectedObject.matrixWorld, m);
+            } else {
+                bbAxesHelper.position.copy(axOrigin);
+            }
+            scene.add(bbAxesHelper);
+            bbAxesHelper.visible = true;
+        } else {
+            if (bbHelper) bbHelper.visible = false;
+            if (bbAxesHelper) { bbAxesHelper.visible = false; }
+        }
+        render();
+    });
+
     selectedFolder.add({ fn() { if (lastSelectedObject) changeColor(lastSelectedObject); } }, 'fn').name('Random color');
     selectedFolder.add({ fn() { removeModel(lastSelectedObject); } }, 'fn').name('Remove Object');
     selectedFolder.add({ fn() { if (lastSelectedObject) flattenHierarchy(lastSelectedObject); } }, 'fn').name('Flatten (remove node, keep children)');
@@ -2873,6 +2971,15 @@ function deselectObject() {
     lastSelectedMeshes.forEach(child => applyEmissive(child, 0x000000));
 
     lastSelectedMeshes.length = 0; // empty the array
+
+    // Hide bounding box helper on deselect
+    part.showBBox = false;
+    if (bbHelper) {
+        bbHelper.visible = false;
+    }
+    if (bbAxesHelper) {
+        bbAxesHelper.visible = false;
+    }
 
     lastSelectedObject = null;
     highlightObject(null); // Zrušení zvýraznění v outlineru
