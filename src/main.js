@@ -8,6 +8,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer.js';
+import { ViewHelper } from 'three/addons/helpers/ViewHelper.js';
 
 //import { GUI } from 'dat.gui';
 import { GUI } from 'lil-gui';
@@ -21,7 +22,8 @@ import { detectCircleCenterFromHit } from './circleDetectionUtils.js';
 // Proměnné globálního rozsahu----------------------------------------------------------------------------------------
 let container, stats;
 let camera, cameraTarget, scene, renderer;
-let css2DRenderer;			
+let css2DRenderer;
+let viewHelper;			
 
 const clipPlanes = [];		
 let crossSectionLines = null; // Pro uchování průřezových čar
@@ -467,6 +469,10 @@ function init() {
     orbitControls = new OrbitControls( currentCamera, renderer.domElement );
     orbitControls.update();
     orbitControls.addEventListener( 'change', render ); // use if there is no animation loop
+
+    // ViewHelper – orientation gizmo in the bottom-right corner
+    viewHelper = new ViewHelper( currentCamera, renderer.domElement );
+    viewHelper.center = orbitControls.target;
 
     transformControls = new TransformControls( currentCamera, renderer.domElement );
     transformControls.setSize( 0.5 );	
@@ -3089,7 +3095,21 @@ function render() {
     updateMarkerScales(currentCamera);
 
     renderer.render(scene, currentCamera);
+    if (viewHelper) {
+        renderer.autoClear = false;
+        viewHelper.render(renderer);
+        renderer.autoClear = true;
+    }
     if (css2DRenderer) css2DRenderer.render(scene, currentCamera);
+}
+
+// ViewHelper animation loop (runs only while the gizmo is animating a view transition)
+const _vhClock = new THREE.Clock();
+function viewHelperAnimate() {
+    if (!viewHelper || !viewHelper.animating) return;
+    requestAnimationFrame(viewHelperAnimate);
+    viewHelper.update(_vhClock.getDelta());
+    render();
 }
 
 
@@ -3114,6 +3134,12 @@ function onMouseUp( event ) {
 }
 
 function onClick( event ) {		
+    // ViewHelper – intercept clicks on the orientation gizmo
+    if (viewHelper && viewHelper.handleClick(event)) {
+        viewHelperAnimate();
+        return;
+    }
+
     // Pokud je kliknuto na GUI prvek, ignorujeme raycast pro selekci
     if (isMouseOnGUI(event)) {
         return;
