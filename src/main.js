@@ -1158,6 +1158,33 @@ function buildMaterialFolder(meshObj, parentFolder) {
             if (mat[prop] && mat[prop].isTexture) {
                 const texInfo = { [prop]: mat[prop].name || mat[prop].uuid || '(texture)' };
                 mf.add(texInfo, prop).name(prop).disable();
+                const viewBtn = { fn: function() {
+                    const tex = mat[prop];
+                    if (!tex || !tex.image) return;
+                    const canvas = document.createElement('canvas');
+                    canvas.width = tex.image.width;
+                    canvas.height = tex.image.height;
+                    canvas.getContext('2d').drawImage(tex.image, 0, 0);
+                    const mimeType = (tex.userData && tex.userData.mimeType) || 'image/png';
+                    const win = window.open('', '_blank');
+                    if (win) win.document.write(`<html><body style="margin:0;background:#222"><img src="${canvas.toDataURL(mimeType)}" style="max-width:100%;display:block"></body></html>`);
+                }};
+                mf.add(viewBtn, 'fn').name('👁 view ' + prop);
+                const dlBtn = { fn: function() {
+                    const tex = mat[prop];
+                    if (!tex || !tex.image) return;
+                    const canvas = document.createElement('canvas');
+                    canvas.width = tex.image.width;
+                    canvas.height = tex.image.height;
+                    canvas.getContext('2d').drawImage(tex.image, 0, 0);
+                    const mimeType = (tex.userData && tex.userData.mimeType) || 'image/png';
+                    const ext = mimeType.split('/')[1] || 'png';
+                    const a = document.createElement('a');
+                    a.href = canvas.toDataURL(mimeType);
+                    a.download = (tex.name || prop) + '.' + ext;
+                    a.click();
+                }};
+                mf.add(dlBtn, 'fn').name('⬇ download ' + prop);
                 const removeBtn = { fn: function() {
                     mat[prop] = null;
                     mat.needsUpdate = true;
@@ -1167,6 +1194,36 @@ function buildMaterialFolder(meshObj, parentFolder) {
                     buildMaterialFolder(meshObj, parentFolder);
                 }};
                 mf.add(removeBtn, 'fn').name('✕ remove ' + prop);
+                const uploadBtn = { fn: function() {
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.accept = 'image/*';
+                    input.onchange = function(e) {
+                        const file = e.target.files[0];
+                        if (!file) return;
+                        const url = URL.createObjectURL(file);
+                        const loader = new THREE.TextureLoader();
+                        loader.load(url, function(newTex) {
+                            URL.revokeObjectURL(url);
+                            newTex.name = file.name;
+                            newTex.userData.mimeType = file.type;
+                            const oldTex = mat[prop];
+                            if (oldTex) {
+                                newTex.colorSpace = oldTex.colorSpace;
+                                newTex.wrapS = oldTex.wrapS;
+                                newTex.wrapT = oldTex.wrapT;
+                                newTex.flipY = oldTex.flipY;
+                            }
+                            mat[prop] = newTex;
+                            mat.needsUpdate = true;
+                            render();
+                            buildMaterialFolder(meshObj, parentFolder);
+                            buildMaterialFolder(meshObj, parentFolder);
+                        });
+                    };
+                    input.click();
+                }};
+                mf.add(uploadBtn, 'fn').name('📂 upload ' + prop);
             }
         });
 
