@@ -356,6 +356,7 @@ outlinerPanelEl = initOutliner({
             obj.visible = true;
             const hi = hiddenObjects.indexOf(obj);
             if (hi !== -1) hiddenObjects.splice(hi, 1);
+            if (viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render);
             render();
         }
         updateVisibilityIcon(obj);
@@ -2768,7 +2769,10 @@ function hideObject(part) {
         if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) {
             updateCrossSectionLines();
         }
-        
+
+        // Aktualizace solid section (skrytý objekt nesmí figurovat ve stencilu)
+        if (viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render);
+
         render();
     } catch(err) {
         console.log("Error: hideObject " + err.message);
@@ -2791,7 +2795,10 @@ function showHiddenObjects() {
         if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) {
             updateCrossSectionLines();
         }
-        
+
+        // Aktualizace solid section
+        if (viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render);
+
         render();
     } catch(err) {
         console.log("Error: showHiddenObjects " + err.message);
@@ -2824,7 +2831,10 @@ function toggleHiddenObjects() {
         if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) {
             updateCrossSectionLines();
         }
-        
+
+        // Aktualizace solid section
+        if (viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render);
+
         render();
     } catch(err) {
         console.log("Error: toggleHiddenObjects " + err.message);

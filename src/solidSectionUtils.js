@@ -14,6 +14,16 @@ let sharedCapGeo = null;
 //  Public API
 // =====================================================================
 
+/** Returns true only if the object and all its ancestors are visible. */
+function isEffectivelyVisible(obj) {
+    let o = obj;
+    while (o) {
+        if (!o.visible) return false;
+        o = o.parent;
+    }
+    return true;
+}
+
 /**
  * Build solid-section caps for the current clip-plane positions.
  */
@@ -22,7 +32,7 @@ export function computeSolidSection(scene, meshObjects, viewProp, renderFn) {
 
     const sceneBBox = new THREE.Box3();
     meshObjects.forEach(obj => {
-        if (obj.visible && !obj.isSectionMesh) sceneBBox.expandByObject(obj);
+        if (isEffectivelyVisible(obj) && !obj.isSectionMesh) sceneBBox.expandByObject(obj);
     });
     if (sceneBBox.isEmpty()) return;
 
@@ -52,7 +62,7 @@ export function computeSolidSection(scene, meshObjects, viewProp, renderFn) {
     ];
 
     const visibleMeshes = meshObjects.filter(
-        m => m.isMesh && m.visible && !m.isSectionMesh
+        m => m.isMesh && isEffectivelyVisible(m) && !m.isSectionMesh
     );
 
     buildCaps(scene, visibleMeshes, clipPlanes, constraintPlanes, capTransforms, viewProp.capColor);
@@ -141,8 +151,16 @@ function makeStencilMesh(mesh, clipPlane, side, stencilOp, renderOrder) {
     });
     const m = new THREE.Mesh(mesh.geometry, mat);
     m.matrixAutoUpdate = false;
+    m.frustumCulled = false;
     m.matrix.copy(mesh.matrixWorld);
     m.renderOrder = renderOrder;
+    // Keep matrixWorld in sync with the source mesh so that animations are reflected.
+    // We update matrixWorld directly because scene.updateMatrixWorld() runs before
+    // onBeforeRender, so updating m.matrix would be too late for the draw call.
+    m.onBeforeRender = function () {
+        mesh.updateWorldMatrix(true, false);
+        m.matrixWorld.copy(mesh.matrixWorld);
+    };
     return m;
 }
 
