@@ -18,6 +18,7 @@ import { exportToHTML, exportToHTMLDraco, exportToHTMLObfuscated, exportToHTMLOb
 import { initOutliner, toggleOutliner, rebuildTree, highlightObject as outlinerHighlight, updateVisibilityIcon, isOutlinerOpen } from './sceneOutliner.js';
 import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales } from './measurementUtils.js';
 import { detectCircleCenterFromHit } from './circleDetectionUtils.js';
+import { computeSolidSection, clearSolidSection } from './solidSectionUtils.js';
 
 // Proměnné globálního rozsahu----------------------------------------------------------------------------------------
 let container, stats;
@@ -182,6 +183,8 @@ const viewProp = {
     showSectionMesh: false, // Toggle pro zobrazení/skrytí sectionMesh
     autoUpdateSectionLines: false, // Automaticky aktualizovat průřezové čáry při změnách scény
     sectionCrossLines: false, // Průřezové čáry vázané na section view clip planes
+    solidSection: false, // Solid (capped) section cut
+    capColor: '#00ffff', // Color of the solid section cap faces
     transformSpace: true,  // true = world, false = local
     snapEnabled: true,     // true = snap vždy aktivní, false = snap jen při Shift
     snapTranslation: 10,   // krok translace
@@ -215,7 +218,7 @@ const toolbarInitDefaults = { ...toolbarDefaults };
 const extent = {
     pn: -1000,
     pp: +1000,
-    pStep: 10,
+    pStep: 0.1,
     rn: -3.1416,
     rp: 3.1416,
     rStep: 0.035,
@@ -404,7 +407,7 @@ function init() {
     document.body.appendChild( container );
 
     //renderer
-    renderer = new THREE.WebGLRenderer( { antialias: true } );
+    renderer = new THREE.WebGLRenderer( { antialias: true, stencil: true } );
     renderer.setPixelRatio( window.devicePixelRatio );
     renderer.setSize( window.innerWidth, window.innerHeight );
     //renderer.outputEncoding = THREE.sRGBEncoding;	Toto bylo pro starší threejs
@@ -850,11 +853,23 @@ function addMainGui() {
             sectionFolder.add(viewProp, 'section').name('Section').onChange(function(value){renderer.localClippingEnabled = value; updateSectionCrossLines(); render(); });
             sectionFolder.add(viewProp, 'sectionCrossLines').name('Cross Section Lines').onChange(function(value){updateSectionCrossLines(); render(); });
             sectionFolder.add(viewProp, 'showSectionMesh').name('Show Section Mesh').onChange(function(value){toggleSectionMeshAll(); });
-            sectionFolder.add(viewProp, 'px', extent.pn, extent.pp, extent.pStep).name('Pos. x').onChange(function(value){clipPlanes[0].constant=value; if(viewProp.sectionCrossLines) updateSectionCrossLines(); render(); }).listen();
-            sectionFolder.add(viewProp, 'py', extent.pn, extent.pp, extent.pStep).name('Pos. y').onChange(function(value){clipPlanes[1].constant=value; if(viewProp.sectionCrossLines) updateSectionCrossLines(); render(); }).listen();
-            sectionFolder.add(viewProp, 'pz', extent.pn, extent.pp, extent.pStep).name('Pos. z').onChange(function(value){clipPlanes[2].constant=value; if(viewProp.sectionCrossLines) updateSectionCrossLines(); render(); }).listen();
+            sectionFolder.add(viewProp, 'solidSection').name('Solid Section').onChange(function(value) {
+                if (value) {
+                    renderer.localClippingEnabled = true;
+                    viewProp.section = true;
+                    computeSolidSection(scene, meshObjects, viewProp, render);
+                } else {
+                    clearSolidSection(scene, render);
+                }
+            }).listen();
+            sectionFolder.addColor(viewProp, 'capColor').name('Cap Color').onChange(function() {
+                if (viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render);
+            });
+            sectionFolder.add(viewProp, 'px', extent.pn, extent.pp, extent.pStep).name('Pos. x').onChange(function(value){clipPlanes[0].constant=value; if(viewProp.sectionCrossLines) updateSectionCrossLines(); if(viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render); render(); }).listen();
+            sectionFolder.add(viewProp, 'py', extent.pn, extent.pp, extent.pStep).name('Pos. y').onChange(function(value){clipPlanes[1].constant=value; if(viewProp.sectionCrossLines) updateSectionCrossLines(); if(viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render); render(); }).listen();
+            sectionFolder.add(viewProp, 'pz', extent.pn, extent.pp, extent.pStep).name('Pos. z').onChange(function(value){clipPlanes[2].constant=value; if(viewProp.sectionCrossLines) updateSectionCrossLines(); if(viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render); render(); }).listen();
             sectionFolder.add({ fn: resetSection }, 'fn').name('Reset section');
-            
+
             const crossSectionFolder = sectionFolder.addFolder("Cross Section Lines");
             crossSectionFolder.add(viewProp, 'showCrossSection').name('Show Lines').onChange(function(value){updateCrossSectionLines(); render(); });
             crossSectionFolder.add(viewProp, 'autoUpdateSectionLines').name('Update Section Lines');
