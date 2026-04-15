@@ -852,6 +852,7 @@ function addMainGui() {
         const sectionFolder = folderProp.addFolder("Section view");   
             sectionFolder.add(viewProp, 'section').name('Section').onChange(function(value){renderer.localClippingEnabled = value; updateSectionCrossLines(); render(); });
             sectionFolder.add(viewProp, 'sectionCrossLines').name('Cross Section Lines').onChange(function(value){updateSectionCrossLines(); render(); });
+            sectionFolder.addColor(viewProp, 'crossSectionColor').name('Cross Lines Color').onChange(function(value){ if(viewProp.sectionCrossLines) { updateSectionCrossLines(); render(); } });
             sectionFolder.add(viewProp, 'showSectionMesh').name('Show Section Mesh').onChange(function(value){toggleSectionMeshAll(); });
             sectionFolder.add(viewProp, 'solidSection').name('Solid Section').onChange(function(value) {
                 if (value) {
