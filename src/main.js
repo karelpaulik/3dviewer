@@ -148,7 +148,11 @@ let isTouchScreen;
 
 let selectionHelper;
 let axesHelperObject = null; // Reference na axes helper objekt ve scéně
-let raycastArrowHelper = null; // ArrowHelper pro vizualizaci raycasting paprsku
+let cameraProspHelperObject = null; // Reference na camera helper objekt ve scéně (persp)
+let cameraOrthoHelperObject = null; // Reference na camera helper objekt ve scéně (ortho)
+let raycastArrowHelper = null;
+const sceneLights = []; // Reference na světla scény (hemisféra + 2x directional)
+const lightHelperObjects = []; // LightHelper objekty // ArrowHelper pro vizualizaci raycasting paprsku
 let isTransformDragging = false;
 let orthoHalfSize = 500; // Polovelikost frustumu ortografické kamery v world units (dynamicky přepočítána po načtení modelu)
 let previousTransformState = null; // Uložení předchozího stavu pro undo
@@ -194,6 +198,10 @@ const viewProp = {
     wireframe: false,       // Wireframe přepínač
     showAxesHelper: false, // Zobrazit / skrýt axes helper
     axesHelperSize: 100,   // Velikost axes helperu
+    showCameraHelper: false, // Zobrazit / skrýt camera helper (frustum perspektivní kamery)
+    showCameraOrthoHelper: false, // Zobrazit / skrýt camera helper (frustum ortografické kamery)
+    showLightHelper: false, // Zobrazit / skrýt light helpery (hemisféra + directional světla)
+    lightHelperSize: 100,  // Velikost light helperů (0 = auto z rozsahu scény)
     showRaycastHelper: false, // Zobrazit / skrýt raycasting helper (ArrowHelper)
     raycastHelperSize: 20000,  // Délka paprsku raycasting helperu
     cadSelection: 'CAD', // CAD selection: 'CAD' = vybere pojmenovaného předka meshe, 'Detailed' = vybere mesh přímo
@@ -455,13 +463,18 @@ function init() {
     scene.background = new THREE.Color( 0x72645b );						
 
     //lights
-    scene.add( new THREE.HemisphereLight( 0x443333, 0x111122 ) );
-    addShadowedLight( 1, 1, 1, 0xffffff, 1.35 );
-    addShadowedLight( 0.5, 1, - 1, 0xffaa00, 1 );
+    const hemisLight = new THREE.HemisphereLight( 0x443333, 0x111122 );
+    scene.add( hemisLight );
+    sceneLights.push(hemisLight);
+    sceneLights.push(addShadowedLight( 100, 100, 100, 0xffffff, 1.35 ));
+    sceneLights.push(addShadowedLight( 50, 100, - 100, 0xffaa00, 1 ));
 
     // headlight - světlo z pohledu kamery
     const headlight = new THREE.DirectionalLight(0xffffff, 0.5);
+    headlight.name = 'headlight';
+    headlight.position.set(0, 100, 0); // 100 world units nad kamerou (v lokálním prostoru kamery)
     currentCamera.add(headlight); // Světlo bude svítit ze stejného místa jako oči uživatele
+    sceneLights.push(headlight);
     scene.add(currentCamera); // BEZ TOHOTO ŘÁDKU SVĚTLO NEBUDE SVÍTIT
     
     //clipPlanes
@@ -849,7 +862,7 @@ function addMainGui() {
         folderProp.add(viewProp, 'cadSelection', ['CAD', 'Detailed']).name('Selection').listen();
         folderProp.add(viewProp, 'orientedSelectionBox', ['local', 'world']).name('Selection box').onChange(function(){ render(); }).listen();
         folderProp.addColor(viewProp, 'backgroundColor').name('Background').onChange(function(value){ scene.background = new THREE.Color(value); render(); });
-        //folderProp.add(viewProp, 'perspCam').name('Persp. camera').onChange(function(value){setCamera(); render(); });
+        folderProp.add(viewProp, 'perspCam').name('Persp. camera').onChange(function(value){setCamera(); render(); });
         const sectionFolder = folderProp.addFolder("Section view");   
             sectionFolder.add(viewProp, 'section').name('Section').onChange(function(value){renderer.localClippingEnabled = value; updateSectionCrossLines(); render(); });
             sectionFolder.add(viewProp, 'sectionCrossLines').name('Cross Section Lines').onChange(function(value){updateSectionCrossLines(); render(); });
@@ -889,6 +902,10 @@ function addMainGui() {
         const helpersFolder = folderProp.addFolder("Helpers");
             helpersFolder.add(viewProp, 'showAxesHelper').name('axes').onChange(function() { updateAxesHelper(); }).listen();
             helpersFolder.add(viewProp, 'axesHelperSize', 1, 2000, 1).name('axes size').onChange(function() { updateAxesHelper(); }).listen();
+            helpersFolder.add(viewProp, 'showCameraHelper').name('camera persp').onChange(function() { updateCameraHelper(); }).listen();
+            helpersFolder.add(viewProp, 'showCameraOrthoHelper').name('camera ortho').onChange(function() { updateCameraHelper(); }).listen();
+            helpersFolder.add(viewProp, 'showLightHelper').name('lights').onChange(function() { updateLightHelper(); }).listen();
+            helpersFolder.add(viewProp, 'lightHelperSize', 1, 5000, 1).name('lights size').onChange(function() { updateLightHelper(); }).listen();
             helpersFolder.add(viewProp, 'showRaycastHelper').name('raycast').onChange(function() { if (!viewProp.showRaycastHelper && raycastArrowHelper) { scene.remove(raycastArrowHelper); raycastArrowHelper = null; render(); } }).listen();
             helpersFolder.add(viewProp, 'raycastHelperSize', 100, 100000, 100).name('raycast size').listen();
             helpersFolder.close();
@@ -2161,6 +2178,7 @@ function addShadowedLight( x, y, z, color, intensity ) {
     directionalLight.position.set( x, y, z );
     scene.add( directionalLight );
     directionalLight.castShadow = true;
+    return directionalLight;
 }
 
 function addAxesHelper(axesSize) {
@@ -2199,6 +2217,75 @@ function updateAxesHelper() {
     
     axesHelperObject = new THREE.AxesHelper(size);
     scene.add(axesHelperObject);
+    render();
+}
+
+function updateCameraHelper() {
+    if (cameraProspHelperObject) {
+        scene.remove(cameraProspHelperObject);
+        cameraProspHelperObject.dispose();
+        cameraProspHelperObject = null;
+    }
+    if (viewProp.showCameraHelper) {
+        cameraProspHelperObject = new THREE.CameraHelper(cameraPersp);
+        scene.add(cameraProspHelperObject);
+    }
+    if (cameraOrthoHelperObject) {
+        scene.remove(cameraOrthoHelperObject);
+        cameraOrthoHelperObject.dispose();
+        cameraOrthoHelperObject = null;
+    }
+    if (viewProp.showCameraOrthoHelper) {
+        cameraOrthoHelperObject = new THREE.CameraHelper(cameraOrtho);
+        scene.add(cameraOrthoHelperObject);
+    }
+    render();
+}
+
+function updateLightHelper() {
+    lightHelperObjects.forEach(h => { scene.remove(h); h.dispose(); });
+    lightHelperObjects.length = 0;
+    if (viewProp.showLightHelper) {
+        // Automaticky dopočítáme velikost z bounding boxu modelů, pokud je size <= 0
+        let size = viewProp.lightHelperSize;
+        if (!size || size <= 0) {
+            const box = new THREE.Box3();
+            meshObjects.forEach(obj => box.expandByObject(obj));
+            size = !box.isEmpty() ? Math.max(...box.getSize(new THREE.Vector3()).toArray()) * 0.3 : 100;
+            viewProp.lightHelperSize = Math.round(size);
+        }
+        console.group('💡 Scene lights');
+        sceneLights.forEach((light, i) => {
+            const type = light.type;
+            const pos = light.position;
+            const base = {
+                index: i,
+                type,
+                intensity: light.intensity,
+                color: '#' + light.color.getHexString(),
+                position: `(${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)})`,
+            };
+            if (light.isHemisphereLight) {
+                console.log({ ...base, groundColor: '#' + light.groundColor.getHexString() });
+            } else if (light.isDirectionalLight) {
+                const t = light.target.position;
+                console.log({ ...base, target: `(${t.x.toFixed(2)}, ${t.y.toFixed(2)}, ${t.z.toFixed(2)})`, castShadow: light.castShadow });
+            } else {
+                console.log(base);
+            }
+        });
+        console.groupEnd();
+
+        sceneLights.forEach(light => {
+            let h;
+            if (light.isHemisphereLight) {
+                h = new THREE.HemisphereLightHelper(light, size);
+            } else if (light.isDirectionalLight) {
+                h = new THREE.DirectionalLightHelper(light, size);
+            }
+            if (h) { scene.add(h); lightHelperObjects.push(h); }
+        });
+    }
     render();
 }
 
@@ -3119,6 +3206,10 @@ function render() {
     // if (selectionHelper && selectionHelper.visible) selectionHelper.update();
 
     updateMarkerScales(currentCamera);
+
+    if (cameraProspHelperObject) cameraProspHelperObject.update();
+    if (cameraOrthoHelperObject) cameraOrthoHelperObject.update();
+    lightHelperObjects.forEach(h => h.update());
 
     renderer.render(scene, currentCamera);
     if (viewHelper) {
