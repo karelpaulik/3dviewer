@@ -788,6 +788,24 @@ function recalibrateOrthoCamera() {
     console.log(`[recalibrateOrthoCamera] maxDim=${maxDim.toFixed(1)}, orthoHalfSize=${orthoHalfSize.toFixed(1)}, near=${cameraOrtho.near.toFixed(2)}, far=${cameraOrtho.far.toFixed(1)}`);
 }
 
+// Přepočítá near/far perspektivní kamery podle aktuálního obsahu meshObjects.
+function recalibratePerspCamera() {
+    const box = new THREE.Box3();
+    meshObjects.forEach(obj => box.expandByObject(obj));
+    if (box.isEmpty()) return;
+
+    const size = box.getSize(new THREE.Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z);
+
+    // near: dostatečně malý pro zoom dovnitř, ale ne nula (z-fighting)
+    cameraPersp.near = Math.max(0.1, maxDim * 0.01);
+    // far: vzdálenost kamery od středu je ~maxDim*4.3 (FOV 20°), plus průměr scény
+    cameraPersp.far  = maxDim * 20;
+    cameraPersp.updateProjectionMatrix();
+
+    console.log(`[recalibratePerspCamera] maxDim=${maxDim.toFixed(1)}, near=${cameraPersp.near.toFixed(2)}, far=${cameraPersp.far.toFixed(1)}`);
+}
+
 function applyToolbarPreferences() {
     // GUI panels – lil-gui CSS custom properties applied to ALL .lil-gui elements
     // (nested folders re-declare variables, so we must set on every level)
@@ -962,7 +980,6 @@ function addMainGui() {
     const fileGui = new GUI({ container: guiContainer, title: 'File' });
     fileGui.add({ fn() {
         loadGlbModel('./models/demo.glb', 'demo.glb', 0.001, true).then(() => {
-            recalibrateOrthoCamera();
             fitView();
         });
     } }, 'fn').name('Import demo GLB');
@@ -1544,7 +1561,6 @@ function initLoad() {
         switch ( fileExtension ) {
             case 'zip':      
                 loadModel(fileUrl, fileName, 0.001, true).then( (result) => {
-                    recalibrateOrthoCamera();
                     fitView();
                     console.log(`Model ${fileName} loaded successfully.`);
                 }).catch((error) => {
@@ -1554,7 +1570,6 @@ function initLoad() {
 
             case 'glb': 
                 loadGlbModel(fileUrl, fileName, 0.001, true).then( (result) => {
-                    recalibrateOrthoCamera();
                     fitView();
                     console.log(`Model ${fileName} loaded successfully.`);   
                 }).catch((error) => {
@@ -1572,7 +1587,6 @@ function initLoad() {
         
         //loadGlbModel('/models/1012053_l.glb','1012053_l.glb', 0.001, true).then( (result)=>{meshObjects.push( result )} );
         loadGlbModel('./models/1012053_l.glb','1012053_l.glb', 0.001, true).then( (result)=>{
-            recalibrateOrthoCamera();
             fitView();
         });
     }
@@ -2035,6 +2049,10 @@ function viewFromPoint(x, y, z) {
 }
 
 function fitView() {
+    // Přepočítáme frustum aktivní kamery (near/far) podle aktuální velikosti modelu
+        recalibrateOrthoCamera();
+        recalibratePerspCamera();
+
     // Výpočet ohraničujícího boxu všech objektů ve scéně
     let box = new THREE.Box3();
     
@@ -2228,6 +2246,7 @@ function updateCameraHelper() {
     }
     if (viewProp.showCameraHelper) {
         cameraProspHelperObject = new THREE.CameraHelper(cameraPersp);
+        cameraProspHelperObject.frustumCulled = false; // Zabránit předčasnému ořezu frustum cullingem
         scene.add(cameraProspHelperObject);
     }
     if (cameraOrthoHelperObject) {
@@ -2237,9 +2256,40 @@ function updateCameraHelper() {
     }
     if (viewProp.showCameraOrthoHelper) {
         cameraOrthoHelperObject = new THREE.CameraHelper(cameraOrtho);
+        cameraOrthoHelperObject.frustumCulled = false; // Zabránit předčasnému ořezu frustum cullingem
         scene.add(cameraOrthoHelperObject);
     }
+    // Rozšířit far aktivní kamery, aby frustum helper druhé kamery nebyl oříznutý
+    ensureCameraFarCoversHelpers();
     render();
+}
+
+// Pokud je zapnutý camera helper, rozšíří far aktivní kamery tak, aby pokryl celý frustum helperu.
+function ensureCameraFarCoversHelpers() {
+    const helperCameras = [];
+    if (viewProp.showCameraHelper) helperCameras.push(cameraPersp);
+    if (viewProp.showCameraOrthoHelper) helperCameras.push(cameraOrtho);
+    if (helperCameras.length === 0) return;
+
+    // Najdeme maximální vzdálenost far-bodu helperu od aktivní kamery
+    let maxDistSq = 0;
+    const camPos = currentCamera.position;
+    helperCameras.forEach(hCam => {
+        // Far body frustumu: pozice helperové kamery + směr * far
+        hCam.updateMatrixWorld(true);
+        const hPos = new THREE.Vector3().setFromMatrixPosition(hCam.matrixWorld);
+        const hDir = new THREE.Vector3(0, 0, -1).applyQuaternion(hCam.quaternion);
+        const farPoint = hPos.clone().add(hDir.multiplyScalar(hCam.far));
+        maxDistSq = Math.max(maxDistSq, camPos.distanceToSquared(farPoint));
+        // Také zkontrolujeme samotnou pozici helperové kamery
+        maxDistSq = Math.max(maxDistSq, camPos.distanceToSquared(hPos));
+    });
+
+    const neededFar = Math.sqrt(maxDistSq) * 1.1; // 10% rezerva
+    if (currentCamera.far < neededFar) {
+        currentCamera.far = neededFar;
+        currentCamera.updateProjectionMatrix();
+    }
 }
 
 function updateLightHelper() {
@@ -3211,6 +3261,9 @@ function render() {
     if (cameraOrthoHelperObject) cameraOrthoHelperObject.update();
     lightHelperObjects.forEach(h => h.update());
 
+    // Dynamicky rozšíří far aktivní kamery, pokud helper druhé kamery přesahuje frustum
+    if (cameraProspHelperObject || cameraOrthoHelperObject) ensureCameraFarCoversHelpers();
+
     renderer.render(scene, currentCamera);
     if (viewHelper) {
         renderer.autoClear = false;
@@ -3469,7 +3522,6 @@ function importGlbFile() {
         const url = URL.createObjectURL(file);
         loadGlbModel(url, file.name, 0.001, true).then(() => {
             URL.revokeObjectURL(url);
-            recalibrateOrthoCamera();
             fitView();
             console.log(`[Import] GLB "${file.name}" loaded successfully.`);
         }).catch(err => {
