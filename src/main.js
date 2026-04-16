@@ -60,6 +60,7 @@ let cameraAnimation = null;            // GSAP tween handle for camera animation
 let cameraAnimationFinalize = null;    // Snaps in-flight camera animation to its end state
 let assemblyStepsListFolder = null; // Dynamicky přebudovávaný subfolder seznamu kroků
 let _assemblyFolderRef = null;      // Reference na hlavní Assembly Workflow folder (pro rebuild)
+let lightsFolder = null; // Reference na Lights folder ve View panelu
 
 const assemblyGui = {
     stepInfo: '\u2013 no step \u2013',
@@ -472,7 +473,7 @@ function init() {
     // headlight - světlo z pohledu kamery
     const headlight = new THREE.DirectionalLight(0xffffff, 0.5);
     headlight.name = 'headlight';
-    headlight.position.set(0, 100, 0); // 100 world units nad kamerou (v lokálním prostoru kamery)
+    //headlight.position.set(0, 100, 0); // 100 world units nad kamerou (v lokálním prostoru kamery)
     currentCamera.add(headlight); // Světlo bude svítit ze stejného místa jako oči uživatele
     sceneLights.push(headlight);
     scene.add(currentCamera); // BEZ TOHOTO ŘÁDKU SVĚTLO NEBUDE SVÍTIT
@@ -601,6 +602,12 @@ function init() {
     window.addEventListener( 'keydown', function ( event ) {
         switch ( event.key ) {
             case 'Escape':
+                if (viewProp.measureMode) {
+                    viewProp.measureMode = false;
+                    setMeasureActive(false);
+                    viewProp.isSelectAllowed = true;
+                    render();
+                }
                 deselectObject();
                 selectionHistory.length = 0;
                 clearHistoryPreviewHelpers();
@@ -927,6 +934,9 @@ function addMainGui() {
             helpersFolder.add(viewProp, 'showRaycastHelper').name('raycast').onChange(function() { if (!viewProp.showRaycastHelper && raycastArrowHelper) { scene.remove(raycastArrowHelper); raycastArrowHelper = null; render(); } }).listen();
             helpersFolder.add(viewProp, 'raycastHelperSize', 100, 100000, 100).name('raycast size').listen();
             helpersFolder.close();
+        lightsFolder = folderProp.addFolder(`Lights (${sceneLights.length})`);
+            rebuildLightsFolder();
+            lightsFolder.close();
         const multiFolder = folderProp.addFolder("Group Selection");
             multiFolder.add(viewProp, 'isGroupTransformActive').name('Group transform active (*)').onChange(function(value) {
                 if (value) activateMultiSelect(); else deactivateMultiSelect();
@@ -2290,6 +2300,133 @@ function ensureCameraFarCoversHelpers() {
         currentCamera.far = neededFar;
         currentCamera.updateProjectionMatrix();
     }
+}
+
+function rebuildLightsFolder() {
+    if (!lightsFolder) return;
+    while (lightsFolder.children.length) {
+        lightsFolder.children[0].destroy();
+    }
+    lightsFolder.title(`Lights (${sceneLights.length})`);
+
+    sceneLights.forEach((light, i) => {
+        const displayName = light.name || `${light.type} #${i}`;
+        const lf = lightsFolder.addFolder(displayName);
+
+        const proxy = {
+            color: '#' + light.color.getHexString(),
+            intensity: light.intensity,
+            posX: light.position.x,
+            posY: light.position.y,
+            posZ: light.position.z,
+        };
+
+        lf.addColor(proxy, 'color').name('Color').onChange(v => {
+            light.color.set(v);
+            updateLightHelper();
+            render();
+        });
+
+        lf.add(proxy, 'intensity', 0, 10, 0.01).name('Intensity').onChange(v => {
+            light.intensity = v;
+            render();
+        });
+
+        if (light.isHemisphereLight) {
+            proxy.groundColor = '#' + light.groundColor.getHexString();
+            lf.addColor(proxy, 'groundColor').name('Ground Color').onChange(v => {
+                light.groundColor.set(v);
+                render();
+            });
+        }
+
+        if (!light.isAmbientLight && !light.isHemisphereLight) {
+            lf.add(proxy, 'posX', -1000, 1000, 1).name('Pos X').onChange(v => {
+                light.position.x = v;
+                updateLightHelper();
+                render();
+            });
+            lf.add(proxy, 'posY', -1000, 1000, 1).name('Pos Y').onChange(v => {
+                light.position.y = v;
+                updateLightHelper();
+                render();
+            });
+            lf.add(proxy, 'posZ', -1000, 1000, 1).name('Pos Z').onChange(v => {
+                light.position.z = v;
+                updateLightHelper();
+                render();
+            });
+        }
+
+        if (light.isSpotLight) {
+            proxy.angle = THREE.MathUtils.radToDeg(light.angle);
+            proxy.penumbra = light.penumbra;
+            lf.add(proxy, 'angle', 1, 90, 1).name('Angle (°)').onChange(v => {
+                light.angle = THREE.MathUtils.degToRad(v);
+                updateLightHelper();
+                render();
+            });
+            lf.add(proxy, 'penumbra', 0, 1, 0.01).name('Penumbra').onChange(v => {
+                light.penumbra = v;
+                render();
+            });
+        }
+
+        if (light.isPointLight || light.isSpotLight) {
+            proxy.distance = light.distance;
+            proxy.decay = light.decay;
+            lf.add(proxy, 'distance', 0, 10000, 1).name('Distance').onChange(v => {
+                light.distance = v;
+                render();
+            });
+            lf.add(proxy, 'decay', 0, 5, 0.01).name('Decay').onChange(v => {
+                light.decay = v;
+                render();
+            });
+        }
+
+        lf.add({ fn() {
+            if (light.parent) light.parent.remove(light);
+            sceneLights.splice(sceneLights.indexOf(light), 1);
+            rebuildLightsFolder();
+            updateLightHelper();
+            render();
+        }}, 'fn').name('🗑 Remove');
+
+        lf.close();
+    });
+
+    const addLightOpts = { type: 'DirectionalLight' };
+    lightsFolder.add(addLightOpts, 'type', ['DirectionalLight', 'PointLight', 'SpotLight', 'AmbientLight', 'HemisphereLight']).name('New type');
+    lightsFolder.add({ fn() {
+        let newLight;
+        switch (addLightOpts.type) {
+            case 'DirectionalLight':
+                newLight = new THREE.DirectionalLight(0xffffff, 1);
+                newLight.position.set(100, 100, 100);
+                break;
+            case 'PointLight':
+                newLight = new THREE.PointLight(0xffffff, 1, 0);
+                newLight.position.set(0, 100, 0);
+                break;
+            case 'SpotLight':
+                newLight = new THREE.SpotLight(0xffffff, 1);
+                newLight.position.set(0, 100, 0);
+                break;
+            case 'AmbientLight':
+                newLight = new THREE.AmbientLight(0x404040, 1);
+                break;
+            case 'HemisphereLight':
+                newLight = new THREE.HemisphereLight(0xffffbb, 0x080820, 1);
+                break;
+        }
+        newLight.name = addLightOpts.type;
+        scene.add(newLight);
+        sceneLights.push(newLight);
+        rebuildLightsFolder();
+        updateLightHelper();
+        render();
+    }}, 'fn').name('➕ Add Light');
 }
 
 function updateLightHelper() {
