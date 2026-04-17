@@ -1,6 +1,7 @@
 // measurementUtils.js – Point-to-point measurement with CSS2D labels
 import * as THREE from 'three';
 import { CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { getAnnotations, updateAnnotationLeaderLine, syncAnnotationLabelPos } from './annotationUtils.js';
 
 // --- Private state ---
 let _scene = null;
@@ -691,6 +692,9 @@ function _setLabelPointerEvents(enabled) {
     for (const m of _angleMeasurements) {
         m.label.element.style.pointerEvents = pe;
     }
+    for (const a of getAnnotations()) {
+        a.label.element.style.pointerEvents = pe;
+    }
 }
 
 function _onLabelMouseDown(e) {
@@ -708,6 +712,11 @@ function _onLabelMouseDown(e) {
             if (m.label.element === el) { found = m; foundType = 'angle'; break; }
         }
     }
+    if (!found) {
+        for (const a of getAnnotations()) {
+            if (a.label.element === el) { found = a; foundType = 'annotation'; break; }
+        }
+    }
     if (!found) return;
 
     _selectDim(found, foundType);
@@ -716,10 +725,12 @@ function _onLabelMouseDown(e) {
     let anchor;
     if (foundType === 'distance') {
         anchor = new THREE.Vector3().addVectors(found.p1, found.p2).multiplyScalar(0.5);
-    } else {
+    } else if (foundType === 'angle') {
         const mid1 = new THREE.Vector3().addVectors(found.points[0], found.points[1]).multiplyScalar(0.5);
         const mid2 = new THREE.Vector3().addVectors(found.points[2], found.points[3]).multiplyScalar(0.5);
         anchor = new THREE.Vector3().addVectors(mid1, mid2).multiplyScalar(0.5);
+    } else if (foundType === 'annotation') {
+        anchor = found.anchorLocal.clone();
     }
     found._labelAnchor = anchor;
 
@@ -755,7 +766,11 @@ function _onDocumentMouseMove(e) {
     _selectedDim.label.position.copy(newLocalPos);
 
     // Update leader line from anchor to label (both in local space)
-    _updateLeaderLine(_selectedDim, newLocalPos);
+    if (_selectedDimType === 'annotation') {
+        updateAnnotationLeaderLine(_selectedDim, newLocalPos);
+    } else {
+        _updateLeaderLine(_selectedDim, newLocalPos);
+    }
 
     if (_renderFn) _renderFn();
 }
@@ -792,20 +807,23 @@ function _onDocumentMouseUp(e) {
     if (_isDraggingLabel) {
         _isDraggingLabel = false;
         if (_orbitControls) _orbitControls.enabled = true;
-        // Sync final label position back to userData.measurements for GLB export
+        // Sync final label position back to userData for GLB export
         if (_selectedDim) {
-            const owner = _selectedDim.ownerObject || _scene;
-            const pos = _selectedDim.label.position;
-            if (owner && owner.userData && Array.isArray(owner.userData.measurements)) {
-                const type = _selectedDimType;
-                // Find matching entry by type and first coordinate
-                const rec = owner.userData.measurements.find(d => {
-                    if (d.type !== type) return false;
-                    if (type === 'distance') return Math.abs(d.p1.x - _selectedDim.p1.x) < 1e-6;
-                    if (type === 'angle') return Math.abs(d.points[0].x - _selectedDim.points[0].x) < 1e-6;
-                    return false;
-                });
-                if (rec) rec.labelPos = { x: pos.x, y: pos.y, z: pos.z };
+            if (_selectedDimType === 'annotation') {
+                syncAnnotationLabelPos(_selectedDim);
+            } else {
+                const owner = _selectedDim.ownerObject || _scene;
+                const pos = _selectedDim.label.position;
+                if (owner && owner.userData && Array.isArray(owner.userData.measurements)) {
+                    const type = _selectedDimType;
+                    const rec = owner.userData.measurements.find(d => {
+                        if (d.type !== type) return false;
+                        if (type === 'distance') return Math.abs(d.p1.x - _selectedDim.p1.x) < 1e-6;
+                        if (type === 'angle') return Math.abs(d.points[0].x - _selectedDim.points[0].x) < 1e-6;
+                        return false;
+                    });
+                    if (rec) rec.labelPos = { x: pos.x, y: pos.y, z: pos.z };
+                }
             }
         }
     }
@@ -815,7 +833,7 @@ function _onCanvasClick(e) {
     if (!_selectDimActive) return;
     // If click is not on a label, deselect
     const el = document.elementFromPoint(e.clientX, e.clientY);
-    if (el && el.closest('.measurement-label')) return; // handled by label mousedown
+    if (el && (el.closest('.measurement-label') || el.closest('.annotation-label'))) return; // handled by label mousedown
     _deselectDim();
     if (_renderFn) _renderFn();
 }
@@ -899,6 +917,9 @@ export function setSelectDimActive(val) {
         for (const m of _angleMeasurements) {
             m.label.element.addEventListener('mousedown', _onLabelMouseDown);
         }
+        for (const a of getAnnotations()) {
+            a.label.element.addEventListener('mousedown', _onLabelMouseDown);
+        }
     } else {
         document.removeEventListener('mousemove', _onDocumentMouseMove);
         document.removeEventListener('mouseup', _onDocumentMouseUp);
@@ -908,6 +929,9 @@ export function setSelectDimActive(val) {
         }
         for (const m of _angleMeasurements) {
             m.label.element.removeEventListener('mousedown', _onLabelMouseDown);
+        }
+        for (const a of getAnnotations()) {
+            a.label.element.removeEventListener('mousedown', _onLabelMouseDown);
         }
     }
 }

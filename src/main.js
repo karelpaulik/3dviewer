@@ -18,6 +18,7 @@ import { exportToHTML, exportToHTMLDraco, exportToHTMLObfuscated, exportToHTMLOb
 import { initOutliner, toggleOutliner, rebuildTree, highlightObject as outlinerHighlight, updateVisibilityIcon, isOutlinerOpen } from './sceneOutliner.js';
 import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements, isSelectDimActive, setSelectDimActive, deleteSelectedDimension, initSelectDimension, updateSelectDimensionCamera, reconstructMeasurements, stripMeasurementVisuals, setMeasurementsVisible } from './measurementUtils.js';
 import { detectCircleCenterFromHit } from './circleDetectionUtils.js';
+import { initAnnotations, isAnnotationActive, setAnnotationActive, addAnnotationPoint, getAnnotationPendingPoint, updateAnnotationPreview, updateAnnotationMarkerScales, setAnnotationsVisible, clearAnnotations, stripAnnotationVisuals, reconstructAnnotations } from './annotationUtils.js';
 import { computeSolidSection, clearSolidSection } from './solidSectionUtils.js';
 
 // Proměnné globálního rozsahu----------------------------------------------------------------------------------------
@@ -220,6 +221,8 @@ const viewProp = {
     selectDimensionMode: false, // Select dimension mode – click label to select, drag to move, Delete to remove
     detectCircleCenter: false, // Snap measurement points to detected circle centers
     showMeasurements: true, // Toggle visibility of all measurement visuals
+    annotationMode: false, // Annotation (note) mode
+    showAnnotations: true, // Toggle visibility of all annotations
     orientedSelectionBox: 'local',
 };
 
@@ -665,6 +668,16 @@ function init() {
                     viewProp.isSelectAllowed = true;
                     render();
                 }
+                if (viewProp.annotationMode) {
+                    viewProp.annotationMode = false;
+                    setAnnotationActive(false);
+                    viewProp.isSelectAllowed = true;
+                    render();
+                }
+                if (viewProp.detectCircleCenter) {
+                    viewProp.detectCircleCenter = false;
+                    render();
+                }
                 deselectObject();
                 selectionHistory.length = 0;
                 clearHistoryPreviewHelpers();
@@ -826,6 +839,7 @@ function init() {
     applyToolbarPreferences(); // Apply initial toolbar CSS from viewProp defaults
     initMeasurement(scene);
     initSelectDimension(currentCamera, render, orbitControls);
+    initAnnotations(scene, render);
 } //End init 
 
 // Přepočítá frustum ortografické kamery podle aktuálního obsahu meshObjects.
@@ -1037,6 +1051,7 @@ function addMainGui() {
                     viewProp.isSelectAllowed = false;
                     if (viewProp.angleMode) { viewProp.angleMode = false; setAngleActive(false); }
                     if (viewProp.selectDimensionMode) { viewProp.selectDimensionMode = false; setSelectDimActive(false); }
+                    if (viewProp.annotationMode) { viewProp.annotationMode = false; setAnnotationActive(false); }
                 } else {
                     viewProp.isSelectAllowed = true;
                 }
@@ -1048,6 +1063,7 @@ function addMainGui() {
                     viewProp.isSelectAllowed = false;
                     if (viewProp.measureMode) { viewProp.measureMode = false; setMeasureActive(false); }
                     if (viewProp.selectDimensionMode) { viewProp.selectDimensionMode = false; setSelectDimActive(false); }
+                    if (viewProp.annotationMode) { viewProp.annotationMode = false; setAnnotationActive(false); }
                 } else {
                     viewProp.isSelectAllowed = true;
                 }
@@ -1059,6 +1075,7 @@ function addMainGui() {
                     viewProp.isSelectAllowed = false;
                     if (viewProp.measureMode) { viewProp.measureMode = false; setMeasureActive(false); }
                     if (viewProp.angleMode) { viewProp.angleMode = false; setAngleActive(false); }
+                    if (viewProp.annotationMode) { viewProp.annotationMode = false; setAnnotationActive(false); }
                 } else {
                     viewProp.isSelectAllowed = true;
                 }
@@ -1072,6 +1089,25 @@ function addMainGui() {
             analysisFolder.add({ fn() {
                 clearMeasurements(render);
             } }, 'fn').name('Clear measurements');
+            analysisFolder.add(viewProp, 'annotationMode').name('Add annotation').onChange(function(value) {
+                setAnnotationActive(value);
+                if (value) {
+                    viewProp.isSelectAllowed = false;
+                    if (viewProp.measureMode) { viewProp.measureMode = false; setMeasureActive(false); }
+                    if (viewProp.angleMode) { viewProp.angleMode = false; setAngleActive(false); }
+                    if (viewProp.selectDimensionMode) { viewProp.selectDimensionMode = false; setSelectDimActive(false); }
+                } else {
+                    viewProp.isSelectAllowed = true;
+                }
+                render();
+            }).listen();
+            analysisFolder.add(viewProp, 'showAnnotations').name('Show annotations').onChange(function(value) {
+                setAnnotationsVisible(value);
+                render();
+            });
+            analysisFolder.add({ fn() {
+                clearAnnotations(render);
+            } }, 'fn').name('Clear annotations');
             analysisFolder.close();
 
     // Když by toto nebylo, tak při ukončení fullscreenu escapem, by "fulscreen" zůstalo zartřené. Funkčně by se moc nestalo.
@@ -2936,6 +2972,7 @@ function loadGlbModel(model, name, scale, colored) {
             
             // Reconstruct measurements stored in userData
             reconstructMeasurements(gltf.scene);
+            reconstructAnnotations(gltf.scene, render);
             
             rebuildTree(loadedModels);
             render();
@@ -3535,11 +3572,37 @@ function render() {
     } else {
         updateAnglePreview(null);
     }
+
+    // Annotation hover preview
+    if (viewProp.annotationMode && isAnnotationActive() && !isMouseOverGui && !isMouseDown) {
+        raycaster.setFromCamera(mouse, currentCamera);
+        const nIntersects = raycaster.intersectObjects(meshObjects);
+        const nIsFullyVisible = (obj) => { let o = obj; while (o) { if (!o.visible) return false; o = o.parent; } return true; };
+        const nVisible = (renderer.localClippingEnabled && clipPlanes.length > 0)
+            ? nIntersects.filter(hit => nIsFullyVisible(hit.object) && clipPlanes.some(plane => plane.distanceToPoint(hit.point) >= 0))
+            : nIntersects.filter(hit => nIsFullyVisible(hit.object));
+        if (nVisible.length > 0) {
+            updateAnnotationPreview(nVisible[0].point);
+        } else {
+            // When pending anchor exists, show preview in empty space at same depth
+            const pending = getAnnotationPendingPoint();
+            if (pending) {
+                const pendingNDC = pending.clone().project(currentCamera);
+                const cursorNDC = new THREE.Vector3(mouse.x, mouse.y, pendingNDC.z);
+                updateAnnotationPreview(cursorNDC.unproject(currentCamera));
+            } else {
+                updateAnnotationPreview(null);
+            }
+        }
+    } else {
+        updateAnnotationPreview(null);
+    }
     
     // Pokud se objekty ve scéně hýbou, odkomentuj řádek níže pro plynulý rámeček:
     // if (selectionHelper && selectionHelper.visible) selectionHelper.update();
 
     updateMarkerScales(currentCamera);
+    updateAnnotationMarkerScales(currentCamera);
 
     if (cameraProspHelperObject) cameraProspHelperObject.update();
     if (cameraOrthoHelperObject) cameraOrthoHelperObject.update();
@@ -3651,6 +3714,36 @@ function onClick( event ) {
             }
             const hitOwner = resolveCADSelection(visibleIntersects[0].object);
             addAnglePoint(point, hitOwner, render);
+        }
+        return;
+    }
+
+    // --- Annotation mode ---
+    if (viewProp.annotationMode && isAnnotationActive()) {
+        mouseUpPos.x = event.clientX;
+        mouseUpPos.y = event.clientY;
+        const dragDistance = mouseDownPos.distanceTo(mouseUpPos);
+        if (dragDistance > 3) return;
+
+        raycaster.setFromCamera(mouse, currentCamera);
+        const intersects = raycaster.intersectObjects(meshObjects);
+        const isFullyVisible = (obj) => { let o = obj; while (o) { if (!o.visible) return false; o = o.parent; } return true; };
+        const visibleIntersects = (renderer.localClippingEnabled && clipPlanes.length > 0)
+            ? intersects.filter(hit => isFullyVisible(hit.object) && clipPlanes.some(plane => plane.distanceToPoint(hit.point) >= 0))
+            : intersects.filter(hit => isFullyVisible(hit.object));
+        if (visibleIntersects.length > 0) {
+            const point = visibleIntersects[0].point;
+            const hitOwner = resolveCADSelection(visibleIntersects[0].object);
+            addAnnotationPoint(point, hitOwner, render);
+        } else {
+            // Second click: allow placing label in empty space (project mouse to same depth as anchor)
+            const pending = getAnnotationPendingPoint();
+            if (pending) {
+                const pendingNDC = pending.clone().project(currentCamera);
+                const clickNDC = new THREE.Vector3(mouse.x, mouse.y, pendingNDC.z);
+                const worldPoint = clickNDC.unproject(currentCamera);
+                addAnnotationPoint(worldPoint, null, render);
+            }
         }
         return;
     }
@@ -4009,6 +4102,7 @@ function exportAllModels() {
 
     // Strip measurement visuals from clones (userData.measurements stays for reconstruction)
     stripMeasurementVisuals(group);
+    stripAnnotationVisuals(group);
 
     exporter.parse(group, function(result) {
         saveArrayBuffer(result, finalName);
@@ -4051,6 +4145,7 @@ async function exportAllModelsDraco() {
 
     // Strip measurement visuals from clones (userData.measurements stays for reconstruction)
     stripMeasurementVisuals(group);
+    stripAnnotationVisuals(group);
 
     exporter.parse(group, function(result) {
         // setTimeout dá prohlížeči čas vykreslit overlay
@@ -4143,6 +4238,7 @@ function exportSelectedObject() {
 
     // Strip measurement visuals from clone (userData.measurements stays for reconstruction)
     stripMeasurementVisuals(clone);
+    stripAnnotationVisuals(clone);
 
     // Apply world transform to the clone so it appears in the same position after re-import
     // Aplikujeme world transform na klon, aby se po importu zobrazil ve stejné pozici
