@@ -16,7 +16,7 @@ import ZipLoader from 'zip-loader';
 import { updateCrossSectionLines as updateCrossSectionLinesCore, updateSectionCrossLines as updateSectionCrossLinesCore } from './crossSectionUtils.js';
 import { exportToHTML, exportToHTMLDraco, exportToHTMLObfuscated, exportToHTMLObfuscatedDraco } from './htmlExport.js';
 import { initOutliner, toggleOutliner, rebuildTree, highlightObject as outlinerHighlight, updateVisibilityIcon, isOutlinerOpen } from './sceneOutliner.js';
-import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales } from './measurementUtils.js';
+import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements } from './measurementUtils.js';
 import { detectCircleCenterFromHit } from './circleDetectionUtils.js';
 import { computeSolidSection, clearSolidSection } from './solidSectionUtils.js';
 
@@ -216,6 +216,7 @@ const viewProp = {
     isGroupTransformActive: false,
     historyInfo: '– žádný záznam –',
     measureMode: false, // Point-to-point measurement mode
+    angleMode: false, // Angle measurement mode (4 points → 2 lines → projected angles)
     detectCircleCenter: false, // Snap measurement points to detected circle centers
     orientedSelectionBox: 'local',
 };
@@ -650,6 +651,12 @@ function init() {
                     viewProp.isSelectAllowed = true;
                     render();
                 }
+                if (viewProp.angleMode) {
+                    viewProp.angleMode = false;
+                    setAngleActive(false);
+                    viewProp.isSelectAllowed = true;
+                    render();
+                }
                 deselectObject();
                 selectionHistory.length = 0;
                 clearHistoryPreviewHelpers();
@@ -1012,8 +1019,22 @@ function addMainGui() {
         const analysisFolder = folderProp.addFolder('Analysis');
             analysisFolder.add(viewProp, 'measureMode').name('Measure (point-to-point)').onChange(function(value) {
                 setMeasureActive(value);
-                if (value) viewProp.isSelectAllowed = false;
-                else viewProp.isSelectAllowed = true;
+                if (value) {
+                    viewProp.isSelectAllowed = false;
+                    if (viewProp.angleMode) { viewProp.angleMode = false; setAngleActive(false); }
+                } else {
+                    viewProp.isSelectAllowed = true;
+                }
+                render();
+            }).listen();
+            analysisFolder.add(viewProp, 'angleMode').name('Measure angle (4 pts)').onChange(function(value) {
+                setAngleActive(value);
+                if (value) {
+                    viewProp.isSelectAllowed = false;
+                    if (viewProp.measureMode) { viewProp.measureMode = false; setMeasureActive(false); }
+                } else {
+                    viewProp.isSelectAllowed = true;
+                }
                 render();
             }).listen();
             analysisFolder.add(viewProp, 'detectCircleCenter').name('Detect circle center');
@@ -3457,6 +3478,28 @@ function render() {
     } else {
         updateMeasurePreview(null);
     }
+
+    // Angle measurement hover preview
+    if (viewProp.angleMode && isAngleActive() && !isMouseOverGui && !isMouseDown) {
+        raycaster.setFromCamera(mouse, currentCamera);
+        const aIntersects = raycaster.intersectObjects(meshObjects);
+        const aIsFullyVisible = (obj) => { let o = obj; while (o) { if (!o.visible) return false; o = o.parent; } return true; };
+        const aVisible = (renderer.localClippingEnabled && clipPlanes.length > 0)
+            ? aIntersects.filter(hit => aIsFullyVisible(hit.object) && clipPlanes.some(plane => plane.distanceToPoint(hit.point) >= 0))
+            : aIntersects.filter(hit => aIsFullyVisible(hit.object));
+        if (aVisible.length > 0) {
+            let previewPoint = aVisible[0].point;
+            if (viewProp.detectCircleCenter) {
+                const center = detectCircleCenterFromHit(aVisible[0]);
+                if (center) previewPoint = center;
+            }
+            updateAnglePreview(previewPoint);
+        } else {
+            updateAnglePreview(null);
+        }
+    } else {
+        updateAnglePreview(null);
+    }
     
     // Pokud se objekty ve scéně hýbou, odkomentuj řádek níže pro plynulý rámeček:
     // if (selectionHelper && selectionHelper.visible) selectionHelper.update();
@@ -3547,6 +3590,30 @@ function onClick( event ) {
                 if (center) point = center;
             }
             addMeasurePoint(point, render);
+        }
+        return;
+    }
+
+    // --- Angle measurement mode ---
+    if (viewProp.angleMode && isAngleActive()) {
+        mouseUpPos.x = event.clientX;
+        mouseUpPos.y = event.clientY;
+        const dragDistance = mouseDownPos.distanceTo(mouseUpPos);
+        if (dragDistance > 3) return;
+
+        raycaster.setFromCamera(mouse, currentCamera);
+        const intersects = raycaster.intersectObjects(meshObjects);
+        const isFullyVisible = (obj) => { let o = obj; while (o) { if (!o.visible) return false; o = o.parent; } return true; };
+        const visibleIntersects = (renderer.localClippingEnabled && clipPlanes.length > 0)
+            ? intersects.filter(hit => isFullyVisible(hit.object) && clipPlanes.some(plane => plane.distanceToPoint(hit.point) >= 0))
+            : intersects.filter(hit => isFullyVisible(hit.object));
+        if (visibleIntersects.length > 0) {
+            let point = visibleIntersects[0].point;
+            if (viewProp.detectCircleCenter) {
+                const center = detectCircleCenterFromHit(visibleIntersects[0]);
+                if (center) point = center;
+            }
+            addAnglePoint(point, render);
         }
         return;
     }
