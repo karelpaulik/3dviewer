@@ -68,10 +68,10 @@ const assemblyGui = {
     editStepInfo: '\u2013 no step \u2013',
     stepName: '',
     stepDescription: '',
-    animationDuration: 600,
+    animationDuration: 1000,
     animationEase: 'power1.inOut',
     animationRepeat: 0,
-    animationDelay: 0,
+    animationDelay: 100,
     animationRepeatDelay: 0,
     animationYoyo: false,
     animationStagger: 0,
@@ -896,7 +896,6 @@ function addMainGui() {
             sectionFolder.add(viewProp, 'section').name('Section').onChange(function(value){renderer.localClippingEnabled = value; updateSectionCrossLines(); render(); });
             sectionFolder.add(viewProp, 'sectionCrossLines').name('Cross Section Lines').onChange(function(value){updateSectionCrossLines(); render(); });
             sectionFolder.addColor(viewProp, 'crossSectionColor').name('Cross Lines Color').onChange(function(value){ if(viewProp.sectionCrossLines) { updateSectionCrossLines(); render(); } });
-            sectionFolder.add(viewProp, 'showSectionMesh').name('Show Section Mesh').onChange(function(value){toggleSectionMeshAll(); });
             sectionFolder.add(viewProp, 'solidSection').name('Solid Section').onChange(function(value) {
                 if (value) {
                     renderer.localClippingEnabled = true;
@@ -909,6 +908,7 @@ function addMainGui() {
             sectionFolder.addColor(viewProp, 'capColor').name('Cap Color').onChange(function() {
                 if (viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render);
             });
+            sectionFolder.add(viewProp, 'showSectionMesh').name('Show Section Mesh').onChange(function(value){toggleSectionMeshAll(); });
             sectionFolder.add(viewProp, 'px', extent.pn, extent.pp, extent.pStep).name('Pos. x').onChange(function(value){clipPlanes[0].constant=value; if(viewProp.sectionCrossLines) updateSectionCrossLines(); if(viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render); render(); }).listen();
             sectionFolder.add(viewProp, 'py', extent.pn, extent.pp, extent.pStep).name('Pos. y').onChange(function(value){clipPlanes[1].constant=value; if(viewProp.sectionCrossLines) updateSectionCrossLines(); if(viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render); render(); }).listen();
             sectionFolder.add(viewProp, 'pz', extent.pn, extent.pp, extent.pStep).name('Pos. z').onChange(function(value){clipPlanes[2].constant=value; if(viewProp.sectionCrossLines) updateSectionCrossLines(); if(viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render); render(); }).listen();
