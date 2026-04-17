@@ -10,6 +10,7 @@ let _pendingMarker = null; // Mesh for pending point preview
 let _previewMarker = null; // Hover preview sphere (follows cursor on surface)
 let _previewLine = null;   // Dashed line from pending point to preview
 let _active = false;
+let _pendingOwner = null;  // Owner object for the first click (distance measurement)
 
 // --- Angle measurement state ---
 let _angleActive = false;
@@ -19,6 +20,7 @@ let _angleMarkers = []; // markers for clicked points
 let _angleLine1 = null; // line for first pair
 let _anglePreviewLine = null; // dashed preview line from last point to cursor
 let _angleMeasurements = []; // completed angle measurements
+let _angleOwner = null; // Owner object for angle measurement (set on first click)
 
 const ANGLE_LINE_COLOR = 0x4488ff;
 const ANGLE_MARKER_COLOR = 0x4488ff;
@@ -98,13 +100,15 @@ export function setMeasureActive(val) {
     _active = val;
     if (!val) {
         // Cancel any pending first-click
-        if (_pendingMarker && _scene) {
-            _scene.remove(_pendingMarker);
+        if (_pendingMarker) {
+            const pendingParent = _pendingOwner || _scene;
+            if (pendingParent) pendingParent.remove(_pendingMarker);
             _pendingMarker.geometry.dispose();
             _pendingMarker.material.dispose();
             _pendingMarker = null;
         }
         _pendingPoint = null;
+        _pendingOwner = null;
         _hidePreview();
     }
 }
@@ -113,42 +117,66 @@ export function setMeasureActive(val) {
  * Handle a click-point from raycaster intersection.
  * First call sets point 1, second call completes the measurement.
  * @param {THREE.Vector3} point – world-space intersection point
+ * @param {THREE.Object3D} ownerObject – object to parent measurement visuals to (resolved via CAD/Detailed selection)
  * @param {Function} renderFn – callback to trigger a render
  */
-export function addMeasurePoint(point, renderFn) {
+export function addMeasurePoint(point, ownerObject, renderFn) {
     if (!_active || !_scene) return;
+    const owner = ownerObject || _scene;
 
     if (!_pendingPoint) {
         // --- First point ---
+        _pendingOwner = owner;
         _pendingPoint = point.clone();
-        _pendingMarker = _createMarker(_pendingPoint);
-        _scene.add(_pendingMarker);
+        // Convert to owner local space
+        owner.updateWorldMatrix(true, false);
+        const localP = owner.worldToLocal(point.clone());
+        _pendingMarker = _createMarker(localP);
+        owner.add(_pendingMarker);
         if (renderFn) renderFn();
     } else {
         // --- Second point → complete measurement ---
-        const p1 = _pendingPoint;
-        const p2 = point.clone();
-        const dist = p1.distanceTo(p2);
+        // Use owner from first click
+        const owner1 = _pendingOwner || _scene;
+        owner1.updateWorldMatrix(true, false);
+        const p1world = _pendingPoint;
+        const p2world = point.clone();
+        const dist = p1world.distanceTo(p2world);
+
+        // Convert both points to owner1 local space
+        const p1 = owner1.worldToLocal(p1world.clone());
+        const p2 = owner1.worldToLocal(p2world.clone());
 
         const marker1 = _pendingMarker;
         const marker2 = _createMarker(p2);
         const line = _createLine(p1, p2);
         const midPoint = new THREE.Vector3().addVectors(p1, p2).multiplyScalar(0.5);
-        const dx = Math.abs(p2.x - p1.x);
-        const dy = Math.abs(p2.y - p1.y);
-        const dz = Math.abs(p2.z - p1.z);
+        const dx = Math.abs(p2world.x - p1world.x);
+        const dy = Math.abs(p2world.y - p1world.y);
+        const dz = Math.abs(p2world.z - p1world.z);
         const labelText = dist.toFixed(2) + '<br><span style="font-size:10px;opacity:0.85;">Δx ' + dx.toFixed(2) + '<br>Δy ' + dy.toFixed(2) + '<br>Δz ' + dz.toFixed(2) + '</span>';
         const label = _createLabel(labelText, midPoint);
 
-        _scene.add(marker2);
-        _scene.add(line);
-        _scene.add(label);
+        owner1.add(marker2);
+        owner1.add(line);
+        owner1.add(label);
 
-        _measurements.push({ line, label, marker1, marker2, p1, p2, distance: dist });
+        _measurements.push({ line, label, marker1, marker2, p1, p2, distance: dist, ownerObject: owner1 });
+
+        // Store measurement data in ownerObject.userData for GLB export
+        if (!owner1.userData.measurements) owner1.userData.measurements = [];
+        owner1.userData.measurements.push({
+            type: 'distance',
+            p1: { x: p1.x, y: p1.y, z: p1.z },
+            p2: { x: p2.x, y: p2.y, z: p2.z },
+            distance: dist,
+            labelPos: { x: midPoint.x, y: midPoint.y, z: midPoint.z }
+        });
 
         // Reset pending state and hide preview
         _pendingPoint = null;
         _pendingMarker = null;
+        _pendingOwner = null;
         _hidePreview();
         if (renderFn) renderFn();
     }
@@ -163,26 +191,34 @@ export function clearMeasurements(renderFn) {
 
     // Remove pending marker
     if (_pendingMarker) {
-        _scene.remove(_pendingMarker);
+        const pendingParent = _pendingOwner || _scene;
+        pendingParent.remove(_pendingMarker);
         _pendingMarker.geometry.dispose();
         _pendingMarker.material.dispose();
         _pendingMarker = null;
     }
     _pendingPoint = null;
+    _pendingOwner = null;
 
     // Remove completed measurements
     for (const m of _measurements) {
         _removeLeaderLine(m);
-        _scene.remove(m.line);
-        _scene.remove(m.label);
-        _scene.remove(m.marker1);
-        _scene.remove(m.marker2);
+        const owner = m.ownerObject || _scene;
+        owner.remove(m.line);
+        owner.remove(m.label);
+        owner.remove(m.marker1);
+        owner.remove(m.marker2);
         m.line.geometry.dispose();
         m.line.material.dispose();
         m.marker1.geometry.dispose();
         m.marker1.material.dispose();
         m.marker2.geometry.dispose();
         m.marker2.material.dispose();
+        // Clean up userData
+        if (owner.userData.measurements) {
+            owner.userData.measurements = owner.userData.measurements.filter(d => d.type !== 'distance');
+            if (owner.userData.measurements.length === 0) delete owner.userData.measurements;
+        }
     }
     _measurements = [];
 
@@ -190,10 +226,11 @@ export function clearMeasurements(renderFn) {
     _cancelAnglePending();
     for (const m of _angleMeasurements) {
         _removeLeaderLine(m);
-        _scene.remove(m.line1);
-        _scene.remove(m.line2);
-        _scene.remove(m.midLine);
-        _scene.remove(m.label);
+        const owner = m.ownerObject || _scene;
+        owner.remove(m.line1);
+        owner.remove(m.line2);
+        owner.remove(m.midLine);
+        owner.remove(m.label);
         m.line1.geometry.dispose();
         m.line1.material.dispose();
         m.line2.geometry.dispose();
@@ -201,9 +238,14 @@ export function clearMeasurements(renderFn) {
         m.midLine.geometry.dispose();
         m.midLine.material.dispose();
         for (const mk of m.markers) {
-            _scene.remove(mk);
+            owner.remove(mk);
             mk.geometry.dispose();
             mk.material.dispose();
+        }
+        // Clean up userData
+        if (owner.userData.measurements) {
+            owner.userData.measurements = owner.userData.measurements.filter(d => d.type !== 'angle');
+            if (owner.userData.measurements.length === 0) delete owner.userData.measurements;
         }
     }
     _angleMeasurements = [];
@@ -308,8 +350,10 @@ export function updateMarkerScales(camera) {
 
     if (markers.length === 0) return;
 
+    const worldPos = new THREE.Vector3();
     for (const marker of markers) {
-        const dist = camera.position.distanceTo(marker.position);
+        marker.getWorldPosition(worldPos);
+        const dist = camera.position.distanceTo(worldPos);
         let scale;
         if (camera.isPerspectiveCamera) {
             const vFov = THREE.MathUtils.degToRad(camera.fov);
@@ -378,20 +422,22 @@ function _hideAnglePreview() {
 }
 
 function _cancelAnglePending() {
+    const owner = _angleOwner || _scene;
     for (const m of _angleMarkers) {
-        if (_scene) _scene.remove(m);
+        if (owner) owner.remove(m);
         m.geometry.dispose();
         m.material.dispose();
     }
     _angleMarkers = [];
-    if (_angleLine1 && _scene) {
-        _scene.remove(_angleLine1);
+    if (_angleLine1 && owner) {
+        owner.remove(_angleLine1);
         _angleLine1.geometry.dispose();
         _angleLine1.material.dispose();
         _angleLine1 = null;
     }
     _anglePoints = [];
     _angleStep = 0;
+    _angleOwner = null;
     _hideAnglePreview();
 }
 
@@ -406,29 +452,44 @@ export function setAngleActive(val) {
     }
 }
 
-export function addAnglePoint(point, renderFn) {
+export function addAnglePoint(point, ownerObject, renderFn) {
     if (!_angleActive || !_scene) return;
 
-    const p = point.clone();
+    const pWorld = point.clone();
+
+    // On first click, set the owner
+    if (_angleStep === 0) {
+        _angleOwner = ownerObject || _scene;
+    }
+    const owner = _angleOwner;
+    owner.updateWorldMatrix(true, false);
+
+    // Convert world point to owner local space
+    const p = owner.worldToLocal(pWorld.clone());
     _anglePoints.push(p);
     const marker = _createAngleMarker(p);
-    _scene.add(marker);
+    owner.add(marker);
     _angleMarkers.push(marker);
     _angleStep++;
 
     if (_angleStep === 2) {
-        // Draw first line
+        // Draw first line (in local space)
         _angleLine1 = _createAngleLine(_anglePoints[0], _anglePoints[1]);
-        _scene.add(_angleLine1);
+        owner.add(_angleLine1);
         _hideAnglePreview();
         if (renderFn) renderFn();
     } else if (_angleStep === 4) {
         // Draw second line and compute angles
         const line2 = _createAngleLine(_anglePoints[2], _anglePoints[3]);
-        _scene.add(line2);
+        owner.add(line2);
 
-        const v1 = new THREE.Vector3().subVectors(_anglePoints[1], _anglePoints[0]);
-        const v2 = new THREE.Vector3().subVectors(_anglePoints[3], _anglePoints[2]);
+        // Compute angles in world space for correctness
+        const p0w = owner.localToWorld(_anglePoints[0].clone());
+        const p1w = owner.localToWorld(_anglePoints[1].clone());
+        const p2w = owner.localToWorld(_anglePoints[2].clone());
+        const p3w = owner.localToWorld(_anglePoints[3].clone());
+        const v1 = new THREE.Vector3().subVectors(p1w, p0w);
+        const v2 = new THREE.Vector3().subVectors(p3w, p2w);
 
         // 3D angle between direction vectors
         const dot3d = v1.dot(v2) / (v1.length() * v2.length());
@@ -446,29 +507,38 @@ export function addAnglePoint(point, renderFn) {
         labelText += 'XZ: ' + (aXZ !== null ? aXZ.toFixed(1) + '°' : 'N/A');
         labelText += '</span>';
 
-        // Place label at midpoint of the two lines' midpoints
+        // Place label at midpoint of the two lines' midpoints (local space)
         const mid1 = new THREE.Vector3().addVectors(_anglePoints[0], _anglePoints[1]).multiplyScalar(0.5);
         const mid2 = new THREE.Vector3().addVectors(_anglePoints[2], _anglePoints[3]).multiplyScalar(0.5);
         const labelPos = new THREE.Vector3().addVectors(mid1, mid2).multiplyScalar(0.5);
 
-        // Connecting line between midpoints of the two lines
+        // Connecting line between midpoints of the two lines (local space)
         const geoMid = new THREE.BufferGeometry().setFromPoints([mid1, mid2]);
         const matMid = new THREE.LineDashedMaterial({ color: ANGLE_LINE_COLOR, dashSize: 3, gapSize: 2, depthTest: false, transparent: true, opacity: 0.5 });
         const midLine = new THREE.Line(geoMid, matMid);
         midLine.computeLineDistances();
         midLine.renderOrder = 999;
         midLine.userData._isMeasurement = true;
-        _scene.add(midLine);
+        owner.add(midLine);
 
         const label = _createAngleLabel(labelText, labelPos);
-        _scene.add(label);
+        owner.add(label);
 
         // Store for cleanup
         const storedMarkers = _angleMarkers.slice();
         _angleMeasurements.push({
             line1: _angleLine1, line2, midLine, label,
             markers: storedMarkers,
-            points: _anglePoints.slice()
+            points: _anglePoints.slice(),
+            ownerObject: owner
+        });
+
+        // Store measurement data in ownerObject.userData for GLB export
+        if (!owner.userData.measurements) owner.userData.measurements = [];
+        owner.userData.measurements.push({
+            type: 'angle',
+            points: _anglePoints.map(pt => ({ x: pt.x, y: pt.y, z: pt.z })),
+            labelPos: { x: labelPos.x, y: labelPos.y, z: labelPos.z }
         });
 
         // Reset pending state
@@ -476,6 +546,7 @@ export function addAnglePoint(point, renderFn) {
         _angleMarkers = [];
         _anglePoints = [];
         _angleStep = 0;
+        _angleOwner = null;
         _hideAnglePreview();
         if (renderFn) renderFn();
     } else {
@@ -521,7 +592,11 @@ export function updateAnglePreview(point) {
     const lastPoint = _anglePoints[_anglePoints.length - 1];
     if (lastPoint) {
         _hideAnglePreview();
-        const geo = new THREE.BufferGeometry().setFromPoints([lastPoint, point]);
+        // lastPoint is in owner local space, point is in world space — convert lastPoint to world
+        const owner = _angleOwner || _scene;
+        owner.updateWorldMatrix(true, false);
+        const lastPointWorld = owner.localToWorld(lastPoint.clone());
+        const geo = new THREE.BufferGeometry().setFromPoints([lastPointWorld, point]);
         const mat = new THREE.LineDashedMaterial({ color: ANGLE_LINE_COLOR, dashSize: 4, gapSize: 3, depthTest: false });
         _anglePreviewLine = new THREE.Line(geo, mat);
         _anglePreviewLine.computeLineDistances();
@@ -538,10 +613,11 @@ export function clearAngleMeasurements(renderFn) {
 
     for (const m of _angleMeasurements) {
         _removeLeaderLine(m);
-        _scene.remove(m.line1);
-        _scene.remove(m.line2);
-        _scene.remove(m.midLine);
-        _scene.remove(m.label);
+        const owner = m.ownerObject || _scene;
+        owner.remove(m.line1);
+        owner.remove(m.line2);
+        owner.remove(m.midLine);
+        owner.remove(m.label);
         m.line1.geometry.dispose();
         m.line1.material.dispose();
         m.line2.geometry.dispose();
@@ -549,9 +625,14 @@ export function clearAngleMeasurements(renderFn) {
         m.midLine.geometry.dispose();
         m.midLine.material.dispose();
         for (const mk of m.markers) {
-            _scene.remove(mk);
+            owner.remove(mk);
             mk.geometry.dispose();
             mk.material.dispose();
+        }
+        // Clean up userData
+        if (owner.userData.measurements) {
+            owner.userData.measurements = owner.userData.measurements.filter(d => d.type !== 'angle');
+            if (owner.userData.measurements.length === 0) delete owner.userData.measurements;
         }
     }
     _angleMeasurements = [];
@@ -613,7 +694,7 @@ function _onLabelMouseDown(e) {
 
     _selectDim(found, foundType);
 
-    // Compute the anchor point (original midpoint of the measurement line)
+    // Compute the anchor point (midpoint in local space of the owner)
     let anchor;
     if (foundType === 'distance') {
         anchor = new THREE.Vector3().addVectors(found.p1, found.p2).multiplyScalar(0.5);
@@ -639,8 +720,10 @@ function _onDocumentMouseMove(e) {
     const dx = e.clientX - _dragStartMouse.x;
     const dy = e.clientY - _dragStartMouse.y;
 
-    // Convert screen-space delta to world-space delta on a plane facing camera at label depth
-    const labelWorldPos = _dragStartPos.clone();
+    // Convert label start position from local to world for NDC projection
+    const owner = _selectedDim.ownerObject || _scene;
+    owner.updateWorldMatrix(true, false);
+    const labelWorldPos = owner.localToWorld(_dragStartPos.clone());
     const labelNDC = labelWorldPos.clone().project(_currentCamera);
 
     const ndcDx = (dx / window.innerWidth) * 2;
@@ -649,19 +732,22 @@ function _onDocumentMouseMove(e) {
     const newNDC = new THREE.Vector3(labelNDC.x + ndcDx, labelNDC.y + ndcDy, labelNDC.z);
     const newWorldPos = newNDC.unproject(_currentCamera);
 
-    _selectedDim.label.position.copy(newWorldPos);
+    // Convert back to owner local space
+    const newLocalPos = owner.worldToLocal(newWorldPos);
+    _selectedDim.label.position.copy(newLocalPos);
 
-    // Update leader line from anchor to label
-    _updateLeaderLine(_selectedDim, newWorldPos);
+    // Update leader line from anchor to label (both in local space)
+    _updateLeaderLine(_selectedDim, newLocalPos);
 
     if (_renderFn) _renderFn();
 }
 
 function _updateLeaderLine(meas, labelPos) {
-    if (!meas._labelAnchor || !_scene) return;
+    if (!meas._labelAnchor) return;
+    const owner = meas.ownerObject || _scene;
     // Remove old leader line
     if (meas.leaderLine) {
-        _scene.remove(meas.leaderLine);
+        owner.remove(meas.leaderLine);
         meas.leaderLine.geometry.dispose();
         meas.leaderLine.material.dispose();
     }
@@ -671,12 +757,13 @@ function _updateLeaderLine(meas, labelPos) {
     meas.leaderLine.computeLineDistances();
     meas.leaderLine.renderOrder = 998;
     meas.leaderLine.userData._isMeasurement = true;
-    _scene.add(meas.leaderLine);
+    owner.add(meas.leaderLine);
 }
 
 function _removeLeaderLine(meas) {
-    if (meas.leaderLine && _scene) {
-        _scene.remove(meas.leaderLine);
+    if (meas.leaderLine) {
+        const owner = meas.ownerObject || _scene;
+        if (owner) owner.remove(meas.leaderLine);
         meas.leaderLine.geometry.dispose();
         meas.leaderLine.material.dispose();
         meas.leaderLine = null;
@@ -702,30 +789,46 @@ function _onCanvasClick(e) {
 function _removeSingleMeasurement(meas, type) {
     if (!_scene) return;
     _removeLeaderLine(meas);
+    const owner = meas.ownerObject || _scene;
     if (type === 'distance') {
-        _scene.remove(meas.line);
-        _scene.remove(meas.label);
-        _scene.remove(meas.marker1);
-        _scene.remove(meas.marker2);
+        owner.remove(meas.line);
+        owner.remove(meas.label);
+        owner.remove(meas.marker1);
+        owner.remove(meas.marker2);
         meas.line.geometry.dispose(); meas.line.material.dispose();
         meas.marker1.geometry.dispose(); meas.marker1.material.dispose();
         meas.marker2.geometry.dispose(); meas.marker2.material.dispose();
         const idx = _measurements.indexOf(meas);
         if (idx !== -1) _measurements.splice(idx, 1);
+        // Clean up userData
+        if (owner.userData.measurements) {
+            // Remove the first matching distance entry
+            const di = owner.userData.measurements.findIndex(d => d.type === 'distance'
+                && Math.abs(d.p1.x - meas.p1.x) < 1e-6 && Math.abs(d.p1.y - meas.p1.y) < 1e-6 && Math.abs(d.p1.z - meas.p1.z) < 1e-6);
+            if (di !== -1) owner.userData.measurements.splice(di, 1);
+            if (owner.userData.measurements.length === 0) delete owner.userData.measurements;
+        }
     } else if (type === 'angle') {
-        _scene.remove(meas.line1);
-        _scene.remove(meas.line2);
-        _scene.remove(meas.midLine);
-        _scene.remove(meas.label);
+        owner.remove(meas.line1);
+        owner.remove(meas.line2);
+        owner.remove(meas.midLine);
+        owner.remove(meas.label);
         meas.line1.geometry.dispose(); meas.line1.material.dispose();
         meas.line2.geometry.dispose(); meas.line2.material.dispose();
         meas.midLine.geometry.dispose(); meas.midLine.material.dispose();
         for (const mk of meas.markers) {
-            _scene.remove(mk);
+            owner.remove(mk);
             mk.geometry.dispose(); mk.material.dispose();
         }
         const idx = _angleMeasurements.indexOf(meas);
         if (idx !== -1) _angleMeasurements.splice(idx, 1);
+        // Clean up userData
+        if (owner.userData.measurements) {
+            const di = owner.userData.measurements.findIndex(d => d.type === 'angle'
+                && Math.abs(d.points[0].x - meas.points[0].x) < 1e-6 && Math.abs(d.points[0].y - meas.points[0].y) < 1e-6);
+            if (di !== -1) owner.userData.measurements.splice(di, 1);
+            if (owner.userData.measurements.length === 0) delete owner.userData.measurements;
+        }
     }
 }
 

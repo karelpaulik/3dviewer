@@ -3616,7 +3616,8 @@ function onClick( event ) {
                 const center = detectCircleCenterFromHit(visibleIntersects[0]);
                 if (center) point = center;
             }
-            addMeasurePoint(point, render);
+            const hitOwner = resolveCADSelection(visibleIntersects[0].object);
+            addMeasurePoint(point, hitOwner, render);
         }
         return;
     }
@@ -3640,7 +3641,8 @@ function onClick( event ) {
                 const center = detectCircleCenterFromHit(visibleIntersects[0]);
                 if (center) point = center;
             }
-            addAnglePoint(point, render);
+            const hitOwner = resolveCADSelection(visibleIntersects[0].object);
+            addAnglePoint(point, hitOwner, render);
         }
         return;
     }
