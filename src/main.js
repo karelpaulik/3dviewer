@@ -16,7 +16,7 @@ import ZipLoader from 'zip-loader';
 import { updateCrossSectionLines as updateCrossSectionLinesCore, updateSectionCrossLines as updateSectionCrossLinesCore } from './crossSectionUtils.js';
 import { exportToHTML, exportToHTMLDraco, exportToHTMLObfuscated, exportToHTMLObfuscatedDraco } from './htmlExport.js';
 import { initOutliner, toggleOutliner, rebuildTree, highlightObject as outlinerHighlight, updateVisibilityIcon, isOutlinerOpen } from './sceneOutliner.js';
-import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements, isSelectDimActive, setSelectDimActive, deleteSelectedDimension, initSelectDimension, updateSelectDimensionCamera, reconstructMeasurements, stripMeasurementVisuals } from './measurementUtils.js';
+import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements, isSelectDimActive, setSelectDimActive, deleteSelectedDimension, initSelectDimension, updateSelectDimensionCamera, reconstructMeasurements, stripMeasurementVisuals, setMeasurementsVisible } from './measurementUtils.js';
 import { detectCircleCenterFromHit } from './circleDetectionUtils.js';
 import { computeSolidSection, clearSolidSection } from './solidSectionUtils.js';
 
@@ -219,6 +219,7 @@ const viewProp = {
     angleMode: false, // Angle measurement mode (4 points → 2 lines → projected angles)
     selectDimensionMode: false, // Select dimension mode – click label to select, drag to move, Delete to remove
     detectCircleCenter: false, // Snap measurement points to detected circle centers
+    showMeasurements: true, // Toggle visibility of all measurement visuals
     orientedSelectionBox: 'local',
 };
 
@@ -1064,6 +1065,10 @@ function addMainGui() {
                 render();
             }).listen();
             analysisFolder.add(viewProp, 'detectCircleCenter').name('Detect circle center');
+            analysisFolder.add(viewProp, 'showMeasurements').name('Show measurements').onChange(function(value) {
+                setMeasurementsVisible(value);
+                render();
+            });
             analysisFolder.add({ fn() {
                 clearMeasurements(render);
             } }, 'fn').name('Clear measurements');

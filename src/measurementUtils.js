@@ -260,6 +260,24 @@ export function getMeasurementCount() {
     return _measurements.length;
 }
 
+export function setMeasurementsVisible(visible) {
+    for (const m of _measurements) {
+        m.line.visible = visible;
+        m.label.visible = visible;
+        m.marker1.visible = visible;
+        m.marker2.visible = visible;
+        if (m.leaderLine) m.leaderLine.visible = visible;
+    }
+    for (const m of _angleMeasurements) {
+        m.line1.visible = visible;
+        m.line2.visible = visible;
+        m.midLine.visible = visible;
+        m.label.visible = visible;
+        for (const mk of m.markers) mk.visible = visible;
+        if (m.leaderLine) m.leaderLine.visible = visible;
+    }
+}
+
 // --- Hover preview ---
 
 function _hidePreview() {
