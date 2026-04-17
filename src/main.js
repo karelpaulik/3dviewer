@@ -30,10 +30,9 @@ const clipPlanes = [];
 let crossSectionLines = null; // Pro uchování průřezových čar
 let sectionCrossSectionLines = null; // Pro uchování průřezových čar vázaných na section view
 
-// --- Section plane gizmos (TransformControls on clip planes) ---
+// --- Section plane gizmo (TransformControls on clip planes) ---
 let sectionTransformControls = null; // Dedicated TransformControls for section gizmo
-const sectionGizmos = [];            // 3 plane meshes representing X/Y/Z clip planes
-let activeSectionGizmoIndex = -1;    // Which gizmo is attached (-1 = none)
+let sectionGizmoHelper = null;       // Invisible helper object whose position drives clip planes
 
 let cameraPersp, cameraOrtho, currentCamera;
 let transformControls, orbitControls;
@@ -191,7 +190,8 @@ const viewProp = {
     crossSectionPos: 0,
     crossSectionColor: "#ff0000",
     showSectionMesh: false, // Toggle pro zobrazení/skrytí sectionMesh
-    sectionGizmo: 'Off', // Active section gizmo: 'Off', 'X', 'Y', 'Z'
+    sectionGizmo: false, // Toggle section gizmo on/off
+    sectionSnapTranslation: 1, // Snap step for section gizmo translation
     autoUpdateSectionLines: false, // Automaticky aktualizovat průřezové čáry při změnách scény
     sectionCrossLines: false, // Průřezové čáry vázané na section view clip planes
     solidSection: false, // Solid (capped) section cut
@@ -592,50 +592,28 @@ function init() {
     } );	
     
 
-    // --- Section plane gizmos ---
+    // --- Section plane gizmo ---
     {
-        const gizmoSize = 200;
-        const gizmoColors = [0xff4444, 0x44ff44, 0x4488ff]; // R, G, B for X, Y, Z
-        // Rotations: each plane gizmo faces along its clip plane normal
-        const gizmoRotations = [
-            new THREE.Euler(0, Math.PI / 2, 0),  // X plane: rotate around Y so it faces X
-            new THREE.Euler(Math.PI / 2, 0, 0),  // Y plane: rotate around X so it faces Y
-            new THREE.Euler(0, 0, 0),             // Z plane: already faces Z
-        ];
-        for (let i = 0; i < 3; i++) {
-            const geo = new THREE.PlaneGeometry(gizmoSize, gizmoSize);
-            const mat = new THREE.MeshBasicMaterial({
-                color: gizmoColors[i],
-                transparent: true,
-                opacity: 0.15,
-                side: THREE.DoubleSide,
-                depthTest: false,
-            });
-            const mesh = new THREE.Mesh(geo, mat);
-            mesh.name = `__sectionGizmo_${['X','Y','Z'][i]}`;
-            mesh.rotation.copy(gizmoRotations[i]);
-            mesh.visible = false;
-            mesh.renderOrder = 999; // Render on top
-            scene.add(mesh);
-            sectionGizmos.push(mesh);
-        }
+        sectionGizmoHelper = new THREE.Object3D();
+        sectionGizmoHelper.name = '__sectionGizmoHelper';
+        scene.add(sectionGizmoHelper);
 
         sectionTransformControls = new TransformControls(currentCamera, renderer.domElement);
         sectionTransformControls.setSize(0.5);
         sectionTransformControls.setMode('translate');
         sectionTransformControls.setSpace('world');
-        // Lock to plane-normal axis only: showX/Y/Z are set when attaching
+        sectionTransformControls.setTranslationSnap(viewProp.sectionSnapTranslation);
         scene.add(sectionTransformControls.getHelper());
 
         sectionTransformControls.addEventListener('change', function () {
-            if (activeSectionGizmoIndex < 0) return;
-            const mesh = sectionGizmos[activeSectionGizmoIndex];
-            // Read the position component corresponding to this axis
-            const axes = ['x', 'y', 'z'];
-            const axis = axes[activeSectionGizmoIndex];
-            const val = mesh.position[axis];
-            clipPlanes[activeSectionGizmoIndex].constant = val;
-            viewProp[`p${axis}`] = val;
+            if (!viewProp.sectionGizmo) return;
+            const pos = sectionGizmoHelper.position;
+            clipPlanes[0].constant = pos.x;
+            clipPlanes[1].constant = pos.y;
+            clipPlanes[2].constant = pos.z;
+            viewProp.px = pos.x;
+            viewProp.py = pos.y;
+            viewProp.pz = pos.z;
             if (viewProp.sectionCrossLines) updateSectionCrossLines();
             if (viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render);
             render();
@@ -953,7 +931,7 @@ function addMainGui() {
         folderProp.addColor(viewProp, 'backgroundColor').name('Background').onChange(function(value){ scene.background = new THREE.Color(value); render(); });
         folderProp.add(viewProp, 'perspCam').name('Persp. camera').onChange(function(value){setCamera(); render(); });
         const sectionFolder = folderProp.addFolder("Section view");   
-            sectionFolder.add(viewProp, 'section').name('Section').onChange(function(value){renderer.localClippingEnabled = value; updateSectionCrossLines(); render(); });
+            sectionFolder.add(viewProp, 'section').name('Section').onChange(function(value){renderer.localClippingEnabled = value; viewProp.sectionGizmo = value; activateSectionGizmo(value); updateSectionCrossLines(); render(); });
             sectionFolder.add(viewProp, 'sectionCrossLines').name('Cross Section Lines').onChange(function(value){updateSectionCrossLines(); render(); });
             sectionFolder.addColor(viewProp, 'crossSectionColor').name('Cross Lines Color').onChange(function(value){ if(viewProp.sectionCrossLines) { updateSectionCrossLines(); render(); } });
             sectionFolder.add(viewProp, 'solidSection').name('Solid Section').onChange(function(value) {
@@ -969,7 +947,8 @@ function addMainGui() {
                 if (viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render);
             });
             sectionFolder.add(viewProp, 'showSectionMesh').name('Show Section Mesh').onChange(function(value){toggleSectionMeshAll(); });
-            sectionFolder.add(viewProp, 'sectionGizmo', ['Off', 'X', 'Y', 'Z']).name('Gizmo').onChange(function(value){ activateSectionGizmo(value); }).listen();
+            sectionFolder.add(viewProp, 'sectionGizmo').name('Gizmo').onChange(function(value){ activateSectionGizmo(value); }).listen();
+            sectionFolder.add(viewProp, 'sectionSnapTranslation', 0.1, 100, 0.1).name('Snap translation').onChange(function(value){ sectionTransformControls.setTranslationSnap(value); }).listen();
             sectionFolder.add(viewProp, 'px', extent.pn, extent.pp, extent.pStep).name('Pos. x').onChange(function(value){clipPlanes[0].constant=value; syncSectionGizmoPosition(); if(viewProp.sectionCrossLines) updateSectionCrossLines(); if(viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render); render(); }).listen();
             sectionFolder.add(viewProp, 'py', extent.pn, extent.pp, extent.pStep).name('Pos. y').onChange(function(value){clipPlanes[1].constant=value; syncSectionGizmoPosition(); if(viewProp.sectionCrossLines) updateSectionCrossLines(); if(viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render); render(); }).listen();
             sectionFolder.add(viewProp, 'pz', extent.pn, extent.pp, extent.pStep).name('Pos. z').onChange(function(value){clipPlanes[2].constant=value; syncSectionGizmoPosition(); if(viewProp.sectionCrossLines) updateSectionCrossLines(); if(viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render); render(); }).listen();
@@ -2081,53 +2060,25 @@ function selectPrevious() {
 
 
 // --- Section gizmo activation/deactivation ---
-function activateSectionGizmo(axisName) {
-    // axisName: 'Off', 'X', 'Y', 'Z'
-    deactivateSectionGizmo();
-    if (axisName === 'Off') return;
-
-    const idx = { 'X': 0, 'Y': 1, 'Z': 2 }[axisName];
-    if (idx === undefined) return;
-
-    activeSectionGizmoIndex = idx;
-    const mesh = sectionGizmos[idx];
-
-    // Sync gizmo position from current clipPlane constant
-    mesh.position.set(0, 0, 0);
-    const axes = ['x', 'y', 'z'];
-    mesh.position[axes[idx]] = clipPlanes[idx].constant;
-
-    // Auto-size the gizmo to fit the scene
-    const box = new THREE.Box3();
-    meshObjects.forEach(obj => box.expandByObject(obj));
-    if (!box.isEmpty()) {
-        const size = box.getSize(new THREE.Vector3());
-        const maxDim = Math.max(size.x, size.y, size.z) * 1.5;
-        mesh.scale.setScalar(maxDim / 200); // 200 = original PlaneGeometry size
+function activateSectionGizmo(enabled) {
+    if (enabled) {
+        // Sync gizmo position from current clip plane constants
+        sectionGizmoHelper.position.set(viewProp.px, viewProp.py, viewProp.pz);
+        sectionTransformControls.attach(sectionGizmoHelper);
+        render();
+    } else {
+        deactivateSectionGizmo();
     }
-
-    mesh.visible = false;
-    sectionTransformControls.attach(mesh);
-    // Constrain movement to the plane's normal axis only
-    sectionTransformControls.showX = (idx === 0);
-    sectionTransformControls.showY = (idx === 1);
-    sectionTransformControls.showZ = (idx === 2);
-    render();
 }
 
 function deactivateSectionGizmo() {
     sectionTransformControls.detach();
-    activeSectionGizmoIndex = -1;
-    sectionGizmos.forEach(g => g.visible = false);
     render();
 }
 
 function syncSectionGizmoPosition() {
-    // Called when slider changes px/py/pz to update gizmo position
-    if (activeSectionGizmoIndex < 0) return;
-    const axes = ['x', 'y', 'z'];
-    const mesh = sectionGizmos[activeSectionGizmoIndex];
-    mesh.position[axes[activeSectionGizmoIndex]] = clipPlanes[activeSectionGizmoIndex].constant;
+    if (!viewProp.sectionGizmo) return;
+    sectionGizmoHelper.position.set(viewProp.px, viewProp.py, viewProp.pz);
 }
 
 
