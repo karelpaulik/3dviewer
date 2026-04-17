@@ -16,7 +16,7 @@ import ZipLoader from 'zip-loader';
 import { updateCrossSectionLines as updateCrossSectionLinesCore, updateSectionCrossLines as updateSectionCrossLinesCore } from './crossSectionUtils.js';
 import { exportToHTML, exportToHTMLDraco, exportToHTMLObfuscated, exportToHTMLObfuscatedDraco } from './htmlExport.js';
 import { initOutliner, toggleOutliner, rebuildTree, highlightObject as outlinerHighlight, updateVisibilityIcon, isOutlinerOpen } from './sceneOutliner.js';
-import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements, isSelectDimActive, setSelectDimActive, deleteSelectedDimension, initSelectDimension, updateSelectDimensionCamera } from './measurementUtils.js';
+import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements, isSelectDimActive, setSelectDimActive, deleteSelectedDimension, initSelectDimension, updateSelectDimensionCamera, reconstructMeasurements, stripMeasurementVisuals } from './measurementUtils.js';
 import { detectCircleCenterFromHit } from './circleDetectionUtils.js';
 import { computeSolidSection, clearSolidSection } from './solidSectionUtils.js';
 
@@ -2929,6 +2929,9 @@ function loadGlbModel(model, name, scale, colored) {
             // Import assembly workflow stored in userData (if any)
             importAssemblyFromGltfScene(gltf.scene);
             
+            // Reconstruct measurements stored in userData
+            reconstructMeasurements(gltf.scene);
+            
             rebuildTree(loadedModels);
             render();
             resolve(gltf.scene);
@@ -3999,6 +4002,9 @@ function exportAllModels() {
     // Clean up originals — clones already carry the assembly data
     assemblyClearUserData();
 
+    // Strip measurement visuals from clones (userData.measurements stays for reconstruction)
+    stripMeasurementVisuals(group);
+
     exporter.parse(group, function(result) {
         saveArrayBuffer(result, finalName);
         console.log('Export all: hotovo.');
@@ -4037,6 +4043,9 @@ async function exportAllModelsDraco() {
     });
 
     assemblyClearUserData();
+
+    // Strip measurement visuals from clones (userData.measurements stays for reconstruction)
+    stripMeasurementVisuals(group);
 
     exporter.parse(group, function(result) {
         // setTimeout dá prohlížeči čas vykreslit overlay
@@ -4126,6 +4135,9 @@ function exportSelectedObject() {
 
     // Clean up originals — clone already carries the assembly data
     assemblyClearUserData();
+
+    // Strip measurement visuals from clone (userData.measurements stays for reconstruction)
+    stripMeasurementVisuals(clone);
 
     // Apply world transform to the clone so it appears in the same position after re-import
     // Aplikujeme world transform na klon, aby se po importu zobrazil ve stejné pozici

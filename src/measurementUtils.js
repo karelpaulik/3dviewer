@@ -774,6 +774,22 @@ function _onDocumentMouseUp(e) {
     if (_isDraggingLabel) {
         _isDraggingLabel = false;
         if (_orbitControls) _orbitControls.enabled = true;
+        // Sync final label position back to userData.measurements for GLB export
+        if (_selectedDim) {
+            const owner = _selectedDim.ownerObject || _scene;
+            const pos = _selectedDim.label.position;
+            if (owner && owner.userData && Array.isArray(owner.userData.measurements)) {
+                const type = _selectedDimType;
+                // Find matching entry by type and first coordinate
+                const rec = owner.userData.measurements.find(d => {
+                    if (d.type !== type) return false;
+                    if (type === 'distance') return Math.abs(d.p1.x - _selectedDim.p1.x) < 1e-6;
+                    if (type === 'angle') return Math.abs(d.points[0].x - _selectedDim.points[0].x) < 1e-6;
+                    return false;
+                });
+                if (rec) rec.labelPos = { x: pos.x, y: pos.y, z: pos.z };
+            }
+        }
     }
 }
 
@@ -884,4 +900,155 @@ export function deleteSelectedDimension(renderFn) {
     _selectedDim = null;
     _selectedDimType = null;
     if (renderFn) renderFn();
+}
+
+/**
+ * Reconstruct visual measurement objects from userData.measurements stored on scene graph nodes.
+ * Call after loading a GLB model. Traverses the given root and rebuilds distance / angle visuals.
+ * @param {THREE.Object3D} root – root of the loaded model (gltf.scene)
+ */
+/**
+ * Strip measurement visual objects (_isMeasurement) from a cloned scene graph before GLB export.
+ * Keeps userData.measurements intact so measurements can be reconstructed on import.
+ * @param {THREE.Object3D} root – cloned root to clean
+ */
+export function stripMeasurementVisuals(root) {
+    if (!root) return;
+    const toRemove = [];
+    root.traverse(function (child) {
+        if (child.userData && child.userData._isMeasurement) {
+            toRemove.push(child);
+        }
+    });
+    for (const obj of toRemove) {
+        if (obj.parent) obj.parent.remove(obj);
+        if (obj.geometry) obj.geometry.dispose();
+        if (obj.material) obj.material.dispose();
+    }
+}
+
+export function reconstructMeasurements(root) {
+    if (!root) return;
+    root.traverse(function (node) {
+        const data = node.userData && node.userData.measurements;
+        if (!Array.isArray(data) || data.length === 0) return;
+        node.updateWorldMatrix(true, false);
+
+        for (const rec of data) {
+            if (rec.type === 'distance') {
+                _reconstructDistance(node, rec);
+            } else if (rec.type === 'angle') {
+                _reconstructAngle(node, rec);
+            }
+        }
+    });
+}
+
+function _reconstructDistance(owner, rec) {
+    const p1 = new THREE.Vector3(rec.p1.x, rec.p1.y, rec.p1.z);
+    const p2 = new THREE.Vector3(rec.p2.x, rec.p2.y, rec.p2.z);
+    const dist = rec.distance;
+
+    const marker1 = _createMarker(p1);
+    const marker2 = _createMarker(p2);
+    const line = _createLine(p1, p2);
+
+    const labelPos = rec.labelPos
+        ? new THREE.Vector3(rec.labelPos.x, rec.labelPos.y, rec.labelPos.z)
+        : new THREE.Vector3().addVectors(p1, p2).multiplyScalar(0.5);
+
+    // Compute deltas in world space for label
+    const p1w = owner.localToWorld(p1.clone());
+    const p2w = owner.localToWorld(p2.clone());
+    const dx = Math.abs(p2w.x - p1w.x);
+    const dy = Math.abs(p2w.y - p1w.y);
+    const dz = Math.abs(p2w.z - p1w.z);
+    const labelText = dist.toFixed(2) + '<br><span style="font-size:10px;opacity:0.85;">Δx ' + dx.toFixed(2) + '<br>Δy ' + dy.toFixed(2) + '<br>Δz ' + dz.toFixed(2) + '</span>';
+    const label = _createLabel(labelText, labelPos);
+
+    owner.add(marker1);
+    owner.add(marker2);
+    owner.add(line);
+    owner.add(label);
+
+    const defaultMid = new THREE.Vector3().addVectors(p1, p2).multiplyScalar(0.5);
+    const meas = { line, label, marker1, marker2, p1, p2, distance: dist, ownerObject: owner };
+    // If label was dragged from its default midpoint, restore anchor + leader line
+    if (labelPos.distanceTo(defaultMid) > 1e-4) {
+        meas._labelAnchor = defaultMid.clone();
+        _updateLeaderLine(meas, labelPos);
+    }
+    _measurements.push(meas);
+}
+
+function _reconstructAngle(owner, rec) {
+    if (!Array.isArray(rec.points) || rec.points.length !== 4) return;
+    const pts = rec.points.map(p => new THREE.Vector3(p.x, p.y, p.z));
+
+    // Markers
+    const markers = pts.map(p => {
+        const m = _createAngleMarker(p);
+        owner.add(m);
+        return m;
+    });
+
+    // Lines
+    const line1 = _createAngleLine(pts[0], pts[1]);
+    owner.add(line1);
+    const line2 = _createAngleLine(pts[2], pts[3]);
+    owner.add(line2);
+
+    // Compute angles in world space
+    owner.updateWorldMatrix(true, false);
+    const p0w = owner.localToWorld(pts[0].clone());
+    const p1w = owner.localToWorld(pts[1].clone());
+    const p2w = owner.localToWorld(pts[2].clone());
+    const p3w = owner.localToWorld(pts[3].clone());
+    const v1 = new THREE.Vector3().subVectors(p1w, p0w);
+    const v2 = new THREE.Vector3().subVectors(p3w, p2w);
+
+    const dot3d = v1.dot(v2) / (v1.length() * v2.length());
+    const a3D = THREE.MathUtils.radToDeg(Math.acos(Math.max(-1, Math.min(1, dot3d))));
+    const aXY = _angleBetweenProjections(v1, v2, 'z');
+    const aYZ = _angleBetweenProjections(v1, v2, 'x');
+    const aXZ = _angleBetweenProjections(v1, v2, 'y');
+
+    let labelText = '<b>Angle</b><br>';
+    labelText += '3D: ' + a3D.toFixed(1) + '°<br>';
+    labelText += '<span style="font-size:10px;opacity:0.85;">';
+    labelText += 'XY: ' + (aXY !== null ? aXY.toFixed(1) + '°' : 'N/A') + '<br>';
+    labelText += 'YZ: ' + (aYZ !== null ? aYZ.toFixed(1) + '°' : 'N/A') + '<br>';
+    labelText += 'XZ: ' + (aXZ !== null ? aXZ.toFixed(1) + '°' : 'N/A');
+    labelText += '</span>';
+
+    // Midpoints and connecting line
+    const mid1 = new THREE.Vector3().addVectors(pts[0], pts[1]).multiplyScalar(0.5);
+    const mid2 = new THREE.Vector3().addVectors(pts[2], pts[3]).multiplyScalar(0.5);
+    const geoMid = new THREE.BufferGeometry().setFromPoints([mid1, mid2]);
+    const matMid = new THREE.LineDashedMaterial({ color: ANGLE_LINE_COLOR, dashSize: 3, gapSize: 2, depthTest: false, transparent: true, opacity: 0.5 });
+    const midLine = new THREE.Line(geoMid, matMid);
+    midLine.computeLineDistances();
+    midLine.renderOrder = 999;
+    midLine.userData._isMeasurement = true;
+    owner.add(midLine);
+
+    const defaultLabelPos = new THREE.Vector3().addVectors(mid1, mid2).multiplyScalar(0.5);
+    const labelPos = rec.labelPos
+        ? new THREE.Vector3(rec.labelPos.x, rec.labelPos.y, rec.labelPos.z)
+        : defaultLabelPos.clone();
+    const label = _createAngleLabel(labelText, labelPos);
+    owner.add(label);
+
+    const angleMeas = {
+        line1, line2, midLine, label,
+        markers,
+        points: pts,
+        ownerObject: owner
+    };
+    // If label was dragged from its default position, restore anchor + leader line
+    if (labelPos.distanceTo(defaultLabelPos) > 1e-4) {
+        angleMeas._labelAnchor = defaultLabelPos.clone();
+        _updateLeaderLine(angleMeas, labelPos);
+    }
+    _angleMeasurements.push(angleMeas);
 }
