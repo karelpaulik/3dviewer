@@ -591,7 +591,11 @@ function init() {
     scene.add(selectionHelper);
     
     window.addEventListener( 'resize', onWindowResize, false );
-    window.addEventListener( 'mousemove', onMouseMove, false );				
+    window.addEventListener( 'mousemove', onMouseMove, false );
+    window.addEventListener( 'beforeunload', function ( event ) {
+        event.preventDefault();
+        event.returnValue = '';
+    } );
     window.addEventListener( 'mousedown', onMouseDown, false );
     window.addEventListener( 'mouseup', onMouseUp, false );
     window.addEventListener( 'click', onClick, false );
