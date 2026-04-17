@@ -316,11 +316,16 @@ canvas { display: block; width: 100%; height: 100%; }
     text-align: center;
     display: none;
 }
-#section-panel {
+#right-panels {
     position: fixed;
     top: 10px;
     right: 10px;
     z-index: 10;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+#section-panel {
     min-width: 190px;
     background: rgba(50,50,50,0.85);
     border-radius: 8px;
@@ -381,6 +386,62 @@ canvas { display: block; width: 100%; height: 100%; }
     transition: background 0.15s;
 }
 #btn-sec-reset:active { background: rgba(120,120,120,0.95); }
+#analysis-panel {
+    min-width: 190px;
+    background: rgba(50,50,50,0.85);
+    border-radius: 8px;
+    backdrop-filter: blur(4px);
+    color: #fff;
+    font-family: Arial, sans-serif;
+    font-size: 14px;
+}
+#analysis-panel-hdr {
+    padding: 8px 12px;
+    cursor: pointer;
+    font-weight: bold;
+    user-select: none;
+    -webkit-user-select: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-radius: 8px;
+    transition: background 0.15s;
+}
+#analysis-panel-hdr:hover { background: rgba(80,80,80,0.9); }
+#analysis-panel-body {
+    display: none;
+    flex-direction: column;
+    gap: 6px;
+    padding: 0 10px 10px;
+}
+#analysis-panel-body.open { display: flex; }
+#analysis-panel-body .chk-label { font-size: 13px; }
+#btn-clear-meas {
+    margin-top: 2px;
+    padding: 6px 10px;
+    font-size: 13px;
+    font-weight: bold;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    color: #fff;
+    background: rgba(80,80,80,0.9);
+    touch-action: manipulation;
+    transition: background 0.15s;
+}
+#btn-clear-meas:active { background: rgba(120,120,120,0.95); }
+.meas-label {
+    position: fixed;
+    color: #fff;
+    background: rgba(200,40,40,0.85);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 11px;
+    pointer-events: none;
+    white-space: nowrap;
+    line-height: 1.4;
+    z-index: 5;
+}
 @media (max-width: 480px) {
     #section-panel { min-width: 150px; font-size: 12px; }
     .sec-row input[type=number] { width: 46px; }
@@ -392,6 +453,7 @@ canvas { display: block; width: 100%; height: 100%; }
     <div id="step-info">Assembled</div>
     <div id="step-desc"></div>
 </div>
+<div id="right-panels">
 <div id="section-panel">
     <div id="section-panel-hdr">&#x2702; Section &#x25BE;</div>
     <div id="section-panel-body">
@@ -404,6 +466,15 @@ canvas { display: block; width: 100%; height: 100%; }
         <div class="sec-row"><span class="sec-axis">Z</span><input type="range" id="sld-pz" step="1"><input type="number" id="num-pz" step="1"></div>
         <button id="btn-sec-reset">&#x21BA; Reset</button>
     </div>
+</div>
+<div id="analysis-panel">
+    <div id="analysis-panel-hdr">&#x1F4CF; Analysis &#x25BE;</div>
+    <div id="analysis-panel-body">
+        <label class="chk-label"><input type="checkbox" id="chk-measure"> Measure (point-to-point)</label>
+        <label class="chk-label"><input type="checkbox" id="chk-detect-circle"> Detect circle center</label>
+        <button id="btn-clear-meas">&#x1F5D1; Clear measurements</button>
+    </div>
+</div>
 </div>
 <div id="canvas-container"></div>
 <div id="controls">
@@ -484,6 +555,25 @@ const solidSectionCapColor = '${sectionSettings.capColor}';
 const solidSectionObjects = [];
 let sceneRoot = null;
 
+// ---- Raycaster & measurement state ----
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+const mouseDownPos = new THREE.Vector2();
+const mouseUpPos = new THREE.Vector2();
+let measureMode = false;
+let detectCircleCenter = false;
+let pendingPoint = null;
+let pendingMarker = null;
+let previewMarker = null;
+let previewLine = null;
+const measurements = [];
+const measLabelDivs = [];
+const MARKER_RADIUS = 1;
+const MARKER_COLOR = 0xff4444;
+const LINE_COLOR = 0xff4444;
+const PREVIEW_COLOR = 0xff8888;
+const MARKER_SCREEN_SIZE = 5;
+
 // Ortho camera
 let orthoHalf = 500;
 const aspect = window.innerWidth / window.innerHeight;
@@ -503,7 +593,27 @@ scene.add(camera);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.addEventListener('change', render);
 
-function render() { renderer.render(scene, camera); }
+// ---- Mouse tracking ----
+renderer.domElement.addEventListener('mousemove', function(e) {
+    mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+    mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+    if (measureMode) updateMeasurePreview();
+});
+renderer.domElement.addEventListener('mousedown', function(e) {
+    mouseDownPos.set(e.clientX, e.clientY);
+});
+renderer.domElement.addEventListener('mouseup', function(e) {
+    mouseUpPos.set(e.clientX, e.clientY);
+    if (!measureMode) return;
+    if (mouseDownPos.distanceTo(mouseUpPos) > 3) return;
+    handleMeasureClick();
+});
+
+function render() {
+    updateMarkerScales();
+    renderer.render(scene, camera);
+    updateMeasureLabelPositions();
+}
 
 function updateCameraFrustum() {
     const a = window.innerWidth / window.innerHeight;
@@ -1302,6 +1412,412 @@ document.getElementById('btn-sec-reset').addEventListener('click', function() {
     render();
 });
 
+// ---- Analysis: Measurement helpers ----
+function getMeshObjects() {
+    const meshes = [];
+    if (sceneRoot) sceneRoot.traverse(function(c) {
+        if (c.isMesh && c.visible && !c.isSectionMesh) meshes.push(c);
+    });
+    return meshes;
+}
+
+function projectToScreen(point) {
+    const v = point.clone().project(camera);
+    return {
+        x: (v.x * 0.5 + 0.5) * window.innerWidth,
+        y: (-v.y * 0.5 + 0.5) * window.innerHeight
+    };
+}
+
+function createMarker(position) {
+    const geo = new THREE.SphereGeometry(MARKER_RADIUS, 12, 12);
+    const mat = new THREE.MeshBasicMaterial({ color: MARKER_COLOR, depthTest: false });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.renderOrder = 999;
+    mesh.position.copy(position);
+    return mesh;
+}
+
+function createLine(p1, p2) {
+    const geo = new THREE.BufferGeometry().setFromPoints([p1, p2]);
+    const mat = new THREE.LineBasicMaterial({ color: LINE_COLOR, depthTest: false });
+    const line = new THREE.Line(geo, mat);
+    line.renderOrder = 999;
+    return line;
+}
+
+function createMeasLabel(text, midPoint) {
+    const div = document.createElement('div');
+    div.className = 'meas-label';
+    div.innerHTML = text;
+    document.body.appendChild(div);
+    return { div: div, point: midPoint };
+}
+
+function updateMeasureLabelPositions() {
+    for (const ml of measLabelDivs) {
+        const s = projectToScreen(ml.point);
+        ml.div.style.left = s.x + 'px';
+        ml.div.style.top = s.y + 'px';
+    }
+}
+
+function updateMarkerScales() {
+    const allMarkers = [];
+    for (const m of measurements) { allMarkers.push(m.marker1, m.marker2); }
+    if (pendingMarker) allMarkers.push(pendingMarker);
+    if (previewMarker) allMarkers.push(previewMarker);
+    if (allMarkers.length === 0) return;
+    const viewHeight = (camera.top - camera.bottom) / camera.zoom;
+    const s = viewHeight / window.innerHeight * MARKER_SCREEN_SIZE;
+    for (const mk of allMarkers) mk.scale.setScalar(s);
+}
+
+function hidePreview() {
+    if (previewMarker) { scene.remove(previewMarker); previewMarker.geometry.dispose(); previewMarker.material.dispose(); previewMarker = null; }
+    if (previewLine) { scene.remove(previewLine); previewLine.geometry.dispose(); previewLine.material.dispose(); previewLine = null; }
+}
+
+function updateMeasurePreview() {
+    if (!measureMode || !sceneRoot) { hidePreview(); return; }
+    raycaster.setFromCamera(mouse, camera);
+    const meshes = getMeshObjects();
+    const hits = raycaster.intersectObjects(meshes);
+    const visHits = (renderer.localClippingEnabled && clipPlanes.length > 0)
+        ? hits.filter(function(h) { return clipPlanes.some(function(p) { return p.distanceToPoint(h.point) >= 0; }); })
+        : hits;
+    if (visHits.length === 0) { hidePreview(); render(); return; }
+    let pt = visHits[0].point;
+    if (detectCircleCenter) {
+        const cc = detectCircleCenterFromHit(visHits[0]);
+        if (cc) pt = cc;
+    }
+    if (!previewMarker) {
+        const geo = new THREE.SphereGeometry(MARKER_RADIUS, 12, 12);
+        const mat = new THREE.MeshBasicMaterial({ color: PREVIEW_COLOR, depthTest: false, transparent: true, opacity: 0.7 });
+        previewMarker = new THREE.Mesh(geo, mat);
+        previewMarker.renderOrder = 999;
+        scene.add(previewMarker);
+    }
+    previewMarker.position.copy(pt);
+    if (pendingPoint) {
+        if (previewLine) { scene.remove(previewLine); previewLine.geometry.dispose(); previewLine.material.dispose(); }
+        const geo = new THREE.BufferGeometry().setFromPoints([pendingPoint, pt]);
+        const mat = new THREE.LineDashedMaterial({ color: LINE_COLOR, dashSize: 4, gapSize: 3, depthTest: false });
+        previewLine = new THREE.Line(geo, mat);
+        previewLine.computeLineDistances();
+        previewLine.renderOrder = 999;
+        scene.add(previewLine);
+    } else if (previewLine) {
+        scene.remove(previewLine); previewLine.geometry.dispose(); previewLine.material.dispose(); previewLine = null;
+    }
+    render();
+}
+
+function handleMeasureClick() {
+    if (!sceneRoot) return;
+    raycaster.setFromCamera(mouse, camera);
+    const meshes = getMeshObjects();
+    const hits = raycaster.intersectObjects(meshes);
+    const visHits = (renderer.localClippingEnabled && clipPlanes.length > 0)
+        ? hits.filter(function(h) { return clipPlanes.some(function(p) { return p.distanceToPoint(h.point) >= 0; }); })
+        : hits;
+    if (visHits.length === 0) return;
+    let pt = visHits[0].point;
+    if (detectCircleCenter) {
+        const cc = detectCircleCenterFromHit(visHits[0]);
+        if (cc) pt = cc;
+    }
+    addMeasurePoint(pt);
+}
+
+function addMeasurePoint(point) {
+    if (!pendingPoint) {
+        pendingPoint = point.clone();
+        pendingMarker = createMarker(pendingPoint);
+        scene.add(pendingMarker);
+        render();
+    } else {
+        const p1 = pendingPoint;
+        const p2 = point.clone();
+        const dist = p1.distanceTo(p2);
+        const marker1 = pendingMarker;
+        const marker2 = createMarker(p2);
+        const line = createLine(p1, p2);
+        const mid = new THREE.Vector3().addVectors(p1, p2).multiplyScalar(0.5);
+        const dx = Math.abs(p2.x - p1.x), dy = Math.abs(p2.y - p1.y), dz = Math.abs(p2.z - p1.z);
+        const txt = dist.toFixed(2) + '<br><span style="font-size:10px;opacity:0.85;">&Delta;x ' + dx.toFixed(2) + '<br>&Delta;y ' + dy.toFixed(2) + '<br>&Delta;z ' + dz.toFixed(2) + '</span>';
+        const ml = createMeasLabel(txt, mid);
+        scene.add(marker2);
+        scene.add(line);
+        measurements.push({ line: line, marker1: marker1, marker2: marker2, p1: p1, p2: p2 });
+        measLabelDivs.push(ml);
+        pendingPoint = null;
+        pendingMarker = null;
+        hidePreview();
+        render();
+    }
+}
+
+function clearMeasurements() {
+    if (pendingMarker) { scene.remove(pendingMarker); pendingMarker.geometry.dispose(); pendingMarker.material.dispose(); pendingMarker = null; }
+    pendingPoint = null;
+    for (const m of measurements) {
+        scene.remove(m.line); scene.remove(m.marker1); scene.remove(m.marker2);
+        m.line.geometry.dispose(); m.line.material.dispose();
+        m.marker1.geometry.dispose(); m.marker1.material.dispose();
+        m.marker2.geometry.dispose(); m.marker2.material.dispose();
+    }
+    measurements.length = 0;
+    for (const ml of measLabelDivs) { ml.div.remove(); }
+    measLabelDivs.length = 0;
+    hidePreview();
+    render();
+}
+
+// ---- Analysis: Circle detection ----
+const SHARP_ANGLE_DEG = 12;
+const CIRCLE_FIT_TOLERANCE = 0.25;
+const MIN_LOOP_VERTICES = 3;
+const MAX_LOOP_VERTICES = 4000;
+const _geoCache = new WeakMap();
+const _faceCache = { mesh: null, faceIndex: -1, result: null };
+
+function _getGeoData(geometry) {
+    if (_geoCache.has(geometry)) return _geoCache.get(geometry);
+    const pos = geometry.getAttribute('position');
+    const rawIdx = geometry.index;
+    const vertCount = pos.count;
+    const bbox = geometry.boundingBox || (geometry.computeBoundingBox(), geometry.boundingBox);
+    const size = new THREE.Vector3();
+    bbox.getSize(size);
+    const maxDim = Math.max(size.x, size.y, size.z, 1e-6);
+    const eps = maxDim * 1e-5;
+    const invEps = 1 / eps;
+    const posMap = new Map();
+    const canonical = new Int32Array(vertCount);
+    const canonPos = [];
+    let nextCanon = 0;
+    for (let i = 0; i < vertCount; i++) {
+        const key = Math.round(pos.getX(i) * invEps) + '_' + Math.round(pos.getY(i) * invEps) + '_' + Math.round(pos.getZ(i) * invEps);
+        if (!posMap.has(key)) { posMap.set(key, nextCanon); canonPos.push(i); nextCanon++; }
+        canonical[i] = posMap.get(key);
+    }
+    const getOrigIdx = rawIdx ? function(i) { return rawIdx.getX(i); } : function(i) { return i; };
+    const totalIdx = rawIdx ? rawIdx.count : vertCount;
+    const faceCount = Math.floor(totalIdx / 3);
+    const faceNormals = new Array(faceCount);
+    const faceVerts = new Array(faceCount);
+    const v0 = new THREE.Vector3(), v1 = new THREE.Vector3(), v2 = new THREE.Vector3();
+    const e1 = new THREE.Vector3(), e2 = new THREE.Vector3();
+    for (let f = 0; f < faceCount; f++) {
+        const oi0 = getOrigIdx(f * 3), oi1 = getOrigIdx(f * 3 + 1), oi2 = getOrigIdx(f * 3 + 2);
+        faceVerts[f] = [canonical[oi0], canonical[oi1], canonical[oi2]];
+        v0.fromBufferAttribute(pos, oi0); v1.fromBufferAttribute(pos, oi1); v2.fromBufferAttribute(pos, oi2);
+        e1.subVectors(v1, v0); e2.subVectors(v2, v0);
+        faceNormals[f] = new THREE.Vector3().crossVectors(e1, e2).normalize();
+    }
+    const edgeFaces = new Map();
+    const faceEdges = new Array(faceCount);
+    for (let f = 0; f < faceCount; f++) {
+        const [a, b, c] = faceVerts[f];
+        const keys = [];
+        for (const [u, vv] of [[a, b], [b, c], [c, a]]) {
+            const key = Math.min(u, vv) + '_' + Math.max(u, vv);
+            keys.push(key);
+            if (!edgeFaces.has(key)) edgeFaces.set(key, []);
+            edgeFaces.get(key).push(f);
+        }
+        faceEdges[f] = keys;
+    }
+    const sharpThreshold = Math.cos(SHARP_ANGLE_DEG * Math.PI / 180);
+    const sharpEdgeSet = new Set();
+    const vertSharpAdj = new Map();
+    for (const [key, faces] of edgeFaces) {
+        let isSharp = false;
+        if (faces.length === 1) { isSharp = true; }
+        else { for (let i = 0; i < faces.length - 1 && !isSharp; i++) { for (let j = i + 1; j < faces.length && !isSharp; j++) { if (faceNormals[faces[i]].dot(faceNormals[faces[j]]) < sharpThreshold) isSharp = true; } } }
+        if (isSharp) {
+            sharpEdgeSet.add(key);
+            const [a, b] = key.split('_').map(Number);
+            if (!vertSharpAdj.has(a)) vertSharpAdj.set(a, new Map());
+            if (!vertSharpAdj.has(b)) vertSharpAdj.set(b, new Map());
+            vertSharpAdj.get(a).set(b, key);
+            vertSharpAdj.get(b).set(a, key);
+        }
+    }
+    const usedEdges = new Set();
+    const circles = [];
+    for (const startEdge of sharpEdgeSet) {
+        if (usedEdges.has(startEdge)) continue;
+        const [startA, startB] = startEdge.split('_').map(Number);
+        const loop = _walkLoop(startA, startB, vertSharpAdj, canonPos, pos);
+        if (!loop || loop.length < MIN_LOOP_VERTICES) continue;
+        const loopKey = loop.slice().sort(function(a, b) { return a - b; }).join(',');
+        if (usedEdges.has('L_' + loopKey)) continue;
+        usedEdges.add('L_' + loopKey);
+        const loopPts = loop.map(function(cv) { return new THREE.Vector3().fromBufferAttribute(pos, canonPos[cv]); });
+        const fit = _fitCircle3D(loopPts);
+        if (!fit) continue;
+        for (let i = 0; i < loop.length; i++) {
+            const a = loop[i], b = loop[(i + 1) % loop.length];
+            usedEdges.add(Math.min(a, b) + '_' + Math.max(a, b));
+        }
+        circles.push({ loopVerts: loop, center: fit.center, radius: fit.radius });
+    }
+    const vertToCircles = new Map();
+    for (let ci = 0; ci < circles.length; ci++) {
+        for (const vv of circles[ci].loopVerts) {
+            if (!vertToCircles.has(vv)) vertToCircles.set(vv, []);
+            vertToCircles.get(vv).push(ci);
+        }
+    }
+    const data = { canonPos: canonPos, faceVerts: faceVerts, faceCount: faceCount, faceEdges: faceEdges, edgeFaces: edgeFaces, sharpEdgeSet: sharpEdgeSet, circles: circles, vertToCircles: vertToCircles };
+    _geoCache.set(geometry, data);
+    return data;
+}
+
+function _walkLoop(startU, startV, vertSharpAdj, canonPos, pos) {
+    const loop = [startU];
+    let prev = startU, curr = startV;
+    for (let i = 0; i < MAX_LOOP_VERTICES; i++) {
+        if (curr === startU) return loop;
+        loop.push(curr);
+        const adj = vertSharpAdj.get(curr);
+        if (!adj || adj.size < 2) return null;
+        if (adj.size === 2) {
+            let next = -1;
+            for (const [n] of adj) { if (n !== prev) { next = n; break; } }
+            if (next === -1) return null;
+            prev = curr; curr = next;
+        } else {
+            const pPrev = _posFromCanon(prev, canonPos, pos);
+            const pCurr = _posFromCanon(curr, canonPos, pos);
+            const inDir = new THREE.Vector3().subVectors(pCurr, pPrev).normalize();
+            let bestNext = -1, bestDot = -2;
+            for (const [n] of adj) {
+                if (n === prev) continue;
+                const pN = _posFromCanon(n, canonPos, pos);
+                const d = inDir.dot(new THREE.Vector3().subVectors(pN, pCurr).normalize());
+                if (d > bestDot) { bestDot = d; bestNext = n; }
+            }
+            if (bestNext === -1) return null;
+            prev = curr; curr = bestNext;
+        }
+    }
+    return null;
+}
+
+function _posFromCanon(cv, canonPos, pos) {
+    const oi = canonPos[cv];
+    return new THREE.Vector3(pos.getX(oi), pos.getY(oi), pos.getZ(oi));
+}
+
+function _fitCircle3D(points) {
+    const count = points.length;
+    if (count < 3) return null;
+    const centroid = new THREE.Vector3();
+    for (const p of points) centroid.add(p);
+    centroid.divideScalar(count);
+    const p0 = points[0], p1 = points[Math.floor(count / 3)], p2 = points[Math.floor(2 * count / 3)];
+    const fe1 = new THREE.Vector3().subVectors(p1, p0);
+    const fe2 = new THREE.Vector3().subVectors(p2, p0);
+    const normal = new THREE.Vector3().crossVectors(fe1, fe2).normalize();
+    if (normal.lengthSq() < 1e-10) return null;
+    const uDir = fe1.clone().normalize();
+    const vDir = new THREE.Vector3().crossVectors(normal, uDir).normalize();
+    const pts2d = points.map(function(p) { const d = new THREE.Vector3().subVectors(p, centroid); return { x: d.dot(uDir), y: d.dot(vDir) }; });
+    let sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0, sxd = 0, syd = 0, sd = 0;
+    for (const pt of pts2d) {
+        const dd = pt.x * pt.x + pt.y * pt.y;
+        sx += pt.x; sy += pt.y; sxx += pt.x * pt.x; syy += pt.y * pt.y; sxy += pt.x * pt.y; sxd += pt.x * dd; syd += pt.y * dd; sd += dd;
+    }
+    const M = [[sxx, sxy, sx], [sxy, syy, sy], [sx, sy, count]];
+    const B = [sxd, syd, sd];
+    const det = M[0][0] * (M[1][1] * M[2][2] - M[1][2] * M[2][1]) - M[0][1] * (M[1][0] * M[2][2] - M[1][2] * M[2][0]) + M[0][2] * (M[1][0] * M[2][1] - M[1][1] * M[2][0]);
+    if (Math.abs(det) < 1e-12) return null;
+    const a = (B[0] * (M[1][1] * M[2][2] - M[1][2] * M[2][1]) - M[0][1] * (B[1] * M[2][2] - M[1][2] * B[2]) + M[0][2] * (B[1] * M[2][1] - M[1][1] * B[2])) / det;
+    const b = (M[0][0] * (B[1] * M[2][2] - M[1][2] * B[2]) - B[0] * (M[1][0] * M[2][2] - M[1][2] * M[2][0]) + M[0][2] * (M[1][0] * B[2] - B[1] * M[2][0])) / det;
+    const cx = a / 2, cy = b / 2;
+    const cVal = (M[0][0] * (M[1][1] * B[2] - B[1] * M[2][1]) - M[0][1] * (M[1][0] * B[2] - B[1] * M[2][0]) + B[0] * (M[1][0] * M[2][1] - M[1][1] * M[2][0])) / det;
+    const rSq = cVal + cx * cx + cy * cy;
+    if (rSq <= 0) return null;
+    const r = Math.sqrt(rSq);
+    let maxErr = 0;
+    for (const pt of pts2d) { const dist = Math.sqrt((pt.x - cx) * (pt.x - cx) + (pt.y - cy) * (pt.y - cy)); maxErr = Math.max(maxErr, Math.abs(dist - r)); }
+    if (maxErr > r * CIRCLE_FIT_TOLERANCE) return null;
+    const center3d = centroid.clone().add(uDir.clone().multiplyScalar(cx)).add(vDir.clone().multiplyScalar(cy));
+    return { center: center3d, radius: r };
+}
+
+function detectCircleCenterFromHit(hit) {
+    if (!hit || hit.faceIndex == null) return null;
+    const mesh = hit.object;
+    const faceIndex = hit.faceIndex;
+    if (_faceCache.mesh === mesh && _faceCache.faceIndex === faceIndex) return _faceCache.result;
+    const geometry = mesh.geometry;
+    if (!geometry) return _cacheFace(mesh, faceIndex, null);
+    const pos = geometry.getAttribute('position');
+    if (!pos) return _cacheFace(mesh, faceIndex, null);
+    const data = _getGeoData(geometry);
+    if (faceIndex >= data.faceCount || data.circles.length === 0) return _cacheFace(mesh, faceIndex, null);
+    const BFS_MAX = 3000;
+    const visited = new Set([faceIndex]);
+    const cands = new Set();
+    let frontier = [faceIndex];
+    for (const cv of data.faceVerts[faceIndex]) { const cis = data.vertToCircles.get(cv); if (cis) for (const ci of cis) cands.add(ci); }
+    while (frontier.length > 0 && visited.size < BFS_MAX) {
+        const nf = [];
+        for (const fi of frontier) {
+            for (const ek of data.faceEdges[fi]) {
+                if (data.sharpEdgeSet.has(ek)) {
+                    const [a, b] = ek.split('_').map(Number);
+                    for (const cv of [a, b]) { const cis = data.vertToCircles.get(cv); if (cis) for (const ci of cis) cands.add(ci); }
+                    continue;
+                }
+                const ef = data.edgeFaces.get(ek);
+                if (!ef) continue;
+                for (const f of ef) { if (!visited.has(f)) { visited.add(f); nf.push(f); for (const cv of data.faceVerts[f]) { const cis = data.vertToCircles.get(cv); if (cis) for (const ci of cis) cands.add(ci); } } }
+            }
+        }
+        frontier = nf;
+    }
+    if (cands.size === 0) return _cacheFace(mesh, faceIndex, null);
+    mesh.updateMatrixWorld(true);
+    let best = null, bestDist = Infinity;
+    for (const ci of cands) {
+        const wc = data.circles[ci].center.clone().applyMatrix4(mesh.matrixWorld);
+        const d = wc.distanceTo(hit.point);
+        if (d < bestDist) { bestDist = d; best = wc; }
+    }
+    return _cacheFace(mesh, faceIndex, best);
+}
+
+function _cacheFace(mesh, faceIndex, result) { _faceCache.mesh = mesh; _faceCache.faceIndex = faceIndex; _faceCache.result = result; return result; }
+
+// ---- Analysis UI wiring ----
+document.getElementById('analysis-panel-hdr').addEventListener('click', function() {
+    const body = document.getElementById('analysis-panel-body');
+    body.classList.toggle('open');
+    this.innerHTML = body.classList.contains('open') ? '&#x1F4CF; Analysis &#x25B4;' : '&#x1F4CF; Analysis &#x25BE;';
+});
+
+document.getElementById('chk-measure').addEventListener('change', function() {
+    measureMode = this.checked;
+    if (!measureMode) {
+        if (pendingMarker) { scene.remove(pendingMarker); pendingMarker.geometry.dispose(); pendingMarker.material.dispose(); pendingMarker = null; }
+        pendingPoint = null;
+        hidePreview();
+        render();
+    }
+});
+
+document.getElementById('chk-detect-circle').addEventListener('change', function() {
+    detectCircleCenter = this.checked;
+});
+
+document.getElementById('btn-clear-meas').addEventListener('click', clearMeasurements);
+
 // ---- Keyboard shortcuts ----
 window.addEventListener('keydown', function(e) {
     switch (e.key) {
@@ -1328,6 +1844,17 @@ window.addEventListener('keydown', function(e) {
         case 'ArrowRight':
             nextStep();
             e.preventDefault();
+            break;
+        case 'Escape':
+            if (measureMode) {
+                measureMode = false;
+                document.getElementById('chk-measure').checked = false;
+                if (pendingMarker) { scene.remove(pendingMarker); pendingMarker.geometry.dispose(); pendingMarker.material.dispose(); pendingMarker = null; }
+                pendingPoint = null;
+                hidePreview();
+                render();
+                e.preventDefault();
+            }
             break;
     }
 });
@@ -1551,9 +2078,12 @@ function generateObfuscatedHTML(glbBase64, animSettings, sectionSettings, dracoD
         'sld-py': '_s5', 'num-py': '_s6',
         'sld-pz': '_s7', 'num-pz': '_s8',
         'btn-sec-reset': '_s9',
+        'analysis-panel': '_aa', 'analysis-panel-hdr': '_ab', 'analysis-panel-body': '_ac',
+        'chk-measure': '_a1', 'chk-detect-circle': '_a2', 'btn-clear-meas': '_a3',
+        'right-panels': '_rp',
         'zoom-coeff': '_zc',
     };
-    const classMap = { 'row': '_r', 'chk-label': '_cl', 'sec-row': '_sr', 'sec-axis': '_sx' };
+    const classMap = { 'row': '_r', 'chk-label': '_cl', 'sec-row': '_sr', 'sec-axis': '_sx', 'meas-label': '_ml' };
 
     // ── Extract JS module from standalone HTML ──
     const moduleMatch = sourceHTML.match(/<script type="module">([\s\S]*?)<\/script>/);
@@ -1568,6 +2098,11 @@ function generateObfuscatedHTML(glbBase64, animSettings, sectionSettings, dracoD
 
     // Rename element IDs in JS
     for (const [readable, obf] of Object.entries(idMap)) {
+        js = js.replaceAll("'" + readable + "'", "'" + obf + "'");
+    }
+
+    // Rename CSS class names in JS
+    for (const [readable, obf] of Object.entries(classMap)) {
         js = js.replaceAll("'" + readable + "'", "'" + obf + "'");
     }
 
@@ -1615,6 +2150,7 @@ function generateObfuscatedHTML(glbBase64, animSettings, sectionSettings, dracoD
     // ── Assemble obfuscated HTML ──
     return `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no"><style>${css}</style></head><body>` +
         `<div id="_a"><div id="_b"></div><div id="_c"></div></div>` +
+        `<div id="_rp">` +
         `<div id="_sa"><div id="_sb">${secPanelArrow}</div><div id="_sc"${secPanelOpen ? ' class="open"' : ''}>` +
         `<label class="_cl"><input type="checkbox" id="_s1"${secChecked}> Section</label>` +
         `<label class="_cl"><input type="checkbox" id="_s2b"${secCrossChecked}> Cross Section Lines</label>` +
@@ -1624,6 +2160,11 @@ function generateObfuscatedHTML(glbBase64, animSettings, sectionSettings, dracoD
         `<div class="_sr"><span class="_sx">Y</span><input type="range" id="_s5" step="1"><input type="number" id="_s6" step="1"></div>` +
         `<div class="_sr"><span class="_sx">Z</span><input type="range" id="_s7" step="1"><input type="number" id="_s8" step="1"></div>` +
         `<button id="_s9">&#x21BA; Reset</button></div></div>` +
+        `<div id="_aa"><div id="_ab">&#x1F4CF; Analysis &#x25BE;</div><div id="_ac">` +
+        `<label class="_cl"><input type="checkbox" id="_a1"> Measure (point-to-point)</label>` +
+        `<label class="_cl"><input type="checkbox" id="_a2"> Detect circle center</label>` +
+        `<button id="_a3">&#x1F5D1; Clear measurements</button></div></div>` +
+        `</div>` +
         `<div id="_d"></div>` +
         `<div id="_e">` +
         `<div class="_r"><button id="_1">&#x23EE; Start</button><button id="_2">Finish &#x23ED;</button><button id="_5">&#x23EA; Anim</button><button id="_6">Anim &#x23E9;</button></div>` +
