@@ -53,6 +53,8 @@ export function exportToHTML(loadedModels, assemblyGui, viewProp, assemblyWriteT
             showSectionMesh: viewProp.showSectionMesh,
             sectionCrossLines: viewProp.sectionCrossLines,
             crossSectionColor: viewProp.crossSectionColor,
+            solidSection: viewProp.solidSection,
+            capColor: viewProp.capColor,
             px: viewProp.px,
             py: viewProp.py,
             pz: viewProp.pz,
@@ -174,6 +176,8 @@ export function exportToHTMLDraco(loadedModels, assemblyGui, viewProp, assemblyW
             showSectionMesh: viewProp.showSectionMesh,
             sectionCrossLines: viewProp.sectionCrossLines,
             crossSectionColor: viewProp.crossSectionColor,
+            solidSection: viewProp.solidSection,
+            capColor: viewProp.capColor,
             px: viewProp.px,
             py: viewProp.py,
             pz: viewProp.pz,
@@ -391,9 +395,10 @@ canvas { display: block; width: 100%; height: 100%; }
 <div id="section-panel">
     <div id="section-panel-hdr">&#x2702; Section &#x25BE;</div>
     <div id="section-panel-body">
-        <label class="chk-label"><input type="checkbox" id="chk-section"> Section</label>
-        <label class="chk-label"><input type="checkbox" id="chk-section-mesh"> Section Mesh</label>
+        <label class="chk-label"><input type="checkbox" id="chk-section"> Section</label>        
         <label class="chk-label"><input type="checkbox" id="chk-section-cross"> Cross Section Lines</label>
+        <label class="chk-label"><input type="checkbox" id="chk-solid-section"${sectionSettings.solidSection ? ' checked' : ''}> Solid Section</label>
+        <label class="chk-label"><input type="checkbox" id="chk-section-mesh"> Section Mesh</label>
         <div class="sec-row"><span class="sec-axis">X</span><input type="range" id="sld-px" step="1"><input type="number" id="num-px" step="1"></div>
         <div class="sec-row"><span class="sec-axis">Y</span><input type="range" id="sld-py" step="1"><input type="number" id="num-py" step="1"></div>
         <div class="sec-row"><span class="sec-axis">Z</span><input type="range" id="sld-pz" step="1"><input type="number" id="num-pz" step="1"></div>
@@ -444,7 +449,7 @@ const GLB_BASE64 = '${glbBase64}';
 
 // ---- Scene setup ----
 const container = document.getElementById('canvas-container');
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+const renderer = new THREE.WebGLRenderer({ antialias: true, stencil: true });
 renderer.setPixelRatio(window.devicePixelRatio);
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -474,6 +479,9 @@ const clipPlanes = [
 let sectionMeshEnabled = ${sectionSettings.showSectionMesh};
 let sectionCrossLinesEnabled = ${sectionSettings.sectionCrossLines};
 let sectionCrossLinesObj = null;
+let solidSectionEnabled = ${sectionSettings.solidSection};
+const solidSectionCapColor = '${sectionSettings.capColor}';
+const solidSectionObjects = [];
 let sceneRoot = null;
 
 // Ortho camera
@@ -645,6 +653,7 @@ loader.parse(glbBuffer, '', function(gltf) {
     sceneRoot = model;
     applyClipPlanesToMaterials(model);
     if (sectionMeshEnabled) updateSectionMeshes();
+    if (solidSectionEnabled) computeSolidSection();
     const _secBox = new THREE.Box3().setFromObject(model);
     const _secSize = _secBox.getSize(new THREE.Vector3());
     const _secRange = Math.ceil(Math.max(_secSize.x, _secSize.y, _secSize.z) * 2);
@@ -1084,6 +1093,128 @@ function updateSectionCrossLines() {
     render();
 }
 
+function isEffectivelyVisible(obj) {
+    let o = obj;
+    while (o) {
+        if (!o.visible) return false;
+        o = o.parent;
+    }
+    return true;
+}
+
+function computeSolidSection() {
+    clearSolidSection();
+    if (!sceneRoot) return;
+    const meshes = [];
+    sceneRoot.traverse(function(c) {
+        if (c.isMesh && isEffectivelyVisible(c) && !c.isSectionMesh) meshes.push(c);
+    });
+    if (meshes.length === 0) return;
+
+    const sceneBBox = new THREE.Box3();
+    meshes.forEach(function(m) { sceneBBox.expandByObject(m); });
+    if (sceneBBox.isEmpty()) return;
+
+    const sceneSize   = sceneBBox.getSize(new THREE.Vector3());
+    const sceneCenter = sceneBBox.getCenter(new THREE.Vector3());
+    const planeSize   = Math.max(sceneSize.x, sceneSize.y, sceneSize.z) * 4;
+    const capGeo      = new THREE.PlaneGeometry(planeSize, planeSize);
+
+    const px = clipPlanes[0].constant, py = clipPlanes[1].constant, pz = clipPlanes[2].constant;
+
+    const sPlanes = [
+        new THREE.Plane(new THREE.Vector3(-1, 0, 0), px),
+        new THREE.Plane(new THREE.Vector3(0, -1, 0), py),
+        new THREE.Plane(new THREE.Vector3(0, 0, -1), pz),
+    ];
+    const constraintPlanes = [
+        [new THREE.Plane(new THREE.Vector3(0, 1, 0), -py), new THREE.Plane(new THREE.Vector3(0, 0, 1), -pz)],
+        [new THREE.Plane(new THREE.Vector3(1, 0, 0), -px), new THREE.Plane(new THREE.Vector3(0, 0, 1), -pz)],
+        [new THREE.Plane(new THREE.Vector3(1, 0, 0), -px), new THREE.Plane(new THREE.Vector3(0, 1, 0), -py)],
+    ];
+    const capTransforms = [
+        { pos: new THREE.Vector3(px, sceneCenter.y, sceneCenter.z), rot: new THREE.Euler(0, Math.PI / 2, 0) },
+        { pos: new THREE.Vector3(sceneCenter.x, py, sceneCenter.z), rot: new THREE.Euler(-Math.PI / 2, 0, 0) },
+        { pos: new THREE.Vector3(sceneCenter.x, sceneCenter.y, pz), rot: new THREE.Euler(0, 0, 0) },
+    ];
+
+    let order = 1;
+    for (let i = 0; i < 3; i++) {
+        const plane      = sPlanes[i];
+        const constraint = constraintPlanes[i];
+        const transform  = capTransforms[i];
+
+        meshes.forEach(function(mesh) {
+            mesh.updateWorldMatrix(true, false);
+            solidSectionObjects.push(makeStencilMesh(mesh, plane, THREE.BackSide,  THREE.IncrementWrapStencilOp, order));
+            solidSectionObjects.push(makeStencilMesh(mesh, plane, THREE.FrontSide, THREE.DecrementWrapStencilOp, order));
+        });
+
+        const capMat = new THREE.MeshStandardMaterial({
+            color: new THREE.Color(solidSectionCapColor),
+            roughness: 0.5,
+            metalness: 0.1,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+            depthTest: true,
+            stencilWrite: true,
+            stencilRef: 0,
+            stencilFunc: THREE.NotEqualStencilFunc,
+            stencilFail:  THREE.KeepStencilOp,
+            stencilZFail: THREE.KeepStencilOp,
+            stencilZPass: THREE.KeepStencilOp,
+            clippingPlanes: constraint,
+        });
+        const cap = new THREE.Mesh(capGeo, capMat);
+        cap.position.copy(transform.pos);
+        cap.rotation.copy(transform.rot);
+        cap.renderOrder = order + 1;
+        cap.frustumCulled = false;
+        cap.onAfterRender = function(r) { r.clearStencil(); };
+        scene.add(cap);
+        solidSectionObjects.push(cap);
+
+        order += 2;
+    }
+    render();
+}
+
+function clearSolidSection() {
+    solidSectionObjects.forEach(function(obj) {
+        if (obj.parent) obj.parent.remove(obj);
+        if (obj.material) {
+            (Array.isArray(obj.material) ? obj.material : [obj.material]).forEach(function(m) { m.dispose(); });
+        }
+    });
+    solidSectionObjects.length = 0;
+}
+
+function makeStencilMesh(mesh, clipPlane, side, stencilOp, renderOrder) {
+    const mat = new THREE.MeshBasicMaterial({
+        side: side,
+        depthWrite: false,
+        depthTest: false,
+        colorWrite: false,
+        stencilWrite: true,
+        stencilFunc: THREE.AlwaysStencilFunc,
+        stencilFail:  stencilOp,
+        stencilZFail: stencilOp,
+        stencilZPass: stencilOp,
+        clippingPlanes: [clipPlane],
+    });
+    const m = new THREE.Mesh(mesh.geometry, mat);
+    m.matrixAutoUpdate = false;
+    m.frustumCulled = false;
+    m.matrix.copy(mesh.matrixWorld);
+    m.renderOrder = renderOrder;
+    m.onBeforeRender = function() {
+        mesh.updateWorldMatrix(true, false);
+        m.matrixWorld.copy(mesh.matrixWorld);
+    };
+    scene.add(m);
+    return m;
+}
+
 function setSectionSliderRange(range) {
     document.getElementById('sld-px').min = -range; document.getElementById('sld-px').max = range;
     document.getElementById('num-px').min = -range; document.getElementById('num-px').max = range;
@@ -1108,8 +1239,23 @@ const chkSection = document.getElementById('chk-section');
 chkSection.checked = renderer.localClippingEnabled;
 chkSection.addEventListener('change', function() {
     renderer.localClippingEnabled = this.checked;
+    if (!this.checked && solidSectionEnabled) { clearSolidSection(); }
+    if (this.checked && solidSectionEnabled) { computeSolidSection(); }
     updateSectionCrossLines();
     render();
+});
+
+const chkSolidSection = document.getElementById('chk-solid-section');
+chkSolidSection.addEventListener('change', function() {
+    solidSectionEnabled = this.checked;
+    if (this.checked) {
+        renderer.localClippingEnabled = true;
+        chkSection.checked = true;
+        computeSolidSection();
+    } else {
+        clearSolidSection();
+        render();
+    }
 });
 
 const chkSectionMesh = document.getElementById('chk-section-mesh');
@@ -1136,6 +1282,7 @@ function wireAxisSlider(sldId, numId, idx) {
         clipPlanes[idx].constant = v;
         sld.value = v; num.value = v;
         if (sectionCrossLinesEnabled) updateSectionCrossLines();
+        if (solidSectionEnabled) computeSolidSection();
         render();
     }
     sld.addEventListener('input', () => update(parseFloat(sld.value)));
@@ -1151,6 +1298,7 @@ document.getElementById('btn-sec-reset').addEventListener('click', function() {
     document.getElementById('sld-py').value = 0; document.getElementById('num-py').value = 0;
     document.getElementById('sld-pz').value = 0; document.getElementById('num-pz').value = 0;
     if (sectionCrossLinesEnabled) updateSectionCrossLines();
+    if (solidSectionEnabled) computeSolidSection();
     render();
 });
 
@@ -1235,6 +1383,8 @@ export function exportToHTMLObfuscated(loadedModels, assemblyGui, viewProp, asse
             showSectionMesh: viewProp.showSectionMesh,
             sectionCrossLines: viewProp.sectionCrossLines,
             crossSectionColor: viewProp.crossSectionColor,
+            solidSection: viewProp.solidSection,
+            capColor: viewProp.capColor,
             px: viewProp.px,
             py: viewProp.py,
             pz: viewProp.pz,
@@ -1351,6 +1501,8 @@ export function exportToHTMLObfuscatedDraco(loadedModels, assemblyGui, viewProp,
             showSectionMesh: viewProp.showSectionMesh,
             sectionCrossLines: viewProp.sectionCrossLines,
             crossSectionColor: viewProp.crossSectionColor,
+            solidSection: viewProp.solidSection,
+            capColor: viewProp.capColor,
             px: viewProp.px,
             py: viewProp.py,
             pz: viewProp.pz,
@@ -1394,7 +1546,7 @@ function generateObfuscatedHTML(glbBase64, animSettings, sectionSettings, dracoD
         'btn-start': '_1', 'btn-finish': '_2', 'btn-prev': '_3',
         'btn-next': '_4', 'btn-anim-start': '_5', 'btn-anim-finish': '_6', 'chk-loop': '_7', 'chk-fullscreen': '_8', 'chk-camera': '_9',
         'section-panel': '_sa', 'section-panel-hdr': '_sb', 'section-panel-body': '_sc',
-        'chk-section': '_s1', 'chk-section-mesh': '_s2', 'chk-section-cross': '_s2b',
+        'chk-section': '_s1', 'chk-section-mesh': '_s2', 'chk-section-cross': '_s2b', 'chk-solid-section': '_s2c',
         'sld-px': '_s3', 'num-px': '_s4',
         'sld-py': '_s5', 'num-py': '_s6',
         'sld-pz': '_s7', 'num-pz': '_s8',
@@ -1458,14 +1610,16 @@ function generateObfuscatedHTML(glbBase64, animSettings, sectionSettings, dracoD
     const secChecked = sectionSettings.section ? ' checked' : '';
     const secMeshChecked = sectionSettings.showSectionMesh ? ' checked' : '';
     const secCrossChecked = sectionSettings.sectionCrossLines ? ' checked' : '';
+    const secSolidChecked = sectionSettings.solidSection ? ' checked' : '';
 
     // ── Assemble obfuscated HTML ──
     return `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no"><style>${css}</style></head><body>` +
         `<div id="_a"><div id="_b"></div><div id="_c"></div></div>` +
         `<div id="_sa"><div id="_sb">${secPanelArrow}</div><div id="_sc"${secPanelOpen ? ' class="open"' : ''}>` +
         `<label class="_cl"><input type="checkbox" id="_s1"${secChecked}> Section</label>` +
-        `<label class="_cl"><input type="checkbox" id="_s2"${secMeshChecked}> Section Mesh</label>` +
         `<label class="_cl"><input type="checkbox" id="_s2b"${secCrossChecked}> Cross Section Lines</label>` +
+        `<label class="_cl"><input type="checkbox" id="_s2c"${secSolidChecked}> Solid Section</label>` +
+        `<label class="_cl"><input type="checkbox" id="_s2"${secMeshChecked}> Section Mesh</label>` +
         `<div class="_sr"><span class="_sx">X</span><input type="range" id="_s3" step="1"><input type="number" id="_s4" step="1"></div>` +
         `<div class="_sr"><span class="_sx">Y</span><input type="range" id="_s5" step="1"><input type="number" id="_s6" step="1"></div>` +
         `<div class="_sr"><span class="_sx">Z</span><input type="range" id="_s7" step="1"><input type="number" id="_s8" step="1"></div>` +
