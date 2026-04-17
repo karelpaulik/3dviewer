@@ -16,7 +16,7 @@ import ZipLoader from 'zip-loader';
 import { updateCrossSectionLines as updateCrossSectionLinesCore, updateSectionCrossLines as updateSectionCrossLinesCore } from './crossSectionUtils.js';
 import { exportToHTML, exportToHTMLDraco, exportToHTMLObfuscated, exportToHTMLObfuscatedDraco } from './htmlExport.js';
 import { initOutliner, toggleOutliner, rebuildTree, highlightObject as outlinerHighlight, updateVisibilityIcon, isOutlinerOpen } from './sceneOutliner.js';
-import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements } from './measurementUtils.js';
+import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements, isSelectDimActive, setSelectDimActive, deleteSelectedDimension, initSelectDimension, updateSelectDimensionCamera } from './measurementUtils.js';
 import { detectCircleCenterFromHit } from './circleDetectionUtils.js';
 import { computeSolidSection, clearSolidSection } from './solidSectionUtils.js';
 
@@ -217,6 +217,7 @@ const viewProp = {
     historyInfo: '– žádný záznam –',
     measureMode: false, // Point-to-point measurement mode
     angleMode: false, // Angle measurement mode (4 points → 2 lines → projected angles)
+    selectDimensionMode: false, // Select dimension mode – click label to select, drag to move, Delete to remove
     detectCircleCenter: false, // Snap measurement points to detected circle centers
     orientedSelectionBox: 'local',
 };
@@ -657,12 +658,23 @@ function init() {
                     viewProp.isSelectAllowed = true;
                     render();
                 }
+                if (viewProp.selectDimensionMode) {
+                    viewProp.selectDimensionMode = false;
+                    setSelectDimActive(false);
+                    viewProp.isSelectAllowed = true;
+                    render();
+                }
                 deselectObject();
                 selectionHistory.length = 0;
                 clearHistoryPreviewHelpers();
                 if (selectedObjects.length > 0) {
                     addCurrentGroupToHistory();
                     clearMultiSelect();
+                }
+                break;
+            case 'Delete':
+                if (viewProp.selectDimensionMode && isSelectDimActive()) {
+                    deleteSelectedDimension(render);
                 }
                 break;
             case 'q':
@@ -812,6 +824,7 @@ function init() {
     addHelpGui();
     applyToolbarPreferences(); // Apply initial toolbar CSS from viewProp defaults
     initMeasurement(scene);
+    initSelectDimension(currentCamera, render, orbitControls);
 } //End init 
 
 // Přepočítá frustum ortografické kamery podle aktuálního obsahu meshObjects.
@@ -1022,6 +1035,7 @@ function addMainGui() {
                 if (value) {
                     viewProp.isSelectAllowed = false;
                     if (viewProp.angleMode) { viewProp.angleMode = false; setAngleActive(false); }
+                    if (viewProp.selectDimensionMode) { viewProp.selectDimensionMode = false; setSelectDimActive(false); }
                 } else {
                     viewProp.isSelectAllowed = true;
                 }
@@ -1032,6 +1046,18 @@ function addMainGui() {
                 if (value) {
                     viewProp.isSelectAllowed = false;
                     if (viewProp.measureMode) { viewProp.measureMode = false; setMeasureActive(false); }
+                    if (viewProp.selectDimensionMode) { viewProp.selectDimensionMode = false; setSelectDimActive(false); }
+                } else {
+                    viewProp.isSelectAllowed = true;
+                }
+                render();
+            }).listen();
+            analysisFolder.add(viewProp, 'selectDimensionMode').name('Select dimension').onChange(function(value) {
+                setSelectDimActive(value);
+                if (value) {
+                    viewProp.isSelectAllowed = false;
+                    if (viewProp.measureMode) { viewProp.measureMode = false; setMeasureActive(false); }
+                    if (viewProp.angleMode) { viewProp.angleMode = false; setAngleActive(false); }
                 } else {
                     viewProp.isSelectAllowed = true;
                 }
@@ -2282,6 +2308,7 @@ function setCamera() {
     sectionTransformControls.camera = currentCamera;
 
     currentCamera.lookAt( orbitControls.target.x, orbitControls.target.y, orbitControls.target.z );
+    updateSelectDimensionCamera(currentCamera);
     onWindowResize();
 }	
 //GUI----------------------------------------------------------------------------------------------------------------

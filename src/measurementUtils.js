@@ -24,6 +24,18 @@ const ANGLE_LINE_COLOR = 0x4488ff;
 const ANGLE_MARKER_COLOR = 0x4488ff;
 const ANGLE_PREVIEW_COLOR = 0x88aaff;
 
+// --- Select dimension state ---
+let _selectDimActive = false;
+let _selectedDim = null; // reference to the selected measurement object (from _measurements or _angleMeasurements)
+let _selectedDimType = null; // 'distance' | 'angle'
+let _isDraggingLabel = false;
+let _dragStartMouse = new THREE.Vector2();
+let _dragStartPos = new THREE.Vector3();
+let _currentCamera = null;
+let _renderFn = null;
+let _orbitControls = null;
+const SELECTED_BORDER = '2px solid #ffdd00';
+
 const MARKER_RADIUS = 1;
 const MARKER_COLOR = 0xff4444;
 const LINE_COLOR = 0xff4444;
@@ -160,6 +172,7 @@ export function clearMeasurements(renderFn) {
 
     // Remove completed measurements
     for (const m of _measurements) {
+        _removeLeaderLine(m);
         _scene.remove(m.line);
         _scene.remove(m.label);
         _scene.remove(m.marker1);
@@ -176,6 +189,7 @@ export function clearMeasurements(renderFn) {
     // Also clear angle measurements
     _cancelAnglePending();
     for (const m of _angleMeasurements) {
+        _removeLeaderLine(m);
         _scene.remove(m.line1);
         _scene.remove(m.line2);
         _scene.remove(m.midLine);
@@ -523,6 +537,7 @@ export function clearAngleMeasurements(renderFn) {
     _cancelAnglePending();
 
     for (const m of _angleMeasurements) {
+        _removeLeaderLine(m);
         _scene.remove(m.line1);
         _scene.remove(m.line2);
         _scene.remove(m.midLine);
@@ -550,4 +565,220 @@ export function getAngleMarkers() {
     }
     markers.push(..._angleMarkers);
     return markers;
+}
+
+// ===================== Select Dimension Mode =====================
+
+function _deselectDim() {
+    if (_selectedDim && _selectedDim.label) {
+        _selectedDim.label.element.style.border = 'none';
+    }
+    _selectedDim = null;
+    _selectedDimType = null;
+}
+
+function _selectDim(meas, type) {
+    _deselectDim();
+    _selectedDim = meas;
+    _selectedDimType = type;
+    meas.label.element.style.border = SELECTED_BORDER;
+}
+
+function _setLabelPointerEvents(enabled) {
+    const pe = enabled ? 'auto' : 'none';
+    for (const m of _measurements) {
+        m.label.element.style.pointerEvents = pe;
+    }
+    for (const m of _angleMeasurements) {
+        m.label.element.style.pointerEvents = pe;
+    }
+}
+
+function _onLabelMouseDown(e) {
+    if (!_selectDimActive) return;
+    e.stopPropagation();
+
+    // Find which measurement this label belongs to
+    const el = e.currentTarget;
+    let found = null, foundType = null;
+    for (const m of _measurements) {
+        if (m.label.element === el) { found = m; foundType = 'distance'; break; }
+    }
+    if (!found) {
+        for (const m of _angleMeasurements) {
+            if (m.label.element === el) { found = m; foundType = 'angle'; break; }
+        }
+    }
+    if (!found) return;
+
+    _selectDim(found, foundType);
+
+    // Compute the anchor point (original midpoint of the measurement line)
+    let anchor;
+    if (foundType === 'distance') {
+        anchor = new THREE.Vector3().addVectors(found.p1, found.p2).multiplyScalar(0.5);
+    } else {
+        const mid1 = new THREE.Vector3().addVectors(found.points[0], found.points[1]).multiplyScalar(0.5);
+        const mid2 = new THREE.Vector3().addVectors(found.points[2], found.points[3]).multiplyScalar(0.5);
+        anchor = new THREE.Vector3().addVectors(mid1, mid2).multiplyScalar(0.5);
+    }
+    found._labelAnchor = anchor;
+
+    // Start drag
+    _isDraggingLabel = true;
+    _dragStartMouse.set(e.clientX, e.clientY);
+    _dragStartPos.copy(found.label.position);
+    if (_orbitControls) _orbitControls.enabled = false;
+
+    if (_renderFn) _renderFn();
+}
+
+function _onDocumentMouseMove(e) {
+    if (!_isDraggingLabel || !_selectedDim || !_currentCamera) return;
+
+    const dx = e.clientX - _dragStartMouse.x;
+    const dy = e.clientY - _dragStartMouse.y;
+
+    // Convert screen-space delta to world-space delta on a plane facing camera at label depth
+    const labelWorldPos = _dragStartPos.clone();
+    const labelNDC = labelWorldPos.clone().project(_currentCamera);
+
+    const ndcDx = (dx / window.innerWidth) * 2;
+    const ndcDy = -(dy / window.innerHeight) * 2;
+
+    const newNDC = new THREE.Vector3(labelNDC.x + ndcDx, labelNDC.y + ndcDy, labelNDC.z);
+    const newWorldPos = newNDC.unproject(_currentCamera);
+
+    _selectedDim.label.position.copy(newWorldPos);
+
+    // Update leader line from anchor to label
+    _updateLeaderLine(_selectedDim, newWorldPos);
+
+    if (_renderFn) _renderFn();
+}
+
+function _updateLeaderLine(meas, labelPos) {
+    if (!meas._labelAnchor || !_scene) return;
+    // Remove old leader line
+    if (meas.leaderLine) {
+        _scene.remove(meas.leaderLine);
+        meas.leaderLine.geometry.dispose();
+        meas.leaderLine.material.dispose();
+    }
+    const geo = new THREE.BufferGeometry().setFromPoints([meas._labelAnchor, labelPos]);
+    const mat = new THREE.LineDashedMaterial({ color: 0x999999, dashSize: 3, gapSize: 2, depthTest: false, transparent: true, opacity: 0.6 });
+    meas.leaderLine = new THREE.Line(geo, mat);
+    meas.leaderLine.computeLineDistances();
+    meas.leaderLine.renderOrder = 998;
+    meas.leaderLine.userData._isMeasurement = true;
+    _scene.add(meas.leaderLine);
+}
+
+function _removeLeaderLine(meas) {
+    if (meas.leaderLine && _scene) {
+        _scene.remove(meas.leaderLine);
+        meas.leaderLine.geometry.dispose();
+        meas.leaderLine.material.dispose();
+        meas.leaderLine = null;
+    }
+}
+
+function _onDocumentMouseUp(e) {
+    if (_isDraggingLabel) {
+        _isDraggingLabel = false;
+        if (_orbitControls) _orbitControls.enabled = true;
+    }
+}
+
+function _onCanvasClick(e) {
+    if (!_selectDimActive) return;
+    // If click is not on a label, deselect
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    if (el && el.closest('.measurement-label')) return; // handled by label mousedown
+    _deselectDim();
+    if (_renderFn) _renderFn();
+}
+
+function _removeSingleMeasurement(meas, type) {
+    if (!_scene) return;
+    _removeLeaderLine(meas);
+    if (type === 'distance') {
+        _scene.remove(meas.line);
+        _scene.remove(meas.label);
+        _scene.remove(meas.marker1);
+        _scene.remove(meas.marker2);
+        meas.line.geometry.dispose(); meas.line.material.dispose();
+        meas.marker1.geometry.dispose(); meas.marker1.material.dispose();
+        meas.marker2.geometry.dispose(); meas.marker2.material.dispose();
+        const idx = _measurements.indexOf(meas);
+        if (idx !== -1) _measurements.splice(idx, 1);
+    } else if (type === 'angle') {
+        _scene.remove(meas.line1);
+        _scene.remove(meas.line2);
+        _scene.remove(meas.midLine);
+        _scene.remove(meas.label);
+        meas.line1.geometry.dispose(); meas.line1.material.dispose();
+        meas.line2.geometry.dispose(); meas.line2.material.dispose();
+        meas.midLine.geometry.dispose(); meas.midLine.material.dispose();
+        for (const mk of meas.markers) {
+            _scene.remove(mk);
+            mk.geometry.dispose(); mk.material.dispose();
+        }
+        const idx = _angleMeasurements.indexOf(meas);
+        if (idx !== -1) _angleMeasurements.splice(idx, 1);
+    }
+}
+
+export function initSelectDimension(camera, renderFn, orbitCtrl) {
+    _currentCamera = camera;
+    _renderFn = renderFn;
+    _orbitControls = orbitCtrl;
+}
+
+export function updateSelectDimensionCamera(camera) {
+    _currentCamera = camera;
+}
+
+export function isSelectDimActive() {
+    return _selectDimActive;
+}
+
+export function setSelectDimActive(val) {
+    _selectDimActive = val;
+    _setLabelPointerEvents(val);
+    if (!val) {
+        _deselectDim();
+        _isDraggingLabel = false;
+    }
+    // Add / remove global listeners
+    if (val) {
+        document.addEventListener('mousemove', _onDocumentMouseMove);
+        document.addEventListener('mouseup', _onDocumentMouseUp);
+        window.addEventListener('click', _onCanvasClick, true);
+        // Attach mousedown to all existing labels
+        for (const m of _measurements) {
+            m.label.element.addEventListener('mousedown', _onLabelMouseDown);
+        }
+        for (const m of _angleMeasurements) {
+            m.label.element.addEventListener('mousedown', _onLabelMouseDown);
+        }
+    } else {
+        document.removeEventListener('mousemove', _onDocumentMouseMove);
+        document.removeEventListener('mouseup', _onDocumentMouseUp);
+        window.removeEventListener('click', _onCanvasClick, true);
+        for (const m of _measurements) {
+            m.label.element.removeEventListener('mousedown', _onLabelMouseDown);
+        }
+        for (const m of _angleMeasurements) {
+            m.label.element.removeEventListener('mousedown', _onLabelMouseDown);
+        }
+    }
+}
+
+export function deleteSelectedDimension(renderFn) {
+    if (!_selectedDim) return;
+    _removeSingleMeasurement(_selectedDim, _selectedDimType);
+    _selectedDim = null;
+    _selectedDimType = null;
+    if (renderFn) renderFn();
 }
