@@ -933,9 +933,9 @@ function _onDocumentMouseMove(e) {
  */
 function _rebuildCadDimVisuals(meas, p1World, p2World, offsetPoint) {
     const owner = meas.ownerObject || _scene;
-    // Clear any label-offset leader line – whole-dim drag resets to default
-    _removeLeaderLine(meas);
-    meas._labelAnchor = null;
+    // Compute label offset relative to old feet midpoint (preserve user-set offset)
+    const oldMid = new THREE.Vector3().addVectors(meas.foot1, meas.foot2).multiplyScalar(0.5);
+    const labelOffset = meas.label ? meas.label.position.clone().sub(oldMid) : new THREE.Vector3();
     owner.updateWorldMatrix(true, false);
     const axis = meas.axis;
 
@@ -964,7 +964,9 @@ function _rebuildCadDimVisuals(meas, p1World, p2World, offsetPoint) {
     const extLine1    = _cadMakeLine(meas.p1, f1, CAD_DIM_EXT_COLOR, false);
     const extLine2    = _cadMakeLine(meas.p2, f2, CAD_DIM_EXT_COLOR, false);
     const dimLine     = _cadMakeLine(f1, f2, CAD_DIM_COLOR, false);
-    const labelPos    = new THREE.Vector3().addVectors(f1, f2).multiplyScalar(0.5);
+    // Preserve label offset relative to new feet midpoint
+    const newMid  = new THREE.Vector3().addVectors(f1, f2).multiplyScalar(0.5);
+    const labelPos = newMid.clone().add(labelOffset);
     // Temporarily set foot1/foot2 and value so _cadDimGetLabelText can use them
     meas.foot1 = f1; meas.foot2 = f2; meas.value = value;
     const label = _cadMakeLabel(_cadDimGetLabelText(meas, meas.labelMode || 0), labelPos);
@@ -979,6 +981,12 @@ function _rebuildCadDimVisuals(meas, p1World, p2World, offsetPoint) {
     meas.extLine2 = extLine2;
     meas.dimLine  = dimLine;
     meas.label    = label;
+
+    // Update leader line anchor to new feet midpoint (keep it visible if offset exists)
+    if (meas._labelAnchor) {
+        meas._labelAnchor = newMid.clone();
+        _updateLeaderLine(meas, labelPos);
+    }
 
     // Restore selection highlight and pointer-events
     if (_selectedDim === meas) {
@@ -1620,11 +1628,10 @@ export function setCadDimDragMode(meas, mode, renderFn) {
         // Create leader line from anchor to current label position
         _updateLeaderLine(meas, meas.label.position);
     } else {
-        // Remove leader line, reset label to dim-line midpoint
-        _removeLeaderLine(meas);
-        meas._labelAnchor = null;
-        const mid = new THREE.Vector3().addVectors(meas.foot1, meas.foot2).multiplyScalar(0.5);
-        meas.label.position.copy(mid);
+        // Keep leader line visible; just update anchor to feet midpoint so it stays connected
+        const anchor = new THREE.Vector3().addVectors(meas.foot1, meas.foot2).multiplyScalar(0.5);
+        meas._labelAnchor = anchor;
+        _updateLeaderLine(meas, meas.label.position);
     }
     // Persist to userData
     if (owner && owner.userData && Array.isArray(owner.userData.measurements)) {
