@@ -157,7 +157,13 @@ export function addMeasurePoint(point, ownerObject, renderFn) {
         const dx = Math.abs(p2world.x - p1world.x);
         const dy = Math.abs(p2world.y - p1world.y);
         const dz = Math.abs(p2world.z - p1world.z);
-        const labelText = dist.toFixed(2) + '<br><span style="font-size:10px;opacity:0.85;">Δx ' + dx.toFixed(2) + '<br>Δy ' + dy.toFixed(2) + '<br>Δz ' + dz.toFixed(2) + '</span>';
+        const dXY = Math.sqrt(dx * dx + dy * dy);
+        const dXZ = Math.sqrt(dx * dx + dz * dz);
+        const dYZ = Math.sqrt(dy * dy + dz * dz);
+        const labelText = dist.toFixed(2)
+            + '<br><span style="font-size:10px;opacity:0.85;">Δx ' + dx.toFixed(2) + ' &nbsp;ΔYZ ' + dYZ.toFixed(2)
+            + '<br>Δy ' + dy.toFixed(2) + ' &nbsp;ΔXZ ' + dXZ.toFixed(2)
+            + '<br>Δz ' + dz.toFixed(2) + ' &nbsp;ΔXY ' + dXY.toFixed(2) + '</span>';
         const label = _createLabel(labelText, midPoint);
 
         owner1.add(marker2);
@@ -1067,7 +1073,13 @@ function _reconstructDistance(owner, rec) {
     const dx = Math.abs(p2w.x - p1w.x);
     const dy = Math.abs(p2w.y - p1w.y);
     const dz = Math.abs(p2w.z - p1w.z);
-    const labelText = dist.toFixed(2) + '<br><span style="font-size:10px;opacity:0.85;">Δx ' + dx.toFixed(2) + '<br>Δy ' + dy.toFixed(2) + '<br>Δz ' + dz.toFixed(2) + '</span>';
+    const dXY = Math.sqrt(dx * dx + dy * dy);
+    const dXZ = Math.sqrt(dx * dx + dz * dz);
+    const dYZ = Math.sqrt(dy * dy + dz * dz);
+    const labelText = dist.toFixed(2)
+        + '<br><span style="font-size:10px;opacity:0.85;">Δx ' + dx.toFixed(2) + ' &nbsp;ΔYZ ' + dYZ.toFixed(2)
+        + '<br>Δy ' + dy.toFixed(2) + ' &nbsp;ΔXZ ' + dXZ.toFixed(2)
+        + '<br>Δz ' + dz.toFixed(2) + ' &nbsp;ΔXY ' + dXY.toFixed(2) + '</span>';
     const label = _createLabel(labelText, labelPos);
 
     owner.add(marker1);
