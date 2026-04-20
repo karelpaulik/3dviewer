@@ -6,6 +6,7 @@ import { CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 let _scene = null;
 let _annotations = []; // { marker, label, point, text, ownerObject, leaderLine }
 let _active = false;
+let _depthTestEnabled = true; // true = skryté za modelem (výchozí), false = vždy viditelné přes model
 let _pendingPoint = null;   // THREE.Vector3 | null – first click (on object surface)
 let _pendingMarker = null;  // Mesh for pending point
 let _pendingOwner = null;   // Owner object for the first click
@@ -24,9 +25,9 @@ const MARKER_SCREEN_SIZE = 5;
 
 function _createMarker(position) {
     const geo = new THREE.SphereGeometry(MARKER_RADIUS, 12, 12);
-    const mat = new THREE.MeshBasicMaterial({ color: MARKER_COLOR, depthTest: false });
+    const mat = new THREE.MeshBasicMaterial({ color: MARKER_COLOR, depthTest: _depthTestEnabled });
     const mesh = new THREE.Mesh(geo, mat);
-    mesh.renderOrder = 999;
+    mesh.renderOrder = _depthTestEnabled ? 0 : 999;
     mesh.position.copy(position);
     mesh.userData._isAnnotation = true;
     return mesh;
@@ -45,10 +46,10 @@ function _createLabel(text, position) {
 
 function _createLeaderLine(p1, p2) {
     const geo = new THREE.BufferGeometry().setFromPoints([p1, p2]);
-    const mat = new THREE.LineDashedMaterial({ color: LINE_COLOR, dashSize: 3, gapSize: 2, depthTest: false, transparent: true, opacity: 0.6 });
+    const mat = new THREE.LineDashedMaterial({ color: LINE_COLOR, dashSize: 3, gapSize: 2, depthTest: _depthTestEnabled, transparent: true, opacity: 0.6 });
     const line = new THREE.Line(geo, mat);
     line.computeLineDistances();
-    line.renderOrder = 998;
+    line.renderOrder = _depthTestEnabled ? 0 : 998;
     line.userData._isAnnotation = true;
     return line;
 }
@@ -350,6 +351,22 @@ export function setAnnotationsVisible(visible) {
         a.marker.visible = visible;
         a.label.visible = visible;
         if (a.leaderLine) a.leaderLine.visible = visible;
+    }
+}
+
+/**
+ * Enable / disable depth testing for annotation markers and leader lines.
+ * enabled=false → vždy viditelné (přes model), enabled=true → skryté za modelem.
+ */
+export function setAnnotationDepthTest(enabled) {
+    _depthTestEnabled = enabled;
+    for (const a of _annotations) {
+        a.marker.material.depthTest = enabled;
+        a.marker.renderOrder = enabled ? 0 : 999;
+        if (a.leaderLine) {
+            a.leaderLine.material.depthTest = enabled;
+            a.leaderLine.renderOrder = enabled ? 0 : 998;
+        }
     }
 }
 

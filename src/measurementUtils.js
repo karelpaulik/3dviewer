@@ -39,6 +39,8 @@ let _renderFn = null;
 let _orbitControls = null;
 const SELECTED_BORDER = '2px solid #ffdd00';
 
+let _depthTestEnabled = true; // true = skryté za modelem (výchozí), false = vždy viditelné přes model
+
 const MARKER_RADIUS = 1;
 const MARKER_COLOR = 0xff4444;
 const LINE_COLOR = 0xff4444;
@@ -49,9 +51,9 @@ const MARKER_SCREEN_SIZE = 5; // desired pixel-size (approximate)
 
 function _createMarker(position) {
     const geo = new THREE.SphereGeometry(MARKER_RADIUS, 12, 12);
-    const mat = new THREE.MeshBasicMaterial({ color: MARKER_COLOR, depthTest: false });
+    const mat = new THREE.MeshBasicMaterial({ color: MARKER_COLOR, depthTest: _depthTestEnabled });
     const mesh = new THREE.Mesh(geo, mat);
-    mesh.renderOrder = 999;
+    mesh.renderOrder = _depthTestEnabled ? 0 : 999;
     mesh.position.copy(position);
     mesh.userData._isMeasurement = true;
     return mesh;
@@ -59,9 +61,9 @@ function _createMarker(position) {
 
 function _createLine(p1, p2) {
     const geo = new THREE.BufferGeometry().setFromPoints([p1, p2]);
-    const mat = new THREE.LineBasicMaterial({ color: LINE_COLOR, depthTest: false });
+    const mat = new THREE.LineBasicMaterial({ color: LINE_COLOR, depthTest: _depthTestEnabled });
     const line = new THREE.Line(geo, mat);
-    line.renderOrder = 999;
+    line.renderOrder = _depthTestEnabled ? 0 : 999;
     line.userData._isMeasurement = true;
     return line;
 }
@@ -279,6 +281,29 @@ export function setMeasurementsVisible(visible) {
     }
 }
 
+/**
+ * Enable / disable depth testing for all measurement markers and lines.
+ * enabled=false → vždy viditelné (přes model), enabled=true → skryté za modelem.
+ */
+export function setMeasurementDepthTest(enabled) {
+    _depthTestEnabled = enabled;
+    const ro = enabled ? 0 : 999;
+    const roLeader = enabled ? 0 : 998;
+    for (const m of _measurements) {
+        m.marker1.material.depthTest = enabled; m.marker1.renderOrder = ro;
+        m.marker2.material.depthTest = enabled; m.marker2.renderOrder = ro;
+        m.line.material.depthTest = enabled; m.line.renderOrder = ro;
+        if (m.leaderLine) { m.leaderLine.material.depthTest = enabled; m.leaderLine.renderOrder = roLeader; }
+    }
+    for (const m of _angleMeasurements) {
+        for (const mk of m.markers) { mk.material.depthTest = enabled; mk.renderOrder = ro; }
+        m.line1.material.depthTest = enabled; m.line1.renderOrder = ro;
+        m.line2.material.depthTest = enabled; m.line2.renderOrder = ro;
+        m.midLine.material.depthTest = enabled; m.midLine.renderOrder = ro;
+        if (m.leaderLine) { m.leaderLine.material.depthTest = enabled; m.leaderLine.renderOrder = roLeader; }
+    }
+}
+
 // --- Hover preview ---
 
 function _hidePreview() {
@@ -389,9 +414,9 @@ export function updateMarkerScales(camera) {
 
 function _createAngleMarker(position) {
     const geo = new THREE.SphereGeometry(MARKER_RADIUS, 12, 12);
-    const mat = new THREE.MeshBasicMaterial({ color: ANGLE_MARKER_COLOR, depthTest: false });
+    const mat = new THREE.MeshBasicMaterial({ color: ANGLE_MARKER_COLOR, depthTest: _depthTestEnabled });
     const mesh = new THREE.Mesh(geo, mat);
-    mesh.renderOrder = 999;
+    mesh.renderOrder = _depthTestEnabled ? 0 : 999;
     mesh.position.copy(position);
     mesh.userData._isMeasurement = true;
     return mesh;
@@ -399,9 +424,9 @@ function _createAngleMarker(position) {
 
 function _createAngleLine(p1, p2) {
     const geo = new THREE.BufferGeometry().setFromPoints([p1, p2]);
-    const mat = new THREE.LineBasicMaterial({ color: ANGLE_LINE_COLOR, depthTest: false });
+    const mat = new THREE.LineBasicMaterial({ color: ANGLE_LINE_COLOR, depthTest: _depthTestEnabled });
     const line = new THREE.Line(geo, mat);
-    line.renderOrder = 999;
+    line.renderOrder = _depthTestEnabled ? 0 : 999;
     line.userData._isMeasurement = true;
     return line;
 }
@@ -533,10 +558,10 @@ export function addAnglePoint(point, ownerObject, renderFn) {
 
         // Connecting line between midpoints of the two lines (local space)
         const geoMid = new THREE.BufferGeometry().setFromPoints([mid1, mid2]);
-        const matMid = new THREE.LineDashedMaterial({ color: ANGLE_LINE_COLOR, dashSize: 3, gapSize: 2, depthTest: false, transparent: true, opacity: 0.5 });
+        const matMid = new THREE.LineDashedMaterial({ color: ANGLE_LINE_COLOR, dashSize: 3, gapSize: 2, depthTest: _depthTestEnabled, transparent: true, opacity: 0.5 });
         const midLine = new THREE.Line(geoMid, matMid);
         midLine.computeLineDistances();
-        midLine.renderOrder = 999;
+        midLine.renderOrder = _depthTestEnabled ? 0 : 999;
         midLine.userData._isMeasurement = true;
         owner.add(midLine);
 
@@ -785,10 +810,10 @@ function _updateLeaderLine(meas, labelPos) {
         meas.leaderLine.material.dispose();
     }
     const geo = new THREE.BufferGeometry().setFromPoints([meas._labelAnchor, labelPos]);
-    const mat = new THREE.LineDashedMaterial({ color: 0x999999, dashSize: 3, gapSize: 2, depthTest: false, transparent: true, opacity: 0.6 });
+    const mat = new THREE.LineDashedMaterial({ color: 0x999999, dashSize: 3, gapSize: 2, depthTest: _depthTestEnabled, transparent: true, opacity: 0.6 });
     meas.leaderLine = new THREE.Line(geo, mat);
     meas.leaderLine.computeLineDistances();
-    meas.leaderLine.renderOrder = 998;
+    meas.leaderLine.renderOrder = _depthTestEnabled ? 0 : 998;
     meas.leaderLine.userData._isMeasurement = true;
     owner.add(meas.leaderLine);
 }
@@ -1067,10 +1092,10 @@ function _reconstructAngle(owner, rec) {
     const mid1 = new THREE.Vector3().addVectors(pts[0], pts[1]).multiplyScalar(0.5);
     const mid2 = new THREE.Vector3().addVectors(pts[2], pts[3]).multiplyScalar(0.5);
     const geoMid = new THREE.BufferGeometry().setFromPoints([mid1, mid2]);
-    const matMid = new THREE.LineDashedMaterial({ color: ANGLE_LINE_COLOR, dashSize: 3, gapSize: 2, depthTest: false, transparent: true, opacity: 0.5 });
+    const matMid = new THREE.LineDashedMaterial({ color: ANGLE_LINE_COLOR, dashSize: 3, gapSize: 2, depthTest: _depthTestEnabled, transparent: true, opacity: 0.5 });
     const midLine = new THREE.Line(geoMid, matMid);
     midLine.computeLineDistances();
-    midLine.renderOrder = 999;
+    midLine.renderOrder = _depthTestEnabled ? 0 : 999;
     midLine.userData._isMeasurement = true;
     owner.add(midLine);
 

@@ -16,9 +16,9 @@ import ZipLoader from 'zip-loader';
 import { updateCrossSectionLines as updateCrossSectionLinesCore, updateSectionCrossLines as updateSectionCrossLinesCore } from './crossSectionUtils.js';
 import { exportToHTML, exportToHTMLDraco, exportToHTMLObfuscated, exportToHTMLObfuscatedDraco } from './htmlExport.js';
 import { initOutliner, toggleOutliner, rebuildTree, highlightObject as outlinerHighlight, updateVisibilityIcon, isOutlinerOpen } from './sceneOutliner.js';
-import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements, isSelectDimActive, setSelectDimActive, deleteSelectedDimension, initSelectDimension, updateSelectDimensionCamera, reconstructMeasurements, stripMeasurementVisuals, setMeasurementsVisible } from './measurementUtils.js';
+import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements, isSelectDimActive, setSelectDimActive, deleteSelectedDimension, initSelectDimension, updateSelectDimensionCamera, reconstructMeasurements, stripMeasurementVisuals, setMeasurementsVisible, setMeasurementDepthTest } from './measurementUtils.js';
 import { detectCircleCenterFromHit } from './circleDetectionUtils.js';
-import { initAnnotations, isAnnotationActive, setAnnotationActive, addAnnotationPoint, getAnnotationPendingPoint, updateAnnotationPreview, updateAnnotationMarkerScales, setAnnotationsVisible, clearAnnotations, stripAnnotationVisuals, reconstructAnnotations } from './annotationUtils.js';
+import { initAnnotations, isAnnotationActive, setAnnotationActive, addAnnotationPoint, getAnnotationPendingPoint, updateAnnotationPreview, updateAnnotationMarkerScales, setAnnotationsVisible, clearAnnotations, stripAnnotationVisuals, reconstructAnnotations, setAnnotationDepthTest } from './annotationUtils.js';
 import { computeSolidSection, clearSolidSection } from './solidSectionUtils.js';
 
 // Proměnné globálního rozsahu----------------------------------------------------------------------------------------
@@ -223,6 +223,7 @@ const viewProp = {
     showMeasurements: true, // Toggle visibility of all measurement visuals
     annotationMode: false, // Annotation (note) mode
     showAnnotations: true, // Toggle visibility of all annotations
+    showBehindModel: false, // Zobrazit kóty/poznámky i za modelem (depthTest off)
     orientedSelectionBox: 'local',
 };
 
@@ -1103,6 +1104,11 @@ function addMainGui() {
             }).listen();
             analysisFolder.add(viewProp, 'showAnnotations').name('Show annotations').onChange(function(value) {
                 setAnnotationsVisible(value);
+                render();
+            });
+            analysisFolder.add(viewProp, 'showBehindModel').name('Show behind model').onChange(function(value) {
+                setMeasurementDepthTest(!value);
+                setAnnotationDepthTest(!value);
                 render();
             });
             analysisFolder.add({ fn() {
