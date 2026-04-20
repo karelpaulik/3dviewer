@@ -953,7 +953,8 @@ function _rebuildCadDimVisuals(meas, p1World, p2World, offsetPoint) {
         if (obj.geometry) obj.geometry.dispose();
         if (obj.material) obj.material.dispose();
     }
-    if (meas.label) {
+    // During a drag, keep the label DOM element alive to avoid cancelling touch gestures
+    if (!_isDraggingLabel && meas.label) {
         owner.remove(meas.label);
         if (meas.label.element) meas.label.element.remove();
     }
@@ -969,11 +970,21 @@ function _rebuildCadDimVisuals(meas, p1World, p2World, offsetPoint) {
     const labelPos = newMid.clone().add(labelOffset);
     // Temporarily set foot1/foot2 and value so _cadDimGetLabelText can use them
     meas.foot1 = f1; meas.foot2 = f2; meas.value = value;
-    const label = _cadMakeLabel(_cadDimGetLabelText(meas, meas.labelMode || 0), labelPos);
+
+    // During an active drag: update the label in-place so the DOM element is NOT removed.
+    let label;
+    if (_isDraggingLabel && meas.label) {
+        label = meas.label;
+        label.position.copy(labelPos);
+        label.element.innerHTML = _cadDimGetLabelText(meas, meas.labelMode || 0);
+    } else {
+        label = _cadMakeLabel(_cadDimGetLabelText(meas, meas.labelMode || 0), labelPos);
+        owner.add(label);
+    }
 
     owner.add(markerFoot1); owner.add(markerFoot2);
     owner.add(extLine1);    owner.add(extLine2);
-    owner.add(dimLine);     owner.add(label);
+    owner.add(dimLine);
 
     meas.markerFoot1 = markerFoot1;
     meas.markerFoot2 = markerFoot2;
@@ -1192,6 +1203,33 @@ export function deleteSelectedDimension(renderFn) {
     _selectedDim = null;
     _selectedDimType = null;
     if (renderFn) renderFn();
+}
+
+/**
+ * Touch equivalents for the select-dim drag system.
+ * Call from touch handlers in main.js when selectDimensionMode is active.
+ */
+export function selectDimTouchStart(clientX, clientY) {
+    if (!_selectDimActive) return false;
+    const el = document.elementFromPoint(clientX, clientY);
+    if (!el) return false;
+    const labelEl = el.closest('.measurement-label') || el.closest('.annotation-label');
+    if (!labelEl) return false;
+    // Synthesise a mousedown-like event on that element
+    const synth = { clientX, clientY, currentTarget: labelEl, stopPropagation: () => {} };
+    _onLabelMouseDown(synth);
+    return true; // consumed
+}
+
+export function selectDimTouchMove(clientX, clientY) {
+    if (!_isDraggingLabel) return false;
+    _onDocumentMouseMove({ clientX, clientY });
+    return true;
+}
+
+export function selectDimTouchEnd() {
+    if (!_isDraggingLabel) return;
+    _onDocumentMouseUp({});
 }
 
 /**

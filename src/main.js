@@ -16,7 +16,7 @@ import ZipLoader from 'zip-loader';
 import { updateCrossSectionLines as updateCrossSectionLinesCore, updateSectionCrossLines as updateSectionCrossLinesCore } from './crossSectionUtils.js';
 import { exportToHTML, exportToHTMLDraco, exportToHTMLObfuscated, exportToHTMLObfuscatedDraco } from './htmlExport.js';
 import { initOutliner, toggleOutliner, rebuildTree, highlightObject as outlinerHighlight, updateVisibilityIcon, isOutlinerOpen } from './sceneOutliner.js';
-import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements, isSelectDimActive, setSelectDimActive, deleteSelectedDimension, initSelectDimension, updateSelectDimensionCamera, reconstructMeasurements, stripMeasurementVisuals, setMeasurementsVisible, setMeasurementDepthTest, removeMeasurementsForOwner, isCadDimActive, setCadDimActive, getCadDimStep, getCadDimAxis, addCadDimPoint, updateCadDimPreview, updateCadDimHoverPreview, cycleCadDimAxis, placeCadDim, clearCadDimMeasurements, removeCadDimMeasurementsForOwner, getSelectedCadDim, setCadDimLabelMode, setCadDimDragMode } from './measurementUtils.js';
+import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements, isSelectDimActive, setSelectDimActive, deleteSelectedDimension, initSelectDimension, updateSelectDimensionCamera, reconstructMeasurements, stripMeasurementVisuals, setMeasurementsVisible, setMeasurementDepthTest, removeMeasurementsForOwner, isCadDimActive, setCadDimActive, getCadDimStep, getCadDimAxis, addCadDimPoint, updateCadDimPreview, updateCadDimHoverPreview, cycleCadDimAxis, placeCadDim, clearCadDimMeasurements, removeCadDimMeasurementsForOwner, getSelectedCadDim, setCadDimLabelMode, setCadDimDragMode, selectDimTouchStart, selectDimTouchMove, selectDimTouchEnd } from './measurementUtils.js';
 import { detectCircleCenterFromHit } from './circleDetectionUtils.js';
 import { initAnnotations, isAnnotationActive, setAnnotationActive, addAnnotationPoint, getAnnotationPendingPoint, updateAnnotationPreview, updateAnnotationMarkerScales, setAnnotationsVisible, clearAnnotations, stripAnnotationVisuals, reconstructAnnotations, setAnnotationDepthTest, removeAnnotationsForOwner } from './annotationUtils.js';
 import { computeSolidSection, clearSolidSection } from './solidSectionUtils.js';
@@ -659,9 +659,9 @@ function init() {
     window.addEventListener( 'mousedown', onMouseDown, false );
     window.addEventListener( 'mouseup', onMouseUp, false );
     window.addEventListener( 'click', onClick, false );
-    window.addEventListener( 'touchstart', onTouchStart, false );
-    window.addEventListener( 'touchmove', onTouchMove, false );
-    window.addEventListener( 'touchend', onTouchEnd, false );
+    window.addEventListener( 'touchstart', onTouchStart, { passive: false } );
+    window.addEventListener( 'touchmove', onTouchMove, { passive: false } );
+    window.addEventListener( 'touchend', onTouchEnd, { passive: false } );
     
     window.addEventListener( 'keydown', function ( event ) {
         switch ( event.key ) {
@@ -3925,6 +3925,12 @@ function onTouchStart( event ) {
         isTouchDragging = false;
         mouse.x = ( touch.clientX / window.innerWidth ) * 2 - 1;
         mouse.y = - ( touch.clientY / window.innerHeight ) * 2 + 1;
+
+        // Edit Labels touch drag
+        if (viewProp.selectDimensionMode && isSelectDimActive()) {
+            selectDimTouchStart(touch.clientX, touch.clientY);
+        }
+
         render();
     }
 }
@@ -3943,6 +3949,14 @@ function onTouchMove( event ) {
         
         mouse.x = ( touch.clientX / window.innerWidth ) * 2 - 1;
         mouse.y = - ( touch.clientY / window.innerHeight ) * 2 + 1;
+
+        // Edit Labels touch drag
+        if (viewProp.selectDimensionMode && isSelectDimActive()) {
+            if (selectDimTouchMove(touch.clientX, touch.clientY)) {
+                event.preventDefault(); // prevent scroll while dragging a dim label
+            }
+        }
+
         render();
     }
 }
@@ -3985,6 +3999,11 @@ function onTouchEnd( event ) {
 
         // Vypočítáme vzdálenost mezi počáteční a koncovou pozicí
         const dragDistance = touchStartPos.distanceTo(touchEndPos);
+
+        // End any active Edit Labels drag regardless of distance
+        if (viewProp.selectDimensionMode && isSelectDimActive()) {
+            selectDimTouchEnd();
+        }
 
         // Selekce pouze pokud nedocházelo k dragování (vzdálenost < 10 pixelů)
         if (dragDistance > 10 || isTouchDragging) {
@@ -5634,7 +5653,10 @@ function assemblyMoveStepDown() {
 
     // --- Shared trigger (mouse RMB + touch long-press) ---
     function triggerContextMenu(x, y) {
-        if (lastSelectedObject) {
+        if (viewProp.selectDimensionMode && isSelectDimActive() && getSelectedCadDim()) {
+            refreshCadDimMenu();
+            showAt(menuCadDim, x, y);
+        } else if (lastSelectedObject) {
             refreshObjectInputs(lastSelectedObject);
             showAt(menuObject, x, y);
         } else {
