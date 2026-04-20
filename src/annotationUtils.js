@@ -412,6 +412,24 @@ export function getAnnotationCount() {
 }
 
 /**
+ * Remove all annotations whose ownerObject is `root` or a descendant of it.
+ * Cleans up CSS2D label DOM elements, disposes geometry/material, updates internal array.
+ */
+export function removeAnnotationsForOwner(root) {
+    if (!root) return;
+    const owned = new Set();
+    root.traverse(obj => owned.add(obj));
+
+    _annotations = _annotations.filter(a => {
+        if (!owned.has(a.ownerObject)) return true;
+        if (a.label && a.label.element) a.label.element.remove();
+        a.marker.geometry.dispose(); a.marker.material.dispose();
+        if (a.leaderLine) { a.leaderLine.geometry.dispose(); a.leaderLine.material.dispose(); }
+        return false;
+    });
+}
+
+/**
  * Return the internal annotations array (for select-dimension integration).
  */
 export function getAnnotations() {

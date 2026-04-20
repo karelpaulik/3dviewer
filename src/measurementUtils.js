@@ -263,6 +263,43 @@ export function getMeasurementCount() {
     return _measurements.length;
 }
 
+/**
+ * Remove all measurements and angle measurements whose ownerObject is `root` or a descendant of it.
+ * Cleans up CSS2D label DOM elements, disposes geometry/material, updates internal arrays.
+ */
+export function removeMeasurementsForOwner(root) {
+    if (!root) return;
+    const owned = new Set();
+    root.traverse(obj => owned.add(obj));
+
+    _measurements = _measurements.filter(m => {
+        if (!owned.has(m.ownerObject)) return true;
+        if (m.label && m.label.element) m.label.element.remove();
+        m.line.geometry.dispose(); m.line.material.dispose();
+        m.marker1.geometry.dispose(); m.marker1.material.dispose();
+        m.marker2.geometry.dispose(); m.marker2.material.dispose();
+        if (m.leaderLine) { m.leaderLine.geometry.dispose(); m.leaderLine.material.dispose(); }
+        return false;
+    });
+
+    _angleMeasurements = _angleMeasurements.filter(m => {
+        if (!owned.has(m.ownerObject)) return true;
+        if (m.label && m.label.element) m.label.element.remove();
+        m.line1.geometry.dispose(); m.line1.material.dispose();
+        m.line2.geometry.dispose(); m.line2.material.dispose();
+        m.midLine.geometry.dispose(); m.midLine.material.dispose();
+        for (const mk of m.markers) { mk.geometry.dispose(); mk.material.dispose(); }
+        if (m.leaderLine) { m.leaderLine.geometry.dispose(); m.leaderLine.material.dispose(); }
+        return false;
+    });
+
+    // Clear selected dim if it was one of the removed ones
+    if (_selectedDim && owned.has(_selectedDim.ownerObject)) {
+        _selectedDim = null;
+        _selectedDimType = null;
+    }
+}
+
 export function setMeasurementsVisible(visible) {
     for (const m of _measurements) {
         m.line.visible = visible;
