@@ -16,7 +16,7 @@ import ZipLoader from 'zip-loader';
 import { updateCrossSectionLines as updateCrossSectionLinesCore, updateSectionCrossLines as updateSectionCrossLinesCore } from './crossSectionUtils.js';
 import { exportToHTML, exportToHTMLDraco, exportToHTMLObfuscated, exportToHTMLObfuscatedDraco } from './htmlExport.js';
 import { initOutliner, toggleOutliner, rebuildTree, highlightObject as outlinerHighlight, updateVisibilityIcon, isOutlinerOpen } from './sceneOutliner.js';
-import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements, isSelectDimActive, setSelectDimActive, deleteSelectedDimension, initSelectDimension, updateSelectDimensionCamera, reconstructMeasurements, stripMeasurementVisuals, setMeasurementsVisible, setMeasurementDepthTest, removeMeasurementsForOwner } from './measurementUtils.js';
+import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements, isSelectDimActive, setSelectDimActive, deleteSelectedDimension, initSelectDimension, updateSelectDimensionCamera, reconstructMeasurements, stripMeasurementVisuals, setMeasurementsVisible, setMeasurementDepthTest, removeMeasurementsForOwner, isCadDimActive, setCadDimActive, getCadDimStep, getCadDimAxis, addCadDimPoint, updateCadDimPreview, updateCadDimHoverPreview, cycleCadDimAxis, placeCadDim, clearCadDimMeasurements, removeCadDimMeasurementsForOwner, getSelectedCadDim, setCadDimLabelMode, setCadDimDragMode } from './measurementUtils.js';
 import { detectCircleCenterFromHit } from './circleDetectionUtils.js';
 import { initAnnotations, isAnnotationActive, setAnnotationActive, addAnnotationPoint, getAnnotationPendingPoint, updateAnnotationPreview, updateAnnotationMarkerScales, setAnnotationsVisible, clearAnnotations, stripAnnotationVisuals, reconstructAnnotations, setAnnotationDepthTest, removeAnnotationsForOwner } from './annotationUtils.js';
 import { computeSolidSection, clearSolidSection } from './solidSectionUtils.js';
@@ -145,6 +145,20 @@ const mouseDownPos = new THREE.Vector2();
 const mouseUpPos = new THREE.Vector2();
 const touchStartPos = new THREE.Vector2();
 const touchEndPos = new THREE.Vector2();
+
+// --- CAD Dimension hint overlay (created in init) ---
+let _cadDimHintDiv = null;
+function _updateCadDimHintUI(overrideAxis) {
+    if (!_cadDimHintDiv) return;
+    if (viewProp.cadDimMode && isCadDimActive() && getCadDimStep() === 2) {
+        const ax = (overrideAxis || getCadDimAxis()).toUpperCase();
+        _cadDimHintDiv.innerHTML = 'CAD dim &nbsp;·&nbsp; Axis: <b>' + ax + '</b> &nbsp;·&nbsp; RMB: cycle X/Y/Z &nbsp;·&nbsp; LMB: place';
+        _cadDimHintDiv.style.display = 'block';
+    } else {
+        _cadDimHintDiv.style.display = 'none';
+    }
+}
+
 let INTERSECTED;
 let isMouseDown = false;
 let isTouchDragging = false;
@@ -218,6 +232,7 @@ const viewProp = {
     historyInfo: '– žádný záznam –',
     measureMode: false, // Point-to-point measurement mode
     angleMode: false, // Angle measurement mode (4 points → 2 lines → projected angles)
+    cadDimMode: false, // CAD-style dimension (2 pts + axis-aligned placement mode)
     selectDimensionMode: false, // Select dimension mode – click label to select, drag to move, Delete to remove
     detectCircleCenter: false, // Snap measurement points to detected circle centers
     showMeasurements: true, // Toggle visibility of all measurement visuals
@@ -663,6 +678,14 @@ function init() {
                     viewProp.isSelectAllowed = true;
                     render();
                 }
+                if (viewProp.cadDimMode) {
+                    viewProp.cadDimMode = false;
+                    setCadDimActive(false);
+                    orbitControls.enabled = true;
+                    viewProp.isSelectAllowed = true;
+                    _updateCadDimHintUI();
+                    render();
+                }
                 if (viewProp.selectDimensionMode) {
                     viewProp.selectDimensionMode = false;
                     setSelectDimActive(false);
@@ -841,6 +864,11 @@ function init() {
     initMeasurement(scene);
     initSelectDimension(currentCamera, render, orbitControls);
     initAnnotations(scene, render);
+
+    // CAD dim placement hint overlay (created here, referenced by module-level pointer)
+    _cadDimHintDiv = document.createElement('div');
+    _cadDimHintDiv.style.cssText = 'position:fixed;bottom:46px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.75);color:#fff;padding:5px 14px;border-radius:5px;font-size:12px;pointer-events:none;display:none;z-index:1000;white-space:nowrap;';
+    document.body.appendChild(_cadDimHintDiv);
 } //End init 
 
 // Přepočítá frustum ortografické kamery podle aktuálního obsahu meshObjects.
@@ -1066,6 +1094,7 @@ function addMainGui() {
                 viewProp.isSelectAllowed = false;
                 if (viewProp.measureMode) { viewProp.measureMode = false; setMeasureActive(false); }
                 if (viewProp.angleMode) { viewProp.angleMode = false; setAngleActive(false); }
+                if (viewProp.cadDimMode) { viewProp.cadDimMode = false; setCadDimActive(false); orbitControls.enabled = true; }
                 if (viewProp.annotationMode) { viewProp.annotationMode = false; setAnnotationActive(false); }
             } else {
                 viewProp.isSelectAllowed = true;
@@ -1078,6 +1107,7 @@ function addMainGui() {
                 if (value) {
                     viewProp.isSelectAllowed = false;
                     if (viewProp.angleMode) { viewProp.angleMode = false; setAngleActive(false); }
+                    if (viewProp.cadDimMode) { viewProp.cadDimMode = false; setCadDimActive(false); orbitControls.enabled = true; }
                     if (viewProp.selectDimensionMode) { viewProp.selectDimensionMode = false; setSelectDimActive(false); }
                     if (viewProp.annotationMode) { viewProp.annotationMode = false; setAnnotationActive(false); }
                 } else {
@@ -1090,10 +1120,26 @@ function addMainGui() {
                 if (value) {
                     viewProp.isSelectAllowed = false;
                     if (viewProp.measureMode) { viewProp.measureMode = false; setMeasureActive(false); }
+                    if (viewProp.cadDimMode) { viewProp.cadDimMode = false; setCadDimActive(false); orbitControls.enabled = true; }
                     if (viewProp.selectDimensionMode) { viewProp.selectDimensionMode = false; setSelectDimActive(false); }
                     if (viewProp.annotationMode) { viewProp.annotationMode = false; setAnnotationActive(false); }
                 } else {
                     viewProp.isSelectAllowed = true;
+                }
+                render();
+            }).listen();
+            measureFolder.add(viewProp, 'cadDimMode').name('CAD dimension').onChange(function(value) {
+                setCadDimActive(value);
+                if (value) {
+                    viewProp.isSelectAllowed = false;
+                    if (viewProp.measureMode) { viewProp.measureMode = false; setMeasureActive(false); }
+                    if (viewProp.angleMode) { viewProp.angleMode = false; setAngleActive(false); }
+                    if (viewProp.selectDimensionMode) { viewProp.selectDimensionMode = false; setSelectDimActive(false); }
+                    if (viewProp.annotationMode) { viewProp.annotationMode = false; setAnnotationActive(false); }
+                } else {
+                    orbitControls.enabled = true; // re-enable in case we were in phase 2
+                    viewProp.isSelectAllowed = true;
+                    _updateCadDimHintUI();
                 }
                 render();
             }).listen();
@@ -1113,6 +1159,7 @@ function addMainGui() {
                     viewProp.isSelectAllowed = false;
                     if (viewProp.measureMode) { viewProp.measureMode = false; setMeasureActive(false); }
                     if (viewProp.angleMode) { viewProp.angleMode = false; setAngleActive(false); }
+                    if (viewProp.cadDimMode) { viewProp.cadDimMode = false; setCadDimActive(false); orbitControls.enabled = true; }
                     if (viewProp.selectDimensionMode) { viewProp.selectDimensionMode = false; setSelectDimActive(false); }
                 } else {
                     viewProp.isSelectAllowed = true;
@@ -3587,6 +3634,38 @@ function render() {
         updateAnglePreview(null);
     }
 
+    // CAD dimension preview
+    if (viewProp.cadDimMode && isCadDimActive() && !isMouseOverGui) {
+        const cdStep = getCadDimStep();
+        if (cdStep < 2) {
+            // Phases 0 & 1: surface hover marker + dashed line from p1
+            if (!isMouseDown) {
+                raycaster.setFromCamera(mouse, currentCamera);
+                const cdIntersects = raycaster.intersectObjects(meshObjects);
+                const cdIsFullyVisible = (obj) => { let o = obj; while (o) { if (!o.visible) return false; o = o.parent; } return true; };
+                const cdVisible = (renderer.localClippingEnabled && clipPlanes.length > 0)
+                    ? cdIntersects.filter(hit => cdIsFullyVisible(hit.object) && clipPlanes.some(plane => plane.distanceToPoint(hit.point) >= 0))
+                    : cdIntersects.filter(hit => cdIsFullyVisible(hit.object));
+                if (cdVisible.length > 0) {
+                    let pt = cdVisible[0].point;
+                    if (viewProp.detectCircleCenter) {
+                        const center = detectCircleCenterFromHit(cdVisible[0]);
+                        if (center) pt = center;
+                    }
+                    updateCadDimHoverPreview(pt);
+                } else {
+                    updateCadDimHoverPreview(null);
+                }
+            }
+        } else {
+            // Phase 2: placement preview driven by mouse position
+            updateCadDimPreview(mouse, currentCamera);
+        }
+    } else {
+        updateCadDimHoverPreview(null);
+    }
+    _updateCadDimHintUI();
+
     // Annotation hover preview
     if (viewProp.annotationMode && isAnnotationActive() && !isMouseOverGui && !isMouseDown) {
         raycaster.setFromCamera(mouse, currentCamera);
@@ -3728,6 +3807,45 @@ function onClick( event ) {
             }
             const hitOwner = resolveCADSelection(visibleIntersects[0].object);
             addAnglePoint(point, hitOwner, render);
+        }
+        return;
+    }
+
+    // --- CAD Dimension mode ---
+    if (viewProp.cadDimMode && isCadDimActive()) {
+        mouseUpPos.x = event.clientX;
+        mouseUpPos.y = event.clientY;
+        const dragDistance = mouseDownPos.distanceTo(mouseUpPos);
+        if (dragDistance > 3) return;
+
+        const step = getCadDimStep();
+        if (step < 2) {
+            // Phases 0 & 1: raycast surface to pick measurement points
+            raycaster.setFromCamera(mouse, currentCamera);
+            const intersects = raycaster.intersectObjects(meshObjects);
+            const isFullyVisible = (obj) => { let o = obj; while (o) { if (!o.visible) return false; o = o.parent; } return true; };
+            const visibleIntersects = (renderer.localClippingEnabled && clipPlanes.length > 0)
+                ? intersects.filter(hit => isFullyVisible(hit.object) && clipPlanes.some(plane => plane.distanceToPoint(hit.point) >= 0))
+                : intersects.filter(hit => isFullyVisible(hit.object));
+            if (visibleIntersects.length > 0) {
+                let point = visibleIntersects[0].point;
+                if (viewProp.detectCircleCenter) {
+                    const center = detectCircleCenterFromHit(visibleIntersects[0]);
+                    if (center) point = center;
+                }
+                const hitOwner = resolveCADSelection(visibleIntersects[0].object);
+                addCadDimPoint(point, hitOwner, render);
+                // If we just entered phase 2, disable orbit controls and show hint
+                if (getCadDimStep() === 2) {
+                    orbitControls.enabled = false;
+                    _updateCadDimHintUI();
+                }
+            }
+        } else {
+            // Phase 2: place the dimension at the current mouse position
+            placeCadDim(render);
+            orbitControls.enabled = true;
+            _updateCadDimHintUI();
         }
         return;
     }
@@ -5407,16 +5525,82 @@ function assemblyMoveStepDown() {
         return m;
     }
 
+    // --- CAD dim label-mode menu ---
+    function createCadDimMenu() {
+        const m = document.createElement('div');
+        m.className = 'ctx-menu hidden';
+
+        const lbl = document.createElement('div');
+        lbl.className = 'ctx-label';
+        lbl.textContent = 'CAD dimension';
+        m.appendChild(lbl);
+
+        m.appendChild(separator());
+
+        // Label display mode
+        const itemSimple = simpleItem('Axis value  (Z: 129)', () => {
+            const sel = getSelectedCadDim();
+            if (sel) setCadDimLabelMode(sel, 0, render);
+            hideAll();
+        });
+        m.appendChild(itemSimple);
+
+        const itemFull = simpleItem('Full  (Δx Δy Δz …)', () => {
+            const sel = getSelectedCadDim();
+            if (sel) setCadDimLabelMode(sel, 1, render);
+            hideAll();
+        });
+        m.appendChild(itemFull);
+
+        m.appendChild(separator());
+
+        // Drag mode
+        const itemLabelOffset = simpleItem('Label offset', () => {
+            const sel = getSelectedCadDim();
+            if (sel) setCadDimDragMode(sel, sel.dragMode === 1 ? 0 : 1, render);
+            hideAll();
+        });
+        m.appendChild(itemLabelOffset);
+
+        m.appendChild(separator());
+
+        m.appendChild(simpleItem('Delete dimension', () => {
+            deleteSelectedDimension(render);
+            hideAll();
+        }));
+
+        // Expose for refresh
+        m._itemLabelOffset = itemLabelOffset;
+        m._itemSimple = itemSimple;
+        m._itemFull   = itemFull;
+
+        return m;
+    }
+
+    function refreshCadDimMenu() {
+        const sel = getSelectedCadDim();
+        if (!sel) return;
+        // Highlight active label mode
+        menuCadDim._itemSimple.style.fontWeight = sel.labelMode === 0 ? 'bold' : '';
+        menuCadDim._itemFull.style.fontWeight   = sel.labelMode === 1 ? 'bold' : '';
+        // Toggle label-offset item text
+        menuCadDim._itemLabelOffset.textContent =
+            sel.dragMode === 1 ? '✓ Label offset' : 'Label offset';
+    }
+
     // --- State ---
     let activeMenu = null;
-    const menuEmpty  = createEmptyMenu();
-    const menuObject = createObjectMenu();
+    const menuEmpty   = createEmptyMenu();
+    const menuObject  = createObjectMenu();
+    const menuCadDim  = createCadDimMenu();
     document.body.appendChild(menuEmpty);
     document.body.appendChild(menuObject);
+    document.body.appendChild(menuCadDim);
 
     function hideAll() {
         menuEmpty.classList.add('hidden');
         menuObject.classList.add('hidden');
+        menuCadDim.classList.add('hidden');
         activeMenu = null;
     }
 
@@ -5464,7 +5648,22 @@ function assemblyMoveStepDown() {
     window.addEventListener('contextmenu', function(event) {
         if (isMouseOnGUI(event)) return; // let GUI handle its own RMB
         event.preventDefault();
-        
+
+        // In CAD dim phase 2 – cycle axis instead of showing context menu
+        if (viewProp.cadDimMode && isCadDimActive() && getCadDimStep() === 2) {
+            const newAxis = cycleCadDimAxis(mouse, currentCamera);
+            _updateCadDimHintUI(newAxis);
+            render();
+            return;
+        }
+
+        // In Edit Labels mode with a CAD dim selected – show cadDim label menu
+        if (viewProp.selectDimensionMode && isSelectDimActive() && getSelectedCadDim()) {
+            refreshCadDimMenu();
+            showAt(menuCadDim, event.clientX, event.clientY);
+            return;
+        }
+
         // Kontrola, zda se myš od pravého kliknutí příliš pohybovala
         const contextMenuPos = new THREE.Vector2(event.clientX, event.clientY);
         const dragDistance = mouseDownPos.distanceTo(contextMenuPos);
