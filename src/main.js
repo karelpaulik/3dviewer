@@ -3835,9 +3835,8 @@ function onClick( event ) {
                 }
                 const hitOwner = resolveCADSelection(visibleIntersects[0].object);
                 addCadDimPoint(point, hitOwner, render);
-                // If we just entered phase 2, disable orbit controls and show hint
+                // If we just entered phase 2, show hint (orbit stays enabled)
                 if (getCadDimStep() === 2) {
-                    orbitControls.enabled = false;
                     _updateCadDimHintUI();
                 }
             }
