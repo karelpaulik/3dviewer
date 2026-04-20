@@ -123,8 +123,8 @@ outlinerBtn.addEventListener('click', () => {
 });
 guiToolbar.insertBefore(outlinerBtn, guiToolbar.firstChild);
 
-// Pre-create all toolbar buttons in desired order: Selected, File, Edit, View, Assembly, Help
-['Selected', 'File', 'Edit', 'View', 'Assembly', 'Help'].forEach(name => {
+// Pre-create all toolbar buttons in desired order: Selected, File, Edit, View, Tools, Assembly, Help
+['Selected', 'File', 'Edit', 'View', 'Tools', 'Assembly', 'Help'].forEach(name => {
     const btn = document.createElement('button');
     btn.className = 'gui-toolbar-btn';
     btn.textContent = name;
@@ -1045,8 +1045,35 @@ function addMainGui() {
             } }, 'fn').name('Set to default');
             toolbarPrefFolder.close();
 
-        const analysisFolder = folderProp.addFolder('Analysis');
-            analysisFolder.add(viewProp, 'measureMode').name('Measure (point-to-point)').onChange(function(value) {
+    // Když by toto nebylo, tak při ukončení fullscreenu escapem, by "fulscreen" zůstalo zartřené. Funkčně by se moc nestalo.
+    document.addEventListener('fullscreenchange', function(){
+        viewProp.fullscreen = !!document.fullscreenElement;
+        if (fsCtrl && fsCtrl.updateDisplay) fsCtrl.updateDisplay();
+    });
+
+    registerGuiPanel('View', folderProp);
+
+    // --- Tools panel (Measurement & Annotations) ---
+    const toolsGui = new GUI({ container: guiContainer, title: 'Tools' });
+        toolsGui.add(viewProp, 'showBehindModel').name('Show behind model').onChange(function(value) {
+            setMeasurementDepthTest(!value);
+            setAnnotationDepthTest(!value);
+            render();
+        });
+        toolsGui.add(viewProp, 'selectDimensionMode').name('Edit labels').onChange(function(value) {
+            setSelectDimActive(value);
+            if (value) {
+                viewProp.isSelectAllowed = false;
+                if (viewProp.measureMode) { viewProp.measureMode = false; setMeasureActive(false); }
+                if (viewProp.angleMode) { viewProp.angleMode = false; setAngleActive(false); }
+                if (viewProp.annotationMode) { viewProp.annotationMode = false; setAnnotationActive(false); }
+            } else {
+                viewProp.isSelectAllowed = true;
+            }
+            render();
+        }).listen();
+        const measureFolder = toolsGui.addFolder('Measurement');
+            measureFolder.add(viewProp, 'measureMode').name('Measure (point-to-point)').onChange(function(value) {
                 setMeasureActive(value);
                 if (value) {
                     viewProp.isSelectAllowed = false;
@@ -1058,7 +1085,7 @@ function addMainGui() {
                 }
                 render();
             }).listen();
-            analysisFolder.add(viewProp, 'angleMode').name('Measure angle (4 pts)').onChange(function(value) {
+            measureFolder.add(viewProp, 'angleMode').name('Measure angle (4 pts)').onChange(function(value) {
                 setAngleActive(value);
                 if (value) {
                     viewProp.isSelectAllowed = false;
@@ -1070,27 +1097,17 @@ function addMainGui() {
                 }
                 render();
             }).listen();
-            analysisFolder.add(viewProp, 'selectDimensionMode').name('Select dimension').onChange(function(value) {
-                setSelectDimActive(value);
-                if (value) {
-                    viewProp.isSelectAllowed = false;
-                    if (viewProp.measureMode) { viewProp.measureMode = false; setMeasureActive(false); }
-                    if (viewProp.angleMode) { viewProp.angleMode = false; setAngleActive(false); }
-                    if (viewProp.annotationMode) { viewProp.annotationMode = false; setAnnotationActive(false); }
-                } else {
-                    viewProp.isSelectAllowed = true;
-                }
-                render();
-            }).listen();
-            analysisFolder.add(viewProp, 'detectCircleCenter').name('Detect circle center');
-            analysisFolder.add(viewProp, 'showMeasurements').name('Show measurements').onChange(function(value) {
+            measureFolder.add(viewProp, 'detectCircleCenter').name('Detect circle center');
+            measureFolder.add(viewProp, 'showMeasurements').name('Show measurements').onChange(function(value) {
                 setMeasurementsVisible(value);
                 render();
             });
-            analysisFolder.add({ fn() {
+            measureFolder.add({ fn() {
                 clearMeasurements(render);
             } }, 'fn').name('Clear measurements');
-            analysisFolder.add(viewProp, 'annotationMode').name('Add annotation').onChange(function(value) {
+            measureFolder.close();
+        const annotationFolder = toolsGui.addFolder('Annotations');
+            annotationFolder.add(viewProp, 'annotationMode').name('Add annotation').onChange(function(value) {
                 setAnnotationActive(value);
                 if (value) {
                     viewProp.isSelectAllowed = false;
@@ -1102,27 +1119,15 @@ function addMainGui() {
                 }
                 render();
             }).listen();
-            analysisFolder.add(viewProp, 'showAnnotations').name('Show annotations').onChange(function(value) {
+            annotationFolder.add(viewProp, 'showAnnotations').name('Show annotations').onChange(function(value) {
                 setAnnotationsVisible(value);
                 render();
             });
-            analysisFolder.add(viewProp, 'showBehindModel').name('Show behind model').onChange(function(value) {
-                setMeasurementDepthTest(!value);
-                setAnnotationDepthTest(!value);
-                render();
-            });
-            analysisFolder.add({ fn() {
+            annotationFolder.add({ fn() {
                 clearAnnotations(render);
             } }, 'fn').name('Clear annotations');
-            analysisFolder.close();
-
-    // Když by toto nebylo, tak při ukončení fullscreenu escapem, by "fulscreen" zůstalo zartřené. Funkčně by se moc nestalo.
-    document.addEventListener('fullscreenchange', function(){
-        viewProp.fullscreen = !!document.fullscreenElement;
-        if (fsCtrl && fsCtrl.updateDisplay) fsCtrl.updateDisplay();
-    });
-
-    registerGuiPanel('View', folderProp);
+            annotationFolder.close();
+    registerGuiPanel('Tools', toolsGui);
 
     // --- File panel (Export / Import) ---
     const fileGui = new GUI({ container: guiContainer, title: 'File' });
