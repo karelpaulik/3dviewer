@@ -840,8 +840,29 @@ function _onLabelMouseDown(e) {
         if (found.dragMode === 1) {
             // Label-only drag: anchor is midpoint of the dim line (foot1–foot2)
             found._labelAnchor = new THREE.Vector3().addVectors(found.foot1, found.foot2).multiplyScalar(0.5);
+        } else {
+            // dragMode 0: whole dimension drag – compute grab offset to prevent jump
+            const owner = found.ownerObject || _scene;
+            owner.updateWorldMatrix(true, false);
+            const p1World = owner.localToWorld(found.p1.clone());
+            const p2World = owner.localToWorld(found.p2.clone());
+            const mid = new THREE.Vector3().addVectors(p1World, p2World).multiplyScalar(0.5);
+            const cameraDir = new THREE.Vector3();
+            _currentCamera.getWorldDirection(cameraDir);
+            const grabPlane = new THREE.Plane().setFromNormalAndCoplanarPoint(cameraDir, mid);
+            const grabNDC = new THREE.Vector2(
+                (e.clientX / window.innerWidth) * 2 - 1,
+                -(e.clientY / window.innerHeight) * 2 + 1
+            );
+            _cadTempRaycaster.setFromCamera(grabNDC, _currentCamera);
+            const initOnPlane = new THREE.Vector3();
+            if (_cadTempRaycaster.ray.intersectPlane(grabPlane, initOnPlane)) {
+                const foot1World = owner.localToWorld(found.foot1.clone());
+                found._cadDragOffset = initOnPlane.clone().sub(foot1World);
+            } else {
+                found._cadDragOffset = new THREE.Vector3();
+            }
         }
-        // dragMode 0: whole dimension drag (no anchor needed, handled in mouseMove)
         _isDraggingLabel = true;
         _dragStartMouse.set(e.clientX, e.clientY);
         _dragStartPos.copy(found.label.position);
@@ -893,6 +914,8 @@ function _onDocumentMouseMove(e) {
         _cadTempRaycaster.setFromCamera(mouseNDC, _currentCamera);
         const offsetPoint = new THREE.Vector3();
         if (!_cadTempRaycaster.ray.intersectPlane(plane, offsetPoint)) return;
+        // Apply grab offset to prevent jump when drag starts
+        if (meas._cadDragOffset) offsetPoint.sub(meas._cadDragOffset);
         _rebuildCadDimVisuals(meas, p1World, p2World, offsetPoint);
         if (_renderFn) _renderFn();
         return;
