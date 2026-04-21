@@ -1964,9 +1964,10 @@ function _reconstructCadDim(owner, rec) {
     owner.add(extLine1); owner.add(extLine2);
     owner.add(dimLine); owner.add(label);
 
-    // Restore leader line for label-offset mode
-    if (dragMode === 1) {
-        measRec._labelAnchor = new THREE.Vector3().addVectors(f1, f2).multiplyScalar(0.5);
+    // Restore leader line when label is offset from dim-line midpoint (regardless of dragMode)
+    const mid = new THREE.Vector3().addVectors(f1, f2).multiplyScalar(0.5);
+    if (dragMode === 1 || mid.distanceTo(labelPos) > 1e-6) {
+        measRec._labelAnchor = mid;
         _updateLeaderLine(measRec, labelPos);
     }
 
