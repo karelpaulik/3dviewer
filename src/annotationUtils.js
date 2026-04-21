@@ -4,7 +4,7 @@ import { CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 
 // --- Private state ---
 let _scene = null;
-let _annotations = []; // { marker, label, point, text, ownerObject, leaderLine }
+let _annotations = []; // { label, labelLocal, text, ownerObject, _userDataRec, leaderLines: [{ marker, line, anchorLocal }] }
 let _active = false;
 let _depthTestEnabled = true; // true = skryté za modelem (výchozí), false = vždy viditelné přes model
 let _pendingPoint = null;   // THREE.Vector3 | null – first click (on object surface)
@@ -14,6 +14,7 @@ let _previewMarker = null;  // Hover preview sphere (follows cursor)
 let _previewLine = null;    // Dashed line from pending point to cursor
 let _renderFn = null;
 let _dialogOpen = false;     // Guard flag to prevent click-through from dialog
+let _pendingAddLeaderAnnotation = null; // Annotation waiting for a new leader-line anchor click
 
 const MARKER_RADIUS = 1;
 const MARKER_COLOR = 0x44aa44;
@@ -142,6 +143,85 @@ function _showTextDialog(defaultText) {
     });
 }
 
+// --- Private helpers ---
+
+function _deleteAnnotation(annotation, renderFn) {
+    const owner = annotation.ownerObject || _scene;
+    owner.remove(annotation.label);
+    annotation.leaderLines.forEach(ll => {
+        owner.remove(ll.marker);
+        owner.remove(ll.line);
+        ll.marker.geometry.dispose(); ll.marker.material.dispose();
+        ll.line.geometry.dispose(); ll.line.material.dispose();
+    });
+    // Remove userData record
+    if (annotation._userDataRec && owner.userData && Array.isArray(owner.userData.annotations)) {
+        const idx = owner.userData.annotations.indexOf(annotation._userDataRec);
+        if (idx !== -1) owner.userData.annotations.splice(idx, 1);
+        if (owner.userData.annotations.length === 0) delete owner.userData.annotations;
+    }
+    const i = _annotations.indexOf(annotation);
+    if (i !== -1) _annotations.splice(i, 1);
+    if (renderFn) renderFn();
+}
+
+function _showAnnotationContextMenu(annotation, x, y, renderFn) {
+    // Remove any existing context menu
+    const existing = document.getElementById('_annotation-ctx-menu');
+    if (existing) existing.remove();
+
+    const menu = document.createElement('div');
+    menu.id = '_annotation-ctx-menu';
+    menu.style.cssText = `position:fixed;left:${x}px;top:${y}px;background:#2a2a2a;color:#fff;border:1px solid #555;border-radius:5px;padding:4px 0;z-index:200000;min-width:170px;box-shadow:0 4px 16px rgba(0,0,0,0.5);font-family:sans-serif;font-size:12px;`;
+
+    const item = (label, cb) => {
+        const el = document.createElement('div');
+        el.textContent = label;
+        el.style.cssText = 'padding:6px 14px;cursor:pointer;';
+        el.addEventListener('mouseenter', () => el.style.background = '#444');
+        el.addEventListener('mouseleave', () => el.style.background = '');
+        el.addEventListener('mousedown', (e) => { e.stopPropagation(); });
+        el.addEventListener('click', (e) => { e.stopPropagation(); menu.remove(); cb(); });
+        menu.appendChild(el);
+    };
+
+    const sep = () => {
+        const el = document.createElement('div');
+        el.style.cssText = 'height:1px;background:#444;margin:3px 0;';
+        menu.appendChild(el);
+    };
+
+    item('➕ Add leader line', () => {
+        _pendingAddLeaderAnnotation = annotation;
+        if (_renderFn) _renderFn();
+    });
+
+    if (annotation.leaderLines.length > 1) {
+        sep();
+        annotation.leaderLines.forEach((ll, idx) => {
+            item(`✕ Remove leader line ${idx + 1}`, () => {
+                removeAnnotationLeaderLine(annotation, idx, renderFn);
+            });
+        });
+    } else if (annotation.leaderLines.length === 1) {
+        item('✕ Remove leader line', () => {
+            removeAnnotationLeaderLine(annotation, 0, renderFn);
+        });
+    }
+
+    sep();
+    item('✏ Edit text', () => { _editAnnotation(annotation, renderFn); });
+    item('🗑 Delete annotation', () => { _deleteAnnotation(annotation, renderFn); });
+
+    document.body.appendChild(menu);
+
+    // Close on click anywhere outside
+    const close = (e) => {
+        if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('mousedown', close, true); }
+    };
+    setTimeout(() => document.addEventListener('mousedown', close, true), 0);
+}
+
 // --- Public API ---
 
 export function initAnnotations(scene, renderFn) {
@@ -212,29 +292,37 @@ export function addAnnotationPoint(point, ownerObject, renderFn) {
         const defaultText = 'txt';
 
         // Create annotation visuals immediately
-        const marker = _pendingMarker; // reuse pending marker
+        const marker = _pendingMarker; // reuse pending marker (already added to owner1 on first click)
+        const line = _createLeaderLine(anchorLocal, labelLocal);
         const label = _createLabel(defaultText, labelLocal);
-        const leaderLine = _createLeaderLine(anchorLocal, labelLocal);
 
         owner1.add(label);
-        owner1.add(leaderLine);
+        owner1.add(line);
 
-        const annotation = { marker, label, leaderLine, anchorLocal: anchorLocal.clone(), labelLocal: labelLocal.clone(), text: defaultText, ownerObject: owner1 };
+        const leaderLines = [{ marker, line, anchorLocal: anchorLocal.clone() }];
+
+        // Store in userData for GLB export
+        if (!owner1.userData.annotations) owner1.userData.annotations = [];
+        const userDataRec = {
+            type: 'note',
+            anchors: [{ x: anchorLocal.x, y: anchorLocal.y, z: anchorLocal.z }],
+            labelPos: { x: labelLocal.x, y: labelLocal.y, z: labelLocal.z },
+            text: defaultText
+        };
+        owner1.userData.annotations.push(userDataRec);
+
+        const annotation = { label, leaderLines, labelLocal: labelLocal.clone(), text: defaultText, ownerObject: owner1, _userDataRec: userDataRec };
         _annotations.push(annotation);
 
-        // Attach dblclick handler for editing
+        // Attach dblclick + contextmenu handlers
         label.element.addEventListener('dblclick', (e) => {
             e.stopPropagation();
             _editAnnotation(annotation, renderFn);
         });
-
-        // Store in userData for GLB export
-        if (!owner1.userData.annotations) owner1.userData.annotations = [];
-        owner1.userData.annotations.push({
-            type: 'note',
-            anchor: { x: anchorLocal.x, y: anchorLocal.y, z: anchorLocal.z },
-            labelPos: { x: labelLocal.x, y: labelLocal.y, z: labelLocal.z },
-            text: defaultText
+        label.element.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            _showAnnotationContextMenu(annotation, e.clientX, e.clientY, renderFn);
         });
 
         // Reset pending state
@@ -260,24 +348,16 @@ async function _editAnnotation(annotation, renderFn) {
     annotation.label.element.textContent = newText;
 
     // Update userData
-    const owner = annotation.ownerObject;
-    if (owner && owner.userData && Array.isArray(owner.userData.annotations)) {
-        const rec = owner.userData.annotations.find(a =>
-            a.type === 'note' &&
-            Math.abs(a.anchor.x - annotation.anchorLocal.x) < 1e-6 &&
-            Math.abs(a.anchor.y - annotation.anchorLocal.y) < 1e-6 &&
-            Math.abs(a.anchor.z - annotation.anchorLocal.z) < 1e-6
-        );
-        if (rec) rec.text = newText;
-    }
+    if (annotation._userDataRec) annotation._userDataRec.text = newText;
     if (renderFn) renderFn();
 }
 
 /**
- * Update hover preview when annotation mode is active.
+ * Update hover preview when annotation mode or add-leader mode is active.
  */
 export function updateAnnotationPreview(point) {
-    if (!_active || !_scene) {
+    const addLeaderMode = _pendingAddLeaderAnnotation !== null;
+    if (!_active && !addLeaderMode) {
         _hidePreview();
         return;
     }
@@ -297,14 +377,24 @@ export function updateAnnotationPreview(point) {
     }
     _previewMarker.position.copy(point);
 
-    // Dashed line from pending point to cursor
+    // Determine line origin: pending annotation anchor (regular mode) or label world pos (add-leader mode)
+    let lineFrom = null;
     if (_pendingPoint) {
+        lineFrom = _pendingPoint;
+    } else if (addLeaderMode) {
+        const ann = _pendingAddLeaderAnnotation;
+        const owner = ann.ownerObject || _scene;
+        owner.updateWorldMatrix(true, false);
+        lineFrom = owner.localToWorld(ann.label.position.clone());
+    }
+
+    if (lineFrom) {
         if (_previewLine) {
             _scene.remove(_previewLine);
             _previewLine.geometry.dispose();
             _previewLine.material.dispose();
         }
-        const geo = new THREE.BufferGeometry().setFromPoints([_pendingPoint, point]);
+        const geo = new THREE.BufferGeometry().setFromPoints([lineFrom, point]);
         const mat = new THREE.LineDashedMaterial({ color: LINE_COLOR, dashSize: 4, gapSize: 3, depthTest: false });
         _previewLine = new THREE.Line(geo, mat);
         _previewLine.computeLineDistances();
@@ -325,7 +415,7 @@ export function updateAnnotationPreview(point) {
 export function updateAnnotationMarkerScales(camera) {
     if (!camera) return;
     const markers = [];
-    for (const a of _annotations) markers.push(a.marker);
+    for (const a of _annotations) a.leaderLines.forEach(ll => markers.push(ll.marker));
     if (_pendingMarker) markers.push(_pendingMarker);
     if (_previewMarker) markers.push(_previewMarker);
     if (markers.length === 0) return;
@@ -348,9 +438,11 @@ export function updateAnnotationMarkerScales(camera) {
 
 export function setAnnotationsVisible(visible) {
     for (const a of _annotations) {
-        a.marker.visible = visible;
         a.label.visible = visible;
-        if (a.leaderLine) a.leaderLine.visible = visible;
+        a.leaderLines.forEach(ll => {
+            ll.marker.visible = visible;
+            ll.line.visible = visible;
+        });
     }
 }
 
@@ -361,12 +453,12 @@ export function setAnnotationsVisible(visible) {
 export function setAnnotationDepthTest(enabled) {
     _depthTestEnabled = enabled;
     for (const a of _annotations) {
-        a.marker.material.depthTest = enabled;
-        a.marker.renderOrder = enabled ? 0 : 999;
-        if (a.leaderLine) {
-            a.leaderLine.material.depthTest = enabled;
-            a.leaderLine.renderOrder = enabled ? 0 : 998;
-        }
+        a.leaderLines.forEach(ll => {
+            ll.marker.material.depthTest = enabled;
+            ll.marker.renderOrder = enabled ? 0 : 999;
+            ll.line.material.depthTest = enabled;
+            ll.line.renderOrder = enabled ? 0 : 998;
+        });
     }
 }
 
@@ -387,15 +479,15 @@ export function clearAnnotations(renderFn) {
     // Remove completed annotations
     for (const a of _annotations) {
         const owner = a.ownerObject || _scene;
-        owner.remove(a.marker);
         owner.remove(a.label);
-        if (a.leaderLine) {
-            owner.remove(a.leaderLine);
-            a.leaderLine.geometry.dispose();
-            a.leaderLine.material.dispose();
-        }
-        a.marker.geometry.dispose();
-        a.marker.material.dispose();
+        a.leaderLines.forEach(ll => {
+            owner.remove(ll.marker);
+            owner.remove(ll.line);
+            ll.marker.geometry.dispose();
+            ll.marker.material.dispose();
+            ll.line.geometry.dispose();
+            ll.line.material.dispose();
+        });
         // Clean up userData
         if (owner.userData.annotations) {
             owner.userData.annotations = owner.userData.annotations.filter(d => d.type !== 'note');
@@ -423,8 +515,10 @@ export function removeAnnotationsForOwner(root) {
     _annotations = _annotations.filter(a => {
         if (!owned.has(a.ownerObject)) return true;
         if (a.label && a.label.element) a.label.element.remove();
-        a.marker.geometry.dispose(); a.marker.material.dispose();
-        if (a.leaderLine) { a.leaderLine.geometry.dispose(); a.leaderLine.material.dispose(); }
+        a.leaderLines.forEach(ll => {
+            ll.marker.geometry.dispose(); ll.marker.material.dispose();
+            ll.line.geometry.dispose(); ll.line.material.dispose();
+        });
         return false;
     });
 }
@@ -436,35 +530,112 @@ export function getAnnotations() {
     return _annotations;
 }
 
+/** True when the user has chosen "Add leader line" from context menu and awaits a click on the model. */
+export function isAddLeaderLineActive() {
+    return _pendingAddLeaderAnnotation !== null;
+}
+
+/** Cancel the pending add-leader-line action (e.g. on Escape). */
+export function cancelAddLeaderLine() {
+    _pendingAddLeaderAnnotation = null;
+    _hidePreview();
+}
+
 /**
- * Update the leader line of an annotation from anchorLocal to the new label position.
+ * Commit a new leader line for the pending annotation.
+ * Call from onClick when isAddLeaderLineActive() is true.
+ * @param {THREE.Vector3} point – world-space surface point from raycaster
+ * @param {THREE.Object3D|null} ownerObject – hit object (used only as fallback; anchor is stored on the annotation's own owner)
+ * @param {Function} renderFn
+ */
+export function commitAddLeaderLine(point, ownerObject, renderFn) {
+    if (!_pendingAddLeaderAnnotation) return;
+    const annotation = _pendingAddLeaderAnnotation;
+    _pendingAddLeaderAnnotation = null;
+    _hidePreview();
+    addAnnotationLeaderLine(annotation, point, renderFn);
+}
+
+/**
+ * Update all leader lines of an annotation to point from each anchorLocal to the new label position.
+ * Called during label drag.
  */
 export function updateAnnotationLeaderLine(annotation, newLabelPos) {
     const owner = annotation.ownerObject || _scene;
-    if (annotation.leaderLine) {
-        owner.remove(annotation.leaderLine);
-        annotation.leaderLine.geometry.dispose();
-        annotation.leaderLine.material.dispose();
+    annotation.leaderLines.forEach(ll => {
+        owner.remove(ll.line);
+        ll.line.geometry.dispose();
+        ll.line.material.dispose();
+        ll.line = _createLeaderLine(ll.anchorLocal, newLabelPos);
+        owner.add(ll.line);
+    });
+}
+
+/**
+ * Add a new leader line to an existing annotation.
+ * @param {Object} annotation – runtime annotation object
+ * @param {THREE.Vector3} anchorWorld – world-space anchor point on the model surface
+ * @param {Function} renderFn
+ */
+export function addAnnotationLeaderLine(annotation, anchorWorld, renderFn) {
+    const owner = annotation.ownerObject || _scene;
+    owner.updateWorldMatrix(true, false);
+    const anchorLocal = owner.worldToLocal(anchorWorld.clone());
+    const labelPos = annotation.label.position;
+    const marker = _createMarker(anchorLocal);
+    const line = _createLeaderLine(anchorLocal, labelPos);
+    owner.add(marker);
+    owner.add(line);
+    annotation.leaderLines.push({ marker, line, anchorLocal: anchorLocal.clone() });
+    // Sync to userData
+    if (annotation._userDataRec) {
+        if (!Array.isArray(annotation._userDataRec.anchors)) {
+            annotation._userDataRec.anchors = annotation._userDataRec.anchor
+                ? [annotation._userDataRec.anchor]
+                : [];
+        }
+        annotation._userDataRec.anchors.push({ x: anchorLocal.x, y: anchorLocal.y, z: anchorLocal.z });
     }
-    annotation.leaderLine = _createLeaderLine(annotation.anchorLocal, newLabelPos);
-    owner.add(annotation.leaderLine);
+    if (renderFn) renderFn();
+}
+
+/**
+ * Remove a leader line from an annotation by index.
+ * When all leader lines are removed the annotation (label + ownerObject binding) is preserved.
+ * @param {Object} annotation – runtime annotation object
+ * @param {number} index – index into annotation.leaderLines
+ * @param {Function} renderFn
+ */
+export function removeAnnotationLeaderLine(annotation, index, renderFn) {
+    if (index < 0 || index >= annotation.leaderLines.length) return;
+    const owner = annotation.ownerObject || _scene;
+    const ll = annotation.leaderLines[index];
+    owner.remove(ll.marker);
+    owner.remove(ll.line);
+    ll.marker.geometry.dispose(); ll.marker.material.dispose();
+    ll.line.geometry.dispose(); ll.line.material.dispose();
+    annotation.leaderLines.splice(index, 1);
+    // Sync to userData – handle both new `anchors` array and legacy `anchor` (single) format
+    if (annotation._userDataRec) {
+        if (Array.isArray(annotation._userDataRec.anchors)) {
+            annotation._userDataRec.anchors.splice(index, 1);
+        } else if (annotation._userDataRec.anchor) {
+            // Legacy format: convert to empty anchors so re-import won't recreate the line
+            delete annotation._userDataRec.anchor;
+            annotation._userDataRec.anchors = [];
+        }
+    }
+    if (renderFn) renderFn();
 }
 
 /**
  * Sync annotation label position back to userData after drag.
  */
 export function syncAnnotationLabelPos(annotation) {
-    const owner = annotation.ownerObject;
     const pos = annotation.label.position;
     annotation.labelLocal.copy(pos);
-    if (owner && owner.userData && Array.isArray(owner.userData.annotations)) {
-        const rec = owner.userData.annotations.find(a =>
-            a.type === 'note' &&
-            Math.abs(a.anchor.x - annotation.anchorLocal.x) < 1e-6 &&
-            Math.abs(a.anchor.y - annotation.anchorLocal.y) < 1e-6 &&
-            Math.abs(a.anchor.z - annotation.anchorLocal.z) < 1e-6
-        );
-        if (rec) rec.labelPos = { x: pos.x, y: pos.y, z: pos.z };
+    if (annotation._userDataRec) {
+        annotation._userDataRec.labelPos = { x: pos.x, y: pos.y, z: pos.z };
     }
 }
 
@@ -506,25 +677,41 @@ export function reconstructAnnotations(root, renderFn) {
 }
 
 function _reconstructAnnotation(owner, rec, renderFn) {
-    const anchorLocal = new THREE.Vector3(rec.anchor.x, rec.anchor.y, rec.anchor.z);
+    // Support both new `anchors` array and legacy `anchor` (single) format
+    const anchorList = Array.isArray(rec.anchors)
+        ? rec.anchors
+        : (rec.anchor ? [rec.anchor] : []);
+
+    const firstAnchor = anchorList[0];
     const labelLocal = rec.labelPos
         ? new THREE.Vector3(rec.labelPos.x, rec.labelPos.y, rec.labelPos.z)
-        : anchorLocal.clone().add(new THREE.Vector3(5, 5, 0));
+        : (firstAnchor
+            ? new THREE.Vector3(firstAnchor.x, firstAnchor.y, firstAnchor.z).add(new THREE.Vector3(5, 5, 0))
+            : new THREE.Vector3());
 
-    const marker = _createMarker(anchorLocal);
     const label = _createLabel(rec.text, labelLocal);
-    const leaderLine = _createLeaderLine(anchorLocal, labelLocal);
-
-    owner.add(marker);
     owner.add(label);
-    owner.add(leaderLine);
 
-    const annotation = { marker, label, leaderLine, anchorLocal: anchorLocal.clone(), labelLocal: labelLocal.clone(), text: rec.text, ownerObject: owner };
+    const leaderLines = anchorList.map(a => {
+        const anchorLocal = new THREE.Vector3(a.x, a.y, a.z);
+        const marker = _createMarker(anchorLocal);
+        const line = _createLeaderLine(anchorLocal, labelLocal);
+        owner.add(marker);
+        owner.add(line);
+        return { marker, line, anchorLocal };
+    });
+
+    const annotation = { label, leaderLines, labelLocal: labelLocal.clone(), text: rec.text, ownerObject: owner, _userDataRec: rec };
     _annotations.push(annotation);
 
-    // Attach dblclick handler for editing
+    // Attach dblclick + contextmenu handlers
     label.element.addEventListener('dblclick', (e) => {
         e.stopPropagation();
         _editAnnotation(annotation, renderFn);
+    });
+    label.element.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        _showAnnotationContextMenu(annotation, e.clientX, e.clientY, renderFn);
     });
 }

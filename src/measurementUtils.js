@@ -880,7 +880,7 @@ function _onLabelMouseDown(e) {
         const mid2 = new THREE.Vector3().addVectors(found.points[2], found.points[3]).multiplyScalar(0.5);
         anchor = new THREE.Vector3().addVectors(mid1, mid2).multiplyScalar(0.5);
     } else if (foundType === 'annotation') {
-        anchor = found.anchorLocal.clone();
+        anchor = found.leaderLines.length > 0 ? found.leaderLines[0].anchorLocal.clone() : found.label.position.clone();
     }
     found._labelAnchor = anchor;
 

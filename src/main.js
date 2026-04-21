@@ -18,7 +18,7 @@ import { exportToHTML, exportToHTMLDraco, exportToHTMLObfuscated, exportToHTMLOb
 import { initOutliner, toggleOutliner, rebuildTree, highlightObject as outlinerHighlight, updateVisibilityIcon, isOutlinerOpen } from './sceneOutliner.js';
 import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements, isSelectDimActive, setSelectDimActive, deleteSelectedDimension, initSelectDimension, updateSelectDimensionCamera, reconstructMeasurements, stripMeasurementVisuals, setMeasurementsVisible, setMeasurementDepthTest, removeMeasurementsForOwner, isCadDimActive, setCadDimActive, getCadDimStep, getCadDimAxis, addCadDimPoint, updateCadDimPreview, updateCadDimHoverPreview, cycleCadDimAxis, placeCadDim, clearCadDimMeasurements, removeCadDimMeasurementsForOwner, getSelectedCadDim, setCadDimLabelMode, setCadDimDragMode, selectDimTouchStart, selectDimTouchMove, selectDimTouchEnd } from './measurementUtils.js';
 import { detectCircleCenterFromHit } from './circleDetectionUtils.js';
-import { initAnnotations, isAnnotationActive, setAnnotationActive, addAnnotationPoint, getAnnotationPendingPoint, updateAnnotationPreview, updateAnnotationMarkerScales, setAnnotationsVisible, clearAnnotations, stripAnnotationVisuals, reconstructAnnotations, setAnnotationDepthTest, removeAnnotationsForOwner } from './annotationUtils.js';
+import { initAnnotations, isAnnotationActive, setAnnotationActive, addAnnotationPoint, getAnnotationPendingPoint, updateAnnotationPreview, updateAnnotationMarkerScales, setAnnotationsVisible, clearAnnotations, stripAnnotationVisuals, reconstructAnnotations, setAnnotationDepthTest, removeAnnotationsForOwner, getAnnotations, isAddLeaderLineActive, cancelAddLeaderLine, commitAddLeaderLine } from './annotationUtils.js';
 import { computeSolidSection, clearSolidSection } from './solidSectionUtils.js';
 
 // Proměnné globálního rozsahu----------------------------------------------------------------------------------------
@@ -280,6 +280,7 @@ if (import.meta.env.DEV) {
     window.loadedModels = loadedModels;
     window.assemblyData = assemblyData;
     window.assemblyState = assemblyState;
+    window.getAnnotations = getAnnotations;
 
     //NOK - toto není reference
     window.transformControls = transformControls;
@@ -698,6 +699,8 @@ function init() {
                     viewProp.isSelectAllowed = true;
                     render();
                 }
+                cancelAddLeaderLine();
+                render();
                 if (viewProp.detectCircleCenter) {
                     viewProp.detectCircleCenter = false;
                     render();
@@ -3666,8 +3669,8 @@ function render() {
     }
     _updateCadDimHintUI();
 
-    // Annotation hover preview
-    if (viewProp.annotationMode && isAnnotationActive() && !isMouseOverGui && !isMouseDown) {
+    // Annotation hover preview (regular mode or add-leader mode)
+    if ((viewProp.annotationMode && isAnnotationActive() || isAddLeaderLineActive()) && !isMouseOverGui && !isMouseDown) {
         raycaster.setFromCamera(mouse, currentCamera);
         const nIntersects = raycaster.intersectObjects(meshObjects);
         const nIsFullyVisible = (obj) => { let o = obj; while (o) { if (!o.visible) return false; o = o.parent; } return true; };
@@ -3845,6 +3848,22 @@ function onClick( event ) {
             placeCadDim(render);
             orbitControls.enabled = true;
             _updateCadDimHintUI();
+        }
+        return;
+    }
+
+    // --- Add leader line mode (from context menu) ---
+    if (isAddLeaderLineActive()) {
+        mouseUpPos.x = event.clientX;
+        mouseUpPos.y = event.clientY;
+        if (mouseDownPos.distanceTo(mouseUpPos) > 3) return;
+        raycaster.setFromCamera(mouse, currentCamera);
+        const _llIntersects = raycaster.intersectObjects(meshObjects);
+        const _llVisible = (renderer.localClippingEnabled && clipPlanes.length > 0)
+            ? _llIntersects.filter(h => { let o = h.object; while (o) { if (!o.visible) return false; o = o.parent; } return clipPlanes.some(p => p.distanceToPoint(h.point) >= 0); })
+            : _llIntersects.filter(h => { let o = h.object; while (o) { if (!o.visible) return false; o = o.parent; } return true; });
+        if (_llVisible.length > 0) {
+            commitAddLeaderLine(_llVisible[0].point, _llVisible[0].object, render);
         }
         return;
     }
