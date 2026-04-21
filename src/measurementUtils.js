@@ -995,15 +995,8 @@ function _rebuildCadDimVisuals(meas, p1World, p2World, offsetPoint) {
     meas.foot1 = f1; meas.foot2 = f2; meas.value = value;
 
     // During an active drag: update the label in-place so the DOM element is NOT removed.
-    let label;
-    if (_isDraggingLabel && meas.label) {
-        label = meas.label;
-        label.position.copy(labelPos);
-        label.element.innerHTML = _cadDimGetLabelText(meas, meas.labelMode || 0);
-    } else {
-        label = _cadMakeLabel(_cadDimGetLabelText(meas, meas.labelMode || 0), labelPos);
-        owner.add(label);
-    }
+    const label = meas.label;
+    label.position.copy(labelPos);
 
     owner.add(markerFoot1); owner.add(markerFoot2);
     owner.add(extLine1);    owner.add(extLine2);
