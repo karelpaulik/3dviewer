@@ -496,11 +496,11 @@ function init() {
     const hemisLight = new THREE.HemisphereLight( 0x443333, 0x111122 );
     scene.add( hemisLight );
     sceneLights.push(hemisLight);
-    sceneLights.push(addShadowedLight( 100, 100, 100, 0xffffff, 1.35 ));
-    sceneLights.push(addShadowedLight( 50, 100, - 100, 0xffaa00, 1 ));
+    sceneLights.push(addShadowedLight( 100, 100, 100, 0xffffff, 1 ));
+    sceneLights.push(addShadowedLight( 50, 100, - 100, 0xffaa00, 0.5 ));
 
     // headlight - světlo z pohledu kamery
-    const headlight = new THREE.DirectionalLight(0xffffff, 0.5);
+    const headlight = new THREE.DirectionalLight(0xffffff, 1.5);
     headlight.name = 'headlight';
     //headlight.position.set(0, 100, 0); // 100 world units nad kamerou (v lokálním prostoru kamery)
     currentCamera.add(headlight); // Světlo bude svítit ze stejného místa jako oči uživatele
