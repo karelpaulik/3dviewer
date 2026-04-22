@@ -665,6 +665,8 @@ function init() {
     window.addEventListener( 'touchend', onTouchEnd, { passive: false } );
     
     window.addEventListener( 'keydown', function ( event ) {
+        const tag = event.target.tagName;
+        if (tag === 'TEXTAREA' || tag === 'INPUT') return;
         switch ( event.key ) {
             case 'Escape':
                 if (viewProp.measureMode) {
@@ -852,6 +854,8 @@ function init() {
     } );
 
     window.addEventListener( 'keyup', function ( event ) {
+        const tag = event.target.tagName;
+        if (tag === 'TEXTAREA' || tag === 'INPUT') return;
         switch ( event.key ) {
             case 'Shift':
                 isShiftHeld = false;
