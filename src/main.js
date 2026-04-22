@@ -719,6 +719,8 @@ function init() {
             case 'Delete':
                 if (viewProp.selectDimensionMode && isSelectDimActive()) {
                     deleteSelectedDimension(render);
+                } else if (lastSelectedObject) {
+                    removeModel(lastSelectedObject);
                 }
                 break;
             case 'q':
