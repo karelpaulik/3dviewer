@@ -37,8 +37,8 @@ function _createMarker(position) {
 function _createLabel(text, position) {
     const div = document.createElement('div');
     div.className = 'annotation-label';
-    div.textContent = text;
-    div.style.cssText = 'color:#fff;background:rgba(40,140,40,0.88);padding:3px 8px;border-radius:4px;font-size:11px;white-space:pre-wrap;max-width:220px;line-height:1.4;pointer-events:auto;cursor:default;user-select:none;';
+    div.innerHTML = text;
+    div.style.cssText = 'color:#fff;background:rgba(40,140,40,0.88);padding:3px 8px;border-radius:4px;font-size:11px;max-width:220px;line-height:1.4;pointer-events:auto;cursor:default;user-select:none;word-break:break-word;';
     const label = new CSS2DObject(div);
     label.position.copy(position);
     label.userData._isAnnotation = true;
@@ -53,6 +53,116 @@ function _createLeaderLine(p1, p2) {
     line.renderOrder = _depthTestEnabled ? 0 : 998;
     line.userData._isAnnotation = true;
     return line;
+}
+
+// --- Minimal WYSIWYG editor (no external dependencies) ---
+
+function _isHtmlEmpty(html) {
+    const tmp = document.createElement('div');
+    tmp.innerHTML = html;
+    return (tmp.textContent || tmp.innerText || '').trim() === '';
+}
+
+/**
+ * Build a lightweight contenteditable toolbar+editor.
+ * Uses a `_busy` guard around execCommand to prevent the
+ * "called recursively" browser warning.
+ * Returns { wrap, content } where `content` is the editable div.
+ */
+function _buildWysiwygEditor(defaultHtml) {
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'border:1px solid #555;border-radius:4px;overflow:hidden;';
+
+    const toolbar = document.createElement('div');
+    toolbar.style.cssText = 'background:#1e1e1e;border-bottom:1px solid #444;display:flex;gap:2px;padding:4px;flex-wrap:wrap;';
+
+    // Shadow DOM host – isolates contenteditable from extension MutationObservers
+    // (extensions observing document.body cannot see DOM mutations inside a shadow root)
+    const shadowHost = document.createElement('div');
+    shadowHost.style.cssText = 'background:#1a1a1a;cursor:text;resize:both;overflow:hidden;min-height:80px;min-width:200px;height:120px;width:100%;box-sizing:border-box;';
+    const shadow = shadowHost.attachShadow({ mode: 'open' });
+
+    const shadowStyle = document.createElement('style');
+    shadowStyle.textContent = [
+        'div{color:#fff;height:100%;min-height:inherit;overflow-y:auto;',
+        'padding:8px;font-size:12px;font-family:sans-serif;outline:none;',
+        'word-break:break-word;box-sizing:border-box;width:100%;}',
+        'ul,ol{padding-left:20px;margin:4px 0;}',
+        'li{margin:2px 0;}',
+        'b,strong{font-weight:bold;}i,em{font-style:italic;}',
+        'u{text-decoration:underline;}s{text-decoration:line-through;}',
+    ].join('');
+    shadow.appendChild(shadowStyle);
+
+    const content = document.createElement('div');
+    content.contentEditable = 'true';
+    content.innerHTML = defaultHtml || '';
+    shadow.appendChild(content);
+
+    // Clicking the host area (padding below text) should focus the editor – no preventDefault to keep text selection working
+    shadowHost.addEventListener('mousedown', () => { content.focus(); });
+
+    let _busy = false;
+    const _stateBtns = []; // { btn, cmd } – buttons that support queryCommandState
+
+    const _updateActiveStates = () => {
+        for (const { btn, cmd } of _stateBtns) {
+            const active = document.queryCommandState(cmd);
+            btn.style.background = active ? '#4a7a4a' : 'none';
+            btn.style.borderColor = active ? '#6a6' : '#555';
+            btn.style.color = active ? '#fff' : '#ddd';
+        }
+    };
+
+    const addBtn = (label, title, cmd, value, trackState = false) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.innerHTML = label;
+        b.title = title;
+        b.style.cssText = 'background:none;color:#ddd;border:1px solid #555;border-radius:3px;padding:2px 7px;cursor:pointer;font-size:11px;min-width:24px;line-height:1.4;transition:background 0.1s;';
+        b.addEventListener('mouseenter', () => { if (b.style.background === 'none' || b.style.background === '') b.style.background = '#333'; });
+        b.addEventListener('mouseleave', () => { _updateActiveStates(); });
+        // mousedown preventDefault keeps selection/focus alive in contenteditable
+        b.addEventListener('mousedown', (e) => { e.preventDefault(); });
+        b.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (_busy) return;
+            _busy = true;
+            try {
+                content.focus();
+                document.execCommand(cmd, false, value !== undefined ? value : null);
+            } finally {
+                _busy = false;
+            }
+            _updateActiveStates();
+        });
+        toolbar.appendChild(b);
+        if (trackState) _stateBtns.push({ btn: b, cmd });
+    };
+
+    const addSep = () => {
+        const s = document.createElement('span');
+        s.style.cssText = 'width:1px;background:#444;margin:2px 4px;display:inline-block;';
+        toolbar.appendChild(s);
+    };
+
+    addBtn('<b>B</b>', 'Tučné (Ctrl+B)', 'bold', undefined, true);
+    addBtn('<i>I</i>', 'Kurzíva (Ctrl+I)', 'italic', undefined, true);
+    addBtn('<u>U</u>', 'Podtržení (Ctrl+U)', 'underline', undefined, true);
+    addBtn('<s>S</s>', 'Přeškrtnutí', 'strikeThrough', undefined, true);
+    addSep();
+    addBtn('OL', 'Číslovaný seznam', 'insertOrderedList', undefined, true);
+    addBtn('UL', 'Odrážkový seznam', 'insertUnorderedList', undefined, true);
+
+    // Update active states on selection change (keyboard + mouse)
+    content.addEventListener('keyup', _updateActiveStates);
+    content.addEventListener('mouseup', _updateActiveStates);
+    content.addEventListener('focus', _updateActiveStates);
+
+    wrap.appendChild(toolbar);
+    wrap.appendChild(shadowHost);
+    return { wrap, content };
 }
 
 function _hidePreview() {
@@ -72,21 +182,17 @@ function _hidePreview() {
 
 function _showTextDialog(defaultText) {
     return new Promise((resolve) => {
-        // Overlay
         const overlay = document.createElement('div');
         overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.45);z-index:100000;display:flex;align-items:center;justify-content:center;';
 
         const dialog = document.createElement('div');
-        dialog.style.cssText = 'background:#2a2a2a;color:#fff;border-radius:8px;padding:16px 20px;min-width:300px;max-width:420px;box-shadow:0 4px 24px rgba(0,0,0,0.5);font-family:sans-serif;';
+        dialog.style.cssText = 'background:#2a2a2a;color:#fff;border-radius:8px;padding:16px 20px;min-width:340px;box-shadow:0 4px 24px rgba(0,0,0,0.5);font-family:sans-serif;display:inline-block;';
 
         const title = document.createElement('div');
         title.textContent = defaultText ? 'Upravit poznámku' : 'Nová poznámka';
         title.style.cssText = 'font-size:14px;font-weight:bold;margin-bottom:10px;';
 
-        const textarea = document.createElement('textarea');
-        textarea.value = defaultText || '';
-        textarea.style.cssText = 'width:100%;min-height:80px;resize:vertical;background:#1a1a1a;color:#fff;border:1px solid #555;border-radius:4px;padding:8px;font-size:12px;font-family:sans-serif;box-sizing:border-box;';
-        textarea.placeholder = 'Zadejte text poznámky...';
+        const { wrap: editorWrap, content: editorContent } = _buildWysiwygEditor(defaultText || '');
 
         const btnRow = document.createElement('div');
         btnRow.style.cssText = 'display:flex;justify-content:flex-end;gap:8px;margin-top:12px;';
@@ -102,12 +208,12 @@ function _showTextDialog(defaultText) {
         btnRow.appendChild(btnCancel);
         btnRow.appendChild(btnOk);
         dialog.appendChild(title);
-        dialog.appendChild(textarea);
+        dialog.appendChild(editorWrap);
         dialog.appendChild(btnRow);
         overlay.appendChild(dialog);
         document.body.appendChild(overlay);
 
-        textarea.focus();
+        editorContent.focus();
 
         function cleanup(result) {
             document.body.removeChild(overlay);
@@ -116,8 +222,8 @@ function _showTextDialog(defaultText) {
 
         btnOk.addEventListener('click', (e) => {
             e.stopPropagation();
-            const val = textarea.value.trim();
-            cleanup(val || null);
+            const html = editorContent.innerHTML;
+            cleanup(_isHtmlEmpty(html) ? null : html);
         });
 
         btnCancel.addEventListener('click', (e) => {
@@ -125,20 +231,12 @@ function _showTextDialog(defaultText) {
             cleanup(null);
         });
 
-        textarea.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                const val = textarea.value.trim();
-                cleanup(val || null);
-            }
-            if (e.key === 'Escape') {
-                cleanup(null);
-            }
+        overlay.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') cleanup(null);
         });
 
         overlay.addEventListener('click', (e) => {
             e.stopPropagation();
-            if (e.target === overlay) cleanup(null);
         });
     });
 }
@@ -317,7 +415,7 @@ export function addAnnotationPoint(point, ownerObject, renderFn) {
         // Attach dblclick + contextmenu handlers
         label.element.addEventListener('dblclick', (e) => {
             e.stopPropagation();
-            _editAnnotation(annotation, renderFn);
+            _editAnnotation(annotation, renderFn).catch(() => {});
         });
         label.element.addEventListener('contextmenu', (e) => {
             e.preventDefault();
@@ -345,7 +443,7 @@ async function _editAnnotation(annotation, renderFn) {
     if (newText === null) return; // cancelled
 
     annotation.text = newText;
-    annotation.label.element.textContent = newText;
+    annotation.label.element.innerHTML = newText;
 
     // Update userData
     if (annotation._userDataRec) annotation._userDataRec.text = newText;
@@ -707,7 +805,7 @@ function _reconstructAnnotation(owner, rec, renderFn) {
     // Attach dblclick + contextmenu handlers
     label.element.addEventListener('dblclick', (e) => {
         e.stopPropagation();
-        _editAnnotation(annotation, renderFn);
+        _editAnnotation(annotation, renderFn).catch(() => {});
     });
     label.element.addEventListener('contextmenu', (e) => {
         e.preventDefault();
