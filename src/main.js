@@ -3064,6 +3064,7 @@ function cleanupModel() {
         if (!root) return;
         root.traverse(function(node) {
             if (node.isMesh || node.isLight || node.isCamera) return;
+            if (node.userData._isMeasurement || node.userData._isAnnotation) return;
             if (!node.name || node.name.trim() === '') {
                 toProcess.push(node);
             }
