@@ -520,6 +520,7 @@ function init() {
     // ViewHelper – orientation gizmo in the bottom-right corner
     viewHelper = new ViewHelper( currentCamera, renderer.domElement );
     viewHelper.center = orbitControls.target;
+    viewHelper.setLabels( 'X', 'Y', 'Z' );
 
     transformControls = new TransformControls( currentCamera, renderer.domElement );
     transformControls.setSize( 0.5 );	
