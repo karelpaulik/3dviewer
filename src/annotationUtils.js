@@ -1,5 +1,6 @@
 // annotationUtils.js – Annotation (note) system with CSS2D labels
 import * as THREE from 'three';
+import { CSS3DObject, CSS3DSprite } from 'three/addons/renderers/CSS3DRenderer.js';
 import { CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 
 // --- Private state ---
@@ -15,6 +16,10 @@ let _previewLine = null;    // Dashed line from pending point to cursor
 let _renderFn = null;
 let _dialogOpen = false;     // Guard flag to prevent click-through from dialog
 let _pendingAddLeaderAnnotation = null; // Annotation waiting for a new leader-line anchor click
+let _defaultAnnotationPlane = 'camera'; // Default plane for new annotations: 'camera'|'XY'|'XZ'|'YZ'|'surface'
+let _defaultAnnotationRendererType = 'css3d'; // 'css3d' | 'css2d' – renderer type for newly created annotations
+const _defaultRotationByPlane = { XY: 0, XZ: 0, YZ: 0 }; // Default rotation (degrees) for css3d annotations per plane
+let _pendingFaceNormal = null;  // World-space face normal stored on first click (for 'surface' plane)
 
 const MARKER_RADIUS = 1;
 const MARKER_COLOR = 0x44aa44;
@@ -23,6 +28,69 @@ const LINE_COLOR = 0x44aa44;
 const MARKER_SCREEN_SIZE = 5;
 
 // --- Helpers ---
+
+function _applyLabelPlane(annotation, camera) {
+    // CSS2D and CSS3DSprite labels are always camera-facing – no manual orientation needed
+    const rt = annotation.rendererType || 'css3d';
+    if (rt === 'css2d' || rt === 'css3dsprite') return;
+    const plane = annotation.labelPlane || 'camera';
+    const rot = annotation.labelRotation || 0;
+    const flipped = annotation.labelFlipped || false;
+    // 180° around label-local Y → flips facing direction, text remains correctly readable from new front
+    const qFlip = flipped ? new THREE.Quaternion(0, 1, 0, 0) : null; // (x,y,z,w) = (0,1,0,0) = 180° around Y
+    const label = annotation.label;
+
+    if (plane === 'camera') {
+        if (camera) {
+            // True billboard: copy camera's world quaternion into label's local space,
+            // compensating for the owner's world rotation.
+            // lookAt() would impose a world "up" constraint which causes rolling/tilting
+            // when the owner object is rotated. This approach has no such constraint.
+            const qCam = new THREE.Quaternion();
+            camera.getWorldQuaternion(qCam);
+            const owner = annotation.ownerObject;
+            if (owner) {
+                owner.updateWorldMatrix(true, false);
+                const qOwner = new THREE.Quaternion();
+                owner.getWorldQuaternion(qOwner);
+                // label_local_q = inv(owner_world_q) × camera_world_q
+                label.quaternion.copy(qOwner.invert().multiply(qCam));
+            } else {
+                label.quaternion.copy(qCam);
+            }
+            if (rot !== 0) {
+                const qExtra = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), rot);
+                label.quaternion.multiply(qExtra);
+            }
+            // flip not applied in camera mode – camera quaternion always faces viewer
+        }
+    } else if (plane === 'XY') {
+        // Faces +Z; rotation around Z axis
+        const qRot = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), rot);
+        label.quaternion.copy(qRot);
+        if (qFlip) label.quaternion.multiply(qFlip);
+    } else if (plane === 'XZ') {
+        // Base: -90° around X (faces +Y); rotation around world Y
+        const qBase = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));
+        const qRot = rot !== 0 ? new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), rot) : null;
+        label.quaternion.copy(qRot ? qRot.multiply(qBase) : qBase);
+        if (qFlip) label.quaternion.multiply(qFlip);
+    } else if (plane === 'YZ') {
+        // Base: +90° around Y (faces +X); rotation around world X
+        const qBase = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.PI / 2, 0));
+        const qRot = rot !== 0 ? new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), rot) : null;
+        label.quaternion.copy(qRot ? qRot.multiply(qBase) : qBase);
+        if (qFlip) label.quaternion.multiply(qFlip);
+    } else if (plane === 'surface') {
+        if (annotation.surfaceNormal) {
+            const normal = annotation.surfaceNormal.clone().normalize();
+            const qBase = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
+            const qRot = rot !== 0 ? new THREE.Quaternion().setFromAxisAngle(normal, rot) : null;
+            label.quaternion.copy(qRot ? qRot.multiply(qBase) : qBase);
+            if (qFlip) label.quaternion.multiply(qFlip);
+        }
+    }
+}
 
 function _createMarker(position) {
     const geo = new THREE.SphereGeometry(MARKER_RADIUS, 12, 12);
@@ -34,14 +102,17 @@ function _createMarker(position) {
     return mesh;
 }
 
-function _createLabel(text, position) {
+function _createLabel(text, position, rendererType) {
     const div = document.createElement('div');
     div.className = 'annotation-label';
     div.innerHTML = text;
     div.style.cssText = 'color:#fff;background:rgba(40,140,40,0.88);padding:3px 8px;border-radius:4px;font-size:11px;max-width:220px;line-height:1.4;pointer-events:auto;cursor:default;user-select:none;word-break:break-word;';
-    const label = new CSS2DObject(div);
+    const label = rendererType === 'css2d' ? new CSS2DObject(div)
+                 : rendererType === 'css3dsprite' ? new CSS3DSprite(div)
+                 : new CSS3DObject(div);
     label.position.copy(position);
     label.userData._isAnnotation = true;
+    label.userData._rendererType = rendererType || 'css3d';
     return label;
 }
 
@@ -309,6 +380,113 @@ function _showAnnotationContextMenu(annotation, x, y, renderFn) {
 
     sep();
     item('✏ Edit text', () => { _editAnnotation(annotation, renderFn); });
+
+    sep();
+    const PLANE_OPTIONS = [
+        { value: 'camera', label: '📷 Camera (billboard)' },
+        { value: 'XY',     label: '▭ XY plane (face +Z)' },
+        { value: 'XZ',     label: '▭ XZ plane (face +Y)' },
+        { value: 'YZ',     label: '▭ YZ plane (face +X)' },
+        { value: 'surface', label: '⬡ Surface normal' },
+    ];
+    for (const opt of PLANE_OPTIONS) {
+        const isCurrent = (annotation.labelPlane || 'camera') === opt.value;
+        item((isCurrent ? '✓ ' : '   ') + opt.label, () => {
+            annotation.labelPlane = opt.value;
+            if (annotation._userDataRec) annotation._userDataRec.labelPlane = opt.value;
+            if (opt.value !== 'camera') _applyLabelPlane(annotation, null);
+            if (renderFn) renderFn();
+        });
+    }
+
+    sep();
+    // --- Rotation row ---
+    {
+        const rotRow = document.createElement('div');
+        rotRow.style.cssText = 'padding:4px 10px;display:flex;align-items:center;gap:3px;';
+
+        const rotLabel = document.createElement('span');
+        rotLabel.style.cssText = 'color:#aaa;font-size:11px;min-width:54px;';
+        const updateRotLabel = () => {
+            rotLabel.textContent = '↻ ' + Math.round((annotation.labelRotation || 0) * 180 / Math.PI) + '°';
+        };
+        updateRotLabel();
+        rotRow.appendChild(rotLabel);
+
+        const mkRotBtn = (delta, title) => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.textContent = (delta > 0 ? '+' : '') + delta + '°';
+            b.title = title || '';
+            b.style.cssText = 'background:#333;color:#ddd;border:1px solid #555;border-radius:3px;padding:1px 5px;cursor:pointer;font-size:10px;line-height:1.4;';
+            b.addEventListener('mousedown', e => e.stopPropagation());
+            b.addEventListener('click', (e) => {
+                e.stopPropagation();
+                annotation.labelRotation = (annotation.labelRotation || 0) + delta * Math.PI / 180;
+                if (annotation._userDataRec) annotation._userDataRec.labelRotation = annotation.labelRotation;
+                updateRotLabel();
+                if ((annotation.labelPlane || 'camera') !== 'camera') _applyLabelPlane(annotation, null);
+                if (renderFn) renderFn();
+            });
+            return b;
+        };
+
+        const mkResetBtn = () => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.textContent = '⟳';
+            b.title = 'Reset rotation';
+            b.style.cssText = 'background:#333;color:#ddd;border:1px solid #555;border-radius:3px;padding:1px 5px;cursor:pointer;font-size:11px;line-height:1.4;';
+            b.addEventListener('mousedown', e => e.stopPropagation());
+            b.addEventListener('click', (e) => {
+                e.stopPropagation();
+                annotation.labelRotation = 0;
+                if (annotation._userDataRec) annotation._userDataRec.labelRotation = 0;
+                updateRotLabel();
+                if ((annotation.labelPlane || 'camera') !== 'camera') _applyLabelPlane(annotation, null);
+                if (renderFn) renderFn();
+            });
+            return b;
+        };
+
+        rotRow.appendChild(mkRotBtn(-45));
+        rotRow.appendChild(mkRotBtn(-15));
+        rotRow.appendChild(mkRotBtn(-5));
+        rotRow.appendChild(mkResetBtn());
+        rotRow.appendChild(mkRotBtn(5));
+        rotRow.appendChild(mkRotBtn(15));
+        rotRow.appendChild(mkRotBtn(45));
+
+        // Flip button (only meaningful for fixed-plane modes)
+        const mkFlipBtn = () => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.title = 'Flip to back / přetočit na zadní stranu';
+            b.style.cssText = 'background:#333;color:#ddd;border:1px solid #555;border-radius:3px;padding:1px 6px;cursor:pointer;font-size:11px;line-height:1.4;margin-left:4px;';
+            const updateFlipBtn = () => {
+                const isFlipped = annotation.labelFlipped || false;
+                b.textContent = isFlipped ? '⟺ ✓' : '⟺';
+                b.style.background = isFlipped ? '#4a4a2a' : '#333';
+                b.style.borderColor = isFlipped ? '#aa6' : '#555';
+            };
+            updateFlipBtn();
+            b.addEventListener('mousedown', e => e.stopPropagation());
+            b.addEventListener('click', (e) => {
+                e.stopPropagation();
+                annotation.labelFlipped = !(annotation.labelFlipped || false);
+                if (annotation._userDataRec) annotation._userDataRec.labelFlipped = annotation.labelFlipped;
+                updateFlipBtn();
+                if ((annotation.labelPlane || 'camera') !== 'camera') _applyLabelPlane(annotation, null);
+                if (renderFn) renderFn();
+            });
+            return b;
+        };
+        rotRow.appendChild(mkFlipBtn());
+
+        menu.appendChild(rotRow);
+    }
+
+    sep();
     item('🗑 Delete annotation', () => { _deleteAnnotation(annotation, renderFn); });
 
     document.body.appendChild(menu);
@@ -351,6 +529,7 @@ export function setAnnotationActive(val) {
         }
         _pendingPoint = null;
         _pendingOwner = null;
+        _pendingFaceNormal = null;
         _hidePreview();
     }
 }
@@ -361,13 +540,15 @@ export function setAnnotationActive(val) {
  * @param {THREE.Vector3} point – world-space intersection point
  * @param {THREE.Object3D} ownerObject – object to parent annotation to
  * @param {Function} renderFn – callback to trigger a render
+ * @param {THREE.Vector3} [faceNormalWorld] – world-space surface normal at the anchor point (for 'surface' plane mode)
  */
-export function addAnnotationPoint(point, ownerObject, renderFn) {
+export function addAnnotationPoint(point, ownerObject, renderFn, faceNormalWorld) {
     if (!_active || !_scene || _dialogOpen) return;
     const owner = ownerObject || _scene;
 
     if (!_pendingPoint) {
         // --- First click: place anchor point on object ---
+        _pendingFaceNormal = faceNormalWorld ? faceNormalWorld.clone() : null;
         _pendingOwner = owner;
         _pendingPoint = point.clone();
         owner.updateWorldMatrix(true, false);
@@ -388,11 +569,13 @@ export function addAnnotationPoint(point, ownerObject, renderFn) {
         const labelLocal = owner1.worldToLocal(labelWorld.clone());
 
         const defaultText = 'txt';
+        const surfaceNormal = _pendingFaceNormal;
+        _pendingFaceNormal = null;
 
         // Create annotation visuals immediately
         const marker = _pendingMarker; // reuse pending marker (already added to owner1 on first click)
         const line = _createLeaderLine(anchorLocal, labelLocal);
-        const label = _createLabel(defaultText, labelLocal);
+        const label = _createLabel(defaultText, labelLocal, _defaultAnnotationRendererType);
 
         owner1.add(label);
         owner1.add(line);
@@ -405,11 +588,17 @@ export function addAnnotationPoint(point, ownerObject, renderFn) {
             type: 'note',
             anchors: [{ x: anchorLocal.x, y: anchorLocal.y, z: anchorLocal.z }],
             labelPos: { x: labelLocal.x, y: labelLocal.y, z: labelLocal.z },
-            text: defaultText
+            text: defaultText,
+            labelPlane: _defaultAnnotationPlane,
+            labelRotation: (_defaultRotationByPlane[_defaultAnnotationPlane] || 0) * Math.PI / 180,
+            labelFlipped: false,
+            rendererType: _defaultAnnotationRendererType,
+            surfaceNormal: surfaceNormal ? { x: surfaceNormal.x, y: surfaceNormal.y, z: surfaceNormal.z } : undefined
         };
         owner1.userData.annotations.push(userDataRec);
 
-        const annotation = { label, leaderLines, labelLocal: labelLocal.clone(), text: defaultText, ownerObject: owner1, _userDataRec: userDataRec };
+        const initRot = (_defaultRotationByPlane[_defaultAnnotationPlane] || 0) * Math.PI / 180;
+        const annotation = { label, leaderLines, labelLocal: labelLocal.clone(), text: defaultText, ownerObject: owner1, _userDataRec: userDataRec, labelPlane: _defaultAnnotationPlane, labelRotation: initRot, labelFlipped: false, surfaceNormal, rendererType: _defaultAnnotationRendererType };
         _annotations.push(annotation);
 
         // Attach dblclick + contextmenu handlers
@@ -787,7 +976,7 @@ function _reconstructAnnotation(owner, rec, renderFn) {
             ? new THREE.Vector3(firstAnchor.x, firstAnchor.y, firstAnchor.z).add(new THREE.Vector3(5, 5, 0))
             : new THREE.Vector3());
 
-    const label = _createLabel(rec.text, labelLocal);
+    const label = _createLabel(rec.text, labelLocal, rec.rendererType || 'css3d');
     owner.add(label);
 
     const leaderLines = anchorList.map(a => {
@@ -799,8 +988,19 @@ function _reconstructAnnotation(owner, rec, renderFn) {
         return { marker, line, anchorLocal };
     });
 
-    const annotation = { label, leaderLines, labelLocal: labelLocal.clone(), text: rec.text, ownerObject: owner, _userDataRec: rec };
+    const annotation = { label, leaderLines, labelLocal: labelLocal.clone(), text: rec.text, ownerObject: owner, _userDataRec: rec,
+        labelPlane: rec.labelPlane || 'camera',
+        labelRotation: rec.labelRotation || 0,
+        labelFlipped: rec.labelFlipped || false,
+        surfaceNormal: rec.surfaceNormal ? new THREE.Vector3(rec.surfaceNormal.x, rec.surfaceNormal.y, rec.surfaceNormal.z) : null,
+        rendererType: rec.rendererType || 'css3d'
+    };
     _annotations.push(annotation);
+
+    // Apply saved plane orientation (camera mode will be applied on first render)
+    if ((rec.labelPlane || 'camera') !== 'camera') {
+        _applyLabelPlane(annotation, null);
+    }
 
     // Attach dblclick + contextmenu handlers
     label.element.addEventListener('dblclick', (e) => {
@@ -812,4 +1012,40 @@ function _reconstructAnnotation(owner, rec, renderFn) {
         e.stopPropagation();
         _showAnnotationContextMenu(annotation, e.clientX, e.clientY, renderFn);
     });
+}
+
+/**
+ * Update label orientations for all annotations based on their labelPlane setting.
+ * Call every render frame, BEFORE renderer.render().
+ * @param {THREE.Camera} camera – the active camera
+ */
+export function updateAnnotationLabelOrientations(camera) {
+    if (!camera) return;
+    for (const a of _annotations) {
+        _applyLabelPlane(a, camera);
+    }
+}
+
+/**
+ * Set the default plane used for newly created annotations.
+ * @param {string} plane – 'camera' | 'XY' | 'XZ' | 'YZ' | 'surface'
+ */
+export function setDefaultAnnotationPlane(plane) {
+    _defaultAnnotationPlane = plane;
+}
+
+export function getDefaultAnnotationPlane() {
+    return _defaultAnnotationPlane;
+}
+
+export function setDefaultAnnotationRendererType(type) {
+    _defaultAnnotationRendererType = type;
+}
+
+export function getDefaultAnnotationRendererType() {
+    return _defaultAnnotationRendererType;
+}
+
+export function setDefaultPlaneRotation(plane, degrees) {
+    _defaultRotationByPlane[plane] = degrees;
 }

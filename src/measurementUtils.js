@@ -1,6 +1,6 @@
 // measurementUtils.js – Point-to-point measurement with CSS2D labels
 import * as THREE from 'three';
-import { CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { CSS3DObject } from 'three/addons/renderers/CSS3DRenderer.js';
 import { getAnnotations, updateAnnotationLeaderLine, syncAnnotationLabelPos } from './annotationUtils.js';
 
 // --- Private state ---
@@ -73,7 +73,7 @@ function _createLabel(text, position) {
     div.className = 'measurement-label';
     div.innerHTML = text;
     div.style.cssText = 'color:#fff;background:rgba(200,40,40,0.85);padding:2px 6px;border-radius:3px;font-size:11px;pointer-events:none;white-space:nowrap;line-height:1.4;';
-    const label = new CSS2DObject(div);
+    const label = new CSS3DObject(div);
     label.position.copy(position);
     label.userData._isMeasurement = true;
     return label;
@@ -518,7 +518,7 @@ function _createAngleLabel(text, position) {
     div.className = 'measurement-label';
     div.innerHTML = text;
     div.style.cssText = 'color:#fff;background:rgba(40,80,200,0.85);padding:2px 6px;border-radius:3px;font-size:11px;pointer-events:none;white-space:nowrap;line-height:1.4;';
-    const label = new CSS2DObject(div);
+    const label = new CSS3DObject(div);
     label.position.copy(position);
     label.userData._isMeasurement = true;
     return label;
@@ -1496,7 +1496,7 @@ function _cadMakeLabel(text, position) {
     div.className = 'measurement-label';
     div.innerHTML = text;
     div.style.cssText = 'color:#fff;background:' + CAD_DIM_LABEL_BG + ';padding:2px 6px;border-radius:3px;font-size:11px;pointer-events:none;white-space:nowrap;line-height:1.4;';
-    const label = new CSS2DObject(div);
+    const label = new CSS3DObject(div);
     label.position.copy(position);
     label.userData._isMeasurement = true;
     return label;
