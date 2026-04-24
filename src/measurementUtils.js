@@ -37,6 +37,8 @@ let _dragStartPos = new THREE.Vector3();
 let _currentCamera = null;
 let _renderFn = null;
 let _orbitControls = null;
+let _canvas = null;
+let _troikaJustSelected = false; // Prevents _onCanvasClick from immediately deselecting a troika label
 const SELECTED_BORDER = '2px solid #ffdd00';
 
 let _depthTestEnabled = true; // true = skryté za modelem (výchozí), false = vždy viditelné přes model
@@ -777,7 +779,7 @@ export function getAngleMarkers() {
 // ===================== Select Dimension Mode =====================
 
 function _deselectDim() {
-    if (_selectedDim && _selectedDim.label) {
+    if (_selectedDim && _selectedDim.label && _selectedDim.label.element) {
         _selectedDim.label.element.style.border = 'none';
     }
     _selectedDim = null;
@@ -788,7 +790,7 @@ function _selectDim(meas, type) {
     _deselectDim();
     _selectedDim = meas;
     _selectedDimType = type;
-    meas.label.element.style.border = SELECTED_BORDER;
+    if (meas.label && meas.label.element) meas.label.element.style.border = SELECTED_BORDER;
 }
 
 function _setLabelPointerEvents(enabled) {
@@ -803,7 +805,7 @@ function _setLabelPointerEvents(enabled) {
         m.label.element.style.pointerEvents = pe;
     }
     for (const a of getAnnotations()) {
-        a.label.element.style.pointerEvents = pe;
+        if (a.label && a.label.element) a.label.element.style.pointerEvents = pe;
     }
 }
 
@@ -1097,6 +1099,7 @@ function _onDocumentMouseUp(e) {
 
 function _onCanvasClick(e) {
     if (!_selectDimActive) return;
+    if (_troikaJustSelected) { _troikaJustSelected = false; return; }
     // If click is not on a label, deselect
     const el = document.elementFromPoint(e.clientX, e.clientY);
     if (el && (el.closest('.measurement-label') || el.closest('.annotation-label'))) return; // handled by label mousedown
@@ -1159,6 +1162,7 @@ export function initSelectDimension(camera, renderFn, orbitCtrl) {
     _currentCamera = camera;
     _renderFn = renderFn;
     _orbitControls = orbitCtrl;
+    _canvas = orbitCtrl && orbitCtrl.domElement ? orbitCtrl.domElement : null;
 }
 
 export function updateSelectDimensionCamera(camera) {
@@ -1167,6 +1171,65 @@ export function updateSelectDimensionCamera(camera) {
 
 export function isSelectDimActive() {
     return _selectDimActive;
+}
+
+/**
+ * Canvas mousedown handler for troika annotation labels (3D objects, no DOM element).
+ * Raycasts against troika text meshes to select and start dragging.
+ */
+function _onCanvasMouseDown(e) {
+    if (!_selectDimActive || !_currentCamera || !_canvas) return;
+    // Only handle primary button clicks not on a DOM label
+    if (e.button !== 0) return;
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    if (el && (el.closest('.measurement-label') || el.closest('.annotation-label'))) return;
+
+    const rect = _canvas.getBoundingClientRect();
+    const ndc = new THREE.Vector2(
+        ((e.clientX - rect.left) / rect.width) * 2 - 1,
+        -((e.clientY - rect.top) / rect.height) * 2 + 1
+    );
+    const rc = new THREE.Raycaster();
+    rc.setFromCamera(ndc, _currentCamera);
+
+    // Collect all troika label meshes from annotations
+    const annotations = getAnnotations();
+    const troikaObjects = [];
+    for (const a of annotations) {
+        if (a.label && a.label.userData && a.label.userData._rendererType === 'troika') {
+            troikaObjects.push(a.label);
+        }
+    }
+    if (troikaObjects.length === 0) return;
+
+    const hits = rc.intersectObjects(troikaObjects, true);
+    if (hits.length === 0) return;
+
+    // Find which annotation owns the hit object
+    const hitObj = hits[0].object;
+    let found = null;
+    for (const a of annotations) {
+        if (a.label === hitObj || (hitObj.parent && a.label === hitObj.parent)) {
+            found = a;
+            break;
+        }
+    }
+    if (!found) return;
+
+    e.stopPropagation();
+    _selectDim(found, 'annotation');
+
+    // Anchor = first leader-line anchor or label position
+    found._labelAnchor = found.leaderLines.length > 0
+        ? found.leaderLines[0].anchorLocal.clone()
+        : found.label.position.clone();
+
+    _isDraggingLabel = true;
+    _dragStartMouse.set(e.clientX, e.clientY);
+    _dragStartPos.copy(found.label.position);
+    if (_orbitControls) _orbitControls.enabled = false;
+    _troikaJustSelected = true;
+    if (_renderFn) _renderFn();
 }
 
 export function setSelectDimActive(val) {
@@ -1181,34 +1244,36 @@ export function setSelectDimActive(val) {
         document.addEventListener('mousemove', _onDocumentMouseMove);
         document.addEventListener('mouseup', _onDocumentMouseUp);
         window.addEventListener('click', _onCanvasClick, true);
+        if (_canvas) _canvas.addEventListener('mousedown', _onCanvasMouseDown);
         // Attach mousedown to all existing labels
         for (const m of _measurements) {
-            m.label.element.addEventListener('mousedown', _onLabelMouseDown);
+            if (m.label && m.label.element) m.label.element.addEventListener('mousedown', _onLabelMouseDown);
         }
         for (const m of _angleMeasurements) {
-            m.label.element.addEventListener('mousedown', _onLabelMouseDown);
+            if (m.label && m.label.element) m.label.element.addEventListener('mousedown', _onLabelMouseDown);
         }
         for (const m of _cadDimMeasurements) {
-            m.label.element.addEventListener('mousedown', _onLabelMouseDown);
+            if (m.label && m.label.element) m.label.element.addEventListener('mousedown', _onLabelMouseDown);
         }
         for (const a of getAnnotations()) {
-            a.label.element.addEventListener('mousedown', _onLabelMouseDown);
+            if (a.label && a.label.element) a.label.element.addEventListener('mousedown', _onLabelMouseDown);
         }
     } else {
         document.removeEventListener('mousemove', _onDocumentMouseMove);
         document.removeEventListener('mouseup', _onDocumentMouseUp);
         window.removeEventListener('click', _onCanvasClick, true);
+        if (_canvas) _canvas.removeEventListener('mousedown', _onCanvasMouseDown);
         for (const m of _measurements) {
-            m.label.element.removeEventListener('mousedown', _onLabelMouseDown);
+            if (m.label && m.label.element) m.label.element.removeEventListener('mousedown', _onLabelMouseDown);
         }
         for (const m of _angleMeasurements) {
-            m.label.element.removeEventListener('mousedown', _onLabelMouseDown);
+            if (m.label && m.label.element) m.label.element.removeEventListener('mousedown', _onLabelMouseDown);
         }
         for (const m of _cadDimMeasurements) {
-            m.label.element.removeEventListener('mousedown', _onLabelMouseDown);
+            if (m.label && m.label.element) m.label.element.removeEventListener('mousedown', _onLabelMouseDown);
         }
         for (const a of getAnnotations()) {
-            a.label.element.removeEventListener('mousedown', _onLabelMouseDown);
+            if (a.label && a.label.element) a.label.element.removeEventListener('mousedown', _onLabelMouseDown);
         }
     }
 }

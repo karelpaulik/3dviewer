@@ -19,7 +19,7 @@ import { exportToHTML, exportToHTMLDraco, exportToHTMLObfuscated, exportToHTMLOb
 import { initOutliner, toggleOutliner, rebuildTree, highlightObject as outlinerHighlight, updateVisibilityIcon, isOutlinerOpen } from './sceneOutliner.js';
 import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements, isSelectDimActive, setSelectDimActive, deleteSelectedDimension, initSelectDimension, updateSelectDimensionCamera, reconstructMeasurements, stripMeasurementVisuals, setMeasurementsVisible, setMeasurementDepthTest, removeMeasurementsForOwner, isCadDimActive, setCadDimActive, getCadDimStep, getCadDimAxis, addCadDimPoint, updateCadDimPreview, updateCadDimHoverPreview, cycleCadDimAxis, placeCadDim, clearCadDimMeasurements, removeCadDimMeasurementsForOwner, getSelectedCadDim, setCadDimLabelMode, setCadDimDragMode, selectDimTouchStart, selectDimTouchMove, selectDimTouchEnd } from './measurementUtils.js';
 import { detectCircleCenterFromHit } from './circleDetectionUtils.js';
-import { initAnnotations, isAnnotationActive, setAnnotationActive, addAnnotationPoint, getAnnotationPendingPoint, updateAnnotationPreview, updateAnnotationMarkerScales, updateAnnotationLabelOrientations, setAnnotationsVisible, clearAnnotations, stripAnnotationVisuals, reconstructAnnotations, setAnnotationDepthTest, removeAnnotationsForOwner, getAnnotations, isAddLeaderLineActive, cancelAddLeaderLine, commitAddLeaderLine, setDefaultAnnotationPlane, setDefaultAnnotationRendererType, setDefaultPlaneRotation } from './annotationUtils.js';
+import { initAnnotations, isAnnotationActive, setAnnotationActive, addAnnotationPoint, getAnnotationPendingPoint, updateAnnotationPreview, updateAnnotationMarkerScales, updateAnnotationLabelOrientations, setAnnotationsVisible, clearAnnotations, stripAnnotationVisuals, reconstructAnnotations, setAnnotationDepthTest, removeAnnotationsForOwner, getAnnotations, isAddLeaderLineActive, cancelAddLeaderLine, commitAddLeaderLine, setDefaultAnnotationPlane, setDefaultAnnotationRendererType, setDefaultPlaneRotation, getTroikaAnnotationObjects, handleTroikaAnnotationInteract, setDefaultTroikaFontSize } from './annotationUtils.js';
 import { computeSolidSection, clearSolidSection } from './solidSectionUtils.js';
 
 // Proměnné globálního rozsahu----------------------------------------------------------------------------------------
@@ -244,8 +244,10 @@ const viewProp = {
     annotationRotXY: 0, // Default rotation for XY-plane css3d annotations (degrees)
     annotationRotXZ: 0, // Default rotation for XZ-plane css3d annotations (degrees)
     annotationRotYZ: 0, // Default rotation for YZ-plane css3d annotations (degrees)
+    troikaFontSize: 2.0, // Font size (world units) for new troika annotations
     showAnnotations: true, // Toggle visibility of all annotations
     showBehindModel: false, // Zobrazit kóty/poznámky i za modelem (depthTest off)
+    throttleRender: false, // Hide labels during camera drag, show on release
     orientedSelectionBox: 'local',
 };
 
@@ -530,6 +532,19 @@ function init() {
     orbitControls = new OrbitControls( currentCamera, renderer.domElement );
     orbitControls.update();
     orbitControls.addEventListener( 'change', render ); // use if there is no animation loop
+    orbitControls.addEventListener( 'start', function() {
+        if (viewProp.throttleRender) {
+            setMeasurementsVisible(false);
+            setAnnotationsVisible(false);
+        }
+    });
+    orbitControls.addEventListener( 'end', function() {
+        if (viewProp.throttleRender) {
+            setMeasurementsVisible(viewProp.showMeasurements);
+            setAnnotationsVisible(viewProp.showAnnotations);
+            render();
+        }
+    });
 
     // ViewHelper – orientation gizmo in the bottom-right corner
     viewHelper = new ViewHelper( currentCamera, renderer.domElement );
@@ -675,6 +690,8 @@ function init() {
     window.addEventListener( 'mousedown', onMouseDown, false );
     window.addEventListener( 'mouseup', onMouseUp, false );
     window.addEventListener( 'click', onClick, false );
+    window.addEventListener( 'dblclick', onDblClick, false );
+    renderer.domElement.addEventListener( 'contextmenu', onCanvasContextMenu, false );
     window.addEventListener( 'touchstart', onTouchStart, { passive: false } );
     window.addEventListener( 'touchmove', onTouchMove, { passive: false } );
     window.addEventListener( 'touchend', onTouchEnd, { passive: false } );
@@ -1107,6 +1124,14 @@ function addMainGui() {
 
     // --- Tools panel (Measurement & Annotations) ---
     const toolsGui = new GUI({ container: guiContainer, title: 'Tools' });
+        toolsGui.add(viewProp, 'throttleRender').name('Throttle Render').onChange(function(value) {
+            // If throttle is disabled while drag is ongoing, restore visibility
+            if (!value) {
+                setMeasurementsVisible(viewProp.showMeasurements);
+                setAnnotationsVisible(viewProp.showAnnotations);
+                render();
+            }
+        });
         toolsGui.add(viewProp, 'showBehindModel').name('Show behind model').onChange(function(value) {
             setMeasurementDepthTest(!value);
             setAnnotationDepthTest(!value);
@@ -1191,6 +1216,11 @@ function addMainGui() {
             annotationFolder.add({ fn() { _startAnnotationMode('css3d'); } }, 'fn').name('Add annotation css3d');
             annotationFolder.add({ fn() { _startAnnotationMode('css3dsprite'); } }, 'fn').name('Add annotation css3dsprite');
             annotationFolder.add({ fn() { _startAnnotationMode('css2d'); } }, 'fn').name('Add annotation css2d');
+            annotationFolder.add({ fn() { _startAnnotationMode('troika'); } }, 'fn').name('Add annotation troika');
+            annotationFolder.add(viewProp, 'troikaFontSize', 0.5, 20, 0.5)
+                .name('Troika font size')
+                .onChange(function(value) { setDefaultTroikaFontSize(value); })
+                .listen();
             annotationFolder.add(viewProp, 'showAnnotations').name('Show annotations').onChange(function(value) {
                 setAnnotationsVisible(value);
                 render();
@@ -3786,6 +3816,34 @@ function onMouseDown( event ) {
 
 function onMouseUp( event ) {
     isMouseDown = false;
+}
+
+function onDblClick( event ) {
+    if (isMouseOnGUI(event)) return;
+    if (viewProp.annotationMode) return; // annotation placement active – ignore
+    const troikaObjects = getTroikaAnnotationObjects();
+    if (troikaObjects.length === 0) return;
+    mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+    mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+    raycaster.setFromCamera(mouse, currentCamera);
+    const hits = raycaster.intersectObjects(troikaObjects, false);
+    if (hits.length > 0) {
+        handleTroikaAnnotationInteract(hits[0].object, event.clientX, event.clientY, true, render);
+    }
+}
+
+function onCanvasContextMenu( event ) {
+    if (isMouseOnGUI(event)) return;
+    const troikaObjects = getTroikaAnnotationObjects();
+    if (troikaObjects.length === 0) return;
+    mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+    mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+    raycaster.setFromCamera(mouse, currentCamera);
+    const hits = raycaster.intersectObjects(troikaObjects, false);
+    if (hits.length > 0) {
+        event.preventDefault();
+        handleTroikaAnnotationInteract(hits[0].object, event.clientX, event.clientY, false, render);
+    }
 }
 
 function onClick( event ) {		

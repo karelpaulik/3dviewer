@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { CSS3DObject, CSS3DSprite } from 'three/addons/renderers/CSS3DRenderer.js';
 import { CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { Text as TroikaText } from 'troika-three-text';
 
 // --- Private state ---
 let _scene = null;
@@ -18,6 +19,7 @@ let _dialogOpen = false;     // Guard flag to prevent click-through from dialog
 let _pendingAddLeaderAnnotation = null; // Annotation waiting for a new leader-line anchor click
 let _defaultAnnotationPlane = 'camera'; // Default plane for new annotations: 'camera'|'XY'|'XZ'|'YZ'|'surface'
 let _defaultAnnotationRendererType = 'css3d'; // 'css3d' | 'css2d' – renderer type for newly created annotations
+let _defaultTroikaFontSize = 2.0; // Font size (world units) for newly created troika annotations
 const _defaultRotationByPlane = { XY: 0, XZ: 0, YZ: 0 }; // Default rotation (degrees) for css3d annotations per plane
 let _pendingFaceNormal = null;  // World-space face normal stored on first click (for 'surface' plane)
 
@@ -103,6 +105,23 @@ function _createMarker(position) {
 }
 
 function _createLabel(text, position, rendererType) {
+    if (rendererType === 'troika') {
+        const tText = new TroikaText();
+        tText.text = text;
+        tText.fontSize = _defaultTroikaFontSize;
+        tText.color = '#ffffff';
+        tText.backgroundColor = '#288c28';
+        tText.backgroundOpacity = 0.88;
+        tText.padding = 0.3;
+        tText.maxWidth = 40;
+        tText.anchorX = 'center';
+        tText.anchorY = 'middle';
+        tText.position.copy(position);
+        tText.userData._isAnnotation = true;
+        tText.userData._rendererType = 'troika';
+        tText.sync();
+        return tText;
+    }
     const div = document.createElement('div');
     div.className = 'annotation-label';
     div.innerHTML = text;
@@ -486,6 +505,40 @@ function _showAnnotationContextMenu(annotation, x, y, renderFn) {
         menu.appendChild(rotRow);
     }
 
+    // --- Font size row (troika only) ---
+    if (annotation.rendererType === 'troika') {
+        sep();
+        const fsRow = document.createElement('div');
+        fsRow.style.cssText = 'padding:4px 10px;display:flex;align-items:center;gap:6px;';
+
+        const fsLabel = document.createElement('span');
+        fsLabel.style.cssText = 'color:#aaa;font-size:11px;min-width:70px;';
+        fsLabel.textContent = '🔠 Font size';
+        fsRow.appendChild(fsLabel);
+
+        const fsInput = document.createElement('input');
+        fsInput.type = 'number';
+        fsInput.min = '0.1';
+        fsInput.max = '100';
+        fsInput.step = '0.5';
+        fsInput.value = String(annotation.label.fontSize || 2.0);
+        fsInput.style.cssText = 'width:60px;background:#333;color:#fff;border:1px solid #555;border-radius:3px;padding:2px 4px;font-size:11px;';
+        fsInput.addEventListener('mousedown', e => e.stopPropagation());
+        fsInput.addEventListener('click', e => e.stopPropagation());
+        fsInput.addEventListener('change', (e) => {
+            const val = parseFloat(fsInput.value);
+            if (!isNaN(val) && val > 0) {
+                annotation.label.fontSize = val;
+                annotation.label.sync();
+                annotation.fontSize = val;
+                if (annotation._userDataRec) annotation._userDataRec.fontSize = val;
+                if (renderFn) renderFn();
+            }
+        });
+        fsRow.appendChild(fsInput);
+        menu.appendChild(fsRow);
+    }
+
     sep();
     item('🗑 Delete annotation', () => { _deleteAnnotation(annotation, renderFn); });
 
@@ -593,24 +646,27 @@ export function addAnnotationPoint(point, ownerObject, renderFn, faceNormalWorld
             labelRotation: (_defaultRotationByPlane[_defaultAnnotationPlane] || 0) * Math.PI / 180,
             labelFlipped: false,
             rendererType: _defaultAnnotationRendererType,
+            fontSize: _defaultAnnotationRendererType === 'troika' ? _defaultTroikaFontSize : undefined,
             surfaceNormal: surfaceNormal ? { x: surfaceNormal.x, y: surfaceNormal.y, z: surfaceNormal.z } : undefined
         };
         owner1.userData.annotations.push(userDataRec);
 
         const initRot = (_defaultRotationByPlane[_defaultAnnotationPlane] || 0) * Math.PI / 180;
-        const annotation = { label, leaderLines, labelLocal: labelLocal.clone(), text: defaultText, ownerObject: owner1, _userDataRec: userDataRec, labelPlane: _defaultAnnotationPlane, labelRotation: initRot, labelFlipped: false, surfaceNormal, rendererType: _defaultAnnotationRendererType };
+        const annotation = { label, leaderLines, labelLocal: labelLocal.clone(), text: defaultText, ownerObject: owner1, _userDataRec: userDataRec, labelPlane: _defaultAnnotationPlane, labelRotation: initRot, labelFlipped: false, surfaceNormal, rendererType: _defaultAnnotationRendererType, fontSize: _defaultAnnotationRendererType === 'troika' ? _defaultTroikaFontSize : undefined };
         _annotations.push(annotation);
 
-        // Attach dblclick + contextmenu handlers
-        label.element.addEventListener('dblclick', (e) => {
-            e.stopPropagation();
-            _editAnnotation(annotation, renderFn).catch(() => {});
-        });
-        label.element.addEventListener('contextmenu', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            _showAnnotationContextMenu(annotation, e.clientX, e.clientY, renderFn);
-        });
+        // Attach dblclick + contextmenu handlers (DOM-based; troika uses raycasting in main.js)
+        if (annotation.rendererType !== 'troika') {
+            label.element.addEventListener('dblclick', (e) => {
+                e.stopPropagation();
+                _editAnnotation(annotation, renderFn).catch(() => {});
+            });
+            label.element.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                _showAnnotationContextMenu(annotation, e.clientX, e.clientY, renderFn);
+            });
+        }
 
         // Reset pending state
         _pendingPoint = null;
@@ -632,7 +688,12 @@ async function _editAnnotation(annotation, renderFn) {
     if (newText === null) return; // cancelled
 
     annotation.text = newText;
-    annotation.label.element.innerHTML = newText;
+    if (annotation.rendererType === 'troika') {
+        annotation.label.text = newText;
+        annotation.label.sync();
+    } else {
+        annotation.label.element.innerHTML = newText;
+    }
 
     // Update userData
     if (annotation._userDataRec) annotation._userDataRec.text = newText;
@@ -767,6 +828,7 @@ export function clearAnnotations(renderFn) {
     for (const a of _annotations) {
         const owner = a.ownerObject || _scene;
         owner.remove(a.label);
+        if (a.rendererType === 'troika') { a.label.dispose(); }
         a.leaderLines.forEach(ll => {
             owner.remove(ll.marker);
             owner.remove(ll.line);
@@ -801,7 +863,8 @@ export function removeAnnotationsForOwner(root) {
 
     _annotations = _annotations.filter(a => {
         if (!owned.has(a.ownerObject)) return true;
-        if (a.label && a.label.element) a.label.element.remove();
+        if (a.rendererType === 'troika') { a.label.dispose(); }
+        else if (a.label && a.label.element) a.label.element.remove();
         a.leaderLines.forEach(ll => {
             ll.marker.geometry.dispose(); ll.marker.material.dispose();
             ll.line.geometry.dispose(); ll.line.material.dispose();
@@ -993,8 +1056,14 @@ function _reconstructAnnotation(owner, rec, renderFn) {
         labelRotation: rec.labelRotation || 0,
         labelFlipped: rec.labelFlipped || false,
         surfaceNormal: rec.surfaceNormal ? new THREE.Vector3(rec.surfaceNormal.x, rec.surfaceNormal.y, rec.surfaceNormal.z) : null,
-        rendererType: rec.rendererType || 'css3d'
+        rendererType: rec.rendererType || 'css3d',
+        fontSize: rec.fontSize
     };
+    // Apply saved fontSize for troika labels
+    if ((rec.rendererType || 'css3d') === 'troika' && rec.fontSize != null) {
+        label.fontSize = rec.fontSize;
+        label.sync();
+    }
     _annotations.push(annotation);
 
     // Apply saved plane orientation (camera mode will be applied on first render)
@@ -1002,16 +1071,18 @@ function _reconstructAnnotation(owner, rec, renderFn) {
         _applyLabelPlane(annotation, null);
     }
 
-    // Attach dblclick + contextmenu handlers
-    label.element.addEventListener('dblclick', (e) => {
-        e.stopPropagation();
-        _editAnnotation(annotation, renderFn).catch(() => {});
-    });
-    label.element.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        _showAnnotationContextMenu(annotation, e.clientX, e.clientY, renderFn);
-    });
+    // Attach dblclick + contextmenu handlers (DOM-based; troika uses raycasting in main.js)
+    if ((rec.rendererType || 'css3d') !== 'troika') {
+        label.element.addEventListener('dblclick', (e) => {
+            e.stopPropagation();
+            _editAnnotation(annotation, renderFn).catch(() => {});
+        });
+        label.element.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            _showAnnotationContextMenu(annotation, e.clientX, e.clientY, renderFn);
+        });
+    }
 }
 
 /**
@@ -1046,6 +1117,35 @@ export function getDefaultAnnotationRendererType() {
     return _defaultAnnotationRendererType;
 }
 
+export function setDefaultTroikaFontSize(size) {
+    _defaultTroikaFontSize = size;
+}
+
+export function getDefaultTroikaFontSize() {
+    return _defaultTroikaFontSize;
+}
+
 export function setDefaultPlaneRotation(plane, degrees) {
     _defaultRotationByPlane[plane] = degrees;
+}
+
+/**
+ * Returns all troika Text meshes for raycasting in main.js.
+ */
+export function getTroikaAnnotationObjects() {
+    return _annotations.filter(a => a.rendererType === 'troika').map(a => a.label);
+}
+
+/**
+ * Called from main.js when a raycasted hit lands on a troika annotation mesh.
+ * isDblClick=true → open edit dialog, false → open context menu.
+ */
+export function handleTroikaAnnotationInteract(hitObject, clientX, clientY, isDblClick, renderFn) {
+    const annotation = _annotations.find(a => a.label === hitObject);
+    if (!annotation) return;
+    if (isDblClick) {
+        _editAnnotation(annotation, renderFn).catch(() => {});
+    } else {
+        _showAnnotationContextMenu(annotation, clientX, clientY, renderFn);
+    }
 }
