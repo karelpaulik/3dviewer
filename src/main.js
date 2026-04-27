@@ -17,10 +17,11 @@ import ZipLoader from 'zip-loader';
 import { updateCrossSectionLines as updateCrossSectionLinesCore, updateSectionCrossLines as updateSectionCrossLinesCore } from './crossSectionUtils.js';
 import { exportToHTML, exportToHTMLDraco, exportToHTMLObfuscated, exportToHTMLObfuscatedDraco } from './htmlExport.js';
 import { initOutliner, toggleOutliner, rebuildTree, highlightObject as outlinerHighlight, updateVisibilityIcon, isOutlinerOpen } from './sceneOutliner.js';
-import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements, isSelectDimActive, setSelectDimActive, deleteSelectedDimension, initSelectDimension, updateSelectDimensionCamera, reconstructMeasurements, stripMeasurementVisuals, setMeasurementsVisible, setMeasurementDepthTest, removeMeasurementsForOwner, isCadDimActive, setCadDimActive, getCadDimStep, getCadDimAxis, addCadDimPoint, updateCadDimPreview, updateCadDimHoverPreview, cycleCadDimAxis, placeCadDim, clearCadDimMeasurements, removeCadDimMeasurementsForOwner, getSelectedCadDim, setCadDimLabelMode, setCadDimDragMode, selectDimTouchStart, selectDimTouchMove, selectDimTouchEnd, registerLabelForSelection } from './measurementUtils.js';
+import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements, isSelectDimActive, setSelectDimActive, deleteSelectedDimension, initSelectDimension, updateSelectDimensionCamera, reconstructMeasurements, stripMeasurementVisuals, setMeasurementsVisible, setMeasurementDepthTest, removeMeasurementsForOwner, isCadDimActive, setCadDimActive, getCadDimStep, getCadDimAxis, addCadDimPoint, updateCadDimPreview, updateCadDimHoverPreview, cycleCadDimAxis, placeCadDim, clearCadDimMeasurements, removeCadDimMeasurementsForOwner, getSelectedCadDim, setCadDimLabelMode, setCadDimDragMode, selectDimTouchStart, selectDimTouchMove, selectDimTouchEnd, registerLabelForSelection, getSelectedCadDim3d } from './measurementUtils.js';
 import { detectCircleCenterFromHit } from './circleDetectionUtils.js';
 import { initAnnotations, isAnnotationActive, setAnnotationActive, addAnnotationPoint, getAnnotationPendingPoint, updateAnnotationPreview, updateAnnotationMarkerScales, setAnnotationsVisible, clearAnnotations, stripAnnotationVisuals, reconstructAnnotations, setAnnotationDepthTest, removeAnnotationsForOwner, getAnnotations, isAddLeaderLineActive, cancelAddLeaderLine, commitAddLeaderLine, deleteAnnotationByRef, setConvertTo3dFn, reconstructAnnotationFromRec } from './annotationUtils.js';
 import { initAnnotations3d, isAnnotation3dActive, setAnnotation3dActive, addAnnotation3dPoint, getAnnotation3dPendingPoint, updateAnnotation3dPreview, updateAnnotation3dMarkerScales, updateAnnotation3dOrientations, setAnnotations3dVisible, clearAnnotations3d, stripAnnotation3dVisuals, reconstructAnnotations3d, setAnnotation3dDepthTest, removeAnnotations3dForOwner, isAddLeaderLine3dActive, cancelAddLeaderLine3d, commitAddLeaderLine3d, getAnnotation3dDefaults, deleteAnnotation3dByRef, setConvertTo2dFn, reconstructAnnotation3dFromRec } from './annotation3dUtils.js';
+import { initCadDim3d, isCadDim3dActive, getCadDim3dStep, getCadDim3dAxis, setCadDim3dActive, addCadDim3dPoint, updateCadDim3dPreview, updateCadDim3dHoverPreview, cycleCadDim3dAxis, placeCadDim3d, clearCadDim3dMeasurements, removeCadDim3dMeasurementsForOwner, setCadDim3dVisible, setCadDim3dDepthTest, updateCadDim3dOrientations, updateCadDim3dMarkerScales, reconstructCadDim3d, stripCadDim3dVisuals, setCadDim3dLabelMode, setCadDim3dDragMode, setCadDim3dOrientationMode, setCadDim3dRotate, setCadDim3dLabelScaleDialog, setCadDim3dMirrored, setCadDim3dTextColor, setCadDim3dBgColor } from './cadDim3dUtils.js';
 import { computeSolidSection, clearSolidSection } from './solidSectionUtils.js';
 
 // Proměnné globálního rozsahu----------------------------------------------------------------------------------------
@@ -162,6 +163,19 @@ function _updateCadDimHintUI(overrideAxis) {
     }
 }
 
+// --- CAD Dimension 3D hint overlay (created in init) ---
+let _cadDim3dHintDiv = null;
+function _updateCadDim3dHintUI(overrideAxis) {
+    if (!_cadDim3dHintDiv) return;
+    if (viewProp.cadDim3dMode && isCadDim3dActive() && getCadDim3dStep() === 2) {
+        const ax = (overrideAxis || getCadDim3dAxis()).toUpperCase();
+        _cadDim3dHintDiv.innerHTML = 'CAD dim 3D &nbsp;·&nbsp; Axis: <b>' + ax + '</b> &nbsp;·&nbsp; RMB: cycle X/Y/Z &nbsp;·&nbsp; LMB: place';
+        _cadDim3dHintDiv.style.display = 'block';
+    } else {
+        _cadDim3dHintDiv.style.display = 'none';
+    }
+}
+
 let INTERSECTED;
 let isMouseDown = false;
 let isTouchDragging = false;
@@ -235,7 +249,8 @@ const viewProp = {
     historyInfo: '– žádný záznam –',
     measureMode: false, // Point-to-point measurement mode
     angleMode: false, // Angle measurement mode (4 points → 2 lines → projected angles)
-    cadDimMode: false, // CAD-style dimension (2 pts + axis-aligned placement mode)
+    cadDimMode: false,   // CAD-style dimension (CSS2D, 2 pts + axis-aligned placement mode)
+    cadDim3dMode: false, // CAD-style dimension (CSS3D label, same interaction as cadDimMode)
     selectDimensionMode: false, // Select dimension mode – click label to select, drag to move, Delete to remove
     detectCircleCenter: false, // Snap measurement points to detected circle centers
     showMeasurements: true, // Toggle visibility of all measurement visuals
@@ -484,6 +499,7 @@ function init() {
     css3DRenderer.domElement.style.position = 'absolute';
     css3DRenderer.domElement.style.top = '0px';
     css3DRenderer.domElement.style.pointerEvents = 'none';
+    css3DRenderer.domElement.id = 'css3d-root';
     container.appendChild(css3DRenderer.domElement);
     
     //currentCamera
@@ -702,6 +718,14 @@ function init() {
                     _updateCadDimHintUI();
                     render();
                 }
+                if (viewProp.cadDim3dMode) {
+                    viewProp.cadDim3dMode = false;
+                    setCadDim3dActive(false);
+                    orbitControls.enabled = true;
+                    viewProp.isSelectAllowed = true;
+                    _updateCadDim3dHintUI();
+                    render();
+                }
                 if (viewProp.selectDimensionMode) {
                     viewProp.selectDimensionMode = false;
                     setSelectDimActive(false);
@@ -894,6 +918,7 @@ function init() {
     initSelectDimension(currentCamera, render, orbitControls);
     initAnnotations(scene, render);
     initAnnotations3d(scene, render);
+    initCadDim3d(scene);
 
     // Register CSS2D<->CSS3D annotation converters
     setConvertTo3dFn((annotation, renderFn) => {
@@ -939,6 +964,10 @@ function init() {
     _cadDimHintDiv = document.createElement('div');
     _cadDimHintDiv.style.cssText = 'position:fixed;bottom:46px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.75);color:#fff;padding:5px 14px;border-radius:5px;font-size:12px;pointer-events:none;display:none;z-index:1000;white-space:nowrap;';
     document.body.appendChild(_cadDimHintDiv);
+
+    _cadDim3dHintDiv = document.createElement('div');
+    _cadDim3dHintDiv.style.cssText = 'position:fixed;bottom:68px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.75);color:#fff;padding:5px 14px;border-radius:5px;font-size:12px;pointer-events:none;display:none;z-index:1000;white-space:nowrap;';
+    document.body.appendChild(_cadDim3dHintDiv);
 } //End init 
 
 // Přepočítá frustum ortografické kamery podle aktuálního obsahu meshObjects.
@@ -1157,6 +1186,7 @@ function addMainGui() {
             setMeasurementDepthTest(!value);
             setAnnotationDepthTest(!value);
             setAnnotation3dDepthTest(!value);
+            setCadDim3dDepthTest(!value);
             render();
         });
         toolsGui.add(viewProp, 'selectDimensionMode').name('Edit labels').onChange(function(value) {
@@ -1166,6 +1196,7 @@ function addMainGui() {
                 if (viewProp.measureMode) { viewProp.measureMode = false; setMeasureActive(false); }
                 if (viewProp.angleMode) { viewProp.angleMode = false; setAngleActive(false); }
                 if (viewProp.cadDimMode) { viewProp.cadDimMode = false; setCadDimActive(false); orbitControls.enabled = true; }
+                if (viewProp.cadDim3dMode) { viewProp.cadDim3dMode = false; setCadDim3dActive(false); orbitControls.enabled = true; _updateCadDim3dHintUI(); }
                 if (viewProp.annotationMode) { viewProp.annotationMode = false; setAnnotationActive(false); }
                 if (viewProp.annotation3dMode) { viewProp.annotation3dMode = false; setAnnotation3dActive(false); }
             } else {
@@ -1199,6 +1230,7 @@ function addMainGui() {
                     viewProp.isSelectAllowed = false;
                     if (viewProp.angleMode) { viewProp.angleMode = false; setAngleActive(false); }
                     if (viewProp.cadDimMode) { viewProp.cadDimMode = false; setCadDimActive(false); orbitControls.enabled = true; }
+                    if (viewProp.cadDim3dMode) { viewProp.cadDim3dMode = false; setCadDim3dActive(false); orbitControls.enabled = true; _updateCadDim3dHintUI(); }
                     if (viewProp.selectDimensionMode) { viewProp.selectDimensionMode = false; setSelectDimActive(false); }
                     if (viewProp.annotationMode) { viewProp.annotationMode = false; setAnnotationActive(false); }
                     if (viewProp.annotation3dMode) { viewProp.annotation3dMode = false; setAnnotation3dActive(false); }
@@ -1213,6 +1245,7 @@ function addMainGui() {
                     viewProp.isSelectAllowed = false;
                     if (viewProp.measureMode) { viewProp.measureMode = false; setMeasureActive(false); }
                     if (viewProp.cadDimMode) { viewProp.cadDimMode = false; setCadDimActive(false); orbitControls.enabled = true; }
+                    if (viewProp.cadDim3dMode) { viewProp.cadDim3dMode = false; setCadDim3dActive(false); orbitControls.enabled = true; _updateCadDim3dHintUI(); }
                     if (viewProp.selectDimensionMode) { viewProp.selectDimensionMode = false; setSelectDimActive(false); }
                     if (viewProp.annotationMode) { viewProp.annotationMode = false; setAnnotationActive(false); }
                     if (viewProp.annotation3dMode) { viewProp.annotation3dMode = false; setAnnotation3dActive(false); }
@@ -1227,6 +1260,7 @@ function addMainGui() {
                     viewProp.isSelectAllowed = false;
                     if (viewProp.measureMode) { viewProp.measureMode = false; setMeasureActive(false); }
                     if (viewProp.angleMode) { viewProp.angleMode = false; setAngleActive(false); }
+                    if (viewProp.cadDim3dMode) { viewProp.cadDim3dMode = false; setCadDim3dActive(false); orbitControls.enabled = true; _updateCadDim3dHintUI(); }
                     if (viewProp.selectDimensionMode) { viewProp.selectDimensionMode = false; setSelectDimActive(false); }
                     if (viewProp.annotationMode) { viewProp.annotationMode = false; setAnnotationActive(false); }
                     if (viewProp.annotation3dMode) { viewProp.annotation3dMode = false; setAnnotation3dActive(false); }
@@ -1237,13 +1271,32 @@ function addMainGui() {
                 }
                 render();
             }).listen();
+            measureFolder.add(viewProp, 'cadDim3dMode').name('CAD dimension (CSS3D)').onChange(function(value) {
+                setCadDim3dActive(value);
+                if (value) {
+                    viewProp.isSelectAllowed = false;
+                    if (viewProp.measureMode) { viewProp.measureMode = false; setMeasureActive(false); }
+                    if (viewProp.angleMode) { viewProp.angleMode = false; setAngleActive(false); }
+                    if (viewProp.cadDimMode) { viewProp.cadDimMode = false; setCadDimActive(false); orbitControls.enabled = true; _updateCadDimHintUI(); }
+                    if (viewProp.selectDimensionMode) { viewProp.selectDimensionMode = false; setSelectDimActive(false); }
+                    if (viewProp.annotationMode) { viewProp.annotationMode = false; setAnnotationActive(false); }
+                    if (viewProp.annotation3dMode) { viewProp.annotation3dMode = false; setAnnotation3dActive(false); }
+                } else {
+                    orbitControls.enabled = true;
+                    viewProp.isSelectAllowed = true;
+                    _updateCadDim3dHintUI();
+                }
+                render();
+            }).listen();
             measureFolder.add(viewProp, 'detectCircleCenter').name('Detect circle center');
             measureFolder.add(viewProp, 'showMeasurements').name('Show measurements').onChange(function(value) {
                 setMeasurementsVisible(value);
+                setCadDim3dVisible(value);
                 render();
             });
             measureFolder.add({ fn() {
                 clearMeasurements(render);
+                clearCadDim3dMeasurements(render);
             } }, 'fn').name('Clear measurements');
             measureFolder.close();
         const annotationFolder = toolsGui.addFolder('Annotations');
@@ -1254,6 +1307,7 @@ function addMainGui() {
                     if (viewProp.measureMode) { viewProp.measureMode = false; setMeasureActive(false); }
                     if (viewProp.angleMode) { viewProp.angleMode = false; setAngleActive(false); }
                     if (viewProp.cadDimMode) { viewProp.cadDimMode = false; setCadDimActive(false); orbitControls.enabled = true; }
+                    if (viewProp.cadDim3dMode) { viewProp.cadDim3dMode = false; setCadDim3dActive(false); orbitControls.enabled = true; _updateCadDim3dHintUI(); }
                     if (viewProp.selectDimensionMode) { viewProp.selectDimensionMode = false; setSelectDimActive(false); }
                     if (viewProp.annotation3dMode) { viewProp.annotation3dMode = false; setAnnotation3dActive(false); }
                 } else {
@@ -1268,6 +1322,7 @@ function addMainGui() {
                     if (viewProp.measureMode) { viewProp.measureMode = false; setMeasureActive(false); }
                     if (viewProp.angleMode) { viewProp.angleMode = false; setAngleActive(false); }
                     if (viewProp.cadDimMode) { viewProp.cadDimMode = false; setCadDimActive(false); orbitControls.enabled = true; }
+                    if (viewProp.cadDim3dMode) { viewProp.cadDim3dMode = false; setCadDim3dActive(false); orbitControls.enabled = true; _updateCadDim3dHintUI(); }
                     if (viewProp.selectDimensionMode) { viewProp.selectDimensionMode = false; setSelectDimActive(false); }
                     if (viewProp.annotationMode) { viewProp.annotationMode = false; setAnnotationActive(false); }
                 } else {
@@ -3144,6 +3199,7 @@ function loadGlbModel(model, name, scale, colored) {
             reconstructMeasurements(gltf.scene, render);
             reconstructAnnotations(gltf.scene, render);
             reconstructAnnotations3d(gltf.scene, render);
+            reconstructCadDim3d(gltf.scene);
             
             rebuildTree(loadedModels);
             render();
@@ -3280,6 +3336,7 @@ function removeModel(part) {
 
         removeMeasurementsForOwner(part);
         removeAnnotationsForOwner(part);
+        removeCadDim3dMeasurementsForOwner(part);
 
         // Odstraníme part i všechny jeho potomky z meshObjects a hiddenObjects.
         // V GLB hierarchii jsou v meshObjects pouze leaf-meshe, nikoli skupiny –
@@ -3781,6 +3838,36 @@ function render() {
     }
     _updateCadDimHintUI();
 
+    // CAD dimension 3D preview
+    if (viewProp.cadDim3dMode && isCadDim3dActive() && !isMouseOverGui) {
+        const cdStep3d = getCadDim3dStep();
+        if (cdStep3d < 2) {
+            if (!isMouseDown) {
+                raycaster.setFromCamera(mouse, currentCamera);
+                const cd3dIntersects = raycaster.intersectObjects(meshObjects);
+                const cd3dIsFullyVisible = (obj) => { let o = obj; while (o) { if (!o.visible) return false; o = o.parent; } return true; };
+                const cd3dVisible = (renderer.localClippingEnabled && clipPlanes.length > 0)
+                    ? cd3dIntersects.filter(hit => cd3dIsFullyVisible(hit.object) && clipPlanes.some(plane => plane.distanceToPoint(hit.point) >= 0))
+                    : cd3dIntersects.filter(hit => cd3dIsFullyVisible(hit.object));
+                if (cd3dVisible.length > 0) {
+                    let pt3d = cd3dVisible[0].point;
+                    if (viewProp.detectCircleCenter) {
+                        const center = detectCircleCenterFromHit(cd3dVisible[0]);
+                        if (center) pt3d = center;
+                    }
+                    updateCadDim3dHoverPreview(pt3d);
+                } else {
+                    updateCadDim3dHoverPreview(null);
+                }
+            }
+        } else {
+            updateCadDim3dPreview(mouse, currentCamera);
+        }
+    } else {
+        updateCadDim3dHoverPreview(null);
+    }
+    _updateCadDim3dHintUI();
+
     // Annotation hover preview – CSS2D (regular mode or add-leader mode)
     if ((viewProp.annotationMode && isAnnotationActive() || isAddLeaderLineActive()) && !isMouseOverGui && !isMouseDown) {
         raycaster.setFromCamera(mouse, currentCamera);
@@ -3837,6 +3924,8 @@ function render() {
     updateAnnotationMarkerScales(currentCamera);
     updateAnnotation3dMarkerScales(currentCamera);
     updateAnnotation3dOrientations(currentCamera);
+    updateCadDim3dMarkerScales(currentCamera);
+    updateCadDim3dOrientations(currentCamera);
 
     if (cameraProspHelperObject) cameraProspHelperObject.update();
     if (cameraOrthoHelperObject) cameraOrthoHelperObject.update();
@@ -3991,7 +4080,40 @@ function onClick( event ) {
         return;
     }
 
-    // --- Add leader line mode – CSS2D (from context menu) ---
+    // --- CAD Dimension 3D mode ---
+    if (viewProp.cadDim3dMode && isCadDim3dActive()) {
+        mouseUpPos.x = event.clientX;
+        mouseUpPos.y = event.clientY;
+        const dragDistance = mouseDownPos.distanceTo(mouseUpPos);
+        if (dragDistance > 3) return;
+
+        const step3d = getCadDim3dStep();
+        if (step3d < 2) {
+            raycaster.setFromCamera(mouse, currentCamera);
+            const cd3dIntersects = raycaster.intersectObjects(meshObjects);
+            const cd3dIsFullyVisible = (obj) => { let o = obj; while (o) { if (!o.visible) return false; o = o.parent; } return true; };
+            const cd3dVisible = (renderer.localClippingEnabled && clipPlanes.length > 0)
+                ? cd3dIntersects.filter(hit => cd3dIsFullyVisible(hit.object) && clipPlanes.some(plane => plane.distanceToPoint(hit.point) >= 0))
+                : cd3dIntersects.filter(hit => cd3dIsFullyVisible(hit.object));
+            if (cd3dVisible.length > 0) {
+                let point3d = cd3dVisible[0].point;
+                if (viewProp.detectCircleCenter) {
+                    const center = detectCircleCenterFromHit(cd3dVisible[0]);
+                    if (center) point3d = center;
+                }
+                const hitOwner3d = resolveCADSelection(cd3dVisible[0].object);
+                addCadDim3dPoint(point3d, hitOwner3d, render);
+                if (getCadDim3dStep() === 2) {
+                    _updateCadDim3dHintUI();
+                }
+            }
+        } else {
+            placeCadDim3d(render);
+            orbitControls.enabled = true;
+            _updateCadDim3dHintUI();
+        }
+        return;
+    }
     if (isAddLeaderLineActive()) {
         mouseUpPos.x = event.clientX;
         mouseUpPos.y = event.clientY;
@@ -4458,6 +4580,7 @@ function exportAllModels() {
     stripMeasurementVisuals(group);
     stripAnnotationVisuals(group);
     stripAnnotation3dVisuals(group);
+    stripCadDim3dVisuals(group);
 
     exporter.parse(group, function(result) {
         saveArrayBuffer(result, finalName);
@@ -4502,6 +4625,7 @@ async function exportAllModelsDraco() {
     stripMeasurementVisuals(group);
     stripAnnotationVisuals(group);
     stripAnnotation3dVisuals(group);
+    stripCadDim3dVisuals(group);
 
     exporter.parse(group, function(result) {
         // setTimeout dá prohlížeči čas vykreslit overlay
@@ -4596,6 +4720,7 @@ function exportSelectedObject() {
     stripMeasurementVisuals(clone);
     stripAnnotationVisuals(clone);
     stripAnnotation3dVisuals(clone);
+    stripCadDim3dVisuals(clone);
 
     // Apply world transform to the clone so it appears in the same position after re-import
     // Aplikujeme world transform na klon, aby se po importu zobrazil ve stejné pozici
@@ -5813,19 +5938,168 @@ function assemblyMoveStepDown() {
             sel.dragMode === 1 ? '✓ Label offset' : 'Label offset';
     }
 
+    // --- CAD dim 3D label-mode menu ---
+    function createCadDim3dMenu() {
+        const m = document.createElement('div');
+        m.className = 'ctx-menu hidden';
+
+        const lbl = document.createElement('div');
+        lbl.className = 'ctx-label';
+        lbl.textContent = 'CAD dimension (CSS3D)';
+        m.appendChild(lbl);
+
+        m.appendChild(separator());
+
+        const itemSimple = simpleItem('Axis value  (Z: 129)', () => {
+            const sel = getSelectedCadDim3d();
+            if (sel) setCadDim3dLabelMode(sel, 0, render);
+            hideAll();
+        });
+        m.appendChild(itemSimple);
+
+        const itemFull = simpleItem('Full  (Δx Δy Δz …)', () => {
+            const sel = getSelectedCadDim3d();
+            if (sel) setCadDim3dLabelMode(sel, 1, render);
+            hideAll();
+        });
+        m.appendChild(itemFull);
+
+        m.appendChild(separator());
+
+        const itemLabelOffset = simpleItem('Label offset', () => {
+            const sel = getSelectedCadDim3d();
+            if (sel) setCadDim3dDragMode(sel, sel.dragMode === 1 ? 0 : 1, render);
+            hideAll();
+        });
+        m.appendChild(itemLabelOffset);
+
+        m.appendChild(separator());
+
+        const itemRotatePlus = simpleItem('↻ Rotate +90°', () => {
+            const sel = getSelectedCadDim3d();
+            if (sel) setCadDim3dRotate(sel, Math.PI / 2, render);
+            hideAll();
+        });
+        m.appendChild(itemRotatePlus);
+
+        const itemRotateMinus = simpleItem('↺ Rotate -90°', () => {
+            const sel = getSelectedCadDim3d();
+            if (sel) setCadDim3dRotate(sel, -Math.PI / 2, render);
+            hideAll();
+        });
+        m.appendChild(itemRotateMinus);
+
+        const itemEditSize = simpleItem('⤢ Edit size…', () => {
+            const sel = getSelectedCadDim3d();
+            hideAll();
+            if (sel) setCadDim3dLabelScaleDialog(sel, render);
+        });
+        m.appendChild(itemEditSize);
+
+        const itemMirror = simpleItem('Mirror text', () => {
+            const sel = getSelectedCadDim3d();
+            if (sel) setCadDim3dMirrored(sel, render);
+            hideAll();
+        });
+        m.appendChild(itemMirror);
+
+        m.appendChild(separator());
+
+        // Color pickers
+        const colorRow = (labelText, getColor, onInput) => {
+            const el = document.createElement('div');
+            el.style.cssText = 'padding:2px 12px;display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:default;';
+            const span = document.createElement('span');
+            span.textContent = labelText;
+            span.style.fontSize = '13px';
+            const inp = document.createElement('input');
+            inp.type = 'color';
+            inp.style.cssText = 'width:26px;height:18px;border:none;padding:0;cursor:pointer;background:none;';
+            inp.addEventListener('mousedown', e => e.stopPropagation());
+            inp.addEventListener('click', e => e.stopPropagation());
+            inp.addEventListener('input', e => { e.stopPropagation(); onInput(inp.value); });
+            el.appendChild(span); el.appendChild(inp);
+            m.appendChild(el);
+            return inp; // return input for refresh
+        };
+
+        const inpTextColor = colorRow('Text color',
+            () => '#ffffff',
+            (color) => { const sel = getSelectedCadDim3d(); if (sel) setCadDim3dTextColor(sel, color, render); }
+        );
+        const inpBgColor = colorRow('Background',
+            () => '#6e3200',
+            (color) => { const sel = getSelectedCadDim3d(); if (sel) setCadDim3dBgColor(sel, color, render); }
+        );
+
+        m.appendChild(separator());
+
+        // Orientation items (flat, directly in menu)
+        const ORIENT_MODES_3D = [
+            { key: 'camera', label: 'Face camera' },
+            { key: 'XY',     label: 'XY plane'    },
+            { key: 'XZ',     label: 'XZ plane'    },
+            { key: 'YZ',     label: 'YZ plane'    },
+        ];
+        const orientItems = {};
+        for (const mode of ORIENT_MODES_3D) {
+            const item = simpleItem(mode.label, () => {
+                const sel = getSelectedCadDim3d();
+                if (sel) setCadDim3dOrientationMode(sel, mode.key, render);
+                hideAll();
+            });
+            orientItems[mode.key] = item;
+            m.appendChild(item);
+        }
+
+        m.appendChild(separator());
+
+        m.appendChild(simpleItem('Delete dimension', () => {
+            deleteSelectedDimension(render);
+            hideAll();
+        }));
+
+        m._itemSimple      = itemSimple;
+        m._itemFull        = itemFull;
+        m._itemLabelOffset = itemLabelOffset;
+        m._itemMirror      = itemMirror;
+        m._inpTextColor    = inpTextColor;
+        m._inpBgColor      = inpBgColor;
+        m._orientItems     = orientItems;
+        return m;
+    }
+
+    function refreshCadDim3dMenu() {
+        const sel = getSelectedCadDim3d();
+        if (!sel) return;
+        menuCadDim3d._itemSimple.style.fontWeight = (sel.labelMode === 0 || !sel.labelMode) ? 'bold' : '';
+        menuCadDim3d._itemFull.style.fontWeight   = sel.labelMode === 1 ? 'bold' : '';
+        menuCadDim3d._itemLabelOffset.textContent = sel.dragMode === 1 ? '✓ Label offset' : 'Label offset';
+        menuCadDim3d._itemMirror.textContent = (sel.mirrored ? '☑' : '☐') + ' Mirror text';
+        menuCadDim3d._inpTextColor.value = sel.textColor || '#ffffff';
+        menuCadDim3d._inpBgColor.value   = sel.bgColor   || '#6e3200';
+        const currentOrient = sel.orientationMode || 'camera';
+        for (const [key, item] of Object.entries(menuCadDim3d._orientItems)) {
+            item.style.fontWeight = key === currentOrient ? 'bold' : '';
+        }
+    }
+
     // --- State ---
     let activeMenu = null;
-    const menuEmpty   = createEmptyMenu();
-    const menuObject  = createObjectMenu();
-    const menuCadDim  = createCadDimMenu();
+    const menuEmpty    = createEmptyMenu();
+    const menuObject   = createObjectMenu();
+    const menuCadDim   = createCadDimMenu();
+    const menuCadDim3d = createCadDim3dMenu();
     document.body.appendChild(menuEmpty);
     document.body.appendChild(menuObject);
     document.body.appendChild(menuCadDim);
+    document.body.appendChild(menuCadDim3d);
 
     function hideAll() {
         menuEmpty.classList.add('hidden');
         menuObject.classList.add('hidden');
         menuCadDim.classList.add('hidden');
+        menuCadDim3d.classList.add('hidden');
         activeMenu = null;
     }
 
@@ -5860,7 +6134,10 @@ function assemblyMoveStepDown() {
 
     // --- Shared trigger (mouse RMB + touch long-press) ---
     function triggerContextMenu(x, y) {
-        if (viewProp.selectDimensionMode && isSelectDimActive() && getSelectedCadDim()) {
+        if (viewProp.selectDimensionMode && isSelectDimActive() && getSelectedCadDim3d()) {
+            refreshCadDim3dMenu();
+            showAt(menuCadDim3d, x, y);
+        } else if (viewProp.selectDimensionMode && isSelectDimActive() && getSelectedCadDim()) {
             refreshCadDimMenu();
             showAt(menuCadDim, x, y);
         } else if (lastSelectedObject) {
@@ -5882,6 +6159,21 @@ function assemblyMoveStepDown() {
             const newAxis = cycleCadDimAxis(mouse, currentCamera);
             _updateCadDimHintUI(newAxis);
             render();
+            return;
+        }
+
+        // In CAD dim 3D phase 2 – cycle axis instead of showing context menu
+        if (viewProp.cadDim3dMode && isCadDim3dActive() && getCadDim3dStep() === 2) {
+            const newAxis3d = cycleCadDim3dAxis(mouse, currentCamera);
+            _updateCadDim3dHintUI(newAxis3d);
+            render();
+            return;
+        }
+
+        // In Edit Labels mode with a CAD dim (CSS3D) selected – show cadDim3d label menu
+        if (viewProp.selectDimensionMode && isSelectDimActive() && getSelectedCadDim3d()) {
+            refreshCadDim3dMenu();
+            showAt(menuCadDim3d, event.clientX, event.clientY);
             return;
         }
 

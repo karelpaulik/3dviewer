@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 import { getAnnotations, updateAnnotationLeaderLine, syncAnnotationLabelPos, deleteAnnotationByRef } from './annotationUtils.js';
 import { getAnnotations3d, updateAnnotation3dLeaderLine, syncAnnotation3dLabelPos, deleteAnnotation3dByRef } from './annotation3dUtils.js';
+import { getCadDim3dMeasurements, deleteCadDim3dByRef, rebuildCadDim3dVisuals, syncCadDim3dLabelPos, updateCadDim3dLeaderLine } from './cadDim3dUtils.js';
 
 // --- Private state ---
 let _scene = null;
@@ -809,6 +810,9 @@ function _setLabelPointerEvents(enabled) {
     for (const a of getAnnotations3d()) {
         a.label.element.style.pointerEvents = pe;
     }
+    for (const m of getCadDim3dMeasurements()) {
+        if (m.label && m.label.element) m.label.element.style.pointerEvents = pe;
+    }
 }
 
 function _onLabelMouseDown(e) {
@@ -841,6 +845,11 @@ function _onLabelMouseDown(e) {
             if (a.label.element === el) { found = a; foundType = 'annotation3d'; break; }
         }
     }
+    if (!found) {
+        for (const m of getCadDim3dMeasurements()) {
+            if (m.label && m.label.element === el) { found = m; foundType = 'cadDim3d'; break; }
+        }
+    }
     if (!found) return;
 
     _selectDim(found, foundType);
@@ -848,6 +857,41 @@ function _onLabelMouseDown(e) {
     if (foundType === 'cadDim') {
         if (found.dragMode === 1) {
             // Label-only drag: anchor is midpoint of the dim line (foot1–foot2)
+            found._labelAnchor = new THREE.Vector3().addVectors(found.foot1, found.foot2).multiplyScalar(0.5);
+        } else {
+            // dragMode 0: whole dimension drag – compute grab offset to prevent jump
+            const owner = found.ownerObject || _scene;
+            owner.updateWorldMatrix(true, false);
+            const p1World = owner.localToWorld(found.p1.clone());
+            const p2World = owner.localToWorld(found.p2.clone());
+            const mid = new THREE.Vector3().addVectors(p1World, p2World).multiplyScalar(0.5);
+            const cameraDir = new THREE.Vector3();
+            _currentCamera.getWorldDirection(cameraDir);
+            const grabPlane = new THREE.Plane().setFromNormalAndCoplanarPoint(cameraDir, mid);
+            const grabNDC = new THREE.Vector2(
+                (e.clientX / window.innerWidth) * 2 - 1,
+                -(e.clientY / window.innerHeight) * 2 + 1
+            );
+            _cadTempRaycaster.setFromCamera(grabNDC, _currentCamera);
+            const initOnPlane = new THREE.Vector3();
+            if (_cadTempRaycaster.ray.intersectPlane(grabPlane, initOnPlane)) {
+                const foot1World = owner.localToWorld(found.foot1.clone());
+                found._cadDragOffset = initOnPlane.clone().sub(foot1World);
+            } else {
+                found._cadDragOffset = new THREE.Vector3();
+            }
+        }
+        _isDraggingLabel = true;
+        _dragStartMouse.set(e.clientX, e.clientY);
+        _dragStartPos.copy(found.label.position);
+        if (_orbitControls) _orbitControls.enabled = false;
+        if (_renderFn) _renderFn();
+        return;
+    }
+
+    if (foundType === 'cadDim3d') {
+        if (found.dragMode === 1) {
+            // Label-only drag
             found._labelAnchor = new THREE.Vector3().addVectors(found.foot1, found.foot2).multiplyScalar(0.5);
         } else {
             // dragMode 0: whole dimension drag – compute grab offset to prevent jump
@@ -907,6 +951,30 @@ function _onLabelMouseDown(e) {
 function _onDocumentMouseMove(e) {
     if (!_isDraggingLabel || !_selectedDim || !_currentCamera) return;
 
+    // --- CSS3D CAD dimension: dragMode 0 = rebuild whole dim ---
+    if (_selectedDimType === 'cadDim3d' && !(_selectedDim.dragMode)) {
+        const mouseNDC = new THREE.Vector2(
+            (e.clientX / window.innerWidth) * 2 - 1,
+            -(e.clientY / window.innerHeight) * 2 + 1
+        );
+        const meas = _selectedDim;
+        const owner = meas.ownerObject || _scene;
+        owner.updateWorldMatrix(true, false);
+        const p1World = owner.localToWorld(meas.p1.clone());
+        const p2World = owner.localToWorld(meas.p2.clone());
+        const mid = new THREE.Vector3().addVectors(p1World, p2World).multiplyScalar(0.5);
+        const cameraDir = new THREE.Vector3();
+        _currentCamera.getWorldDirection(cameraDir);
+        const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(cameraDir, mid);
+        _cadTempRaycaster.setFromCamera(mouseNDC, _currentCamera);
+        const offsetPoint = new THREE.Vector3();
+        if (!_cadTempRaycaster.ray.intersectPlane(plane, offsetPoint)) return;
+        if (meas._cadDragOffset) offsetPoint.sub(meas._cadDragOffset);
+        rebuildCadDim3dVisuals(meas, p1World, p2World, offsetPoint, true);
+        if (_renderFn) _renderFn();
+        return;
+    }
+
     // --- CAD dimension: drag repositions the whole dimension (dragMode 0 only) ---
     if (_selectedDimType === 'cadDim' && !(_selectedDim.dragMode)) {
         const mouseNDC = new THREE.Vector2(
@@ -956,6 +1024,8 @@ function _onDocumentMouseMove(e) {
         updateAnnotationLeaderLine(_selectedDim, newLocalPos);
     } else if (_selectedDimType === 'annotation3d') {
         updateAnnotation3dLeaderLine(_selectedDim, newLocalPos);
+    } else if (_selectedDimType === 'cadDim3d') {
+        updateCadDim3dLeaderLine(_selectedDim, newLocalPos);
     } else {
         _updateLeaderLine(_selectedDim, newLocalPos);
     }
@@ -1092,6 +1162,8 @@ function _onDocumentMouseUp(e) {
                         rec.labelPos = { x: lp.x, y: lp.y, z: lp.z };
                     }
                 }
+            } else if (_selectedDimType === 'cadDim3d') {
+                syncCadDim3dLabelPos(_selectedDim);
             } else {
                 const owner = _selectedDim.ownerObject || _scene;
                 const pos = _selectedDim.label.position;
@@ -1171,6 +1243,8 @@ function _removeSingleMeasurement(meas, type) {
         deleteAnnotationByRef(meas, null);
     } else if (type === 'annotation3d') {
         deleteAnnotation3dByRef(meas, null);
+    } else if (type === 'cadDim3d') {
+        deleteCadDim3dByRef(meas);
     }
 }
 
@@ -1216,6 +1290,9 @@ export function setSelectDimActive(val) {
         for (const a of getAnnotations3d()) {
             a.label.element.addEventListener('mousedown', _onLabelMouseDown);
         }
+        for (const m of getCadDim3dMeasurements()) {
+            if (m.label && m.label.element) m.label.element.addEventListener('mousedown', _onLabelMouseDown);
+        }
     } else {
         document.removeEventListener('mousemove', _onDocumentMouseMove);
         document.removeEventListener('mouseup', _onDocumentMouseUp);
@@ -1234,6 +1311,9 @@ export function setSelectDimActive(val) {
         }
         for (const a of getAnnotations3d()) {
             a.label.element.removeEventListener('mousedown', _onLabelMouseDown);
+        }
+        for (const m of getCadDim3dMeasurements()) {
+            if (m.label && m.label.element) m.label.element.removeEventListener('mousedown', _onLabelMouseDown);
         }
     }
 }
@@ -1669,6 +1749,10 @@ export function getCadDimAxis() { return _cadDimAxis; }
  */
 export function getSelectedCadDim() {
     return (_selectedDimType === 'cadDim') ? _selectedDim : null;
+}
+
+export function getSelectedCadDim3d() {
+    return (_selectedDimType === 'cadDim3d') ? _selectedDim : null;
 }
 
 /**

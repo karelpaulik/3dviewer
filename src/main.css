@@ -3,6 +3,12 @@ html {
 	overflow: hidden;
 }
 
+/* CSS3DRenderer internal wrapper divs must not intercept pointer events.
+   Label elements can override this via inline style when Edit Labels mode is active. */
+#css3d-root * {
+	pointer-events: none;
+}
+
 body {
 	margin: 0;
 	height: 100%;
