@@ -1247,6 +1247,17 @@ export function deleteSelectedDimension(renderFn) {
 }
 
 /**
+ * Attach mousedown (selection) listener to a newly created annotation label,
+ * if Edit labels mode is currently active. Call after creating an annotation
+ * programmatically (e.g. after CSS2D<->CSS3D conversion).
+ */
+export function registerLabelForSelection(annotation) {
+    if (!_selectDimActive || !annotation?.label?.element) return;
+    annotation.label.element.removeEventListener('mousedown', _onLabelMouseDown);
+    annotation.label.element.addEventListener('mousedown', _onLabelMouseDown);
+}
+
+/**
  * Touch equivalents for the select-dim drag system.
  * Call from touch handlers in main.js when selectDimensionMode is active.
  */

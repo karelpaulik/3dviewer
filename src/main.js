@@ -17,10 +17,10 @@ import ZipLoader from 'zip-loader';
 import { updateCrossSectionLines as updateCrossSectionLinesCore, updateSectionCrossLines as updateSectionCrossLinesCore } from './crossSectionUtils.js';
 import { exportToHTML, exportToHTMLDraco, exportToHTMLObfuscated, exportToHTMLObfuscatedDraco } from './htmlExport.js';
 import { initOutliner, toggleOutliner, rebuildTree, highlightObject as outlinerHighlight, updateVisibilityIcon, isOutlinerOpen } from './sceneOutliner.js';
-import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements, isSelectDimActive, setSelectDimActive, deleteSelectedDimension, initSelectDimension, updateSelectDimensionCamera, reconstructMeasurements, stripMeasurementVisuals, setMeasurementsVisible, setMeasurementDepthTest, removeMeasurementsForOwner, isCadDimActive, setCadDimActive, getCadDimStep, getCadDimAxis, addCadDimPoint, updateCadDimPreview, updateCadDimHoverPreview, cycleCadDimAxis, placeCadDim, clearCadDimMeasurements, removeCadDimMeasurementsForOwner, getSelectedCadDim, setCadDimLabelMode, setCadDimDragMode, selectDimTouchStart, selectDimTouchMove, selectDimTouchEnd } from './measurementUtils.js';
+import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements, isSelectDimActive, setSelectDimActive, deleteSelectedDimension, initSelectDimension, updateSelectDimensionCamera, reconstructMeasurements, stripMeasurementVisuals, setMeasurementsVisible, setMeasurementDepthTest, removeMeasurementsForOwner, isCadDimActive, setCadDimActive, getCadDimStep, getCadDimAxis, addCadDimPoint, updateCadDimPreview, updateCadDimHoverPreview, cycleCadDimAxis, placeCadDim, clearCadDimMeasurements, removeCadDimMeasurementsForOwner, getSelectedCadDim, setCadDimLabelMode, setCadDimDragMode, selectDimTouchStart, selectDimTouchMove, selectDimTouchEnd, registerLabelForSelection } from './measurementUtils.js';
 import { detectCircleCenterFromHit } from './circleDetectionUtils.js';
-import { initAnnotations, isAnnotationActive, setAnnotationActive, addAnnotationPoint, getAnnotationPendingPoint, updateAnnotationPreview, updateAnnotationMarkerScales, setAnnotationsVisible, clearAnnotations, stripAnnotationVisuals, reconstructAnnotations, setAnnotationDepthTest, removeAnnotationsForOwner, getAnnotations, isAddLeaderLineActive, cancelAddLeaderLine, commitAddLeaderLine } from './annotationUtils.js';
-import { initAnnotations3d, isAnnotation3dActive, setAnnotation3dActive, addAnnotation3dPoint, getAnnotation3dPendingPoint, updateAnnotation3dPreview, updateAnnotation3dMarkerScales, updateAnnotation3dOrientations, setAnnotations3dVisible, clearAnnotations3d, stripAnnotation3dVisuals, reconstructAnnotations3d, setAnnotation3dDepthTest, removeAnnotations3dForOwner, isAddLeaderLine3dActive, cancelAddLeaderLine3d, commitAddLeaderLine3d, getAnnotation3dDefaults } from './annotation3dUtils.js';
+import { initAnnotations, isAnnotationActive, setAnnotationActive, addAnnotationPoint, getAnnotationPendingPoint, updateAnnotationPreview, updateAnnotationMarkerScales, setAnnotationsVisible, clearAnnotations, stripAnnotationVisuals, reconstructAnnotations, setAnnotationDepthTest, removeAnnotationsForOwner, getAnnotations, isAddLeaderLineActive, cancelAddLeaderLine, commitAddLeaderLine, deleteAnnotationByRef, setConvertTo3dFn, reconstructAnnotationFromRec } from './annotationUtils.js';
+import { initAnnotations3d, isAnnotation3dActive, setAnnotation3dActive, addAnnotation3dPoint, getAnnotation3dPendingPoint, updateAnnotation3dPreview, updateAnnotation3dMarkerScales, updateAnnotation3dOrientations, setAnnotations3dVisible, clearAnnotations3d, stripAnnotation3dVisuals, reconstructAnnotations3d, setAnnotation3dDepthTest, removeAnnotations3dForOwner, isAddLeaderLine3dActive, cancelAddLeaderLine3d, commitAddLeaderLine3d, getAnnotation3dDefaults, deleteAnnotation3dByRef, setConvertTo2dFn, reconstructAnnotation3dFromRec } from './annotation3dUtils.js';
 import { computeSolidSection, clearSolidSection } from './solidSectionUtils.js';
 
 // Proměnné globálního rozsahu----------------------------------------------------------------------------------------
@@ -895,6 +895,46 @@ function init() {
     initAnnotations(scene, render);
     initAnnotations3d(scene, render);
 
+    // Register CSS2D<->CSS3D annotation converters
+    setConvertTo3dFn((annotation, renderFn) => {
+        const owner = annotation.ownerObject || scene;
+        const def = getAnnotation3dDefaults();
+        const rotMap = { camera: def.rotationCamera, XY: def.rotationXY, XZ: def.rotationXZ, YZ: def.rotationYZ };
+        const rec = {
+            type: 'note3d',
+            text: annotation.text,
+            anchors: annotation.leaderLines.map(ll => ({ x: ll.anchorLocal.x, y: ll.anchorLocal.y, z: ll.anchorLocal.z })),
+            labelPos: { x: annotation.labelLocal.x, y: annotation.labelLocal.y, z: annotation.labelLocal.z },
+            orientationMode: def.orientationMode,
+            rotationAngle: rotMap[def.orientationMode] ?? 0,
+            labelScale: def.labelScale,
+            mirrored: false,
+            textColor: def.textColor,
+            bgColor: def.bgColor,
+        };
+        if (!owner.userData.annotations3d) owner.userData.annotations3d = [];
+        owner.userData.annotations3d.push(rec);
+        deleteAnnotationByRef(annotation, null);
+        const newAnn3d = reconstructAnnotation3dFromRec(owner, rec, renderFn);
+        registerLabelForSelection(newAnn3d);
+        if (renderFn) renderFn();
+    });
+    setConvertTo2dFn((annotation, renderFn) => {
+        const owner = annotation.ownerObject || scene;
+        const rec = {
+            type: 'note',
+            text: annotation.text,
+            anchors: annotation.leaderLines.map(ll => ({ x: ll.anchorLocal.x, y: ll.anchorLocal.y, z: ll.anchorLocal.z })),
+            labelPos: { x: annotation.labelLocal.x, y: annotation.labelLocal.y, z: annotation.labelLocal.z },
+        };
+        if (!owner.userData.annotations) owner.userData.annotations = [];
+        owner.userData.annotations.push(rec);
+        deleteAnnotation3dByRef(annotation, null);
+        const newAnn2d = reconstructAnnotationFromRec(owner, rec, renderFn);
+        registerLabelForSelection(newAnn2d);
+        if (renderFn) renderFn();
+    });
+
     // CAD dim placement hint overlay (created here, referenced by module-level pointer)
     _cadDimHintDiv = document.createElement('div');
     _cadDimHintDiv.style.cssText = 'position:fixed;bottom:46px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.75);color:#fff;padding:5px 14px;border-radius:5px;font-size:12px;pointer-events:none;display:none;z-index:1000;white-space:nowrap;';
@@ -1133,6 +1173,25 @@ function addMainGui() {
             }
             render();
         }).listen();
+
+        const ann3dDefaultsFolder = toolsGui.addFolder('CSS3D defaults');
+            const _ann3dDef = getAnnotation3dDefaults();
+            ann3dDefaultsFolder.add(_ann3dDef, 'labelScale', 0.1, 10, 0.1).name('Size');
+            const _rotOpts = { '0°': 0, '90°': Math.PI / 2, '180°': Math.PI, '270°': 3 * Math.PI / 2 };
+            ann3dDefaultsFolder.add(_ann3dDef, 'rotationCamera', _rotOpts).name('Rotation (Face camera)');
+            ann3dDefaultsFolder.add(_ann3dDef, 'rotationXY',     _rotOpts).name('Rotation (XY plane)');
+            ann3dDefaultsFolder.add(_ann3dDef, 'rotationXZ',     _rotOpts).name('Rotation (XZ plane)');
+            ann3dDefaultsFolder.add(_ann3dDef, 'rotationYZ',     _rotOpts).name('Rotation (YZ plane)');
+            ann3dDefaultsFolder.add(_ann3dDef, 'orientationMode', {
+                'Face camera': 'camera',
+                'XY plane': 'XY',
+                'XZ plane': 'XZ',
+                'YZ plane': 'YZ',
+            }).name('Orientation');
+            ann3dDefaultsFolder.addColor(_ann3dDef, 'textColor').name('Text color');
+            ann3dDefaultsFolder.addColor(_ann3dDef, 'bgColor').name('Background');
+            ann3dDefaultsFolder.close();
+
         const measureFolder = toolsGui.addFolder('Measurement');
             measureFolder.add(viewProp, 'measureMode').name('Measure (point-to-point)').onChange(function(value) {
                 setMeasureActive(value);
@@ -1225,24 +1284,6 @@ function addMainGui() {
                 clearAnnotations(render);
                 clearAnnotations3d(render);
             } }, 'fn').name('Clear annotations');
-
-            const ann3dDefaultsFolder = annotationFolder.addFolder('CSS3D defaults');
-                const _ann3dDef = getAnnotation3dDefaults();
-                ann3dDefaultsFolder.add(_ann3dDef, 'labelScale', 0.1, 10, 0.1).name('Size');
-                const _rotOpts = { '0°': 0, '90°': Math.PI / 2, '180°': Math.PI, '270°': 3 * Math.PI / 2 };
-                ann3dDefaultsFolder.add(_ann3dDef, 'rotationCamera', _rotOpts).name('Rotation (Face camera)');
-                ann3dDefaultsFolder.add(_ann3dDef, 'rotationXY',     _rotOpts).name('Rotation (XY plane)');
-                ann3dDefaultsFolder.add(_ann3dDef, 'rotationXZ',     _rotOpts).name('Rotation (XZ plane)');
-                ann3dDefaultsFolder.add(_ann3dDef, 'rotationYZ',     _rotOpts).name('Rotation (YZ plane)');
-                ann3dDefaultsFolder.add(_ann3dDef, 'orientationMode', {
-                    'Face camera': 'camera',
-                    'XY plane': 'XY',
-                    'XZ plane': 'XZ',
-                    'YZ plane': 'YZ',
-                }).name('Orientation');
-                ann3dDefaultsFolder.addColor(_ann3dDef, 'textColor').name('Text color');
-                ann3dDefaultsFolder.addColor(_ann3dDef, 'bgColor').name('Background');
-                ann3dDefaultsFolder.close();
 
             annotationFolder.close();
     registerGuiPanel('Tools', toolsGui);

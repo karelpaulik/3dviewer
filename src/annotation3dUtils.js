@@ -17,6 +17,7 @@ let _renderFn = null;
 let _dialogOpen = false;
 let _pendingAddLeaderAnnotation = null;  // Annotation waiting for add-leader-line click
 let _currentCamera = null;               // Updated each frame via updateAnnotation3dOrientations()
+let _convertTo2dFn = null;               // set from main.js to avoid circular dep
 
 const MARKER_RADIUS = 1;
 const MARKER_COLOR = 0x4499cc;
@@ -34,14 +35,14 @@ const ORIENT_MODES = [
 
 // --- Default settings for new annotations ---
 const _defaults3d = {
-    labelScale:      1,
+    labelScale:      5,
     rotationCamera:  0,
     rotationXY:      0,
     rotationXZ:      0,
     rotationYZ:      0,
     orientationMode: 'camera',
     textColor:       '#ffffff',
-    bgColor:         '#2850a0',
+    bgColor:         '#2d7a3a',
 };
 
 function _defaultRotation() {
@@ -72,7 +73,7 @@ function _createLabel3d(text, position) {
     const div = document.createElement('div');
     div.className = 'annotation-label annotation-label-3d';
     div.innerHTML = text;
-    div.style.cssText = 'color:#fff;background:rgba(40,80,160,0.88);padding:3px 8px;border-radius:4px;font-size:11px;max-width:220px;line-height:1.4;pointer-events:auto;cursor:default;user-select:none;word-break:break-word;white-space:nowrap;';
+    div.style.cssText = 'color:#fff;background:rgba(40,80,160,0.88);padding:3px 8px;border-radius:4px;font-size:11px;line-height:1.4;pointer-events:auto;cursor:default;user-select:none;white-space:nowrap;';
     const label = new CSS3DObject(div);
     label.position.copy(position);
     label.scale.setScalar(LABEL_SCALE);
@@ -408,6 +409,10 @@ function _showAnnotation3dContextMenu(annotation, x, y, renderFn) {
     });
 
     item('🗑 Delete annotation', () => { _deleteAnnotation(annotation, renderFn); });
+    if (_convertTo2dFn) {
+        sep();
+        item('⇄ Convert to CSS2D', () => { _convertTo2dFn(annotation, renderFn); });
+    }
 
     sep();
     sectionLabel('Orientation:');
@@ -443,6 +448,14 @@ function _showAnnotation3dContextMenu(annotation, x, y, renderFn) {
 
 export function deleteAnnotation3dByRef(annotation, renderFn) {
     _deleteAnnotation(annotation, renderFn);
+}
+
+export function setConvertTo2dFn(fn) {
+    _convertTo2dFn = fn;
+}
+
+export function reconstructAnnotation3dFromRec(owner, rec, renderFn) {
+    return _reconstructAnnotation3d(owner, rec, renderFn);
 }
 
 export function initAnnotations3d(scene, renderFn) {
@@ -836,4 +849,5 @@ function _reconstructAnnotation3d(owner, rec, renderFn) {
     _applyScale(annotation);
     _applyColors(annotation);
     _attachHandlers(annotation, renderFn);
+    return annotation;
 }

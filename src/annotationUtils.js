@@ -15,6 +15,7 @@ let _previewLine = null;    // Dashed line from pending point to cursor
 let _renderFn = null;
 let _dialogOpen = false;     // Guard flag to prevent click-through from dialog
 let _pendingAddLeaderAnnotation = null; // Annotation waiting for a new leader-line anchor click
+let _convertTo3dFn = null;  // set from main.js to avoid circular dep
 
 const MARKER_RADIUS = 1;
 const MARKER_COLOR = 0x44aa44;
@@ -38,7 +39,7 @@ function _createLabel(text, position) {
     const div = document.createElement('div');
     div.className = 'annotation-label';
     div.innerHTML = text;
-    div.style.cssText = 'color:#fff;background:rgba(40,140,40,0.88);padding:3px 8px;border-radius:4px;font-size:11px;max-width:220px;line-height:1.4;pointer-events:auto;cursor:default;user-select:none;word-break:break-word;';
+    div.style.cssText = 'color:#fff;background:rgba(40,140,40,0.88);padding:3px 8px;border-radius:4px;font-size:11px;line-height:1.4;pointer-events:auto;cursor:default;user-select:none;white-space:nowrap;';
     const label = new CSS2DObject(div);
     label.position.copy(position);
     label.userData._isAnnotation = true;
@@ -309,6 +310,10 @@ function _showAnnotationContextMenu(annotation, x, y, renderFn) {
 
     sep();
     item('✏ Edit text', () => { _editAnnotation(annotation, renderFn); });
+    if (_convertTo3dFn) {
+        sep();
+        item('⇄ Convert to CSS3D', () => { _convertTo3dFn(annotation, renderFn); });
+    }
     item('🗑 Delete annotation', () => { _deleteAnnotation(annotation, renderFn); });
 
     document.body.appendChild(menu);
@@ -781,6 +786,14 @@ export function deleteAnnotationByRef(annotation, renderFn) {
     _deleteAnnotation(annotation, renderFn);
 }
 
+export function setConvertTo3dFn(fn) {
+    _convertTo3dFn = fn;
+}
+
+export function reconstructAnnotationFromRec(owner, rec, renderFn) {
+    return _reconstructAnnotation(owner, rec, renderFn);
+}
+
 export function showAnnotationTextDialog(defaultText) {
     return _showTextDialog(defaultText);
 }
@@ -823,4 +836,5 @@ function _reconstructAnnotation(owner, rec, renderFn) {
         e.stopPropagation();
         _showAnnotationContextMenu(annotation, e.clientX, e.clientY, renderFn);
     });
+    return annotation;
 }
