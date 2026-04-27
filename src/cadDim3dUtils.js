@@ -46,6 +46,28 @@ const MARKER_SCREEN_SIZE  = 5;
 const LABEL_SCALE         = 0.2;   // CSS pixels → world units
 const LABEL_SCALE_DEFAULT = 5;     // multiplier for the label
 
+// --- Defaults (editable via tools panel) ---
+const _cadDim3dDefaults = {
+    labelScale:      LABEL_SCALE_DEFAULT,
+    rotationCamera:  0,
+    rotationXY:      0,
+    rotationXZ:      0,
+    rotationYZ:      0,
+    orientationMode: 'camera',
+    textColor:       CAD_DIM3D_LABEL_TEXT_HEX,
+    bgColor:         CAD_DIM3D_LABEL_BG_HEX,
+};
+
+function _defaultCadDim3dRotation() {
+    const m = _cadDim3dDefaults.orientationMode;
+    if (m === 'XY') return _cadDim3dDefaults.rotationXY;
+    if (m === 'XZ') return _cadDim3dDefaults.rotationXZ;
+    if (m === 'YZ') return _cadDim3dDefaults.rotationYZ;
+    return _cadDim3dDefaults.rotationCamera;
+}
+
+export function getCadDim3dDefaults() { return _cadDim3dDefaults; }
+
 // --- Geometry helpers ---
 
 function _cadGetFoot3d(pointWorld, axis, offsetPoint) {
@@ -323,10 +345,10 @@ function _buildPhase2Preview3d(offsetPoint) {
     const labelPos = new THREE.Vector3().addVectors(foot1, foot2).multiplyScalar(0.5);
     const labelText = axisLabel + ': ' + value.toFixed(2)
         + '<br><span style="font-size:9px;opacity:0.7;">RMB: cycle axis · LMB: place</span>';
-    _cadP2Label3d = _makeLabel3d(labelText, labelPos, LABEL_SCALE_DEFAULT);
+    _cadP2Label3d = _makeLabel3d(labelText, labelPos, _cadDim3dDefaults.labelScale, _cadDim3dDefaults.textColor, _cadDim3dDefaults.bgColor);
 
     // Orient label immediately if camera is known
-    if (_currentCamera) _applyOrientation3d(_cadP2Label3d, _currentCamera);
+    if (_currentCamera) _applyOrientation3d(_cadP2Label3d, _currentCamera, _cadDim3dDefaults.orientationMode, _defaultCadDim3dRotation());
 
     _scene.add(_cadP2Ext1_3d);
     _scene.add(_cadP2Ext2_3d);
@@ -743,7 +765,7 @@ export function placeCadDim3d(renderFn) {
 
     const labelPos  = new THREE.Vector3().addVectors(f1, f2).multiplyScalar(0.5);
     const labelText = _getLabelText3d(_cadDim3dAxis, value);
-    const label     = _makeLabel3d(labelText, labelPos, LABEL_SCALE_DEFAULT);
+    const label     = _makeLabel3d(labelText, labelPos, _cadDim3dDefaults.labelScale, _cadDim3dDefaults.textColor, _cadDim3dDefaults.bgColor);
 
     owner.add(markerP2);
     owner.add(markerFoot1);
@@ -754,7 +776,7 @@ export function placeCadDim3d(renderFn) {
     owner.add(label);
 
     // Apply orientation immediately
-    if (_currentCamera) _applyOrientation3d(label, _currentCamera);
+    if (_currentCamera) _applyOrientation3d(label, _currentCamera, _cadDim3dDefaults.orientationMode, _defaultCadDim3dRotation());
 
     const meas = {
         markerP1, markerP2, markerFoot1, markerFoot2,
@@ -764,12 +786,12 @@ export function placeCadDim3d(renderFn) {
         ownerObject: owner,
         labelMode: 0,
         dragMode: 0,
-        orientationMode: 'camera',
-        rotationAngle: 0,
-        labelScale: LABEL_SCALE_DEFAULT,
+        orientationMode: _cadDim3dDefaults.orientationMode,
+        rotationAngle: _defaultCadDim3dRotation(),
+        labelScale: _cadDim3dDefaults.labelScale,
         mirrored: false,
-        textColor: null,
-        bgColor:   null,
+        textColor: _cadDim3dDefaults.textColor,
+        bgColor:   _cadDim3dDefaults.bgColor,
     };
     _cadDim3dMeasurements.push(meas);
 
@@ -786,10 +808,12 @@ export function placeCadDim3d(renderFn) {
         labelPos:        { x: labelPos.x, y: labelPos.y, z: labelPos.z },
         labelMode:       0,
         dragMode:        0,
-        orientationMode: 'camera',
-        rotationAngle:   0,
-        labelScale:      LABEL_SCALE_DEFAULT,
+        orientationMode: _cadDim3dDefaults.orientationMode,
+        rotationAngle:   _defaultCadDim3dRotation(),
+        labelScale:      _cadDim3dDefaults.labelScale,
         mirrored:        false,
+        textColor:       _cadDim3dDefaults.textColor,
+        bgColor:         _cadDim3dDefaults.bgColor,
     });
 
     // Reset to phase 0 (keep mode active for next dimension)
