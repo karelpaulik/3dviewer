@@ -312,7 +312,7 @@ function _showAnnotationContextMenu(annotation, x, y, renderFn) {
     item('✏ Edit text', () => { _editAnnotation(annotation, renderFn); });
     if (_convertTo3dFn) {
         sep();
-        item('⇄ Convert to CSS3D', () => { _convertTo3dFn(annotation, renderFn); });
+        item('⇄ Convert to 3D annotation', () => { _convertTo3dFn(annotation, renderFn); });
     }
     item('🗑 Delete annotation', () => { _deleteAnnotation(annotation, renderFn); });
 

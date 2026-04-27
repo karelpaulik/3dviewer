@@ -411,7 +411,7 @@ function _showAnnotation3dContextMenu(annotation, x, y, renderFn) {
     item('🗑 Delete annotation', () => { _deleteAnnotation(annotation, renderFn); });
     if (_convertTo2dFn) {
         sep();
-        item('⇄ Convert to CSS2D', () => { _convertTo2dFn(annotation, renderFn); });
+        item('⇄ Convert to Flat annotation', () => { _convertTo2dFn(annotation, renderFn); });
     }
 
     sep();

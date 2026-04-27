@@ -1208,7 +1208,7 @@ function addMainGui() {
         const _rotOpts = { '0°': 0, '90°': Math.PI / 2, '180°': Math.PI, '270°': 3 * Math.PI / 2 };
         const _orientOpts = { 'Face camera': 'camera', 'XY plane': 'XY', 'XZ plane': 'XZ', 'YZ plane': 'YZ' };
 
-        const cadDim3dDefaultsFolder = toolsGui.addFolder('CSS3D dim defaults');
+        const cadDim3dDefaultsFolder = toolsGui.addFolder('3D dimension defaults');
             const _cadDim3dDef = getCadDim3dDefaults();
             cadDim3dDefaultsFolder.add(_cadDim3dDef, 'labelScale', 0.1, 10, 0.1).name('Size');
             cadDim3dDefaultsFolder.add(_cadDim3dDef, 'rotationCamera', _rotOpts).name('Rotation (Face camera)');
@@ -1220,7 +1220,7 @@ function addMainGui() {
             cadDim3dDefaultsFolder.addColor(_cadDim3dDef, 'bgColor').name('Background');
             cadDim3dDefaultsFolder.close();
 
-        const ann3dDefaultsFolder = toolsGui.addFolder('CSS3D annotation defaults');
+        const ann3dDefaultsFolder = toolsGui.addFolder('3D annotation defaults');
             const _ann3dDef = getAnnotation3dDefaults();
             ann3dDefaultsFolder.add(_ann3dDef, 'labelScale', 0.1, 10, 0.1).name('Size');
             ann3dDefaultsFolder.add(_ann3dDef, 'rotationCamera', _rotOpts).name('Rotation (Face camera)');
@@ -1263,7 +1263,7 @@ function addMainGui() {
                 }
                 render();
             }).listen();
-            measureFolder.add(viewProp, 'cadDimMode').name('CAD dimension').onChange(function(value) {
+            measureFolder.add(viewProp, 'cadDimMode').name('CAD dimension (Flat)').onChange(function(value) {
                 setCadDimActive(value);
                 if (value) {
                     viewProp.isSelectAllowed = false;
@@ -1280,7 +1280,7 @@ function addMainGui() {
                 }
                 render();
             }).listen();
-            measureFolder.add(viewProp, 'cadDim3dMode').name('CAD dimension (CSS3D)').onChange(function(value) {
+            measureFolder.add(viewProp, 'cadDim3dMode').name('CAD dimension (3D)').onChange(function(value) {
                 setCadDim3dActive(value);
                 if (value) {
                     viewProp.isSelectAllowed = false;
@@ -1309,7 +1309,7 @@ function addMainGui() {
             } }, 'fn').name('Clear measurements');
             measureFolder.close();
         const annotationFolder = toolsGui.addFolder('Annotations');
-            annotationFolder.add(viewProp, 'annotationMode').name('Add annotation (CSS2D)').onChange(function(value) {
+            annotationFolder.add(viewProp, 'annotationMode').name('Add annotation (Flat)').onChange(function(value) {
                 setAnnotationActive(value);
                 if (value) {
                     viewProp.isSelectAllowed = false;
@@ -1324,7 +1324,7 @@ function addMainGui() {
                 }
                 render();
             }).listen();
-            annotationFolder.add(viewProp, 'annotation3dMode').name('Add annotation (CSS3D)').onChange(function(value) {
+            annotationFolder.add(viewProp, 'annotation3dMode').name('Add annotation (3D)').onChange(function(value) {
                 setAnnotation3dActive(value);
                 if (value) {
                     viewProp.isSelectAllowed = false;
@@ -5923,7 +5923,7 @@ function assemblyMoveStepDown() {
 
         m.appendChild(separator());
 
-        m.appendChild(simpleItem('Convert to CSS3D', () => {
+        m.appendChild(simpleItem('Convert to 3D dimension', () => {
             const sel = getSelectedCadDim();
             hideAll();
             if (sel) {
@@ -5963,7 +5963,7 @@ function assemblyMoveStepDown() {
 
         const lbl = document.createElement('div');
         lbl.className = 'ctx-label';
-        lbl.textContent = 'CAD dimension (CSS3D)';
+        lbl.textContent = 'CAD dimension (3D)';
         m.appendChild(lbl);
 
         m.appendChild(separator());
@@ -6072,7 +6072,7 @@ function assemblyMoveStepDown() {
 
         m.appendChild(separator());
 
-        m.appendChild(simpleItem('Convert to CSS2D', () => {
+        m.appendChild(simpleItem('Convert to Flat dimension', () => {
             const sel = getSelectedCadDim3d();
             hideAll();
             if (sel) convertCadDim3dTo2d(sel, render);
