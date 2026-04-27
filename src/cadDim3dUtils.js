@@ -1029,3 +1029,51 @@ export function stripCadDim3dVisuals(root) {
         if (obj.material) obj.material.dispose();
     }
 }
+
+/**
+ * Convert a placed CSS2D CAD dimension to a CSS3D CAD dimension.
+ * meas2d: a measurement record from getCadDimMeasurements().
+ * deleteMeas2d: callback(meas2d) that removes the CSS2D meas (avoids circular import).
+ * Returns the new CSS3D meas, or null on failure.
+ */
+export function convertCadDimTo3d(meas2d, deleteMeas2d, renderFn) {
+    if (!meas2d || !_scene) return null;
+    const owner = meas2d.ownerObject || _scene;
+    const labelPos = meas2d.label ? meas2d.label.position.clone() : null;
+
+    // Remove the CSS2D visual
+    deleteMeas2d(meas2d);
+
+    // Build a rec that matches what _reconstructCadDim3dFromRec expects
+    const p1 = meas2d.p1, p2 = meas2d.p2, f1 = meas2d.foot1, f2 = meas2d.foot2;
+    const rec = {
+        type:     'cadDim3d',
+        p1:       { x: p1.x, y: p1.y, z: p1.z },
+        p2:       { x: p2.x, y: p2.y, z: p2.z },
+        foot1:    { x: f1.x, y: f1.y, z: f1.z },
+        foot2:    { x: f2.x, y: f2.y, z: f2.z },
+        axis:     meas2d.axis,
+        value:    meas2d.value,
+        labelPos: labelPos ? { x: labelPos.x, y: labelPos.y, z: labelPos.z } : undefined,
+        labelMode:       meas2d.labelMode || 0,
+        dragMode:        meas2d.dragMode  || 0,
+        orientationMode: _cadDim3dDefaults.orientationMode,
+        rotationAngle:   _defaultCadDim3dRotation(),
+        labelScale:      _cadDim3dDefaults.labelScale,
+        mirrored:        false,
+        textColor:       _cadDim3dDefaults.textColor,
+        bgColor:         _cadDim3dDefaults.bgColor,
+    };
+
+    // Persist in userData.measurements3d
+    if (!owner.userData.measurements3d) owner.userData.measurements3d = [];
+    owner.userData.measurements3d.push(rec);
+
+    // Build visuals
+    owner.updateWorldMatrix(true, false);
+    _reconstructCadDim3dFromRec(owner, rec);
+
+    const newMeas = _cadDim3dMeasurements[_cadDim3dMeasurements.length - 1];
+    if (renderFn) renderFn();
+    return newMeas;
+}

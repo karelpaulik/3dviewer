@@ -1333,6 +1333,7 @@ export function deleteSelectedDimension(renderFn) {
  */
 export function registerLabelForSelection(annotation) {
     if (!_selectDimActive || !annotation?.label?.element) return;
+    annotation.label.element.style.pointerEvents = 'auto';
     annotation.label.element.removeEventListener('mousedown', _onLabelMouseDown);
     annotation.label.element.addEventListener('mousedown', _onLabelMouseDown);
 }
@@ -2108,4 +2109,60 @@ function _reconstructCadDim(owner, rec) {
     }
 
     _cadDimMeasurements.push(measRec);
+}
+
+export function getCadDimMeasurements() { return _cadDimMeasurements; }
+
+export function deleteCadDimByRef(meas) {
+    _removeSingleCadDim(meas);
+    const idx = _cadDimMeasurements.indexOf(meas);
+    if (idx !== -1) _cadDimMeasurements.splice(idx, 1);
+}
+
+/**
+ * Convert a placed CSS3D CAD dimension to a CSS2D CAD dimension.
+ * Removes the CSS3D meas, creates a matching CSS2D one.
+ * If the measurement was selected, clears the selection.
+ */
+export function convertCadDim3dTo2d(meas3d, renderFn) {
+    if (!meas3d) return;
+    const owner = meas3d.ownerObject || _scene;
+    const labelPos = meas3d.label ? meas3d.label.position.clone() : null;
+    const wasSelected = (_selectedDim === meas3d);
+    if (wasSelected) _deselectDim();
+
+    // Remove the CSS3D visual
+    deleteCadDim3dByRef(meas3d);
+
+    // Build a rec mirroring the CSS2D userData format
+    const p1 = meas3d.p1, p2 = meas3d.p2, f1 = meas3d.foot1, f2 = meas3d.foot2;
+    const rec = {
+        type:      'cadDim',
+        p1:        { x: p1.x, y: p1.y, z: p1.z },
+        p2:        { x: p2.x, y: p2.y, z: p2.z },
+        foot1:     { x: f1.x, y: f1.y, z: f1.z },
+        foot2:     { x: f2.x, y: f2.y, z: f2.z },
+        axis:      meas3d.axis,
+        value:     meas3d.value,
+        labelMode: meas3d.labelMode || 0,
+        dragMode:  meas3d.dragMode  || 0,
+        labelPos:  labelPos ? { x: labelPos.x, y: labelPos.y, z: labelPos.z } : undefined,
+    };
+
+    // Persist in userData.measurements
+    if (!owner.userData.measurements) owner.userData.measurements = [];
+    owner.userData.measurements.push(rec);
+
+    // Build visuals via existing reconstruct function
+    _reconstructCadDim(owner, rec);
+
+    // Wire up selection and pointer events for the newly created meas
+    const newMeas = _cadDimMeasurements[_cadDimMeasurements.length - 1];
+    if (_selectDimActive && newMeas && newMeas.label) {
+        newMeas.label.element.style.pointerEvents = 'auto';
+        newMeas.label.element.addEventListener('mousedown', _onLabelMouseDown);
+    }
+
+    if (renderFn) renderFn();
+    return newMeas;
 }
