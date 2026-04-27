@@ -1,7 +1,8 @@
 // measurementUtils.js – Point-to-point measurement with CSS2D labels
 import * as THREE from 'three';
 import { CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
-import { getAnnotations, updateAnnotationLeaderLine, syncAnnotationLabelPos } from './annotationUtils.js';
+import { getAnnotations, updateAnnotationLeaderLine, syncAnnotationLabelPos, deleteAnnotationByRef } from './annotationUtils.js';
+import { getAnnotations3d, updateAnnotation3dLeaderLine, syncAnnotation3dLabelPos, deleteAnnotation3dByRef } from './annotation3dUtils.js';
 
 // --- Private state ---
 let _scene = null;
@@ -805,6 +806,9 @@ function _setLabelPointerEvents(enabled) {
     for (const a of getAnnotations()) {
         a.label.element.style.pointerEvents = pe;
     }
+    for (const a of getAnnotations3d()) {
+        a.label.element.style.pointerEvents = pe;
+    }
 }
 
 function _onLabelMouseDown(e) {
@@ -830,6 +834,11 @@ function _onLabelMouseDown(e) {
     if (!found) {
         for (const a of getAnnotations()) {
             if (a.label.element === el) { found = a; foundType = 'annotation'; break; }
+        }
+    }
+    if (!found) {
+        for (const a of getAnnotations3d()) {
+            if (a.label.element === el) { found = a; foundType = 'annotation3d'; break; }
         }
     }
     if (!found) return;
@@ -880,6 +889,8 @@ function _onLabelMouseDown(e) {
         const mid2 = new THREE.Vector3().addVectors(found.points[2], found.points[3]).multiplyScalar(0.5);
         anchor = new THREE.Vector3().addVectors(mid1, mid2).multiplyScalar(0.5);
     } else if (foundType === 'annotation') {
+        anchor = found.leaderLines.length > 0 ? found.leaderLines[0].anchorLocal.clone() : found.label.position.clone();
+    } else if (foundType === 'annotation3d') {
         anchor = found.leaderLines.length > 0 ? found.leaderLines[0].anchorLocal.clone() : found.label.position.clone();
     }
     found._labelAnchor = anchor;
@@ -943,6 +954,8 @@ function _onDocumentMouseMove(e) {
     // Update leader line from anchor to label (both in local space)
     if (_selectedDimType === 'annotation') {
         updateAnnotationLeaderLine(_selectedDim, newLocalPos);
+    } else if (_selectedDimType === 'annotation3d') {
+        updateAnnotation3dLeaderLine(_selectedDim, newLocalPos);
     } else {
         _updateLeaderLine(_selectedDim, newLocalPos);
     }
@@ -1061,6 +1074,8 @@ function _onDocumentMouseUp(e) {
         if (_selectedDim) {
             if (_selectedDimType === 'annotation') {
                 syncAnnotationLabelPos(_selectedDim);
+            } else if (_selectedDimType === 'annotation3d') {
+                syncAnnotation3dLabelPos(_selectedDim);
             } else if (_selectedDimType === 'cadDim') {
                 const meas = _selectedDim;
                 const owner = meas.ownerObject || _scene;
@@ -1152,6 +1167,10 @@ function _removeSingleMeasurement(meas, type) {
         _removeSingleCadDim(meas);
         const idx = _cadDimMeasurements.indexOf(meas);
         if (idx !== -1) _cadDimMeasurements.splice(idx, 1);
+    } else if (type === 'annotation') {
+        deleteAnnotationByRef(meas, null);
+    } else if (type === 'annotation3d') {
+        deleteAnnotation3dByRef(meas, null);
     }
 }
 
@@ -1194,6 +1213,9 @@ export function setSelectDimActive(val) {
         for (const a of getAnnotations()) {
             a.label.element.addEventListener('mousedown', _onLabelMouseDown);
         }
+        for (const a of getAnnotations3d()) {
+            a.label.element.addEventListener('mousedown', _onLabelMouseDown);
+        }
     } else {
         document.removeEventListener('mousemove', _onDocumentMouseMove);
         document.removeEventListener('mouseup', _onDocumentMouseUp);
@@ -1208,6 +1230,9 @@ export function setSelectDimActive(val) {
             m.label.element.removeEventListener('mousedown', _onLabelMouseDown);
         }
         for (const a of getAnnotations()) {
+            a.label.element.removeEventListener('mousedown', _onLabelMouseDown);
+        }
+        for (const a of getAnnotations3d()) {
             a.label.element.removeEventListener('mousedown', _onLabelMouseDown);
         }
     }

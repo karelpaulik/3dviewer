@@ -8,6 +8,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer.js';
+import { CSS3DRenderer } from 'three/addons/renderers/CSS3DRenderer.js';
 import { ViewHelper } from 'three/addons/helpers/ViewHelper.js';
 
 //import { GUI } from 'dat.gui';
@@ -19,12 +20,14 @@ import { initOutliner, toggleOutliner, rebuildTree, highlightObject as outlinerH
 import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements, isSelectDimActive, setSelectDimActive, deleteSelectedDimension, initSelectDimension, updateSelectDimensionCamera, reconstructMeasurements, stripMeasurementVisuals, setMeasurementsVisible, setMeasurementDepthTest, removeMeasurementsForOwner, isCadDimActive, setCadDimActive, getCadDimStep, getCadDimAxis, addCadDimPoint, updateCadDimPreview, updateCadDimHoverPreview, cycleCadDimAxis, placeCadDim, clearCadDimMeasurements, removeCadDimMeasurementsForOwner, getSelectedCadDim, setCadDimLabelMode, setCadDimDragMode, selectDimTouchStart, selectDimTouchMove, selectDimTouchEnd } from './measurementUtils.js';
 import { detectCircleCenterFromHit } from './circleDetectionUtils.js';
 import { initAnnotations, isAnnotationActive, setAnnotationActive, addAnnotationPoint, getAnnotationPendingPoint, updateAnnotationPreview, updateAnnotationMarkerScales, setAnnotationsVisible, clearAnnotations, stripAnnotationVisuals, reconstructAnnotations, setAnnotationDepthTest, removeAnnotationsForOwner, getAnnotations, isAddLeaderLineActive, cancelAddLeaderLine, commitAddLeaderLine } from './annotationUtils.js';
+import { initAnnotations3d, isAnnotation3dActive, setAnnotation3dActive, addAnnotation3dPoint, getAnnotation3dPendingPoint, updateAnnotation3dPreview, updateAnnotation3dMarkerScales, updateAnnotation3dOrientations, setAnnotations3dVisible, clearAnnotations3d, stripAnnotation3dVisuals, reconstructAnnotations3d, setAnnotation3dDepthTest, removeAnnotations3dForOwner, isAddLeaderLine3dActive, cancelAddLeaderLine3d, commitAddLeaderLine3d, getAnnotation3dDefaults } from './annotation3dUtils.js';
 import { computeSolidSection, clearSolidSection } from './solidSectionUtils.js';
 
 // Proměnné globálního rozsahu----------------------------------------------------------------------------------------
 let container, stats;
 let camera, cameraTarget, scene, renderer;
 let css2DRenderer;
+let css3DRenderer;
 let viewHelper;			
 
 const clipPlanes = [];		
@@ -236,7 +239,8 @@ const viewProp = {
     selectDimensionMode: false, // Select dimension mode – click label to select, drag to move, Delete to remove
     detectCircleCenter: false, // Snap measurement points to detected circle centers
     showMeasurements: true, // Toggle visibility of all measurement visuals
-    annotationMode: false, // Annotation (note) mode
+    annotationMode: false,   // CSS2D annotation (note) mode
+    annotation3dMode: false, // CSS3D annotation (note) mode
     showAnnotations: true, // Toggle visibility of all annotations
     showBehindModel: false, // Zobrazit kóty/poznámky i za modelem (depthTest off)
     orientedSelectionBox: 'local',
@@ -473,6 +477,14 @@ function init() {
     css2DRenderer.domElement.style.top = '0px';
     css2DRenderer.domElement.style.pointerEvents = 'none';
     container.appendChild(css2DRenderer.domElement);
+
+    // CSS3DRenderer for 3D-oriented annotation labels
+    css3DRenderer = new CSS3DRenderer();
+    css3DRenderer.setSize(window.innerWidth, window.innerHeight);
+    css3DRenderer.domElement.style.position = 'absolute';
+    css3DRenderer.domElement.style.top = '0px';
+    css3DRenderer.domElement.style.pointerEvents = 'none';
+    container.appendChild(css3DRenderer.domElement);
     
     //currentCamera
     const aspect = window.innerWidth / window.innerHeight;
@@ -702,7 +714,14 @@ function init() {
                     viewProp.isSelectAllowed = true;
                     render();
                 }
+                if (viewProp.annotation3dMode) {
+                    viewProp.annotation3dMode = false;
+                    setAnnotation3dActive(false);
+                    viewProp.isSelectAllowed = true;
+                    render();
+                }
                 cancelAddLeaderLine();
+                cancelAddLeaderLine3d();
                 render();
                 if (viewProp.detectCircleCenter) {
                     viewProp.detectCircleCenter = false;
@@ -874,6 +893,7 @@ function init() {
     initMeasurement(scene);
     initSelectDimension(currentCamera, render, orbitControls);
     initAnnotations(scene, render);
+    initAnnotations3d(scene, render);
 
     // CAD dim placement hint overlay (created here, referenced by module-level pointer)
     _cadDimHintDiv = document.createElement('div');
@@ -1096,6 +1116,7 @@ function addMainGui() {
         toolsGui.add(viewProp, 'showBehindModel').name('Show behind model').onChange(function(value) {
             setMeasurementDepthTest(!value);
             setAnnotationDepthTest(!value);
+            setAnnotation3dDepthTest(!value);
             render();
         });
         toolsGui.add(viewProp, 'selectDimensionMode').name('Edit labels').onChange(function(value) {
@@ -1106,6 +1127,7 @@ function addMainGui() {
                 if (viewProp.angleMode) { viewProp.angleMode = false; setAngleActive(false); }
                 if (viewProp.cadDimMode) { viewProp.cadDimMode = false; setCadDimActive(false); orbitControls.enabled = true; }
                 if (viewProp.annotationMode) { viewProp.annotationMode = false; setAnnotationActive(false); }
+                if (viewProp.annotation3dMode) { viewProp.annotation3dMode = false; setAnnotation3dActive(false); }
             } else {
                 viewProp.isSelectAllowed = true;
             }
@@ -1120,6 +1142,7 @@ function addMainGui() {
                     if (viewProp.cadDimMode) { viewProp.cadDimMode = false; setCadDimActive(false); orbitControls.enabled = true; }
                     if (viewProp.selectDimensionMode) { viewProp.selectDimensionMode = false; setSelectDimActive(false); }
                     if (viewProp.annotationMode) { viewProp.annotationMode = false; setAnnotationActive(false); }
+                    if (viewProp.annotation3dMode) { viewProp.annotation3dMode = false; setAnnotation3dActive(false); }
                 } else {
                     viewProp.isSelectAllowed = true;
                 }
@@ -1133,6 +1156,7 @@ function addMainGui() {
                     if (viewProp.cadDimMode) { viewProp.cadDimMode = false; setCadDimActive(false); orbitControls.enabled = true; }
                     if (viewProp.selectDimensionMode) { viewProp.selectDimensionMode = false; setSelectDimActive(false); }
                     if (viewProp.annotationMode) { viewProp.annotationMode = false; setAnnotationActive(false); }
+                    if (viewProp.annotation3dMode) { viewProp.annotation3dMode = false; setAnnotation3dActive(false); }
                 } else {
                     viewProp.isSelectAllowed = true;
                 }
@@ -1146,6 +1170,7 @@ function addMainGui() {
                     if (viewProp.angleMode) { viewProp.angleMode = false; setAngleActive(false); }
                     if (viewProp.selectDimensionMode) { viewProp.selectDimensionMode = false; setSelectDimActive(false); }
                     if (viewProp.annotationMode) { viewProp.annotationMode = false; setAnnotationActive(false); }
+                    if (viewProp.annotation3dMode) { viewProp.annotation3dMode = false; setAnnotation3dActive(false); }
                 } else {
                     orbitControls.enabled = true; // re-enable in case we were in phase 2
                     viewProp.isSelectAllowed = true;
@@ -1163,7 +1188,7 @@ function addMainGui() {
             } }, 'fn').name('Clear measurements');
             measureFolder.close();
         const annotationFolder = toolsGui.addFolder('Annotations');
-            annotationFolder.add(viewProp, 'annotationMode').name('Add annotation').onChange(function(value) {
+            annotationFolder.add(viewProp, 'annotationMode').name('Add annotation (CSS2D)').onChange(function(value) {
                 setAnnotationActive(value);
                 if (value) {
                     viewProp.isSelectAllowed = false;
@@ -1171,6 +1196,21 @@ function addMainGui() {
                     if (viewProp.angleMode) { viewProp.angleMode = false; setAngleActive(false); }
                     if (viewProp.cadDimMode) { viewProp.cadDimMode = false; setCadDimActive(false); orbitControls.enabled = true; }
                     if (viewProp.selectDimensionMode) { viewProp.selectDimensionMode = false; setSelectDimActive(false); }
+                    if (viewProp.annotation3dMode) { viewProp.annotation3dMode = false; setAnnotation3dActive(false); }
+                } else {
+                    viewProp.isSelectAllowed = true;
+                }
+                render();
+            }).listen();
+            annotationFolder.add(viewProp, 'annotation3dMode').name('Add annotation (CSS3D)').onChange(function(value) {
+                setAnnotation3dActive(value);
+                if (value) {
+                    viewProp.isSelectAllowed = false;
+                    if (viewProp.measureMode) { viewProp.measureMode = false; setMeasureActive(false); }
+                    if (viewProp.angleMode) { viewProp.angleMode = false; setAngleActive(false); }
+                    if (viewProp.cadDimMode) { viewProp.cadDimMode = false; setCadDimActive(false); orbitControls.enabled = true; }
+                    if (viewProp.selectDimensionMode) { viewProp.selectDimensionMode = false; setSelectDimActive(false); }
+                    if (viewProp.annotationMode) { viewProp.annotationMode = false; setAnnotationActive(false); }
                 } else {
                     viewProp.isSelectAllowed = true;
                 }
@@ -1178,11 +1218,32 @@ function addMainGui() {
             }).listen();
             annotationFolder.add(viewProp, 'showAnnotations').name('Show annotations').onChange(function(value) {
                 setAnnotationsVisible(value);
+                setAnnotations3dVisible(value);
                 render();
             });
             annotationFolder.add({ fn() {
                 clearAnnotations(render);
+                clearAnnotations3d(render);
             } }, 'fn').name('Clear annotations');
+
+            const ann3dDefaultsFolder = annotationFolder.addFolder('CSS3D defaults');
+                const _ann3dDef = getAnnotation3dDefaults();
+                ann3dDefaultsFolder.add(_ann3dDef, 'labelScale', 0.1, 10, 0.1).name('Size');
+                const _rotOpts = { '0°': 0, '90°': Math.PI / 2, '180°': Math.PI, '270°': 3 * Math.PI / 2 };
+                ann3dDefaultsFolder.add(_ann3dDef, 'rotationCamera', _rotOpts).name('Rotation (Face camera)');
+                ann3dDefaultsFolder.add(_ann3dDef, 'rotationXY',     _rotOpts).name('Rotation (XY plane)');
+                ann3dDefaultsFolder.add(_ann3dDef, 'rotationXZ',     _rotOpts).name('Rotation (XZ plane)');
+                ann3dDefaultsFolder.add(_ann3dDef, 'rotationYZ',     _rotOpts).name('Rotation (YZ plane)');
+                ann3dDefaultsFolder.add(_ann3dDef, 'orientationMode', {
+                    'Face camera': 'camera',
+                    'XY plane': 'XY',
+                    'XZ plane': 'XZ',
+                    'YZ plane': 'YZ',
+                }).name('Orientation');
+                ann3dDefaultsFolder.addColor(_ann3dDef, 'textColor').name('Text color');
+                ann3dDefaultsFolder.addColor(_ann3dDef, 'bgColor').name('Background');
+                ann3dDefaultsFolder.close();
+
             annotationFolder.close();
     registerGuiPanel('Tools', toolsGui);
 
@@ -3039,8 +3100,9 @@ function loadGlbModel(model, name, scale, colored) {
             importAssemblyFromGltfScene(gltf.scene);
             
             // Reconstruct measurements stored in userData
-            reconstructMeasurements(gltf.scene);
+            reconstructMeasurements(gltf.scene, render);
             reconstructAnnotations(gltf.scene, render);
+            reconstructAnnotations3d(gltf.scene, render);
             
             rebuildTree(loadedModels);
             render();
@@ -3397,6 +3459,7 @@ function onWindowResize() {
     currentCamera.updateProjectionMatrix();
     renderer.setSize( window.innerWidth, window.innerHeight );
     if (css2DRenderer) css2DRenderer.setSize(window.innerWidth, window.innerHeight);
+    if (css3DRenderer) css3DRenderer.setSize(window.innerWidth, window.innerHeight);
     render();
 }
 
@@ -3677,7 +3740,7 @@ function render() {
     }
     _updateCadDimHintUI();
 
-    // Annotation hover preview (regular mode or add-leader mode)
+    // Annotation hover preview – CSS2D (regular mode or add-leader mode)
     if ((viewProp.annotationMode && isAnnotationActive() || isAddLeaderLineActive()) && !isMouseOverGui && !isMouseDown) {
         raycaster.setFromCamera(mouse, currentCamera);
         const nIntersects = raycaster.intersectObjects(meshObjects);
@@ -3701,12 +3764,38 @@ function render() {
     } else {
         updateAnnotationPreview(null);
     }
+
+    // Annotation hover preview – CSS3D (regular mode or add-leader mode)
+    if ((viewProp.annotation3dMode && isAnnotation3dActive() || isAddLeaderLine3dActive()) && !isMouseOverGui && !isMouseDown) {
+        raycaster.setFromCamera(mouse, currentCamera);
+        const n3Intersects = raycaster.intersectObjects(meshObjects);
+        const n3IsFullyVisible = (obj) => { let o = obj; while (o) { if (!o.visible) return false; o = o.parent; } return true; };
+        const n3Visible = (renderer.localClippingEnabled && clipPlanes.length > 0)
+            ? n3Intersects.filter(hit => n3IsFullyVisible(hit.object) && clipPlanes.some(plane => plane.distanceToPoint(hit.point) >= 0))
+            : n3Intersects.filter(hit => n3IsFullyVisible(hit.object));
+        if (n3Visible.length > 0) {
+            updateAnnotation3dPreview(n3Visible[0].point);
+        } else {
+            const pending3 = getAnnotation3dPendingPoint();
+            if (pending3) {
+                const pendingNDC3 = pending3.clone().project(currentCamera);
+                const cursorNDC3 = new THREE.Vector3(mouse.x, mouse.y, pendingNDC3.z);
+                updateAnnotation3dPreview(cursorNDC3.unproject(currentCamera));
+            } else {
+                updateAnnotation3dPreview(null);
+            }
+        }
+    } else {
+        updateAnnotation3dPreview(null);
+    }
     
     // Pokud se objekty ve scéně hýbou, odkomentuj řádek níže pro plynulý rámeček:
     // if (selectionHelper && selectionHelper.visible) selectionHelper.update();
 
     updateMarkerScales(currentCamera);
     updateAnnotationMarkerScales(currentCamera);
+    updateAnnotation3dMarkerScales(currentCamera);
+    updateAnnotation3dOrientations(currentCamera);
 
     if (cameraProspHelperObject) cameraProspHelperObject.update();
     if (cameraOrthoHelperObject) cameraOrthoHelperObject.update();
@@ -3722,6 +3811,7 @@ function render() {
         renderer.autoClear = true;
     }
     if (css2DRenderer) css2DRenderer.render(scene, currentCamera);
+    if (css3DRenderer) css3DRenderer.render(scene, currentCamera);
 }
 
 // ViewHelper animation loop (runs only while the gizmo is animating a view transition)
@@ -3860,7 +3950,7 @@ function onClick( event ) {
         return;
     }
 
-    // --- Add leader line mode (from context menu) ---
+    // --- Add leader line mode – CSS2D (from context menu) ---
     if (isAddLeaderLineActive()) {
         mouseUpPos.x = event.clientX;
         mouseUpPos.y = event.clientY;
@@ -3876,7 +3966,23 @@ function onClick( event ) {
         return;
     }
 
-    // --- Annotation mode ---
+    // --- Add leader line mode – CSS3D (from context menu) ---
+    if (isAddLeaderLine3dActive()) {
+        mouseUpPos.x = event.clientX;
+        mouseUpPos.y = event.clientY;
+        if (mouseDownPos.distanceTo(mouseUpPos) > 3) return;
+        raycaster.setFromCamera(mouse, currentCamera);
+        const _ll3Intersects = raycaster.intersectObjects(meshObjects);
+        const _ll3Visible = (renderer.localClippingEnabled && clipPlanes.length > 0)
+            ? _ll3Intersects.filter(h => { let o = h.object; while (o) { if (!o.visible) return false; o = o.parent; } return clipPlanes.some(p => p.distanceToPoint(h.point) >= 0); })
+            : _ll3Intersects.filter(h => { let o = h.object; while (o) { if (!o.visible) return false; o = o.parent; } return true; });
+        if (_ll3Visible.length > 0) {
+            commitAddLeaderLine3d(_ll3Visible[0].point, _ll3Visible[0].object, render);
+        }
+        return;
+    }
+
+    // --- Annotation mode – CSS2D ---
     if (viewProp.annotationMode && isAnnotationActive()) {
         mouseUpPos.x = event.clientX;
         mouseUpPos.y = event.clientY;
@@ -3901,6 +4007,36 @@ function onClick( event ) {
                 const clickNDC = new THREE.Vector3(mouse.x, mouse.y, pendingNDC.z);
                 const worldPoint = clickNDC.unproject(currentCamera);
                 addAnnotationPoint(worldPoint, null, render);
+            }
+        }
+        return;
+    }
+
+    // --- Annotation mode – CSS3D ---
+    if (viewProp.annotation3dMode && isAnnotation3dActive()) {
+        mouseUpPos.x = event.clientX;
+        mouseUpPos.y = event.clientY;
+        const dragDistance = mouseDownPos.distanceTo(mouseUpPos);
+        if (dragDistance > 3) return;
+
+        raycaster.setFromCamera(mouse, currentCamera);
+        const intersects3d = raycaster.intersectObjects(meshObjects);
+        const isFullyVisible3d = (obj) => { let o = obj; while (o) { if (!o.visible) return false; o = o.parent; } return true; };
+        const visibleIntersects3d = (renderer.localClippingEnabled && clipPlanes.length > 0)
+            ? intersects3d.filter(hit => isFullyVisible3d(hit.object) && clipPlanes.some(plane => plane.distanceToPoint(hit.point) >= 0))
+            : intersects3d.filter(hit => isFullyVisible3d(hit.object));
+        if (visibleIntersects3d.length > 0) {
+            const point = visibleIntersects3d[0].point;
+            const hitOwner = resolveCADSelection(visibleIntersects3d[0].object);
+            addAnnotation3dPoint(point, hitOwner, render);
+        } else {
+            // Second click: allow placing label in empty space
+            const pending3d = getAnnotation3dPendingPoint();
+            if (pending3d) {
+                const pendingNDC3d = pending3d.clone().project(currentCamera);
+                const clickNDC3d = new THREE.Vector3(mouse.x, mouse.y, pendingNDC3d.z);
+                const worldPoint3d = clickNDC3d.unproject(currentCamera);
+                addAnnotation3dPoint(worldPoint3d, null, render);
             }
         }
         return;
@@ -4280,6 +4416,7 @@ function exportAllModels() {
     // Strip measurement visuals from clones (userData.measurements stays for reconstruction)
     stripMeasurementVisuals(group);
     stripAnnotationVisuals(group);
+    stripAnnotation3dVisuals(group);
 
     exporter.parse(group, function(result) {
         saveArrayBuffer(result, finalName);
@@ -4323,6 +4460,7 @@ async function exportAllModelsDraco() {
     // Strip measurement visuals from clones (userData.measurements stays for reconstruction)
     stripMeasurementVisuals(group);
     stripAnnotationVisuals(group);
+    stripAnnotation3dVisuals(group);
 
     exporter.parse(group, function(result) {
         // setTimeout dá prohlížeči čas vykreslit overlay
@@ -4416,6 +4554,7 @@ function exportSelectedObject() {
     // Strip measurement visuals from clone (userData.measurements stays for reconstruction)
     stripMeasurementVisuals(clone);
     stripAnnotationVisuals(clone);
+    stripAnnotation3dVisuals(clone);
 
     // Apply world transform to the clone so it appears in the same position after re-import
     // Aplikujeme world transform na klon, aby se po importu zobrazil ve stejné pozici

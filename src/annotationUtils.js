@@ -275,7 +275,7 @@ function _showAnnotationContextMenu(annotation, x, y, renderFn) {
     const item = (label, cb) => {
         const el = document.createElement('div');
         el.textContent = label;
-        el.style.cssText = 'padding:6px 14px;cursor:pointer;';
+        el.style.cssText = 'padding:1px 12px;cursor:pointer;';
         el.addEventListener('mouseenter', () => el.style.background = '#444');
         el.addEventListener('mouseleave', () => el.style.background = '');
         el.addEventListener('mousedown', (e) => { e.stopPropagation(); });
@@ -772,6 +772,17 @@ export function reconstructAnnotations(root, renderFn) {
             }
         }
     });
+}
+
+/**
+ * Show the shared annotation text dialog (used by both CSS2D and CSS3D annotation systems).
+ */
+export function deleteAnnotationByRef(annotation, renderFn) {
+    _deleteAnnotation(annotation, renderFn);
+}
+
+export function showAnnotationTextDialog(defaultText) {
+    return _showTextDialog(defaultText);
 }
 
 function _reconstructAnnotation(owner, rec, renderFn) {
