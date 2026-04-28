@@ -1,5 +1,5 @@
 // documentsUtils.js
-import { Editor } from '@tiptap/core';
+import { Editor, Extension } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import Image from '@tiptap/extension-image';
 import TextAlign from '@tiptap/extension-text-align';
@@ -7,12 +7,63 @@ import { TextStyle } from '@tiptap/extension-text-style';
 import Color from '@tiptap/extension-color';
 import { Table, TableRow, TableCell, TableHeader } from '@tiptap/extension-table';
 
+// ── TextIndent extension (per-paragraph first-line indent) ────────────────────
+const TextIndent = Extension.create({
+    name: 'textIndent',
+    addGlobalAttributes() {
+        return [{
+            types: ['paragraph'],
+            attributes: {
+                textIndent: {
+                    default: null,
+                    parseHTML: el => el.style.textIndent || null,
+                    renderHTML: attrs => {
+                        if (!attrs.textIndent) return {};
+                        return { style: `text-indent: ${attrs.textIndent}` };
+                    },
+                },
+            },
+        }];
+    },
+    addCommands() {
+        return {
+            setTextIndent: (value) => ({ commands }) => {
+                return commands.updateAttributes('paragraph', { textIndent: value || null });
+            },
+        };
+    },
+});
+
+// ── Font options ──────────────────────────────────────────────────────────────
+
+const _FONT_OPTIONS = [
+    { label: 'Arial',           value: 'Arial, sans-serif' },
+    { label: 'Verdana',         value: 'Verdana, Geneva, sans-serif' },
+    { label: 'Trebuchet MS',    value: '"Trebuchet MS", sans-serif' },
+    { label: 'Georgia',         value: 'Georgia, serif' },
+    { label: 'Times New Roman', value: '"Times New Roman", Times, serif' },
+    { label: 'Courier New',     value: '"Courier New", Courier, monospace' },
+];
+const _DEFAULT_FONT = 'Arial, sans-serif';
+const _LINE_HEIGHT_OPTIONS = ['1.2', '1.4', '1.6', '1.8', '2.0', '2.4'];
+const _DEFAULT_LINE_HEIGHT = '1.4';
+const _PARA_SPACING_OPTIONS = [
+    { label: '0',    value: '0' },
+    { label: '4px',  value: '4px' },
+    { label: '8px',  value: '8px' },
+    { label: '12px', value: '12px' },
+    { label: '16px', value: '16px' },
+    { label: '24px', value: '24px' },
+];
+const _DEFAULT_PARA_SPACING = '8px';
+
 // ── State ─────────────────────────────────────────────────────────────────────
 
-let documentsStore = [];   // [{ id, title, content, createdAt }]
+let documentsStore = [];   // [{ id, title, content, createdAt, font }]
 let _guiRef = null;        // lil-gui folder reference (set by initDocumentsGui)
 let _editor = null;        // TipTap editor instance
 let _overlayEl = null;     // editor overlay DOM element
+let _bubbleMenuEl = null;  // bubble menu DOM element
 let _currentDocId = null;  // id of document currently open in editor
 let _isEditMode = false;   // true = editor mode, false = read-only mode
 let _bgOpacity = 1.0;      // editor content background opacity (0 = transparent, 1 = opaque)
@@ -106,6 +157,9 @@ function _newDocument() {
         title: 'New document',
         content: '<p></p>',
         createdAt: new Date().toISOString(),
+        font: _DEFAULT_FONT,
+        lineHeight: _DEFAULT_LINE_HEIGHT,
+        paraSpacing: _DEFAULT_PARA_SPACING,
     };
     documentsStore.push(doc);
     refreshDocumentsGui();
@@ -119,6 +173,25 @@ function _showOverlay(doc, editMode) {
     const titleInput = _overlayEl.querySelector('.doc-title-input');
     titleInput.value = doc.title;
     titleInput.readOnly = !editMode;
+
+    // Apply font
+    const fontSelect = _overlayEl.querySelector('.doc-font-select');
+    const fontValue = doc.font || _DEFAULT_FONT;
+    fontSelect.value = fontValue;
+    const editorContentEl = _overlayEl.querySelector('.doc-editor-content');
+    editorContentEl.style.fontFamily = fontValue;
+
+    // Apply line height
+    const lineHeightSelect = _overlayEl.querySelector('.doc-line-height-select');
+    const lineHeightValue = doc.lineHeight || _DEFAULT_LINE_HEIGHT;
+    lineHeightSelect.value = lineHeightValue;
+    editorContentEl.style.lineHeight = lineHeightValue;
+
+    // Apply paragraph spacing
+    const paraSpacingSelect = _overlayEl.querySelector('.doc-para-spacing-select');
+    const paraSpacingValue = doc.paraSpacing || _DEFAULT_PARA_SPACING;
+    paraSpacingSelect.value = paraSpacingValue;
+    editorContentEl.style.setProperty('--doc-para-spacing', paraSpacingValue);
 
     // Update header buttons
     const editBtn = _overlayEl.querySelector('.doc-btn-edit');
@@ -154,6 +227,8 @@ function _showOverlay(doc, editMode) {
 }
 
 function _createEditor(el, content, readOnly) {
+    if (!_bubbleMenuEl) _buildBubbleMenu();
+
     const editor = new Editor({
         element: el,
         extensions: [
@@ -162,6 +237,7 @@ function _createEditor(el, content, readOnly) {
             Color,
             Image.configure({ inline: false, allowBase64: true }),
             TextAlign.configure({ types: ['heading', 'paragraph'] }),
+            TextIndent,
             Table.configure({ resizable: true }),
             TableRow,
             TableHeader,
@@ -173,12 +249,151 @@ function _createEditor(el, content, readOnly) {
 
     editor.on('update', () => {
         _updateToolbarState();
+        _updateBubbleMenuState();
     });
     editor.on('selectionUpdate', () => {
         _updateToolbarState();
+        _updateBubbleMenuPosition();
+    });
+    editor.on('blur', () => {
+        // Small delay — allow mousedown on bubble menu to fire first.
+        // Do not hide if focus moved to an element inside the bubble menu (e.g. indent select).
+        setTimeout(() => {
+            if (_bubbleMenuEl && !_bubbleMenuEl.contains(document.activeElement)) {
+                _bubbleMenuEl.style.display = 'none';
+            }
+        }, 150);
     });
 
     return editor;
+}
+
+function _buildBubbleMenu() {
+    const menu = document.createElement('div');
+    menu.className = 'doc-bubble-menu';
+
+    const bubbleDefs = [
+        { action: 'bold',      label: 'B',  title: 'Bold' },
+        { action: 'italic',    label: 'I',  title: 'Italic' },
+        { action: 'underline', label: 'U',  title: 'Underline' },
+        { action: 'strike',    label: 'S̶', title: 'Strikethrough' },
+        { sep: true },
+        { action: 'h1',        label: 'H1', title: 'Heading 1' },
+        { action: 'h2',        label: 'H2', title: 'Heading 2' },
+        { sep: true },
+        { action: 'alignLeft',   label: '⬛▭▭', title: 'Align left' },
+        { action: 'alignCenter', label: '▭⬛▭', title: 'Align center' },
+        { action: 'alignRight',  label: '▭▭⬛', title: 'Align right' },
+        { sep: true },
+        { type: 'indent-select' },
+    ];
+
+    bubbleDefs.forEach(def => {
+        if (def.sep) {
+            const sep = document.createElement('span');
+            sep.className = 'doc-bubble-sep';
+            menu.appendChild(sep);
+            return;
+        }
+        if (def.type === 'indent-select') {
+            const label = document.createElement('span');
+            label.className = 'doc-bubble-indent-label';
+            label.textContent = '↵';
+            label.title = 'First line indent';
+            const sel = document.createElement('select');
+            sel.className = 'doc-bubble-select doc-bubble-indent-select';
+            sel.title = 'First line indent';
+            [{ label: '0', value: '0' }, { label: '1em', value: '1em' }, { label: '2em', value: '2em' }, { label: '3em', value: '3em' }]
+                .forEach(opt => {
+                    const o = document.createElement('option');
+                    o.value = opt.value;
+                    o.textContent = opt.label;
+                    sel.appendChild(o);
+                });
+            sel.addEventListener('mousedown', e => e.stopPropagation());
+            sel.addEventListener('change', () => {
+                if (_editor) {
+                    const val = sel.value === '0' ? null : sel.value;
+                    _editor.commands.setTextIndent(val);
+                    _editor.view.focus();
+                }
+            });
+            menu.appendChild(label);
+            menu.appendChild(sel);
+            return;
+        }
+        const btn = document.createElement('button');
+        btn.className = 'doc-bubble-btn';
+        btn.dataset.action = def.action;
+        btn.textContent = def.label;
+        btn.title = def.title;
+        btn.type = 'button';
+        btn.addEventListener('mousedown', e => {
+            e.preventDefault();
+            _handleToolbarClick(def.action);
+        });
+        menu.appendChild(btn);
+    });
+
+    document.body.appendChild(menu);
+    _bubbleMenuEl = menu;
+}
+
+function _updateBubbleMenuPosition() {
+    if (!_editor || !_bubbleMenuEl) return;
+    if (!_editor.isEditable) { _bubbleMenuEl.style.display = 'none'; return; }
+
+    const { from, to, empty } = _editor.state.selection;
+    if (empty) { _bubbleMenuEl.style.display = 'none'; return; }
+
+    const view = _editor.view;
+    const startCoords = view.coordsAtPos(from);
+    const endCoords   = view.coordsAtPos(to);
+
+    _bubbleMenuEl.style.display = 'flex';
+    // Measure after making visible
+    const menuRect = _bubbleMenuEl.getBoundingClientRect();
+
+    const midX = (startCoords.left + endCoords.left) / 2;
+    const topY = Math.min(startCoords.top, endCoords.top);
+
+    let left = midX - menuRect.width / 2;
+    let top  = topY - menuRect.height - 8;
+
+    // Clamp inside viewport
+    const vw = window.innerWidth;
+    if (left < 4) left = 4;
+    if (left + menuRect.width > vw - 4) left = vw - menuRect.width - 4;
+    if (top < 4) top = Math.min(startCoords.top, endCoords.top) + 28;
+
+    _bubbleMenuEl.style.left = left + 'px';
+    _bubbleMenuEl.style.top  = top  + 'px';
+
+    _updateBubbleMenuState();
+}
+
+function _updateBubbleMenuState() {
+    if (!_editor || !_bubbleMenuEl) return;
+    _bubbleMenuEl.querySelectorAll('[data-action]').forEach(btn => {
+        const action = btn.dataset.action;
+        let active = false;
+        if (action === 'bold')        active = _editor.isActive('bold');
+        else if (action === 'italic') active = _editor.isActive('italic');
+        else if (action === 'underline') active = _editor.isActive('underline');
+        else if (action === 'strike')  active = _editor.isActive('strike');
+        else if (action === 'h1')      active = _editor.isActive('heading', { level: 1 });
+        else if (action === 'h2')      active = _editor.isActive('heading', { level: 2 });
+        else if (action === 'alignLeft')   active = _editor.isActive({ textAlign: 'left' });
+        else if (action === 'alignCenter') active = _editor.isActive({ textAlign: 'center' });
+        else if (action === 'alignRight')  active = _editor.isActive({ textAlign: 'right' });
+        btn.classList.toggle('active', active);
+    });
+    // Sync indent select
+    const indentSel = _bubbleMenuEl.querySelector('.doc-bubble-indent-select');
+    if (indentSel) {
+        const attrs = _editor.getAttributes('paragraph');
+        indentSel.value = attrs.textIndent || '0';
+    }
 }
 
 function _saveCurrentDocument() {
@@ -189,6 +404,9 @@ function _saveCurrentDocument() {
     const titleInput = _overlayEl.querySelector('.doc-title-input');
     doc.title = titleInput.value.trim() || 'Untitled';
     doc.content = _editor.getHTML();
+    doc.font = (_overlayEl.querySelector('.doc-font-select') || {}).value || _DEFAULT_FONT;
+    doc.lineHeight = (_overlayEl.querySelector('.doc-line-height-select') || {}).value || _DEFAULT_LINE_HEIGHT;
+    doc.paraSpacing = (_overlayEl.querySelector('.doc-para-spacing-select') || {}).value || _DEFAULT_PARA_SPACING;
 
     refreshDocumentsGui();
 }
@@ -212,6 +430,9 @@ function _printDocument() {
     const doc = _currentDocId ? documentsStore.find(d => d.id === _currentDocId) : null;
     const title = doc ? doc.title : 'Document';
     const content = _editor.getHTML();
+    const fontFamily = (doc && doc.font) ? doc.font : _DEFAULT_FONT;
+    const lineHeight = (doc && doc.lineHeight) ? doc.lineHeight : _DEFAULT_LINE_HEIGHT;
+    const paraSpacing = (doc && doc.paraSpacing) ? doc.paraSpacing : _DEFAULT_PARA_SPACING;
 
     const win = window.open('', '_blank');
     win.document.write(`<!DOCTYPE html>
@@ -221,9 +442,9 @@ function _printDocument() {
 <style>
   @page { size: A4; margin: 2cm; }
   body {
-    font-family: Georgia, "Times New Roman", serif;
+    font-family: ${fontFamily};
     font-size: 15px;
-    line-height: 1.7;
+    line-height: ${lineHeight};
     color: #111;
     margin: 0;
     padding: 0;
@@ -231,7 +452,7 @@ function _printDocument() {
   h1 { font-size: 2em; margin: 0.6em 0 0.3em; }
   h2 { font-size: 1.5em; margin: 0.6em 0 0.3em; }
   h3 { font-size: 1.2em; margin: 0.6em 0 0.3em; }
-  p  { margin: 0 0 0.8em; }
+  p  { margin: 0 0 ${paraSpacing}; }
   ul, ol { padding-left: 2em; margin: 0 0 0.8em; }
   blockquote {
     border-left: 4px solid #ccc;
@@ -443,6 +664,86 @@ function _buildEditorOverlay() {
     header.appendChild(titleInput);
     header.appendChild(bgWrap);
     header.appendChild(btnNav3d);
+    // Font selector
+    const fontWrap = document.createElement('span');
+    fontWrap.className = 'doc-font-wrap';
+    const fontLabel = document.createElement('span');
+    fontLabel.className = 'doc-font-label';
+    fontLabel.textContent = 'Font';
+    const fontSelect = document.createElement('select');
+    fontSelect.className = 'doc-font-select';
+    _FONT_OPTIONS.forEach(opt => {
+        const option = document.createElement('option');
+        option.value = opt.value;
+        option.textContent = opt.label;
+        fontSelect.appendChild(option);
+    });
+    fontSelect.addEventListener('change', () => {
+        const editorEl = overlay.querySelector('.doc-editor-content');
+        editorEl.style.fontFamily = fontSelect.value;
+        if (_currentDocId) {
+            const d = documentsStore.find(x => x.id === _currentDocId);
+            if (d) d.font = fontSelect.value;
+        }
+    });
+    fontWrap.appendChild(fontLabel);
+    fontWrap.appendChild(fontSelect);
+    header.appendChild(fontWrap);
+
+    // Line height selector
+    const lineHeightWrap = document.createElement('span');
+    lineHeightWrap.className = 'doc-font-wrap';
+    const lineHeightLabel = document.createElement('span');
+    lineHeightLabel.className = 'doc-font-label';
+    lineHeightLabel.textContent = 'LH';
+    const lineHeightSelect = document.createElement('select');
+    lineHeightSelect.className = 'doc-font-select doc-line-height-select';
+    lineHeightSelect.title = 'Line height';
+    _LINE_HEIGHT_OPTIONS.forEach(val => {
+        const option = document.createElement('option');
+        option.value = val;
+        option.textContent = val;
+        lineHeightSelect.appendChild(option);
+    });
+    lineHeightSelect.addEventListener('change', () => {
+        const editorEl = overlay.querySelector('.doc-editor-content');
+        editorEl.style.lineHeight = lineHeightSelect.value;
+        if (_currentDocId) {
+            const d = documentsStore.find(x => x.id === _currentDocId);
+            if (d) d.lineHeight = lineHeightSelect.value;
+        }
+    });
+    lineHeightWrap.appendChild(lineHeightLabel);
+    lineHeightWrap.appendChild(lineHeightSelect);
+    header.appendChild(lineHeightWrap);
+
+    // Paragraph spacing selector
+    const paraSpacingWrap = document.createElement('span');
+    paraSpacingWrap.className = 'doc-font-wrap';
+    const paraSpacingLabel = document.createElement('span');
+    paraSpacingLabel.className = 'doc-font-label';
+    paraSpacingLabel.textContent = 'PS';
+    const paraSpacingSelect = document.createElement('select');
+    paraSpacingSelect.className = 'doc-font-select doc-para-spacing-select';
+    paraSpacingSelect.title = 'Paragraph spacing';
+    _PARA_SPACING_OPTIONS.forEach(opt => {
+        const option = document.createElement('option');
+        option.value = opt.value;
+        option.textContent = opt.label;
+        paraSpacingSelect.appendChild(option);
+    });
+    paraSpacingSelect.addEventListener('change', () => {
+        const editorEl = overlay.querySelector('.doc-editor-content');
+        editorEl.style.setProperty('--doc-para-spacing', paraSpacingSelect.value);
+        if (_currentDocId) {
+            const d = documentsStore.find(x => x.id === _currentDocId);
+            if (d) d.paraSpacing = paraSpacingSelect.value;
+        }
+    });
+    paraSpacingWrap.appendChild(paraSpacingLabel);
+    paraSpacingWrap.appendChild(paraSpacingSelect);
+    header.appendChild(paraSpacingWrap);
+
     header.appendChild(btnEdit);
     header.appendChild(btnSave);
     header.appendChild(btnPrint);
