@@ -1,7 +1,7 @@
 // documentsUtils.js
 import { Editor, Extension } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
-import Image from '@tiptap/extension-image';
+import ImageResize from 'tiptap-extension-resize-image';
 import TextAlign from '@tiptap/extension-text-align';
 import { TextStyle } from '@tiptap/extension-text-style';
 import Color from '@tiptap/extension-color';
@@ -235,7 +235,7 @@ function _createEditor(el, content, readOnly) {
             StarterKit,
             TextStyle,
             Color,
-            Image.configure({ inline: false, allowBase64: true }),
+            ImageResize.configure({ inline: false, allowBase64: true }),
             TextAlign.configure({ types: ['heading', 'paragraph'] }),
             TextIndent,
             Table.configure({ resizable: true }),
