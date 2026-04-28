@@ -246,6 +246,18 @@ function _createEditor(el, content, readOnly) {
         ],
         content,
         editable: !readOnly,
+        editorProps: {
+            handlePaste(view, event) {
+                const items = Array.from(event.clipboardData?.items || []);
+                const imageItem = items.find(item => item.type.startsWith('image/'));
+                if (!imageItem) return false;
+                const file = imageItem.getAsFile();
+                if (!file) return false;
+                event.preventDefault();
+                _showImageInsertDialog(file);
+                return true;
+            },
+        },
     });
 
     editor.on('update', () => {
