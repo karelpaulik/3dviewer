@@ -1,5 +1,6 @@
 // documentsUtils.js
 import { Editor, Extension } from '@tiptap/core';
+import imageCompression from 'browser-image-compression';
 import StarterKit from '@tiptap/starter-kit';
 import ImageResize from 'tiptap-extension-resize-image';
 import TextAlign from '@tiptap/extension-text-align';
@@ -549,6 +550,31 @@ function _insertTableDialog() {
     _editor.chain().focus().insertTable({ rows, cols, withHeaderRow: true }).run();
 }
 
+async function _compressImageLib(file, maxPx, quality) {
+    const compressed = await imageCompression(file, {
+        maxWidthOrHeight: maxPx,
+        initialQuality: quality,
+        useWebWorker: true,
+    });
+    return new Promise(resolve => {
+        const reader = new FileReader();
+        reader.onload = e => resolve(e.target.result);
+        reader.readAsDataURL(compressed);
+    });
+}
+
+function _fmtBytes(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' kB';
+    return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+}
+
+function _dataUrlBytes(dataUrl) {
+    // base64 encodes 3 bytes as 4 chars; subtract data: prefix
+    const base64 = dataUrl.split(',')[1] || '';
+    return Math.round(base64.length * 0.75);
+}
+
 function _insertImageFromFile() {
     const input = document.createElement('input');
     input.type = 'file';
@@ -556,13 +582,183 @@ function _insertImageFromFile() {
     input.onchange = () => {
         const file = input.files[0];
         if (!file) return;
-        const reader = new FileReader();
-        reader.onload = e => {
-            _editor.chain().focus().setImage({ src: e.target.result }).run();
-        };
-        reader.readAsDataURL(file);
+        _showImageInsertDialog(file);
     };
     input.click();
+}
+
+function _showImageInsertDialog(file) {
+    // Defaults
+    let maxPx = 1600;
+    let quality = 0.85;
+    let _debounceTimer = null;
+    let _previewDataUrl = null;
+
+    const origObjectUrl = URL.createObjectURL(file);
+    const origBytes = file.size;
+
+    // ── Dialog backdrop ──
+    const backdrop = document.createElement('div');
+    backdrop.className = 'img-dialog-backdrop';
+
+    const dialog = document.createElement('div');
+    dialog.className = 'img-dialog';
+
+    // Title
+    const title = document.createElement('div');
+    title.className = 'img-dialog-title';
+    title.textContent = 'Insert image';
+    dialog.appendChild(title);
+
+    // Info row
+    const infoRow = document.createElement('div');
+    infoRow.className = 'img-dialog-info';
+    const origInfo = document.createElement('span');
+    origInfo.textContent = `Original: ${_fmtBytes(origBytes)}`;
+    const previewInfo = document.createElement('span');
+    previewInfo.className = 'img-dialog-preview-info';
+    infoRow.appendChild(origInfo);
+    infoRow.appendChild(previewInfo);
+    dialog.appendChild(infoRow);
+
+    // Previews
+    const previews = document.createElement('div');
+    previews.className = 'img-dialog-previews';
+
+    const origThumb = document.createElement('img');
+    origThumb.className = 'img-dialog-thumb';
+    origThumb.src = origObjectUrl;
+    origThumb.onload = () => {
+        origInfo.textContent = `Original: ${origThumb.naturalWidth}×${origThumb.naturalHeight} · ${_fmtBytes(origBytes)}`;
+    };
+    const origLabel = document.createElement('div');
+    origLabel.className = 'img-dialog-thumb-label';
+    origLabel.textContent = 'Originál';
+    const origWrap = document.createElement('div');
+    origWrap.className = 'img-dialog-thumb-wrap';
+    origWrap.appendChild(origThumb);
+    origWrap.appendChild(origLabel);
+
+    const prevThumb = document.createElement('img');
+    prevThumb.className = 'img-dialog-thumb';
+    const prevLabel = document.createElement('div');
+    prevLabel.className = 'img-dialog-thumb-label';
+    prevLabel.textContent = 'Náhled';
+    const prevWrap = document.createElement('div');
+    prevWrap.className = 'img-dialog-thumb-wrap';
+    prevWrap.appendChild(prevThumb);
+    prevWrap.appendChild(prevLabel);
+
+    previews.appendChild(origWrap);
+    previews.appendChild(prevWrap);
+    dialog.appendChild(previews);
+
+    // Controls
+    const controls = document.createElement('div');
+    controls.className = 'img-dialog-controls';
+
+    function makeSliderRow(labelText, min, max, step, value, unit, onChange) {
+        const row = document.createElement('div');
+        row.className = 'img-dialog-row';
+        const lbl = document.createElement('label');
+        lbl.className = 'img-dialog-label';
+        lbl.textContent = labelText;
+        const slider = document.createElement('input');
+        slider.type = 'range';
+        slider.min = min; slider.max = max; slider.step = step;
+        slider.value = value;
+        slider.className = 'img-dialog-slider';
+        const valSpan = document.createElement('span');
+        valSpan.className = 'img-dialog-val';
+        valSpan.textContent = value + unit;
+        slider.addEventListener('input', () => {
+            valSpan.textContent = slider.value + unit;
+            onChange(parseFloat(slider.value));
+        });
+        row.appendChild(lbl);
+        row.appendChild(slider);
+        row.appendChild(valSpan);
+        return row;
+    }
+
+    controls.appendChild(makeSliderRow('Max rozměr', 200, 4000, 50, maxPx, ' px', v => { maxPx = v; schedulePreview(); }));
+    controls.appendChild(makeSliderRow('Kvalita', 0.1, 1.0, 0.05, quality, '', v => { quality = v; schedulePreview(); }));
+
+    dialog.appendChild(controls);
+
+    // Buttons
+    const btnRow = document.createElement('div');
+    btnRow.className = 'img-dialog-btns';
+
+    const btnInsert = document.createElement('button');
+    btnInsert.className = 'img-dialog-btn img-dialog-btn-primary';
+    btnInsert.textContent = 'Vložit';
+    btnInsert.disabled = true;
+    btnInsert.addEventListener('click', () => {
+        if (_previewDataUrl) {
+            _editor.chain().focus().setImage({ src: _previewDataUrl }).run();
+            URL.revokeObjectURL(origObjectUrl);
+            backdrop.remove();
+        }
+    });
+
+    const btnOrig = document.createElement('button');
+    btnOrig.className = 'img-dialog-btn';
+    btnOrig.textContent = 'Vložit originál';
+    btnOrig.addEventListener('click', async () => {
+        const dataUrl = await new Promise(resolve => {
+            const reader = new FileReader();
+            reader.onload = e => resolve(e.target.result);
+            reader.readAsDataURL(file);
+        });
+        _editor.chain().focus().setImage({ src: dataUrl }).run();
+        URL.revokeObjectURL(origObjectUrl);
+        backdrop.remove();
+    });
+
+    const btnCancel = document.createElement('button');
+    btnCancel.className = 'img-dialog-btn';
+    btnCancel.textContent = 'Zrušit';
+    btnCancel.addEventListener('click', () => { URL.revokeObjectURL(origObjectUrl); backdrop.remove(); });
+
+    btnRow.appendChild(btnInsert);
+    btnRow.appendChild(btnOrig);
+    btnRow.appendChild(btnCancel);
+    dialog.appendChild(btnRow);
+
+    backdrop.appendChild(dialog);
+    document.body.appendChild(backdrop);
+
+    // ── Preview generation ──
+    async function generatePreview() {
+        btnInsert.disabled = true;
+        prevLabel.textContent = 'Generuji…';
+        try {
+            const dataUrl = await _compressImageLib(file, maxPx, quality);
+            _previewDataUrl = dataUrl;
+            prevThumb.src = dataUrl;
+            const prevBytes = _dataUrlBytes(dataUrl);
+            const prevImg = new Image();
+            prevImg.onload = () => {
+                prevLabel.textContent = `${prevImg.naturalWidth}×${prevImg.naturalHeight} · ${_fmtBytes(prevBytes)}`;
+                previewInfo.textContent = `Úspora: ${_fmtBytes(origBytes - prevBytes)} (${Math.round((1 - prevBytes / origBytes) * 100)} %)`;
+            };
+            prevImg.src = dataUrl;
+            btnInsert.textContent = `Vložit (${_fmtBytes(prevBytes)})`;
+            btnInsert.disabled = false;
+        } catch (err) {
+            prevLabel.textContent = 'Chyba komprese';
+            console.error(err);
+        }
+    }
+
+    function schedulePreview() {
+        clearTimeout(_debounceTimer);
+        _debounceTimer = setTimeout(generatePreview, 400);
+    }
+
+    // Initial preview
+    generatePreview();
 }
 
 // ── Build overlay DOM ─────────────────────────────────────────────────────────
@@ -674,6 +870,7 @@ function _buildEditorOverlay() {
     header.appendChild(titleInput);
     header.appendChild(bgWrap);
     header.appendChild(btnNav3d);
+
     // Font selector
     const fontWrap = document.createElement('span');
     fontWrap.className = 'doc-font-wrap';

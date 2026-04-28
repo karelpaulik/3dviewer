@@ -33,6 +33,7 @@
     "@tiptap/extension-text-style": "^3.22.4",
     "@tiptap/extension-underline": "^3.22.4",
     "@tiptap/starter-kit": "^3.22.4",
+    "browser-image-compression": "^2.0.2",
     "gsap": "^3.14.2",
     "jszip": "^3.10.1",
     "lil-gui": "^0.21.0",
