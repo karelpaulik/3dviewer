@@ -3247,7 +3247,7 @@ function cleanupModel() {
         if (!root) return;
         root.traverse(function(node) {
             if (node.isMesh || node.isLight || node.isCamera) return;
-            if (node.userData._isMeasurement || node.userData._isAnnotation) return;
+            if (node.userData._isMeasurement || node.userData._isAnnotation || node.userData._isAnnotation3d || node.userData._isCadDim3d) return;
             if (!node.name || node.name.trim() === '') {
                 toProcess.push(node);
             }
