@@ -23,6 +23,7 @@ import { initAnnotations, isAnnotationActive, setAnnotationActive, addAnnotation
 import { initAnnotations3d, isAnnotation3dActive, setAnnotation3dActive, addAnnotation3dPoint, getAnnotation3dPendingPoint, updateAnnotation3dPreview, updateAnnotation3dMarkerScales, updateAnnotation3dOrientations, setAnnotations3dVisible, clearAnnotations3d, stripAnnotation3dVisuals, reconstructAnnotations3d, setAnnotation3dDepthTest, removeAnnotations3dForOwner, isAddLeaderLine3dActive, cancelAddLeaderLine3d, commitAddLeaderLine3d, getAnnotation3dDefaults, deleteAnnotation3dByRef, setConvertTo2dFn, reconstructAnnotation3dFromRec } from './annotation3dUtils.js';
 import { initCadDim3d, isCadDim3dActive, getCadDim3dStep, getCadDim3dAxis, setCadDim3dActive, addCadDim3dPoint, updateCadDim3dPreview, updateCadDim3dHoverPreview, cycleCadDim3dAxis, placeCadDim3d, clearCadDim3dMeasurements, removeCadDim3dMeasurementsForOwner, setCadDim3dVisible, setCadDim3dDepthTest, updateCadDim3dOrientations, updateCadDim3dMarkerScales, reconstructCadDim3d, stripCadDim3dVisuals, setCadDim3dLabelMode, setCadDim3dDragMode, setCadDim3dOrientationMode, setCadDim3dRotate, setCadDim3dLabelScaleDialog, setCadDim3dMirrored, setCadDim3dTextColor, setCadDim3dBgColor, getCadDim3dDefaults, convertCadDimTo3d } from './cadDim3dUtils.js';
 import { computeSolidSection, clearSolidSection } from './solidSectionUtils.js';
+import { initDocumentsGui, importDocumentsFromGltfScene, getDocumentsStore } from './documentsUtils.js';
 
 // Proměnné globálního rozsahu----------------------------------------------------------------------------------------
 let container, stats;
@@ -127,8 +128,8 @@ outlinerBtn.addEventListener('click', () => {
 });
 guiToolbar.insertBefore(outlinerBtn, guiToolbar.firstChild);
 
-// Pre-create all toolbar buttons in desired order: Selected, File, Edit, View, Tools, Assembly, Help
-['Selected', 'File', 'Edit', 'View', 'Tools', 'Assembly', 'Help'].forEach(name => {
+// Pre-create all toolbar buttons in desired order: Selected, File, Edit, View, Tools, Assembly, Docs, Help
+['Selected', 'File', 'Edit', 'View', 'Tools', 'Assembly', 'Docs', 'Help'].forEach(name => {
     const btn = document.createElement('button');
     btn.className = 'gui-toolbar-btn';
     btn.textContent = name;
@@ -912,6 +913,7 @@ function init() {
 
     addMainGui();
     addAssemblyGui();
+    addDocumentsGui();
     addHelpGui();
     applyToolbarPreferences(); // Apply initial toolbar CSS from viewProp defaults
     initMeasurement(scene);
@@ -3206,6 +3208,9 @@ function loadGlbModel(model, name, scale, colored) {
             // Import assembly workflow stored in userData (if any)
             importAssemblyFromGltfScene(gltf.scene);
             
+            // Import documents stored in userData (if any)
+            importDocumentsFromGltfScene(gltf.scene);
+            
             // Reconstruct measurements stored in userData
             reconstructMeasurements(gltf.scene, render);
             reconstructAnnotations(gltf.scene, render);
@@ -4584,6 +4589,9 @@ function exportAllModels() {
         group.add(model.clone(true));
     });
 
+    // Embed documents into export
+    group.userData.documents = getDocumentsStore().map(d => ({ ...d }));
+
     // Clean up originals — clones already carry the assembly data
     assemblyClearUserData();
 
@@ -4629,6 +4637,9 @@ async function exportAllModelsDraco() {
     loadedModels.forEach(model => {
         group.add(model.clone(true));
     });
+
+    // Embed documents into export
+    group.userData.documents = getDocumentsStore().map(d => ({ ...d }));
 
     assemblyClearUserData();
 
@@ -4877,6 +4888,12 @@ function addAssemblyGui() {
 
     registerGuiPanel('Assembly', assemblyFolder);
     updateAssemblyGuiInfo();
+}
+
+function addDocumentsGui() {
+    const docsGui = new GUI({ container: guiContainer, title: 'Documents' });
+    initDocumentsGui(docsGui);
+    registerGuiPanel('Docs', docsGui);
 }
 
 function addHelpGui() {
