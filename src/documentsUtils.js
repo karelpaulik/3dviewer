@@ -593,7 +593,17 @@ function _buildEditorOverlay() {
         btnEdit.style.display = 'none';
         btnSave.style.display = 'inline-block';
         overlay.querySelector('.doc-editor-toolbar').style.display = 'flex';
-        if (_editor) _editor.setEditable(true);
+        // Recreate editor in editable mode so that columnResizing plugin is registered
+        // (Tiptap v3 only registers columnResizing when editor.isEditable is true at init time)
+        if (_editor) {
+            const content = _editor.getHTML();
+            _editor.destroy();
+            _editor = null;
+            const editorEl = overlay.querySelector('.doc-editor-content');
+            requestAnimationFrame(() => {
+                _editor = _createEditor(editorEl, content, false);
+            });
+        }
         _isEditMode = true;
     });
 
