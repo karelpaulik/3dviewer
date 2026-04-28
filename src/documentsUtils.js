@@ -1,5 +1,5 @@
 // documentsUtils.js
-import { Editor, Extension } from '@tiptap/core';
+import { Editor, Extension, Mark } from '@tiptap/core';
 import imageCompression from 'browser-image-compression';
 import StarterKit from '@tiptap/starter-kit';
 import ImageResize from 'tiptap-extension-resize-image';
@@ -35,6 +35,36 @@ const TextIndent = Extension.create({
     },
 });
 
+// ── FontSize extension (inline font-size via TextStyle) ───────────────────────
+const FontSize = Mark.create({
+    name: 'fontSize',
+    addOptions() { return { types: ['textStyle'] }; },
+    addGlobalAttributes() {
+        return [{
+            types: this.options.types,
+            attributes: {
+                fontSize: {
+                    default: null,
+                    parseHTML: el => el.style.fontSize || null,
+                    renderHTML: attrs => {
+                        if (!attrs.fontSize) return {};
+                        return { style: `font-size: ${attrs.fontSize}` };
+                    },
+                },
+            },
+        }];
+    },
+    addCommands() {
+        return {
+            setFontSize: (size) => ({ chain }) =>
+                chain().setMark('textStyle', { fontSize: size }).run(),
+            unsetFontSize: () => ({ chain }) =>
+                chain().setMark('textStyle', { fontSize: null })
+                       .removeEmptyTextStyle().run(),
+        };
+    },
+});
+
 // ── Font options ──────────────────────────────────────────────────────────────
 
 const _FONT_OPTIONS = [
@@ -57,6 +87,19 @@ const _PARA_SPACING_OPTIONS = [
     { label: '24px', value: '24px' },
 ];
 const _DEFAULT_PARA_SPACING = '8px';
+const _DOC_WIDTH_OPTIONS = [
+    { label: 'Full',      value: '100%' },
+    { label: '90%',       value: '90%' },
+    { label: '80%',       value: '80%' },
+    { label: '1200px',    value: '1200px' },
+    { label: '960px',     value: '960px' },
+    { label: 'A4 794px', value: '794px' },
+    { label: '800px',     value: '800px' },
+    { label: '680px',     value: '680px' },
+    { label: '600px',     value: '600px' },
+    { label: '400px',     value: '400px' },
+];
+const _DEFAULT_DOC_WIDTH = '100%';
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
@@ -161,6 +204,7 @@ function _newDocument() {
         font: _DEFAULT_FONT,
         lineHeight: _DEFAULT_LINE_HEIGHT,
         paraSpacing: _DEFAULT_PARA_SPACING,
+        docWidth: _DEFAULT_DOC_WIDTH,
     };
     documentsStore.push(doc);
     refreshDocumentsGui();
@@ -193,6 +237,12 @@ function _showOverlay(doc, editMode) {
     const paraSpacingValue = doc.paraSpacing || _DEFAULT_PARA_SPACING;
     paraSpacingSelect.value = paraSpacingValue;
     editorContentEl.style.setProperty('--doc-para-spacing', paraSpacingValue);
+
+    // Apply document width
+    const docWidthSelect = _overlayEl.querySelector('.doc-width-select');
+    const docWidthValue = doc.docWidth || _DEFAULT_DOC_WIDTH;
+    docWidthSelect.value = docWidthValue;
+    editorContentEl.style.setProperty('--doc-width', docWidthValue);
 
     // Update header buttons
     const editBtn = _overlayEl.querySelector('.doc-btn-edit');
@@ -236,6 +286,7 @@ function _createEditor(el, content, readOnly) {
             StarterKit,
             TextStyle,
             Color,
+            FontSize,
             ImageResize.configure({ inline: false, allowBase64: true }),
             TextAlign.configure({ types: ['heading', 'paragraph'] }),
             TextIndent,
@@ -420,6 +471,7 @@ function _saveCurrentDocument() {
     doc.font = (_overlayEl.querySelector('.doc-font-select') || {}).value || _DEFAULT_FONT;
     doc.lineHeight = (_overlayEl.querySelector('.doc-line-height-select') || {}).value || _DEFAULT_LINE_HEIGHT;
     doc.paraSpacing = (_overlayEl.querySelector('.doc-para-spacing-select') || {}).value || _DEFAULT_PARA_SPACING;
+    doc.docWidth = (_overlayEl.querySelector('.doc-width-select') || {}).value || _DEFAULT_DOC_WIDTH;
 
     refreshDocumentsGui();
 }
@@ -518,6 +570,15 @@ function _updateToolbarState() {
         else if (action === 'alignRight') active = _editor.isActive({ textAlign: 'right' });
         btn.classList.toggle('active', active);
     });
+
+    // Sync font-size select
+    const fsSelect = toolbar.querySelector('.doc-fontsize-select');
+    if (fsSelect) {
+        const attrs = _editor.getAttributes('textStyle');
+        const currentSize = attrs.fontSize || '16px';
+        fsSelect.value = currentSize;
+        if (!fsSelect.value) fsSelect.value = '16px';
+    }
 }
 
 // ── Toolbar click handler ─────────────────────────────────────────────────────
@@ -963,6 +1024,33 @@ function _buildEditorOverlay() {
     paraSpacingWrap.appendChild(paraSpacingSelect);
     header.appendChild(paraSpacingWrap);
 
+    // Document width selector
+    const docWidthWrap = document.createElement('span');
+    docWidthWrap.className = 'doc-font-wrap';
+    const docWidthLabel = document.createElement('span');
+    docWidthLabel.className = 'doc-font-label';
+    docWidthLabel.textContent = 'W';
+    const docWidthSelect = document.createElement('select');
+    docWidthSelect.className = 'doc-font-select doc-width-select';
+    docWidthSelect.title = 'Document width';
+    _DOC_WIDTH_OPTIONS.forEach(opt => {
+        const option = document.createElement('option');
+        option.value = opt.value;
+        option.textContent = opt.label;
+        docWidthSelect.appendChild(option);
+    });
+    docWidthSelect.addEventListener('change', () => {
+        const editorContentEl = overlay.querySelector('.doc-editor-content');
+        editorContentEl.style.setProperty('--doc-width', docWidthSelect.value);
+        if (_currentDocId) {
+            const d = documentsStore.find(x => x.id === _currentDocId);
+            if (d) d.docWidth = docWidthSelect.value;
+        }
+    });
+    docWidthWrap.appendChild(docWidthLabel);
+    docWidthWrap.appendChild(docWidthSelect);
+    header.appendChild(docWidthWrap);
+
     header.appendChild(btnEdit);
     header.appendChild(btnSave);
     header.appendChild(btnPrint);
@@ -1025,6 +1113,56 @@ function _buildEditorOverlay() {
         });
         toolbar.appendChild(btn);
     });
+
+    // Font size select
+    const fsSep = document.createElement('span');
+    fsSep.className = 'doc-toolbar-sep';
+    toolbar.appendChild(fsSep);
+
+    const fsLabel = document.createElement('span');
+    fsLabel.className = 'doc-font-label';
+    fsLabel.textContent = 'px';
+    fsLabel.style.marginLeft = '2px';
+    toolbar.appendChild(fsLabel);
+
+    const fsSelect = document.createElement('select');
+    fsSelect.className = 'doc-font-select doc-fontsize-select';
+    fsSelect.title = 'Font size';
+    [
+        { label: '— reset', value: '' },
+        { label: '8',    value: '8px' },
+        { label: '9',    value: '9px' },
+        { label: '10',   value: '10px' },
+        { label: '11',   value: '11px' },
+        { label: '12',   value: '12px' },
+        { label: '13',   value: '13px' },
+        { label: '14',   value: '14px' },
+        { label: '15',   value: '15px' },
+        { label: '16 ✦', value: '16px' },
+        { label: '18',   value: '18px' },
+        { label: '20',   value: '20px' },
+        { label: '22',   value: '22px' },
+        { label: '24',   value: '24px' },
+        { label: '28',   value: '28px' },
+        { label: '32',   value: '32px' },
+        { label: '36',   value: '36px' },
+        { label: '48',   value: '48px' },
+        { label: '64',   value: '64px' },
+    ].forEach(opt => {
+        const o = document.createElement('option');
+        o.value = opt.value;
+        o.textContent = opt.label;
+        fsSelect.appendChild(o);
+    });
+    fsSelect.addEventListener('change', () => {
+        if (!_editor) return;
+        if (fsSelect.value) {
+            _editor.chain().focus().setFontSize(fsSelect.value).run();
+        } else {
+            _editor.chain().focus().unsetFontSize().run();
+        }
+    });
+    toolbar.appendChild(fsSelect);
 
     // Editor content area
     const editorContent = document.createElement('div');
