@@ -207,6 +207,50 @@ function _closeOverlay() {
     _isEditMode = false;
 }
 
+function _printDocument() {
+    if (!_editor) return;
+    const doc = _currentDocId ? documentsStore.find(d => d.id === _currentDocId) : null;
+    const title = doc ? doc.title : 'Document';
+    const content = _editor.getHTML();
+
+    const win = window.open('', '_blank');
+    win.document.write(`<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<title>${title}</title>
+<style>
+  @page { size: A4; margin: 2cm; }
+  body {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 15px;
+    line-height: 1.7;
+    color: #111;
+    margin: 0;
+    padding: 0;
+  }
+  h1 { font-size: 2em; margin: 0.6em 0 0.3em; }
+  h2 { font-size: 1.5em; margin: 0.6em 0 0.3em; }
+  h3 { font-size: 1.2em; margin: 0.6em 0 0.3em; }
+  p  { margin: 0 0 0.8em; }
+  ul, ol { padding-left: 2em; margin: 0 0 0.8em; }
+  blockquote {
+    border-left: 4px solid #ccc;
+    margin: 0.8em 0;
+    padding: 0.2em 1em;
+    color: #555;
+  }
+  img { max-width: 100%; height: auto; display: block; margin: 0.8em 0; }
+  table { border-collapse: collapse; width: 100%; margin: 1em 0; table-layout: fixed; }
+  td, th { border: 1px solid #ccc; padding: 6px 10px; vertical-align: top; box-sizing: border-box; }
+  th { background: #f0f0f0; font-weight: 600; text-align: left; }
+</style>
+</head><body>${content}</body></html>`);
+    win.document.close();
+    win.focus();
+    win.print();
+    win.close();
+}
+
 function _deleteCurrentDocument() {
     if (!_currentDocId) return;
     const doc = documentsStore.find(d => d.id === _currentDocId);
@@ -347,6 +391,12 @@ function _buildEditorOverlay() {
         _isEditMode = false;
     });
 
+    const btnPrint = document.createElement('button');
+    btnPrint.className = 'doc-btn doc-btn-print';
+    btnPrint.textContent = '🖨 Print';
+    btnPrint.title = 'Print document';
+    btnPrint.addEventListener('click', _printDocument);
+
     const btnDelete = document.createElement('button');
     btnDelete.className = 'doc-btn doc-btn-delete';
     btnDelete.textContent = '🗑 Delete';
@@ -395,6 +445,7 @@ function _buildEditorOverlay() {
     header.appendChild(btnNav3d);
     header.appendChild(btnEdit);
     header.appendChild(btnSave);
+    header.appendChild(btnPrint);
     header.appendChild(btnDelete);
     header.appendChild(btnClose);
 
