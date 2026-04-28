@@ -15,11 +15,26 @@ let _editor = null;        // TipTap editor instance
 let _overlayEl = null;     // editor overlay DOM element
 let _currentDocId = null;  // id of document currently open in editor
 let _isEditMode = false;   // true = editor mode, false = read-only mode
+let _bgOpacity = 1.0;      // editor content background opacity (0 = transparent, 1 = opaque)
+let _nav3d = false;        // true = pointer-events off on overlay → 3D navigation active
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
 export function getDocumentsStore() {
     return documentsStore;
+}
+
+/** Returns true when the doc overlay is visible but 3D navigation is NOT active.
+ *  In that state hover-highlight and selection should be suppressed. */
+export function isDocOverlayBlockingInput() {
+    return _overlayEl !== null && _overlayEl.style.display !== 'none' && !_nav3d;
+}
+
+// Call before export to flush any unsaved editor content
+export function flushDocumentEdits() {
+    if (_editor && _currentDocId && _isEditMode) {
+        _saveCurrentDocument();
+    }
 }
 
 export function importDocumentsFromGltfScene(gltfScene) {
@@ -179,6 +194,10 @@ function _saveCurrentDocument() {
 }
 
 function _closeOverlay() {
+    // Auto-save if closing while in edit mode
+    if (_isEditMode && _editor && _currentDocId) {
+        _saveCurrentDocument();
+    }
     if (_overlayEl) _overlayEl.style.display = 'none';
     if (_editor) {
         _editor.destroy();
@@ -338,7 +357,42 @@ function _buildEditorOverlay() {
     btnClose.textContent = '✕ Close';
     btnClose.addEventListener('click', _closeOverlay);
 
+    const bgWrap = document.createElement('span');
+    bgWrap.className = 'doc-bg-wrap';
+    const bgLabel = document.createElement('span');
+    bgLabel.className = 'doc-bg-label';
+    bgLabel.textContent = 'BG';
+    const bgSlider = document.createElement('input');
+    bgSlider.type = 'range';
+    bgSlider.min = '0';
+    bgSlider.max = '1';
+    bgSlider.step = '0.05';
+    bgSlider.value = String(_bgOpacity);
+    bgSlider.className = 'doc-bg-slider';
+    bgSlider.title = 'Background opacity';
+    bgSlider.addEventListener('input', () => {
+        _bgOpacity = parseFloat(bgSlider.value);
+        overlay.style.setProperty('--doc-bg-opacity', _bgOpacity);
+    });
+    bgWrap.appendChild(bgLabel);
+    bgWrap.appendChild(bgSlider);
+
+    const btnNav3d = document.createElement('button');
+    btnNav3d.className = 'doc-btn doc-btn-nav3d' + (_nav3d ? ' active' : '');
+    btnNav3d.textContent = '🖱 3D';
+    btnNav3d.title = 'Toggle 3D navigation (disables editor interaction)';
+    btnNav3d.addEventListener('click', () => {
+        _nav3d = !_nav3d;
+        overlay.style.pointerEvents = _nav3d ? 'none' : '';
+        btnNav3d.classList.toggle('active', _nav3d);
+        // Restore pointer events on the header itself so the button stays clickable
+        header.style.pointerEvents = _nav3d ? 'auto' : '';
+        btnNav3d.style.pointerEvents = 'auto';
+    });
+
     header.appendChild(titleInput);
+    header.appendChild(bgWrap);
+    header.appendChild(btnNav3d);
     header.appendChild(btnEdit);
     header.appendChild(btnSave);
     header.appendChild(btnDelete);
@@ -409,6 +463,7 @@ function _buildEditorOverlay() {
     overlay.appendChild(toolbar);
     overlay.appendChild(editorContent);
 
+    overlay.style.setProperty('--doc-bg-opacity', _bgOpacity);
     document.body.appendChild(overlay);
     _overlayEl = overlay;
 }

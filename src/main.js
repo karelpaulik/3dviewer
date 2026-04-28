@@ -23,7 +23,7 @@ import { initAnnotations, isAnnotationActive, setAnnotationActive, addAnnotation
 import { initAnnotations3d, isAnnotation3dActive, setAnnotation3dActive, addAnnotation3dPoint, getAnnotation3dPendingPoint, updateAnnotation3dPreview, updateAnnotation3dMarkerScales, updateAnnotation3dOrientations, setAnnotations3dVisible, clearAnnotations3d, stripAnnotation3dVisuals, reconstructAnnotations3d, setAnnotation3dDepthTest, removeAnnotations3dForOwner, isAddLeaderLine3dActive, cancelAddLeaderLine3d, commitAddLeaderLine3d, getAnnotation3dDefaults, deleteAnnotation3dByRef, setConvertTo2dFn, reconstructAnnotation3dFromRec } from './annotation3dUtils.js';
 import { initCadDim3d, isCadDim3dActive, getCadDim3dStep, getCadDim3dAxis, setCadDim3dActive, addCadDim3dPoint, updateCadDim3dPreview, updateCadDim3dHoverPreview, cycleCadDim3dAxis, placeCadDim3d, clearCadDim3dMeasurements, removeCadDim3dMeasurementsForOwner, setCadDim3dVisible, setCadDim3dDepthTest, updateCadDim3dOrientations, updateCadDim3dMarkerScales, reconstructCadDim3d, stripCadDim3dVisuals, setCadDim3dLabelMode, setCadDim3dDragMode, setCadDim3dOrientationMode, setCadDim3dRotate, setCadDim3dLabelScaleDialog, setCadDim3dMirrored, setCadDim3dTextColor, setCadDim3dBgColor, getCadDim3dDefaults, convertCadDimTo3d } from './cadDim3dUtils.js';
 import { computeSolidSection, clearSolidSection } from './solidSectionUtils.js';
-import { initDocumentsGui, importDocumentsFromGltfScene, getDocumentsStore } from './documentsUtils.js';
+import { initDocumentsGui, importDocumentsFromGltfScene, getDocumentsStore, flushDocumentEdits, isDocOverlayBlockingInput } from './documentsUtils.js';
 
 // Proměnné globálního rozsahu----------------------------------------------------------------------------------------
 let container, stats;
@@ -301,6 +301,7 @@ if (import.meta.env.DEV) {
     window.assemblyData = assemblyData;
     window.assemblyState = assemblyState;
     window.getAnnotations = getAnnotations;
+    window.getDocumentsStore = getDocumentsStore;
 
     //NOK - toto není reference
     window.transformControls = transformControls;
@@ -696,7 +697,7 @@ function init() {
     
     window.addEventListener( 'keydown', function ( event ) {
         const tag = event.target.tagName;
-        if (tag === 'TEXTAREA' || tag === 'INPUT') return;
+        if (tag === 'TEXTAREA' || tag === 'INPUT' || event.target.isContentEditable) return;
         switch ( event.key ) {
             case 'Escape':
                 if (viewProp.measureMode) {
@@ -902,7 +903,7 @@ function init() {
 
     window.addEventListener( 'keyup', function ( event ) {
         const tag = event.target.tagName;
-        if (tag === 'TEXTAREA' || tag === 'INPUT') return;
+        if (tag === 'TEXTAREA' || tag === 'INPUT' || event.target.isContentEditable) return;
         switch ( event.key ) {
             case 'Shift':
                 isShiftHeld = false;
@@ -3715,7 +3716,7 @@ function render() {
                                                      -mouse.y * window.innerHeight / 2 + window.innerHeight / 2)?.closest('.lil-gui');
     
     // Nezvýrazňujeme objekty při dragování (rotaci/posouvání) nebo při transformaci
-    if (!isTransformDragging && !isMouseOverGui && !isMouseDown && !isTouchDragging && viewProp.isSelectAllowed && !viewProp.isGroupTransformActive) {      
+    if (!isTransformDragging && !isMouseOverGui && !isMouseDown && !isTouchDragging && viewProp.isSelectAllowed && !viewProp.isGroupTransformActive && !isDocOverlayBlockingInput()) {      
         raycaster.setFromCamera(mouse, currentCamera);
         // Raycasting ArrowHelper – vizualizace paprsku pro ladění
         if (viewProp.showRaycastHelper) {
@@ -3772,8 +3773,8 @@ function render() {
         INTERSECTED = null;
     }
 
-    // Pokud je selekce zakázána nebo je aktivní skupinová transformace, zajistíme že nebude nic zvýrazněno
-    if ((!viewProp.isSelectAllowed || viewProp.isGroupTransformActive) && INTERSECTED) {
+    // Pokud je selekce zakázána nebo je aktivní skupinová transformace nebo doc overlay blokuje vstup, zajistíme že nebude nic zvýrazněno
+    if ((!viewProp.isSelectAllowed || viewProp.isGroupTransformActive || isDocOverlayBlockingInput()) && INTERSECTED) {
         clearHighlight();
         INTERSECTED = null;
     }
@@ -4224,6 +4225,7 @@ function onClick( event ) {
     // Pokud je selekce zakázána v GUI, ignorujeme click
     if (!viewProp.isSelectAllowed) return;
     if (viewProp.isGroupTransformActive) return;
+    if (isDocOverlayBlockingInput()) return;
 
     // Pokud právě probíhá drag transformací, ignorujeme click
     if (isTransformDragging) return;
@@ -4356,6 +4358,7 @@ function onTouchEnd( event ) {
         // All touches ended - simulujeme click pro selekci
         if (!viewProp.isSelectAllowed) return;
         if (viewProp.isGroupTransformActive) return;
+        if (isDocOverlayBlockingInput()) return;
         if (isTransformDragging) return;
 
         // Pokud je dotykem stisknuto na GUI prvek, ignorujeme raycast pro selekci
@@ -4583,6 +4586,9 @@ function exportAllModels() {
     // Write assembly workflow into userData before cloning
     assemblyWriteToUserData();
 
+    // Flush any unsaved document editor changes
+    flushDocumentEdits();
+
     const exporter = new GLTFExporter();
     const group = new THREE.Group();
     loadedModels.forEach(model => {
@@ -4631,6 +4637,9 @@ async function exportAllModelsDraco() {
     overlay.style.display = 'flex';
 
     assemblyWriteToUserData();
+
+    // Flush any unsaved document editor changes
+    flushDocumentEdits();
 
     const exporter = new GLTFExporter();
     const group = new THREE.Group();
