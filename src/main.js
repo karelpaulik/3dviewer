@@ -1304,6 +1304,7 @@ function addMainGui() {
                 render();
             });
             measureFolder.add({ fn() {
+                if (!confirm('Clear all measurements/dimensions?')) return;
                 clearMeasurements(render);
                 clearCadDim3dMeasurements(render);
             } }, 'fn').name('Clear measurements');
@@ -1345,6 +1346,7 @@ function addMainGui() {
                 render();
             });
             annotationFolder.add({ fn() {
+                if (!confirm('Clear all annotations?')) return;
                 clearAnnotations(render);
                 clearAnnotations3d(render);
             } }, 'fn').name('Clear annotations');
