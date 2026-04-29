@@ -190,7 +190,7 @@ function _showTextDialog(defaultText) {
         dialog.style.cssText = 'background:#2a2a2a;color:#fff;border-radius:8px;padding:16px 20px;min-width:340px;box-shadow:0 4px 24px rgba(0,0,0,0.5);font-family:sans-serif;display:inline-block;';
 
         const title = document.createElement('div');
-        title.textContent = defaultText ? 'Upravit poznámku' : 'Nová poznámka';
+        title.textContent = defaultText ? 'Edit note' : 'New note';
         title.style.cssText = 'font-size:14px;font-weight:bold;margin-bottom:10px;';
 
         const { wrap: editorWrap, content: editorContent } = _buildWysiwygEditor(defaultText || '');
