@@ -837,6 +837,16 @@ function _buildEditorOverlay() {
         btnNav3d.style.pointerEvents = 'auto';
     });
 
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && _nav3d && _overlayEl && _overlayEl.style.display !== 'none') {
+            _nav3d = false;
+            overlay.style.pointerEvents = '';
+            btnNav3d.classList.remove('active');
+            header.style.pointerEvents = '';
+            btnNav3d.style.pointerEvents = 'auto';
+        }
+    });
+
     header.appendChild(titleInput);
     header.appendChild(bgWrap);
     header.appendChild(btnNav3d);
