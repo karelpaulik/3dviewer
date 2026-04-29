@@ -183,6 +183,8 @@ a, button, input, select {
     overflow-x: auto;
     overflow-y: hidden;
     -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    scrollbar-color: #444 transparent;
 }
 .gui-toolbar-btn {
     padding: 0 16px;
@@ -512,6 +514,11 @@ a, button, input, select {
     background: rgb(189, 189, 189);
     border-bottom: 1px solid rgba(51,51,51, calc(0.4 + var(--doc-bg-opacity) * 0.6));
     flex: 0 0 auto;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    scrollbar-color: #444 transparent;
 }
     background: #111;
     border-bottom: 1px solid #333;
