@@ -115,7 +115,6 @@ let documentsStore = [];   // [{ id, title, content, createdAt, font }]
 let _guiRef = null;        // lil-gui folder reference (set by initDocumentsGui)
 let _editor = null;        // TipTap editor instance
 let _overlayEl = null;     // editor overlay DOM element
-let _bubbleMenuEl = null;  // bubble menu DOM element
 let _currentDocId = null;  // id of document currently open in editor
 let _isEditMode = false;   // true = editor mode, false = read-only mode
 let _bgOpacity = 1.0;      // editor content background opacity (0 = transparent, 1 = opaque)
@@ -295,8 +294,6 @@ function _showOverlay(doc, editMode) {
 }
 
 function _createEditor(el, content, readOnly) {
-    if (!_bubbleMenuEl) _buildBubbleMenu();
-
     const editor = new Editor({
         element: el,
         extensions: [
@@ -330,151 +327,12 @@ function _createEditor(el, content, readOnly) {
 
     editor.on('update', () => {
         _updateToolbarState();
-        _updateBubbleMenuState();
     });
     editor.on('selectionUpdate', () => {
         _updateToolbarState();
-        _updateBubbleMenuPosition();
-    });
-    editor.on('blur', () => {
-        // Small delay — allow mousedown on bubble menu to fire first.
-        // Do not hide if focus moved to an element inside the bubble menu (e.g. indent select).
-        setTimeout(() => {
-            if (_bubbleMenuEl && !_bubbleMenuEl.contains(document.activeElement)) {
-                _bubbleMenuEl.style.display = 'none';
-            }
-        }, 150);
     });
 
     return editor;
-}
-
-function _buildBubbleMenu() {
-    const menu = document.createElement('div');
-    menu.className = 'doc-bubble-menu';
-
-    const bubbleDefs = [
-        { action: 'bold',      label: 'B',  title: 'Bold' },
-        { action: 'italic',    label: 'I',  title: 'Italic' },
-        { action: 'underline', label: 'U',  title: 'Underline' },
-        { action: 'strike',    label: 'S̶', title: 'Strikethrough' },
-        { sep: true },
-        { action: 'h1',        label: 'H1', title: 'Heading 1' },
-        { action: 'h2',        label: 'H2', title: 'Heading 2' },
-        { sep: true },
-        { action: 'alignLeft',   label: '⬛▭▭', title: 'Align left' },
-        { action: 'alignCenter', label: '▭⬛▭', title: 'Align center' },
-        { action: 'alignRight',  label: '▭▭⬛', title: 'Align right' },
-        { sep: true },
-        { type: 'indent-select' },
-    ];
-
-    bubbleDefs.forEach(def => {
-        if (def.sep) {
-            const sep = document.createElement('span');
-            sep.className = 'doc-bubble-sep';
-            menu.appendChild(sep);
-            return;
-        }
-        if (def.type === 'indent-select') {
-            const label = document.createElement('span');
-            label.className = 'doc-bubble-indent-label';
-            label.textContent = '↵';
-            label.title = 'First line indent';
-            const sel = document.createElement('select');
-            sel.className = 'doc-bubble-select doc-bubble-indent-select';
-            sel.title = 'First line indent';
-            [{ label: '0', value: '0' }, { label: '1em', value: '1em' }, { label: '2em', value: '2em' }, { label: '3em', value: '3em' }]
-                .forEach(opt => {
-                    const o = document.createElement('option');
-                    o.value = opt.value;
-                    o.textContent = opt.label;
-                    sel.appendChild(o);
-                });
-            sel.addEventListener('mousedown', e => e.stopPropagation());
-            sel.addEventListener('change', () => {
-                if (_editor) {
-                    const val = sel.value === '0' ? null : sel.value;
-                    _editor.commands.setTextIndent(val);
-                    _editor.view.focus();
-                }
-            });
-            menu.appendChild(label);
-            menu.appendChild(sel);
-            return;
-        }
-        const btn = document.createElement('button');
-        btn.className = 'doc-bubble-btn';
-        btn.dataset.action = def.action;
-        btn.textContent = def.label;
-        btn.title = def.title;
-        btn.type = 'button';
-        btn.addEventListener('mousedown', e => {
-            e.preventDefault();
-            _handleToolbarClick(def.action);
-        });
-        menu.appendChild(btn);
-    });
-
-    document.body.appendChild(menu);
-    _bubbleMenuEl = menu;
-}
-
-function _updateBubbleMenuPosition() {
-    if (!_editor || !_bubbleMenuEl) return;
-    if (!_editor.isEditable) { _bubbleMenuEl.style.display = 'none'; return; }
-
-    const { from, to, empty } = _editor.state.selection;
-    if (empty) { _bubbleMenuEl.style.display = 'none'; return; }
-
-    const view = _editor.view;
-    const startCoords = view.coordsAtPos(from);
-    const endCoords   = view.coordsAtPos(to);
-
-    _bubbleMenuEl.style.display = 'flex';
-    // Measure after making visible
-    const menuRect = _bubbleMenuEl.getBoundingClientRect();
-
-    const midX = (startCoords.left + endCoords.left) / 2;
-    const topY = Math.min(startCoords.top, endCoords.top);
-
-    let left = midX - menuRect.width / 2;
-    let top  = topY - menuRect.height - 8;
-
-    // Clamp inside viewport
-    const vw = window.innerWidth;
-    if (left < 4) left = 4;
-    if (left + menuRect.width > vw - 4) left = vw - menuRect.width - 4;
-    if (top < 4) top = Math.min(startCoords.top, endCoords.top) + 28;
-
-    _bubbleMenuEl.style.left = left + 'px';
-    _bubbleMenuEl.style.top  = top  + 'px';
-
-    _updateBubbleMenuState();
-}
-
-function _updateBubbleMenuState() {
-    if (!_editor || !_bubbleMenuEl) return;
-    _bubbleMenuEl.querySelectorAll('[data-action]').forEach(btn => {
-        const action = btn.dataset.action;
-        let active = false;
-        if (action === 'bold')        active = _editor.isActive('bold');
-        else if (action === 'italic') active = _editor.isActive('italic');
-        else if (action === 'underline') active = _editor.isActive('underline');
-        else if (action === 'strike')  active = _editor.isActive('strike');
-        else if (action === 'h1')      active = _editor.isActive('heading', { level: 1 });
-        else if (action === 'h2')      active = _editor.isActive('heading', { level: 2 });
-        else if (action === 'alignLeft')   active = _editor.isActive({ textAlign: 'left' });
-        else if (action === 'alignCenter') active = _editor.isActive({ textAlign: 'center' });
-        else if (action === 'alignRight')  active = _editor.isActive({ textAlign: 'right' });
-        btn.classList.toggle('active', active);
-    });
-    // Sync indent select
-    const indentSel = _bubbleMenuEl.querySelector('.doc-bubble-indent-select');
-    if (indentSel) {
-        const attrs = _editor.getAttributes('paragraph');
-        indentSel.value = attrs.textIndent || '0';
-    }
 }
 
 function _saveCurrentDocument() {
