@@ -616,6 +616,29 @@ export function updateAnnotation3dPreview(point) {
 }
 
 /**
+ * Show a preview marker at `point` regardless of active mode (used by move-anchor mode).
+ * Pass null to hide.
+ */
+export function showAnnotation3dMovePreview(point) {
+    if (!point) { _hidePreview(); return; }
+    if (!_previewMarker) {
+        const geo = new THREE.SphereGeometry(MARKER_RADIUS, 12, 12);
+        const mat = new THREE.MeshBasicMaterial({ color: MARKER_PREVIEW_COLOR, depthTest: false, transparent: true, opacity: 0.7 });
+        _previewMarker = new THREE.Mesh(geo, mat);
+        _previewMarker.renderOrder = 999;
+        _previewMarker.userData._isAnnotation3d = true;
+        _scene.add(_previewMarker);
+    }
+    _previewMarker.position.copy(point);
+    if (_previewLine) {
+        _scene.remove(_previewLine);
+        _previewLine.geometry.dispose();
+        _previewLine.material.dispose();
+        _previewLine = null;
+    }
+}
+
+/**
  * Scale annotation markers to maintain constant screen size.
  */
 export function updateAnnotation3dMarkerScales(camera) {
@@ -721,6 +744,29 @@ export function isAddLeaderLine3dActive() {
 export function cancelAddLeaderLine3d() {
     _pendingAddLeaderAnnotation = null;
     _hidePreview();
+}
+
+export function removeAnnotation3dLeaderLine(annotation, index, renderFn) {
+    _removeLeaderLine(annotation, index, renderFn);
+}
+
+export function moveAnnotation3dLeaderAnchor(annotation, index, newAnchorWorld, renderFn) {
+    if (index < 0 || index >= annotation.leaderLines.length) return;
+    const owner = annotation.ownerObject || _scene;
+    owner.updateWorldMatrix(true, false);
+    const newAnchorLocal = owner.worldToLocal(newAnchorWorld.clone());
+    const ll = annotation.leaderLines[index];
+    ll.marker.position.copy(newAnchorLocal);
+    ll.anchorLocal.copy(newAnchorLocal);
+    owner.remove(ll.line);
+    ll.line.geometry.dispose();
+    ll.line.material.dispose();
+    ll.line = _createLeaderLine(newAnchorLocal, annotation.labelLocal);
+    owner.add(ll.line);
+    if (annotation._userDataRec && Array.isArray(annotation._userDataRec.anchors)) {
+        annotation._userDataRec.anchors[index] = { x: newAnchorLocal.x, y: newAnchorLocal.y, z: newAnchorLocal.z };
+    }
+    if (renderFn) renderFn();
 }
 
 export function getAnnotations3d() {
