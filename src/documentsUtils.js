@@ -1,4 +1,4 @@
-// documentsUtils.js
+﻿// documentsUtils.js
 import { Editor, Extension, Mark } from '@tiptap/core';
 import imageCompression from 'browser-image-compression';
 import StarterKit from '@tiptap/starter-kit';
@@ -1007,7 +1007,7 @@ function _buildEditorOverlay() {
         { action: 'alignCenter',  label: '▭⬛▭', title: 'Align center' },
         { action: 'alignRight',   label: '▭▭⬛', title: 'Align right' },
         { sep: true },
-        { action: 'image',          label: '🖼',  title: 'Insert image' },
+        { action: 'image',          label: '🖼️',  title: 'Insert image' },
         { sep: true },
         { action: 'tableInsert',      label: '⊞',   title: 'Insert table (e.g. 3x4)' },
         { action: 'tableAddRowAfter', label: '+row', title: 'Add row below' },
