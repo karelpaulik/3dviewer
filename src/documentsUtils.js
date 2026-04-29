@@ -287,7 +287,7 @@ function _createEditor(el, content, readOnly) {
             TextStyle,
             Color,
             FontSize,
-            ImageResize.configure({ inline: false, allowBase64: true }),
+            ImageResize.configure({ inline: true, allowBase64: true }),
             TextAlign.configure({ types: ['heading', 'paragraph'] }),
             TextIndent,
             Table.configure({ resizable: true }),
@@ -525,7 +525,7 @@ function _printDocument() {
     padding: 0.2em 1em;
     color: #555;
   }
-  img { max-width: 100%; height: auto; display: block; margin: 0.8em 0; }
+  img { max-width: 100%; height: auto; display: inline-block; vertical-align: top; margin: 0.4em 4px; }
   table { border-collapse: collapse; width: 100%; margin: 1em 0; table-layout: fixed; }
   td, th { border: 1px solid #ccc; padding: 6px 10px; vertical-align: top; box-sizing: border-box; }
   th { background: #f0f0f0; font-weight: 600; text-align: left; }
