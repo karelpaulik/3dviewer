@@ -175,6 +175,7 @@ const touchEndPos = new THREE.Vector2();
 
 // --- Leader anchor move state ---
 let _movingLeaderHit = null;
+let _selectedLeaderHit = null;  // visually selected marker (orange) before entering move mode
 let _leaderMoveHintDiv = null;
 
 // --- CAD Dimension hint overlay (created in init) ---
@@ -779,6 +780,10 @@ function init() {
                     _movingLeaderHit = null;
                     _leaderMoveHintDiv.style.display = 'none';
                     document.body.style.cursor = '';
+                }
+                if (_selectedLeaderHit) {
+                    _selectedLeaderHit.mesh.material.color.copy(_selectedLeaderHit.savedColor);
+                    _selectedLeaderHit = null;
                 }
                 render();
                 if (viewProp.detectCircleCenter) {
@@ -4077,8 +4082,15 @@ function _showLeaderDeleteMenu(hit, x, y) {
     };
 
     addItem('✥ Move anchor point', () => {
-        const savedColor = hit.mesh.material.color.clone();
-        hit.mesh.material.color.set(0xff8800);
+        // If this marker is already selected (orange), reuse its original saved color
+        let savedColor;
+        if (_selectedLeaderHit && _selectedLeaderHit.mesh === hit.mesh) {
+            savedColor = _selectedLeaderHit.savedColor;
+            _selectedLeaderHit = null;
+        } else {
+            savedColor = hit.mesh.material.color.clone();
+            hit.mesh.material.color.set(0xff8800);
+        }
         _movingLeaderHit = { ...hit, savedColor };
         _leaderMoveHintDiv.style.display = 'block';
         document.body.style.cursor = 'crosshair';
@@ -4296,24 +4308,35 @@ function onClick( event ) {
         return;
     }
 
-    // --- Annotation marker click: click on a leader-line reference point to delete it ---
-    if (!viewProp.annotationMode && !viewProp.annotation3dMode) {
+    // --- Annotation marker click: left click highlights marker (selection only, not move mode) ---
+    if (!viewProp.annotationMode && !viewProp.annotation3dMode && !_movingLeaderHit) {
         mouseUpPos.x = event.clientX;
         mouseUpPos.y = event.clientY;
         if (mouseDownPos.distanceTo(mouseUpPos) <= 3) {
             const _allMarkers = [];
             getAnnotations().forEach(ann => ann.leaderLines.forEach((ll, idx) => _allMarkers.push({ mesh: ll.marker, ann, idx, type: '2d' })));
             getAnnotations3d().forEach(ann => ann.leaderLines.forEach((ll, idx) => _allMarkers.push({ mesh: ll.marker, ann, idx, type: '3d' })));
-            if (_allMarkers.length > 0) {
-                raycaster.setFromCamera(mouse, currentCamera);
-                const _markerHits = raycaster.intersectObjects(_allMarkers.map(m => m.mesh));
-                if (_markerHits.length > 0) {
-                    const _hit = _allMarkers.find(m => m.mesh === _markerHits[0].object);
-                    if (_hit) {
-                        _showLeaderDeleteMenu(_hit, event.clientX, event.clientY);
-                        return;
+            raycaster.setFromCamera(mouse, currentCamera);
+            const _markerHits = _allMarkers.length > 0 ? raycaster.intersectObjects(_allMarkers.map(m => m.mesh)) : [];
+            if (_markerHits.length > 0) {
+                const _hit = _allMarkers.find(m => m.mesh === _markerHits[0].object);
+                if (_hit) {
+                    // Deselect previous selection
+                    if (_selectedLeaderHit) {
+                        _selectedLeaderHit.mesh.material.color.copy(_selectedLeaderHit.savedColor);
                     }
+                    const savedColor = _hit.mesh.material.color.clone();
+                    _hit.mesh.material.color.set(0xff8800);
+                    _selectedLeaderHit = { ..._hit, savedColor };
+                    render();
+                    return;
                 }
+            }
+            // Clicked elsewhere – deselect
+            if (_selectedLeaderHit) {
+                _selectedLeaderHit.mesh.material.color.copy(_selectedLeaderHit.savedColor);
+                _selectedLeaderHit = null;
+                render();
             }
         }
     }
@@ -6390,6 +6413,24 @@ function assemblyMoveStepDown() {
             refreshCadDimMenu();
             showAt(menuCadDim, event.clientX, event.clientY);
             return;
+        }
+
+        // Check if right-clicking on a leader-line marker → show leader menu
+        if (!viewProp.annotationMode && !viewProp.annotation3dMode) {
+            const _allMarkersRMB = [];
+            getAnnotations().forEach(ann => ann.leaderLines.forEach((ll, idx) => _allMarkersRMB.push({ mesh: ll.marker, ann, idx, type: '2d' })));
+            getAnnotations3d().forEach(ann => ann.leaderLines.forEach((ll, idx) => _allMarkersRMB.push({ mesh: ll.marker, ann, idx, type: '3d' })));
+            if (_allMarkersRMB.length > 0) {
+                raycaster.setFromCamera(mouse, currentCamera);
+                const _markerHitsRMB = raycaster.intersectObjects(_allMarkersRMB.map(m => m.mesh));
+                if (_markerHitsRMB.length > 0) {
+                    const _hitRMB = _allMarkersRMB.find(m => m.mesh === _markerHitsRMB[0].object);
+                    if (_hitRMB) {
+                        _showLeaderDeleteMenu(_hitRMB, event.clientX, event.clientY);
+                        return;
+                    }
+                }
+            }
         }
 
         // Kontrola, zda se myš od pravého kliknutí příliš pohybovala
