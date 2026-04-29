@@ -107,6 +107,28 @@ statusBar.id = 'status-bar';
 statusBar.innerHTML = `<span class="status-brand"><i>BE &amp; DO BETTER</i></span><span class="status-copy">&copy; 2026 Bedobe</span><span class="status-version">v${__APP_VERSION__}</span>`;
 document.body.appendChild(statusBar);
 
+// Fullscreen toggle button (bottom-left, next to ViewHelper gizmo)
+const fsBtn = document.createElement('button');
+fsBtn.id = 'fs-btn';
+fsBtn.title = 'Fullscreen';
+fsBtn.textContent = '⛶';
+fsBtn.addEventListener('click', () => {
+    viewProp.fullscreen = !viewProp.fullscreen;
+    if (viewProp.fullscreen) {
+        document.documentElement.requestFullscreen().then(() => {
+            if (navigator.keyboard && navigator.keyboard.lock) navigator.keyboard.lock(['Escape']).catch(() => {});
+        }).catch((err) => {
+            console.warn('Fullscreen not available: ', err.message);
+            viewProp.fullscreen = false;
+        });
+    } else {
+        if (navigator.keyboard && navigator.keyboard.unlock) navigator.keyboard.unlock();
+        if (document.fullscreenElement) document.exitFullscreen();
+    }
+    fsBtn.classList.toggle('active', viewProp.fullscreen);
+});
+document.body.appendChild(fsBtn);
+
 // Wrapper reference for hit-testing (toolbar + panels + outliner)
 let outlinerPanelEl = null;
 const guiWrapper = { contains(el) { return guiToolbar.contains(el) || guiContainer.contains(el) || (outlinerPanelEl && outlinerPanelEl.contains(el)); } };
@@ -1083,10 +1105,20 @@ function addMainGui() {
         folderProp.add({ fn: fitView }, 'fn').name('Fit View');
         folderProp.add({ fn: showHiddenObjects }, 'fn').name('Show hidden objects');
         folderProp.add({ fn: toggleHiddenObjects }, 'fn').name('Switch hidden objects');
-        let fsCtrl = folderProp.add(viewProp, 'fullscreen').name('Fullscreen').onChange(function(value){// Fullscreen toggle (false = windowed, true = fullscreen)
+        let fsCtrl = folderProp.add(viewProp, 'fullscreen').name('Fullscreen').onChange(function(value){
             if (value) {
-                document.getElementById('body').requestFullscreen().catch((err) => {console.warn('Fullscreen not available: ', err.message)});
+                document.documentElement.requestFullscreen().then(() => {
+                    // Lock Escape so it doesn't exit fullscreen (Chrome/Edge)
+                    if (navigator.keyboard && navigator.keyboard.lock) {
+                        navigator.keyboard.lock(['Escape']).catch(() => {});
+                    }
+                }).catch((err) => {
+                    console.warn('Fullscreen not available: ', err.message);
+                    viewProp.fullscreen = false;
+                    fsCtrl.updateDisplay();
+                });
             } else {
+                if (navigator.keyboard && navigator.keyboard.unlock) navigator.keyboard.unlock();
                 if (document.fullscreenElement) document.exitFullscreen();
             }
         }).listen();
@@ -1175,9 +1207,11 @@ function addMainGui() {
             } }, 'fn').name('Set to default');
             toolbarPrefFolder.close();
 
-    // Když by toto nebylo, tak při ukončení fullscreenu escapem, by "fulscreen" zůstalo zartřené. Funkčně by se moc nestalo.
-    document.addEventListener('fullscreenchange', function(){
+    // Sync toggle when fullscreen is exited externally (e.g. F11)
+    document.addEventListener('fullscreenchange', function() {
         viewProp.fullscreen = !!document.fullscreenElement;
+        if (!document.fullscreenElement && navigator.keyboard && navigator.keyboard.unlock) navigator.keyboard.unlock();
+        fsBtn.classList.toggle('active', viewProp.fullscreen);
         if (fsCtrl && fsCtrl.updateDisplay) fsCtrl.updateDisplay();
     });
 
