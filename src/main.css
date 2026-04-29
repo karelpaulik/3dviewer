@@ -633,6 +633,7 @@ a, button, input, select {
     background: rgba(200, 200, 200, var(--doc-bg-opacity));
     color: #111;
     --doc-para-spacing: 8px;
+    --doc-width: 794px;
 }
 
 /* BG opacity slider */
@@ -776,7 +777,8 @@ a, button, input, select {
     line-height: inherit;
     color: #111;
     box-sizing: border-box;
-    max-width: var(--doc-width, 100%);
+    width: 794px;
+    max-width: 100%;
     margin-left: auto;
     margin-right: auto;
     background: rgba(255, 255, 255, var(--doc-bg-opacity));
