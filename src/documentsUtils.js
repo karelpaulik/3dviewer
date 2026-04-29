@@ -135,11 +135,13 @@ export function flushDocumentEdits() {
 export function importDocumentsFromGltfScene(gltfScene) {
     // GLTFLoader wraps the exported group as a child of gltf.scene,
     // so documents may be on gltfScene itself or on a child node.
-    // Traverse to find the first node that carries userData.documents.
+    // Traverse to find ALL nodes that carry userData.documents and collect them.
     let docs = null;
     gltfScene.traverse(node => {
-        if (!docs && Array.isArray(node.userData.documents) && node.userData.documents.length > 0) {
-            docs = node.userData.documents;
+        if (Array.isArray(node.userData.documents) && node.userData.documents.length > 0) {
+            if (!docs) docs = node.userData.documents;
+            // Remove from the node so it is not re-exported with stale image data
+            delete node.userData.documents;
         }
     });
     if (!docs) return;
@@ -533,8 +535,22 @@ function _printDocument() {
 </head><body>${content}</body></html>`);
     win.document.close();
     win.focus();
-    win.print();
-    win.close();
+    const imgs = Array.from(win.document.images);
+    if (imgs.length === 0) {
+        win.print();
+        win.close();
+    } else {
+        Promise.all(imgs.map(img => {
+            if (img.complete) return Promise.resolve();
+            return new Promise(resolve => {
+                img.onload = resolve;
+                img.onerror = resolve;
+            });
+        })).then(() => {
+            win.print();
+            win.close();
+        });
+    }
 }
 
 function _deleteCurrentDocument() {
