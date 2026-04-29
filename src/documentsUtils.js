@@ -99,7 +99,15 @@ const _DOC_WIDTH_OPTIONS = [
     { label: '600px',     value: '600px' },
     { label: '400px',     value: '400px' },
 ];
-const _DEFAULT_DOC_WIDTH = '100%';
+const _DEFAULT_DOC_WIDTH = '794px';
+const _TABLE_BORDER_OPTIONS = [
+    { label: 'None',   value: 'none' },
+    { label: '1px',    value: '1px solid #ccc' },
+    { label: '2px',    value: '2px solid #aaa' },
+    { label: '3px',    value: '3px solid #888' },
+    { label: '4px',    value: '4px solid #666' },
+];
+const _DEFAULT_TABLE_BORDER = '1px solid #ccc';
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
@@ -207,6 +215,7 @@ function _newDocument() {
         lineHeight: _DEFAULT_LINE_HEIGHT,
         paraSpacing: _DEFAULT_PARA_SPACING,
         docWidth: _DEFAULT_DOC_WIDTH,
+        tableBorder: _DEFAULT_TABLE_BORDER,
     };
     documentsStore.push(doc);
     refreshDocumentsGui();
@@ -245,6 +254,12 @@ function _showOverlay(doc, editMode) {
     const docWidthValue = doc.docWidth || _DEFAULT_DOC_WIDTH;
     docWidthSelect.value = docWidthValue;
     editorContentEl.style.setProperty('--doc-width', docWidthValue);
+
+    // Apply table border
+    const tableBorderSelect = _overlayEl.querySelector('.doc-table-border-select');
+    const tableBorderValue = doc.tableBorder || _DEFAULT_TABLE_BORDER;
+    tableBorderSelect.value = tableBorderValue;
+    editorContentEl.style.setProperty('--doc-table-border', tableBorderValue);
 
     // Update header buttons
     const editBtn = _overlayEl.querySelector('.doc-btn-edit');
@@ -474,6 +489,7 @@ function _saveCurrentDocument() {
     doc.lineHeight = (_overlayEl.querySelector('.doc-line-height-select') || {}).value || _DEFAULT_LINE_HEIGHT;
     doc.paraSpacing = (_overlayEl.querySelector('.doc-para-spacing-select') || {}).value || _DEFAULT_PARA_SPACING;
     doc.docWidth = (_overlayEl.querySelector('.doc-width-select') || {}).value || _DEFAULT_DOC_WIDTH;
+    doc.tableBorder = (_overlayEl.querySelector('.doc-table-border-select') || {}).value || _DEFAULT_TABLE_BORDER;
 
     refreshDocumentsGui();
 }
@@ -594,6 +610,13 @@ function _updateToolbarState() {
         const currentSize = attrs.fontSize || '16px';
         fsSelect.value = currentSize;
         if (!fsSelect.value) fsSelect.value = '16px';
+    }
+
+    // Sync toolbar indent select
+    const indentSelect = toolbar.querySelector('.doc-toolbar-indent-select');
+    if (indentSelect) {
+        const attrs = _editor.getAttributes('paragraph');
+        indentSelect.value = attrs.textIndent || '0';
     }
 }
 
@@ -1067,6 +1090,34 @@ function _buildEditorOverlay() {
     docWidthWrap.appendChild(docWidthSelect);
     header.appendChild(docWidthWrap);
 
+    // Table border selector
+    const tableBorderWrap = document.createElement('span');
+    tableBorderWrap.className = 'doc-font-wrap';
+    const tableBorderLabel = document.createElement('span');
+    tableBorderLabel.className = 'doc-font-label';
+    tableBorderLabel.textContent = '┼';
+    tableBorderLabel.title = 'Table border width';
+    const tableBorderSelect = document.createElement('select');
+    tableBorderSelect.className = 'doc-font-select doc-table-border-select';
+    tableBorderSelect.title = 'Table border width';
+    _TABLE_BORDER_OPTIONS.forEach(opt => {
+        const option = document.createElement('option');
+        option.value = opt.value;
+        option.textContent = opt.label;
+        tableBorderSelect.appendChild(option);
+    });
+    tableBorderSelect.addEventListener('change', () => {
+        const editorContentEl = overlay.querySelector('.doc-editor-content');
+        editorContentEl.style.setProperty('--doc-table-border', tableBorderSelect.value);
+        if (_currentDocId) {
+            const d = documentsStore.find(x => x.id === _currentDocId);
+            if (d) d.tableBorder = tableBorderSelect.value;
+        }
+    });
+    tableBorderWrap.appendChild(tableBorderLabel);
+    tableBorderWrap.appendChild(tableBorderSelect);
+    header.appendChild(tableBorderWrap);
+
     header.appendChild(btnEdit);
     header.appendChild(btnSave);
     header.appendChild(btnPrint);
@@ -1179,6 +1230,36 @@ function _buildEditorOverlay() {
         }
     });
     toolbar.appendChild(fsSelect);
+
+    // Indent select
+    const indentSep = document.createElement('span');
+    indentSep.className = 'doc-toolbar-sep';
+    toolbar.appendChild(indentSep);
+
+    const indentLabel = document.createElement('span');
+    indentLabel.className = 'doc-font-label';
+    indentLabel.textContent = '↵';
+    indentLabel.title = 'First line indent';
+    indentLabel.style.marginLeft = '2px';
+    toolbar.appendChild(indentLabel);
+
+    const indentSelect = document.createElement('select');
+    indentSelect.className = 'doc-font-select doc-toolbar-indent-select';
+    indentSelect.title = 'First line indent';
+    [{ label: '0', value: '0' }, { label: '1em', value: '1em' }, { label: '2em', value: '2em' }, { label: '3em', value: '3em' }]
+        .forEach(opt => {
+            const o = document.createElement('option');
+            o.value = opt.value;
+            o.textContent = opt.label;
+            indentSelect.appendChild(o);
+        });
+    indentSelect.addEventListener('change', () => {
+        if (!_editor) return;
+        const val = indentSelect.value === '0' ? null : indentSelect.value;
+        _editor.commands.setTextIndent(val);
+        _editor.view.focus();
+    });
+    toolbar.appendChild(indentSelect);
 
     // Editor content area
     const editorContent = document.createElement('div');

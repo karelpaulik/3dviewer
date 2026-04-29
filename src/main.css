@@ -664,6 +664,7 @@ a, button, input, select {
     color: #111;
     --doc-para-spacing: 8px;
     --doc-width: 794px;
+    --doc-table-border: 1px solid #ccc;
     display: flex;
     flex-direction: column;
 }
@@ -809,7 +810,7 @@ a, button, input, select {
     line-height: inherit;
     color: #111;
     box-sizing: border-box;
-    width: 794px;
+    width: var(--doc-width, 794px);
     max-width: 100%;
     margin-left: auto;
     margin-right: auto;
@@ -855,7 +856,7 @@ a, button, input, select {
 }
 .doc-editor-content .ProseMirror table td,
 .doc-editor-content .ProseMirror table th {
-    border: 1px solid #ccc;
+    border: var(--doc-table-border, 1px solid #ccc);
     padding: 6px 10px;
     vertical-align: top;
     min-width: 40px;
