@@ -104,8 +104,29 @@ document.body.appendChild(guiContainer);
 // Status bar (footer)
 const statusBar = document.createElement('div');
 statusBar.id = 'status-bar';
-statusBar.innerHTML = `<span class="status-brand"><i>BE &amp; DO BETTER</i></span><span class="status-copy">&copy; 2026 Bedobe</span><span class="status-version">v${__APP_VERSION__}</span>`;
+statusBar.innerHTML = `<span class="status-left"></span><span class="status-right"><span class="status-brand"><i>BE &amp; DO BETTER</i></span><span class="status-copy">&copy; 2026 Bedobe</span><span class="status-version">v${__APP_VERSION__}</span></span>`;
 document.body.appendChild(statusBar);
+
+// Mode + Selection indicator elements (in .status-left)
+const statusModeLabelEl = document.createElement('span');
+statusModeLabelEl.className = 'status-label';
+statusModeLabelEl.textContent = 'Mode:';
+const statusModeEl = document.createElement('span');
+statusModeEl.className = 'status-mode';
+const statusSepEl = document.createElement('span');
+statusSepEl.className = 'status-sep';
+statusSepEl.textContent = '|';
+const statusSelLabelEl = document.createElement('span');
+statusSelLabelEl.className = 'status-label';
+statusSelLabelEl.textContent = 'Selection:';
+const statusSelEl = document.createElement('span');
+statusSelEl.className = 'status-mode';
+const _statusLeft = statusBar.querySelector('.status-left');
+_statusLeft.appendChild(statusModeLabelEl);
+_statusLeft.appendChild(statusModeEl);
+_statusLeft.appendChild(statusSepEl);
+_statusLeft.appendChild(statusSelLabelEl);
+_statusLeft.appendChild(statusSelEl);
 
 // Fullscreen toggle button (bottom-left, next to ViewHelper gizmo)
 const fsBtn = document.createElement('button');
@@ -1122,7 +1143,7 @@ function addMainGui() {
                 if (document.fullscreenElement) document.exitFullscreen();
             }
         }).listen();
-        folderProp.add(viewProp, 'isSelectAllowed').name('Allow selection').listen();
+        folderProp.add(viewProp, 'isSelectAllowed').name('Allow selection').onChange(render).listen();
         folderProp.add(viewProp, 'wireframe').name('Wireframe').onChange(function(value){ toggleWireframeAll(value); }).listen();
         folderProp.add(viewProp, 'cadSelection', ['CAD', 'Detailed']).name('Selection').listen();
         folderProp.add(viewProp, 'orientedSelectionBox', ['local', 'world']).name('Selection box').onChange(function(){ render(); }).listen();
@@ -3743,7 +3764,42 @@ function deselectObject() {
 
 }
 
+// --- Mode + Selection indicator (status bar) ---
+var _modeIndicatorCache = '';
+function updateModeIndicator() {
+    const vp = viewProp;
+
+    // --- Mode ---
+    let modeLabel, modeCls;
+    if (assemblyState.editMode)      { modeLabel = 'Assembly Edit';     modeCls = 'mode-assembly'; }
+    else if (vp.measureMode)         { modeLabel = 'Measure';           modeCls = 'mode-active'; }
+    else if (vp.angleMode)           { modeLabel = 'Measure Angle';     modeCls = 'mode-active'; }
+    else if (vp.cadDimMode)          { modeLabel = 'CAD Dim (Flat)';    modeCls = 'mode-active'; }
+    else if (vp.cadDim3dMode)        { modeLabel = 'CAD Dim (3D)';      modeCls = 'mode-active'; }
+    else if (vp.selectDimensionMode) { modeLabel = 'Edit Labels';       modeCls = 'mode-active'; }
+    else if (vp.annotationMode)      { modeLabel = 'Annotation (Flat)'; modeCls = 'mode-active'; }
+    else if (vp.annotation3dMode)    { modeLabel = 'Annotation (3D)';   modeCls = 'mode-active'; }
+    else                             { modeLabel = 'Navigate';           modeCls = 'mode-navigate'; }
+
+    // --- Selection ---
+    let selLabel, selCls;
+    if (vp.selectDimensionMode)              { selLabel = 'Note Selection';     selCls = 'mode-select'; }
+    else if (!vp.isSelectAllowed)            { selLabel = 'No Selection';       selCls = 'mode-noselect'; }
+    else if (vp.cadSelection === 'Detailed') { selLabel = 'Detailed Selection'; selCls = 'mode-select'; }
+    else                                     { selLabel = 'CAD Selection';      selCls = 'mode-select'; }
+
+    const key = modeLabel + '|' + selLabel;
+    if (key === _modeIndicatorCache) return;
+    _modeIndicatorCache = key;
+
+    statusModeEl.textContent = modeLabel;
+    statusModeEl.className = 'status-mode ' + modeCls;
+    statusSelEl.textContent = selLabel;
+    statusSelEl.className = 'status-mode ' + selCls;
+}
+
 function render() {   
+    updateModeIndicator();
     //console.log("viewProp.isSelectAllowed: ", viewProp.isSelectAllowed);
     // isMouseOverGui - pokud kurzor nad GUI a současně nad objektem, pak má přednost GUI.
     const isMouseOverGui = document.elementFromPoint(mouse.x * window.innerWidth / 2 + window.innerWidth / 2, 
