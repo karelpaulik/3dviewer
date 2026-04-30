@@ -111,16 +111,77 @@ document.body.appendChild(statusBar);
 const statusModeLabelEl = document.createElement('span');
 statusModeLabelEl.className = 'status-label';
 statusModeLabelEl.textContent = 'Mode:';
-const statusModeEl = document.createElement('span');
-statusModeEl.className = 'status-mode';
+const statusModeEl = document.createElement('select');
+statusModeEl.className = 'status-select mode-navigate';
+[
+    ['navigate',     'Navigate'],
+    ['measure',      'Add Measure'],
+    ['angle',        'Add Measure Angle'],
+    ['cadDim',       'Add Dim (Flat)'],
+    ['cadDim3d',     'Add Dim (3D)'],
+    ['annotation',   'Add Annotation (Flat)'],
+    ['annotation3d', 'Add Annotation (3D)'],
+    ['selectDim',    'Edit Labels'],
+    ['assemblyEdit', 'Assembly Edit'],
+].forEach(([val, label]) => {
+    const opt = document.createElement('option');
+    opt.value = val;
+    opt.textContent = label;
+    if (val === 'assemblyEdit') opt.disabled = true;
+    statusModeEl.appendChild(opt);
+});
+statusModeEl.addEventListener('change', function() {
+    const val = this.value;
+    if (viewProp.measureMode)         { viewProp.measureMode = false;         setMeasureActive(false); }
+    if (viewProp.angleMode)           { viewProp.angleMode = false;           setAngleActive(false); }
+    if (viewProp.cadDimMode)          { viewProp.cadDimMode = false;          setCadDimActive(false);   orbitControls.enabled = true; _updateCadDimHintUI(); }
+    if (viewProp.cadDim3dMode)        { viewProp.cadDim3dMode = false;        setCadDim3dActive(false); orbitControls.enabled = true; _updateCadDim3dHintUI(); }
+    if (viewProp.selectDimensionMode) { viewProp.selectDimensionMode = false; setSelectDimActive(false); }
+    if (viewProp.annotationMode)      { viewProp.annotationMode = false;      setAnnotationActive(false); }
+    if (viewProp.annotation3dMode)    { viewProp.annotation3dMode = false;    setAnnotation3dActive(false); }
+    viewProp.isSelectAllowed = true;
+    switch (val) {
+        case 'measure':      viewProp.measureMode = true;         setMeasureActive(true);     viewProp.isSelectAllowed = false; break;
+        case 'angle':        viewProp.angleMode = true;           setAngleActive(true);        viewProp.isSelectAllowed = false; break;
+        case 'cadDim':       viewProp.cadDimMode = true;          setCadDimActive(true);       viewProp.isSelectAllowed = false; break;
+        case 'cadDim3d':     viewProp.cadDim3dMode = true;        setCadDim3dActive(true);     viewProp.isSelectAllowed = false; break;
+        case 'selectDim':    viewProp.selectDimensionMode = true; setSelectDimActive(true);    viewProp.isSelectAllowed = false; break;
+        case 'annotation':   viewProp.annotationMode = true;      setAnnotationActive(true);   viewProp.isSelectAllowed = false; break;
+        case 'annotation3d': viewProp.annotation3dMode = true;    setAnnotation3dActive(true); viewProp.isSelectAllowed = false; break;
+    }
+    _syncModeBtns();
+    _modeIndicatorCache = '';
+    render();
+});
 const statusSepEl = document.createElement('span');
 statusSepEl.className = 'status-sep';
 statusSepEl.textContent = '|';
 const statusSelLabelEl = document.createElement('span');
 statusSelLabelEl.className = 'status-label';
 statusSelLabelEl.textContent = 'Selection:';
-const statusSelEl = document.createElement('span');
-statusSelEl.className = 'status-mode';
+const statusSelEl = document.createElement('select');
+statusSelEl.className = 'status-select mode-select';
+[
+    ['cad',      'CAD Selection'],
+    ['detailed', 'Detailed Selection'],
+    ['none',     'No Selection'],
+].forEach(([val, label]) => {
+    const opt = document.createElement('option');
+    opt.value = val;
+    opt.textContent = label;
+    statusSelEl.appendChild(opt);
+});
+statusSelEl.addEventListener('change', function() {
+    const val = this.value;
+    if (val === 'none') {
+        viewProp.isSelectAllowed = false;
+    } else {
+        viewProp.isSelectAllowed = true;
+        viewProp.cadSelection = (val === 'detailed') ? 'Detailed' : 'CAD';
+    }
+    _modeIndicatorCache = '';
+    render();
+});
 const _statusLeft = statusBar.querySelector('.status-left');
 _statusLeft.appendChild(statusModeLabelEl);
 _statusLeft.appendChild(statusModeEl);
@@ -3805,32 +3866,32 @@ function updateModeIndicator() {
     const vp = viewProp;
 
     // --- Mode ---
-    let modeLabel, modeCls;
-    if (assemblyState.editMode)      { modeLabel = 'Assembly Edit';     modeCls = 'mode-assembly'; }
-    else if (vp.measureMode)         { modeLabel = 'Measure';           modeCls = 'mode-active'; }
-    else if (vp.angleMode)           { modeLabel = 'Measure Angle';     modeCls = 'mode-active'; }
-    else if (vp.cadDimMode)          { modeLabel = 'CAD Dim (Flat)';    modeCls = 'mode-active'; }
-    else if (vp.cadDim3dMode)        { modeLabel = 'CAD Dim (3D)';      modeCls = 'mode-active'; }
-    else if (vp.selectDimensionMode) { modeLabel = 'Edit Labels';       modeCls = 'mode-active'; }
-    else if (vp.annotationMode)      { modeLabel = 'Annotation (Flat)'; modeCls = 'mode-active'; }
-    else if (vp.annotation3dMode)    { modeLabel = 'Annotation (3D)';   modeCls = 'mode-active'; }
-    else                             { modeLabel = 'Navigate';           modeCls = 'mode-navigate'; }
+    let modeVal, modeCls;
+    if (assemblyState.editMode)      { modeVal = 'assemblyEdit'; modeCls = 'mode-assembly'; }
+    else if (vp.measureMode)         { modeVal = 'measure';      modeCls = 'mode-active'; }
+    else if (vp.angleMode)           { modeVal = 'angle';        modeCls = 'mode-active'; }
+    else if (vp.cadDimMode)          { modeVal = 'cadDim';       modeCls = 'mode-active'; }
+    else if (vp.cadDim3dMode)        { modeVal = 'cadDim3d';     modeCls = 'mode-active'; }
+    else if (vp.selectDimensionMode) { modeVal = 'selectDim';    modeCls = 'mode-active'; }
+    else if (vp.annotationMode)      { modeVal = 'annotation';   modeCls = 'mode-active'; }
+    else if (vp.annotation3dMode)    { modeVal = 'annotation3d'; modeCls = 'mode-active'; }
+    else                             { modeVal = 'navigate';     modeCls = 'mode-navigate'; }
 
     // --- Selection ---
-    let selLabel, selCls;
-    if (vp.selectDimensionMode)              { selLabel = 'Note Selection';     selCls = 'mode-select'; }
-    else if (!vp.isSelectAllowed)            { selLabel = 'No Selection';       selCls = 'mode-noselect'; }
-    else if (vp.cadSelection === 'Detailed') { selLabel = 'Detailed Selection'; selCls = 'mode-select'; }
-    else                                     { selLabel = 'CAD Selection';      selCls = 'mode-select'; }
+    let selVal, selCls;
+    if (!vp.isSelectAllowed)             { selVal = 'none';     selCls = 'mode-noselect'; }
+    else if (vp.cadSelection === 'Detailed') { selVal = 'detailed'; selCls = 'mode-select'; }
+    else                                     { selVal = 'cad';      selCls = 'mode-select'; }
 
-    const key = modeLabel + '|' + selLabel;
+    const key = modeVal + '|' + selVal;
     if (key === _modeIndicatorCache) return;
     _modeIndicatorCache = key;
 
-    statusModeEl.textContent = modeLabel;
-    statusModeEl.className = 'status-mode ' + modeCls;
-    statusSelEl.textContent = selLabel;
-    statusSelEl.className = 'status-mode ' + selCls;
+    statusModeEl.value = modeVal;
+    statusModeEl.className = 'status-select ' + modeCls;
+    statusModeEl.disabled = assemblyState.editMode;
+    statusSelEl.value = selVal;
+    statusSelEl.className = 'status-select ' + selCls;
 }
 
 function render() {   
