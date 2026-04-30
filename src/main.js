@@ -19,8 +19,8 @@ import { exportToHTML, exportToHTMLDraco, exportToHTMLObfuscated, exportToHTMLOb
 import { initOutliner, toggleOutliner, rebuildTree, highlightObject as outlinerHighlight, updateVisibilityIcon, isOutlinerOpen } from './sceneOutliner.js';
 import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements, isSelectDimActive, setSelectDimActive, deleteSelectedDimension, initSelectDimension, updateSelectDimensionCamera, reconstructMeasurements, stripMeasurementVisuals, setMeasurementsVisible, setMeasurementDepthTest, removeMeasurementsForOwner, isCadDimActive, setCadDimActive, getCadDimStep, getCadDimAxis, addCadDimPoint, updateCadDimPreview, updateCadDimHoverPreview, cycleCadDimAxis, placeCadDim, clearCadDimMeasurements, removeCadDimMeasurementsForOwner, getSelectedCadDim, setCadDimLabelMode, setCadDimDragMode, selectDimTouchStart, selectDimTouchMove, selectDimTouchEnd, registerLabelForSelection, getSelectedCadDim3d, getCadDimMeasurements, deleteCadDimByRef, convertCadDim3dTo2d } from './measurementUtils.js';
 import { detectCircleCenterFromHit } from './circleDetectionUtils.js';
-import { initAnnotations, isAnnotationActive, setAnnotationActive, addAnnotationPoint, getAnnotationPendingPoint, updateAnnotationPreview, updateAnnotationMarkerScales, setAnnotationsVisible, clearAnnotations, stripAnnotationVisuals, reconstructAnnotations, setAnnotationDepthTest, removeAnnotationsForOwner, getAnnotations, isAddLeaderLineActive, cancelAddLeaderLine, commitAddLeaderLine, deleteAnnotationByRef, setConvertTo3dFn, reconstructAnnotationFromRec, removeAnnotationLeaderLine, moveAnnotationLeaderAnchor, showAnnotationMovePreview } from './annotationUtils.js';
-import { initAnnotations3d, isAnnotation3dActive, setAnnotation3dActive, addAnnotation3dPoint, getAnnotation3dPendingPoint, updateAnnotation3dPreview, updateAnnotation3dMarkerScales, updateAnnotation3dOrientations, setAnnotations3dVisible, clearAnnotations3d, stripAnnotation3dVisuals, reconstructAnnotations3d, setAnnotation3dDepthTest, removeAnnotations3dForOwner, isAddLeaderLine3dActive, cancelAddLeaderLine3d, commitAddLeaderLine3d, getAnnotation3dDefaults, deleteAnnotation3dByRef, setConvertTo2dFn, reconstructAnnotation3dFromRec, getAnnotations3d, removeAnnotation3dLeaderLine, moveAnnotation3dLeaderAnchor, showAnnotation3dMovePreview } from './annotation3dUtils.js';
+import { initAnnotations, isAnnotationActive, setAnnotationActive, addAnnotationPoint, getAnnotationPendingPoint, updateAnnotationPreview, updateAnnotationMarkerScales, setAnnotationsVisible, clearAnnotations, stripAnnotationVisuals, reconstructAnnotations, setAnnotationDepthTest, removeAnnotationsForOwner, getAnnotations, isAddLeaderLineActive, cancelAddLeaderLine, commitAddLeaderLine, deleteAnnotationByRef, setConvertTo3dFn, reconstructAnnotationFromRec } from './annotationUtils.js';
+import { initAnnotations3d, isAnnotation3dActive, setAnnotation3dActive, addAnnotation3dPoint, getAnnotation3dPendingPoint, updateAnnotation3dPreview, updateAnnotation3dMarkerScales, updateAnnotation3dOrientations, setAnnotations3dVisible, clearAnnotations3d, stripAnnotation3dVisuals, reconstructAnnotations3d, setAnnotation3dDepthTest, removeAnnotations3dForOwner, isAddLeaderLine3dActive, cancelAddLeaderLine3d, commitAddLeaderLine3d, getAnnotation3dDefaults, deleteAnnotation3dByRef, setConvertTo2dFn, reconstructAnnotation3dFromRec } from './annotation3dUtils.js';
 import { initCadDim3d, isCadDim3dActive, getCadDim3dStep, getCadDim3dAxis, setCadDim3dActive, addCadDim3dPoint, updateCadDim3dPreview, updateCadDim3dHoverPreview, cycleCadDim3dAxis, placeCadDim3d, clearCadDim3dMeasurements, removeCadDim3dMeasurementsForOwner, setCadDim3dVisible, setCadDim3dDepthTest, updateCadDim3dOrientations, updateCadDim3dMarkerScales, reconstructCadDim3d, stripCadDim3dVisuals, setCadDim3dLabelMode, setCadDim3dDragMode, setCadDim3dOrientationMode, setCadDim3dRotate, setCadDim3dLabelScaleDialog, setCadDim3dMirrored, setCadDim3dTextColor, setCadDim3dBgColor, getCadDim3dDefaults, convertCadDimTo3d } from './cadDim3dUtils.js';
 import { computeSolidSection, clearSolidSection } from './solidSectionUtils.js';
 import { initDocumentsGui, importDocumentsFromGltfScene, getDocumentsStore, flushDocumentEdits, isDocOverlayBlockingInput } from './documentsUtils.js';
@@ -172,11 +172,6 @@ const mouseDownPos = new THREE.Vector2();
 const mouseUpPos = new THREE.Vector2();
 const touchStartPos = new THREE.Vector2();
 const touchEndPos = new THREE.Vector2();
-
-// --- Leader anchor move state ---
-let _movingLeaderHit = null;
-let _selectedLeaderHit = null;  // visually selected marker (orange) before entering move mode
-let _leaderMoveHintDiv = null;
 
 // --- CAD Dimension hint overlay (created in init) ---
 let _cadDimHintDiv = null;
@@ -775,16 +770,6 @@ function init() {
                 }
                 cancelAddLeaderLine();
                 cancelAddLeaderLine3d();
-                if (_movingLeaderHit) {
-                    _movingLeaderHit.mesh.material.color.copy(_movingLeaderHit.savedColor);
-                    _movingLeaderHit = null;
-                    _leaderMoveHintDiv.style.display = 'none';
-                    document.body.style.cursor = '';
-                }
-                if (_selectedLeaderHit) {
-                    _selectedLeaderHit.mesh.material.color.copy(_selectedLeaderHit.savedColor);
-                    _selectedLeaderHit = null;
-                }
                 render();
                 if (viewProp.detectCircleCenter) {
                     viewProp.detectCircleCenter = false;
@@ -1008,11 +993,6 @@ function init() {
     _cadDim3dHintDiv = document.createElement('div');
     _cadDim3dHintDiv.style.cssText = 'position:fixed;bottom:68px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.75);color:#fff;padding:5px 14px;border-radius:5px;font-size:12px;pointer-events:none;display:none;z-index:1000;white-space:nowrap;';
     document.body.appendChild(_cadDim3dHintDiv);
-
-    _leaderMoveHintDiv = document.createElement('div');
-    _leaderMoveHintDiv.style.cssText = 'position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:rgba(180,100,0,0.88);color:#fff;padding:5px 14px;border-radius:5px;font-size:12px;pointer-events:none;display:none;z-index:1000;white-space:nowrap;';
-    _leaderMoveHintDiv.textContent = 'Klikněte na povrch modelu pro přesunutí kotevního bodu  ·  Esc = zrušit';
-    document.body.appendChild(_leaderMoveHintDiv);
 } //End init 
 
 // Přepočítá frustum ortografické kamery podle aktuálního obsahu meshObjects.
@@ -3939,16 +3919,8 @@ function render() {
     }
     _updateCadDim3dHintUI();
 
-    // Annotation hover preview – CSS2D (regular mode, add-leader mode, or move-anchor mode)
-    if ((_movingLeaderHit && _movingLeaderHit.type === '2d') && !isMouseOverGui && !isMouseDown) {
-        raycaster.setFromCamera(mouse, currentCamera);
-        const nIntersects = raycaster.intersectObjects(meshObjects);
-        const nIsFullyVisible = (obj) => { let o = obj; while (o) { if (!o.visible) return false; o = o.parent; } return true; };
-        const nVisible = (renderer.localClippingEnabled && clipPlanes.length > 0)
-            ? nIntersects.filter(hit => nIsFullyVisible(hit.object) && clipPlanes.some(plane => plane.distanceToPoint(hit.point) >= 0))
-            : nIntersects.filter(hit => nIsFullyVisible(hit.object));
-        showAnnotationMovePreview(nVisible.length > 0 ? nVisible[0].point : null);
-    } else if ((viewProp.annotationMode && isAnnotationActive() || isAddLeaderLineActive()) && !isMouseOverGui && !isMouseDown) {
+    // Annotation hover preview – CSS2D (regular mode or add-leader mode)
+    if ((viewProp.annotationMode && isAnnotationActive() || isAddLeaderLineActive()) && !isMouseOverGui && !isMouseDown) {
         raycaster.setFromCamera(mouse, currentCamera);
         const nIntersects = raycaster.intersectObjects(meshObjects);
         const nIsFullyVisible = (obj) => { let o = obj; while (o) { if (!o.visible) return false; o = o.parent; } return true; };
@@ -3972,16 +3944,8 @@ function render() {
         updateAnnotationPreview(null);
     }
 
-    // Annotation hover preview – CSS3D (regular mode, add-leader mode, or move-anchor mode)
-    if ((_movingLeaderHit && _movingLeaderHit.type === '3d') && !isMouseOverGui && !isMouseDown) {
-        raycaster.setFromCamera(mouse, currentCamera);
-        const n3Intersects = raycaster.intersectObjects(meshObjects);
-        const n3IsFullyVisible = (obj) => { let o = obj; while (o) { if (!o.visible) return false; o = o.parent; } return true; };
-        const n3Visible = (renderer.localClippingEnabled && clipPlanes.length > 0)
-            ? n3Intersects.filter(hit => n3IsFullyVisible(hit.object) && clipPlanes.some(plane => plane.distanceToPoint(hit.point) >= 0))
-            : n3Intersects.filter(hit => n3IsFullyVisible(hit.object));
-        showAnnotation3dMovePreview(n3Visible.length > 0 ? n3Visible[0].point : null);
-    } else if ((viewProp.annotation3dMode && isAnnotation3dActive() || isAddLeaderLine3dActive()) && !isMouseOverGui && !isMouseDown) {
+    // Annotation hover preview – CSS3D (regular mode or add-leader mode)
+    if ((viewProp.annotation3dMode && isAnnotation3dActive() || isAddLeaderLine3dActive()) && !isMouseOverGui && !isMouseDown) {
         raycaster.setFromCamera(mouse, currentCamera);
         const n3Intersects = raycaster.intersectObjects(meshObjects);
         const n3IsFullyVisible = (obj) => { let o = obj; while (o) { if (!o.visible) return false; o = o.parent; } return true; };
@@ -4059,58 +4023,6 @@ function onMouseDown( event ) {
 
 function onMouseUp( event ) {
     isMouseDown = false;
-}
-
-function _showLeaderDeleteMenu(hit, x, y) {
-    const existing = document.getElementById('_leader-delete-menu');
-    if (existing) existing.remove();
-
-    const menu = document.createElement('div');
-    menu.id = '_leader-delete-menu';
-    menu.className = 'ctx-menu';
-    menu.style.cssText = `position:fixed;left:${x}px;top:${y}px;background:#2a2a2a;color:#fff;border:1px solid #555;border-radius:5px;padding:4px 0;z-index:200000;min-width:160px;box-shadow:0 4px 16px rgba(0,0,0,0.5);font-family:sans-serif;font-size:12px;`;
-
-    const addItem = (label, cb) => {
-        const el = document.createElement('div');
-        el.textContent = label;
-        el.style.cssText = 'padding:6px 12px;cursor:pointer;';
-        el.addEventListener('mouseenter', () => { el.style.background = '#444'; });
-        el.addEventListener('mouseleave', () => { el.style.background = ''; });
-        el.addEventListener('mousedown', (e) => { e.stopPropagation(); });
-        el.addEventListener('click', (e) => { e.stopPropagation(); menu.remove(); cb(); });
-        menu.appendChild(el);
-    };
-
-    addItem('✥ Move anchor point', () => {
-        // If this marker is already selected (orange), reuse its original saved color
-        let savedColor;
-        if (_selectedLeaderHit && _selectedLeaderHit.mesh === hit.mesh) {
-            savedColor = _selectedLeaderHit.savedColor;
-            _selectedLeaderHit = null;
-        } else {
-            savedColor = hit.mesh.material.color.clone();
-            hit.mesh.material.color.set(0xff8800);
-        }
-        _movingLeaderHit = { ...hit, savedColor };
-        _leaderMoveHintDiv.style.display = 'block';
-        document.body.style.cursor = 'crosshair';
-        render();
-    });
-
-    addItem('🗑 Delete leader line', () => {
-        if (hit.type === '2d') {
-            removeAnnotationLeaderLine(hit.ann, hit.idx, render);
-        } else {
-            removeAnnotation3dLeaderLine(hit.ann, hit.idx, render);
-        }
-    });
-
-    document.body.appendChild(menu);
-
-    const close = (e) => {
-        if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('mousedown', close, true); }
-    };
-    setTimeout(() => document.addEventListener('mousedown', close, true), 0);
 }
 
 function onClick( event ) {		
@@ -4282,63 +4194,6 @@ function onClick( event ) {
             commitAddLeaderLine3d(_ll3Visible[0].point, _ll3Visible[0].object, render);
         }
         return;
-    }
-
-    // --- Move leader anchor mode ---
-    if (_movingLeaderHit) {
-        mouseUpPos.x = event.clientX;
-        mouseUpPos.y = event.clientY;
-        if (mouseDownPos.distanceTo(mouseUpPos) > 3) return;
-        raycaster.setFromCamera(mouse, currentCamera);
-        const _mvIntersects = raycaster.intersectObjects(meshObjects);
-        const _mvVisible = (renderer.localClippingEnabled && clipPlanes.length > 0)
-            ? _mvIntersects.filter(h => { let o = h.object; while (o) { if (!o.visible) return false; o = o.parent; } return clipPlanes.some(p => p.distanceToPoint(h.point) >= 0); })
-            : _mvIntersects.filter(h => { let o = h.object; while (o) { if (!o.visible) return false; o = o.parent; } return true; });
-        if (_mvVisible.length > 0) {
-            _movingLeaderHit.mesh.material.color.copy(_movingLeaderHit.savedColor);
-            if (_movingLeaderHit.type === '2d') {
-                moveAnnotationLeaderAnchor(_movingLeaderHit.ann, _movingLeaderHit.idx, _mvVisible[0].point, render);
-            } else {
-                moveAnnotation3dLeaderAnchor(_movingLeaderHit.ann, _movingLeaderHit.idx, _mvVisible[0].point, render);
-            }
-            _movingLeaderHit = null;
-            _leaderMoveHintDiv.style.display = 'none';
-            document.body.style.cursor = '';
-        }
-        return;
-    }
-
-    // --- Annotation marker click: left click highlights marker (selection only, not move mode) ---
-    if (!viewProp.annotationMode && !viewProp.annotation3dMode && !_movingLeaderHit) {
-        mouseUpPos.x = event.clientX;
-        mouseUpPos.y = event.clientY;
-        if (mouseDownPos.distanceTo(mouseUpPos) <= 3) {
-            const _allMarkers = [];
-            getAnnotations().forEach(ann => ann.leaderLines.forEach((ll, idx) => _allMarkers.push({ mesh: ll.marker, ann, idx, type: '2d' })));
-            getAnnotations3d().forEach(ann => ann.leaderLines.forEach((ll, idx) => _allMarkers.push({ mesh: ll.marker, ann, idx, type: '3d' })));
-            raycaster.setFromCamera(mouse, currentCamera);
-            const _markerHits = _allMarkers.length > 0 ? raycaster.intersectObjects(_allMarkers.map(m => m.mesh)) : [];
-            if (_markerHits.length > 0) {
-                const _hit = _allMarkers.find(m => m.mesh === _markerHits[0].object);
-                if (_hit) {
-                    // Deselect previous selection
-                    if (_selectedLeaderHit) {
-                        _selectedLeaderHit.mesh.material.color.copy(_selectedLeaderHit.savedColor);
-                    }
-                    const savedColor = _hit.mesh.material.color.clone();
-                    _hit.mesh.material.color.set(0xff8800);
-                    _selectedLeaderHit = { ..._hit, savedColor };
-                    render();
-                    return;
-                }
-            }
-            // Clicked elsewhere – deselect
-            if (_selectedLeaderHit) {
-                _selectedLeaderHit.mesh.material.color.copy(_selectedLeaderHit.savedColor);
-                _selectedLeaderHit = null;
-                render();
-            }
-        }
     }
 
     // --- Annotation mode – CSS2D ---
@@ -6413,24 +6268,6 @@ function assemblyMoveStepDown() {
             refreshCadDimMenu();
             showAt(menuCadDim, event.clientX, event.clientY);
             return;
-        }
-
-        // Check if right-clicking on a leader-line marker → show leader menu
-        if (!viewProp.annotationMode && !viewProp.annotation3dMode) {
-            const _allMarkersRMB = [];
-            getAnnotations().forEach(ann => ann.leaderLines.forEach((ll, idx) => _allMarkersRMB.push({ mesh: ll.marker, ann, idx, type: '2d' })));
-            getAnnotations3d().forEach(ann => ann.leaderLines.forEach((ll, idx) => _allMarkersRMB.push({ mesh: ll.marker, ann, idx, type: '3d' })));
-            if (_allMarkersRMB.length > 0) {
-                raycaster.setFromCamera(mouse, currentCamera);
-                const _markerHitsRMB = raycaster.intersectObjects(_allMarkersRMB.map(m => m.mesh));
-                if (_markerHitsRMB.length > 0) {
-                    const _hitRMB = _allMarkersRMB.find(m => m.mesh === _markerHitsRMB[0].object);
-                    if (_hitRMB) {
-                        _showLeaderDeleteMenu(_hitRMB, event.clientX, event.clientY);
-                        return;
-                    }
-                }
-            }
         }
 
         // Kontrola, zda se myš od pravého kliknutí příliš pohybovala
