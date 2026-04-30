@@ -298,9 +298,28 @@ function _showAnnotationContextMenu(annotation, x, y, renderFn) {
     if (annotation.leaderLines.length > 1) {
         sep();
         annotation.leaderLines.forEach((ll, idx) => {
-            item(`✕ Remove leader line ${idx + 1}`, () => {
+            const el = document.createElement('div');
+            el.textContent = `✕ Remove leader line ${idx + 1}`;
+            el.style.cssText = 'padding:1px 12px;cursor:pointer;';
+            const origColor = ll.marker.material.color.getHex();
+            el.addEventListener('mouseenter', () => {
+                el.style.background = '#444';
+                ll.marker.material.color.setHex(0xff4400);
+                if (renderFn) renderFn();
+            });
+            el.addEventListener('mouseleave', () => {
+                el.style.background = '';
+                ll.marker.material.color.setHex(origColor);
+                if (renderFn) renderFn();
+            });
+            el.addEventListener('mousedown', (e) => { e.stopPropagation(); });
+            el.addEventListener('click', (e) => {
+                e.stopPropagation();
+                ll.marker.material.color.setHex(origColor);
+                menu.remove();
                 removeAnnotationLeaderLine(annotation, idx, renderFn);
             });
+            menu.appendChild(el);
         });
     } else if (annotation.leaderLines.length === 1) {
         item('✕ Remove leader line', () => {
