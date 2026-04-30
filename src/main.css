@@ -353,6 +353,12 @@ a, button, input, select {
     margin-left: 12px;
 }
 
+/* Active-mode toggle buttons in Tools panel */
+#gui-container .lil-gui .controller.function.mode-active > button {
+    background: #2a7a2a !important;
+    color: #fff !important;
+}
+
 /* GUI panel dimensions – controlled dynamically by JS (applyToolbarPreferences) */
 
 /* Context menu ------------------------------------ */

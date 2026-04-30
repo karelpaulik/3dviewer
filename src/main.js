@@ -207,6 +207,28 @@ function _updateCadDimHintUI(overrideAxis) {
     }
 }
 
+// --- Mode toggle button controllers (Tools panel) ---
+const _modeBtnCtrls = {};
+function _syncModeBtns() {
+    const entries = [
+        ['measure',      'measureMode'],
+        ['angle',        'angleMode'],
+        ['cadDim',       'cadDimMode'],
+        ['cadDim3d',     'cadDim3dMode'],
+        ['annotation',   'annotationMode'],
+        ['annotation3d', 'annotation3dMode'],
+    ];
+    for (const [key, prop] of entries) {
+        const ctrl = _modeBtnCtrls[key];
+        if (!ctrl) continue;
+        if (viewProp[prop]) {
+            ctrl.domElement.classList.add('mode-active');
+        } else {
+            ctrl.domElement.classList.remove('mode-active');
+        }
+    }
+}
+
 // --- CAD Dimension 3D hint overlay (created in init) ---
 let _cadDim3dHintDiv = null;
 function _updateCadDim3dHintUI(overrideAxis) {
@@ -789,6 +811,7 @@ function init() {
                     viewProp.isSelectAllowed = true;
                     render();
                 }
+                _syncModeBtns();
                 cancelAddLeaderLine();
                 cancelAddLeaderLine3d();
                 render();
@@ -1291,9 +1314,10 @@ function addMainGui() {
             ann3dDefaultsFolder.close();
 
         const measureFolder = toolsGui.addFolder('Measurement');
-            measureFolder.add(viewProp, 'measureMode').name('Measure (point-to-point)').onChange(function(value) {
-                setMeasureActive(value);
-                if (value) {
+            _modeBtnCtrls.measure = measureFolder.add({ fn() {
+                viewProp.measureMode = !viewProp.measureMode;
+                setMeasureActive(viewProp.measureMode);
+                if (viewProp.measureMode) {
                     viewProp.isSelectAllowed = false;
                     if (viewProp.angleMode) { viewProp.angleMode = false; setAngleActive(false); }
                     if (viewProp.cadDimMode) { viewProp.cadDimMode = false; setCadDimActive(false); orbitControls.enabled = true; }
@@ -1304,11 +1328,13 @@ function addMainGui() {
                 } else {
                     viewProp.isSelectAllowed = true;
                 }
+                _syncModeBtns();
                 render();
-            }).listen();
-            measureFolder.add(viewProp, 'angleMode').name('Measure angle (4 pts)').onChange(function(value) {
-                setAngleActive(value);
-                if (value) {
+            } }, 'fn').name('Measure (point-to-point)');
+            _modeBtnCtrls.angle = measureFolder.add({ fn() {
+                viewProp.angleMode = !viewProp.angleMode;
+                setAngleActive(viewProp.angleMode);
+                if (viewProp.angleMode) {
                     viewProp.isSelectAllowed = false;
                     if (viewProp.measureMode) { viewProp.measureMode = false; setMeasureActive(false); }
                     if (viewProp.cadDimMode) { viewProp.cadDimMode = false; setCadDimActive(false); orbitControls.enabled = true; }
@@ -1319,11 +1345,13 @@ function addMainGui() {
                 } else {
                     viewProp.isSelectAllowed = true;
                 }
+                _syncModeBtns();
                 render();
-            }).listen();
-            measureFolder.add(viewProp, 'cadDimMode').name('CAD dimension (Flat)').onChange(function(value) {
-                setCadDimActive(value);
-                if (value) {
+            } }, 'fn').name('Measure angle (4 pts)');
+            _modeBtnCtrls.cadDim = measureFolder.add({ fn() {
+                viewProp.cadDimMode = !viewProp.cadDimMode;
+                setCadDimActive(viewProp.cadDimMode);
+                if (viewProp.cadDimMode) {
                     viewProp.isSelectAllowed = false;
                     if (viewProp.measureMode) { viewProp.measureMode = false; setMeasureActive(false); }
                     if (viewProp.angleMode) { viewProp.angleMode = false; setAngleActive(false); }
@@ -1332,15 +1360,17 @@ function addMainGui() {
                     if (viewProp.annotationMode) { viewProp.annotationMode = false; setAnnotationActive(false); }
                     if (viewProp.annotation3dMode) { viewProp.annotation3dMode = false; setAnnotation3dActive(false); }
                 } else {
-                    orbitControls.enabled = true; // re-enable in case we were in phase 2
+                    orbitControls.enabled = true;
                     viewProp.isSelectAllowed = true;
                     _updateCadDimHintUI();
                 }
+                _syncModeBtns();
                 render();
-            }).listen();
-            measureFolder.add(viewProp, 'cadDim3dMode').name('CAD dimension (3D)').onChange(function(value) {
-                setCadDim3dActive(value);
-                if (value) {
+            } }, 'fn').name('CAD dimension (Flat)');
+            _modeBtnCtrls.cadDim3d = measureFolder.add({ fn() {
+                viewProp.cadDim3dMode = !viewProp.cadDim3dMode;
+                setCadDim3dActive(viewProp.cadDim3dMode);
+                if (viewProp.cadDim3dMode) {
                     viewProp.isSelectAllowed = false;
                     if (viewProp.measureMode) { viewProp.measureMode = false; setMeasureActive(false); }
                     if (viewProp.angleMode) { viewProp.angleMode = false; setAngleActive(false); }
@@ -1353,8 +1383,9 @@ function addMainGui() {
                     viewProp.isSelectAllowed = true;
                     _updateCadDim3dHintUI();
                 }
+                _syncModeBtns();
                 render();
-            }).listen();
+            } }, 'fn').name('CAD dimension (3D)');
             measureFolder.add(viewProp, 'detectCircleCenter').name('Detect circle center');
             measureFolder.add(viewProp, 'showMeasurements').name('Show measurements').onChange(function(value) {
                 setMeasurementsVisible(value);
@@ -1368,9 +1399,10 @@ function addMainGui() {
             } }, 'fn').name('Clear measurements');
             measureFolder.close();
         const annotationFolder = toolsGui.addFolder('Annotations');
-            annotationFolder.add(viewProp, 'annotationMode').name('Add annotation (Flat)').onChange(function(value) {
-                setAnnotationActive(value);
-                if (value) {
+            _modeBtnCtrls.annotation = annotationFolder.add({ fn() {
+                viewProp.annotationMode = !viewProp.annotationMode;
+                setAnnotationActive(viewProp.annotationMode);
+                if (viewProp.annotationMode) {
                     viewProp.isSelectAllowed = false;
                     if (viewProp.measureMode) { viewProp.measureMode = false; setMeasureActive(false); }
                     if (viewProp.angleMode) { viewProp.angleMode = false; setAngleActive(false); }
@@ -1381,11 +1413,13 @@ function addMainGui() {
                 } else {
                     viewProp.isSelectAllowed = true;
                 }
+                _syncModeBtns();
                 render();
-            }).listen();
-            annotationFolder.add(viewProp, 'annotation3dMode').name('Add annotation (3D)').onChange(function(value) {
-                setAnnotation3dActive(value);
-                if (value) {
+            } }, 'fn').name('Add annotation (Flat)');
+            _modeBtnCtrls.annotation3d = annotationFolder.add({ fn() {
+                viewProp.annotation3dMode = !viewProp.annotation3dMode;
+                setAnnotation3dActive(viewProp.annotation3dMode);
+                if (viewProp.annotation3dMode) {
                     viewProp.isSelectAllowed = false;
                     if (viewProp.measureMode) { viewProp.measureMode = false; setMeasureActive(false); }
                     if (viewProp.angleMode) { viewProp.angleMode = false; setAngleActive(false); }
@@ -1396,8 +1430,9 @@ function addMainGui() {
                 } else {
                     viewProp.isSelectAllowed = true;
                 }
+                _syncModeBtns();
                 render();
-            }).listen();
+            } }, 'fn').name('Add annotation (3D)');
             annotationFolder.add(viewProp, 'showAnnotations').name('Show annotations').onChange(function(value) {
                 setAnnotationsVisible(value);
                 setAnnotations3dVisible(value);
