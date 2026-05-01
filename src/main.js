@@ -213,7 +213,7 @@ document.body.appendChild(fsBtn);
 
 // Wrapper reference for hit-testing (toolbar + panels + outliner)
 let outlinerPanelEl = null;
-const guiWrapper = { contains(el) { return guiToolbar.contains(el) || guiContainer.contains(el) || (outlinerPanelEl && outlinerPanelEl.contains(el)); } };
+const guiWrapper = { contains(el) { return guiToolbar.contains(el) || guiContainer.contains(el) || (outlinerPanelEl && outlinerPanelEl.contains(el)) || statusBar.contains(el); } };
 
 let guiView = null;
 let guiAssembly = null;
@@ -3898,8 +3898,9 @@ function render() {
     updateModeIndicator();
     //console.log("viewProp.isSelectAllowed: ", viewProp.isSelectAllowed);
     // isMouseOverGui - pokud kurzor nad GUI a současně nad objektem, pak má přednost GUI.
-    const isMouseOverGui = document.elementFromPoint(mouse.x * window.innerWidth / 2 + window.innerWidth / 2, 
-                                                     -mouse.y * window.innerHeight / 2 + window.innerHeight / 2)?.closest('.lil-gui');
+    const _guiHitEl = document.elementFromPoint(mouse.x * window.innerWidth / 2 + window.innerWidth / 2,
+                                                -mouse.y * window.innerHeight / 2 + window.innerHeight / 2);
+    const isMouseOverGui = _guiHitEl && (guiWrapper.contains(_guiHitEl) || _guiHitEl.closest('.lil-gui'));
     
     // Nezvýrazňujeme objekty při dragování (rotaci/posouvání) nebo při transformaci
     if (!isTransformDragging && !isMouseOverGui && !isMouseDown && !isTouchDragging && viewProp.isSelectAllowed && !viewProp.isGroupTransformActive && !isDocOverlayBlockingInput()) {      
@@ -5097,8 +5098,8 @@ function addHelpGui() {
     aboutDialog.id = 'about-dialog';
     aboutDialog.innerHTML =
         '<h2>BEDOBE</h2>'
-        + '<p>3D Studio</p>'
-        + '<p>BEDOBE is a web-based 3D model viewer and assembly workflow editor built with Three.js. It allows you to load GLB models, explore their structure, create step-by-step assembly instructions with smooth animations and much much more.</p>'
+        + '<p>CAD Explorer</p>'
+        + '<p>BEDOBE is a web-based CAD Explorer, assembly workflow editor, document editor built with Three.js. It allows you to load GLB models, explore their structure, create documentation , create step-by-step assembly instructions with smooth animations and much much more.</p>'
         + '<form method="dialog"><button>OK</button></form>';
     aboutDialog.addEventListener('click', e => { if (e.target === aboutDialog) aboutDialog.close(); });
     document.body.appendChild(aboutDialog);
