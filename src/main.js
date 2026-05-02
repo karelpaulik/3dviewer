@@ -104,7 +104,7 @@ document.body.appendChild(guiContainer);
 // Status bar (footer)
 const statusBar = document.createElement('div');
 statusBar.id = 'status-bar';
-statusBar.innerHTML = `<span class="status-left"></span><span class="status-right"><span class="status-brand"><i>BE &amp; DO BETTER</i></span><span class="status-copy">&copy; 2026 Bedobe</span><span class="status-version">v${__APP_VERSION__}</span></span>`;
+statusBar.innerHTML = `<span class="status-left"></span><span class="status-right"><span class="status-brand"><i>BE &amp; DO BETTER</i></span><span>info@bedobe.eu</span><span class="status-copy">&copy; 2026 Bedobe</span><span class="status-version">v${__APP_VERSION__}</span></span>`;
 document.body.appendChild(statusBar);
 
 // Mode + Selection indicator elements (in .status-left)
@@ -5096,11 +5096,13 @@ function addHelpGui() {
         // Create <dialog> element once
     const aboutDialog = document.createElement('dialog');
     aboutDialog.id = 'about-dialog';
-    aboutDialog.innerHTML =
-        '<h2>BEDOBE</h2>'
-        + '<p>CAD Explorer</p>'
-        + '<p>BEDOBE is a web-based CAD Explorer, assembly workflow editor, document editor built with Three.js. It allows you to load GLB models, explore their structure, create documentation , create step-by-step assembly instructions with smooth animations and much much more.</p>'
-        + '<form method="dialog"><button>OK</button></form>';
+    aboutDialog.innerHTML = `
+        <h2>BEDOBE</h2>
+        <p>CAD Explorer</p>
+        <p>BEDOBE is a web-based CAD Explorer, assembly workflow editor, and document editor built with Three.js. It allows you to load GLB models, explore their structure, create documentation, create step-by-step assembly instructions with smooth animations and much much more.</p>
+        <p><a href="mailto:info@bedobe.eu">info@bedobe.eu</a></p>
+        <form method="dialog"><button>OK</button></form>
+    `;
     aboutDialog.addEventListener('click', e => { if (e.target === aboutDialog) aboutDialog.close(); });
     document.body.appendChild(aboutDialog);
 
