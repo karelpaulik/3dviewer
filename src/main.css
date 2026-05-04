@@ -124,7 +124,15 @@ canvas {
 	color: rgba(255,255,255,0.55);
 	user-select: none;
 	gap: 16px;
+	overflow-x: auto;
+	overflow-y: hidden;
+	-webkit-overflow-scrolling: touch;
+	scrollbar-width: thin;
+	scrollbar-color: #444 transparent;
+	white-space: nowrap;
+	flex-wrap: nowrap;
 }
+
 .status-brand {
 	color: rgba(255,255,255,0.65);
 }
