@@ -1307,6 +1307,23 @@ function addMainGui() {
                 applyToolbarPreferences();
             } }, 'fn').name('Set to default');
             toolbarPrefFolder.close();
+        folderProp.add(viewProp, 'showMeasurements').name('Show measurements').onChange(function(value) {
+            setMeasurementsVisible(value);
+            setCadDim3dVisible(value);
+            render();
+        });
+        folderProp.add(viewProp, 'showAnnotations').name('Show annotations').onChange(function(value) {
+            setAnnotationsVisible(value);
+            setAnnotations3dVisible(value);
+            render();
+        });
+        folderProp.add(viewProp, 'showBehindModel').name('Show behind model').onChange(function(value) {
+            setMeasurementDepthTest(!value);
+            setAnnotationDepthTest(!value);
+            setAnnotation3dDepthTest(!value);
+            setCadDim3dDepthTest(!value);
+            render();
+        });
 
     // Sync toggle when fullscreen is exited externally (e.g. F11)
     document.addEventListener('fullscreenchange', function() {
@@ -1319,13 +1336,6 @@ function addMainGui() {
 
     // --- Tools panel (Measurement & Annotations) ---
     const toolsGui = new GUI({ container: guiContainer, title: 'Tools' });
-        toolsGui.add(viewProp, 'showBehindModel').name('Show behind model').onChange(function(value) {
-            setMeasurementDepthTest(!value);
-            setAnnotationDepthTest(!value);
-            setAnnotation3dDepthTest(!value);
-            setCadDim3dDepthTest(!value);
-            render();
-        });
         const _rotOpts = { '0°': 0, '90°': Math.PI / 2, '180°': Math.PI, '270°': 3 * Math.PI / 2 };
         const _orientOpts = { 'Face camera': 'camera', 'XY plane': 'XY', 'XZ plane': 'XZ', 'YZ plane': 'YZ' };
 
@@ -1426,17 +1436,6 @@ function addMainGui() {
                 _syncModeBtns();
                 render();
             } }, 'fn').name('CAD dimension (3D)');
-            measureFolder.add(viewProp, 'detectCircleCenter').name('Detect circle center');
-            measureFolder.add(viewProp, 'showMeasurements').name('Show measurements').onChange(function(value) {
-                setMeasurementsVisible(value);
-                setCadDim3dVisible(value);
-                render();
-            });
-            measureFolder.add({ fn() {
-                if (!confirm('Clear all measurements/dimensions?')) return;
-                clearMeasurements(render);
-                clearCadDim3dMeasurements(render);
-            } }, 'fn').name('Clear measurements');
             measureFolder.close();
         const annotationFolder = toolsGui.addFolder('Annotations');
             _modeBtnCtrls.annotation = annotationFolder.add({ fn() {
@@ -1473,17 +1472,6 @@ function addMainGui() {
                 _syncModeBtns();
                 render();
             } }, 'fn').name('Add annotation (3D)');
-            annotationFolder.add(viewProp, 'showAnnotations').name('Show annotations').onChange(function(value) {
-                setAnnotationsVisible(value);
-                setAnnotations3dVisible(value);
-                render();
-            });
-            annotationFolder.add({ fn() {
-                if (!confirm('Clear all annotations?')) return;
-                clearAnnotations(render);
-                clearAnnotations3d(render);
-            } }, 'fn').name('Clear annotations');
-
             annotationFolder.close();
     registerGuiPanel('Tools', toolsGui);
 
@@ -1527,6 +1515,16 @@ function addMainGui() {
             snapFolder.add(viewProp, 'snapRotationDeg', 1, 90, 1).name('Rotation (°)').onChange(function() { applySnapSettings(); }).listen();
             snapFolder.add(viewProp, 'snapScale', 0.01, 2, 0.01).name('Scale').onChange(function() { applySnapSettings(); }).listen();
             snapFolder.close();
+    editGui.add({ fn() {
+        if (!confirm('Clear all measurements/dimensions?')) return;
+        clearMeasurements(render);
+        clearCadDim3dMeasurements(render);
+    } }, 'fn').name('Clear measurements');
+    editGui.add({ fn() {
+        if (!confirm('Clear all annotations?')) return;
+        clearAnnotations(render);
+        clearAnnotations3d(render);
+    } }, 'fn').name('Clear annotations');
     registerGuiPanel('Edit', editGui);
 }
 
