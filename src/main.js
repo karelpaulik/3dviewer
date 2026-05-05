@@ -149,10 +149,24 @@ statusModeEl.addEventListener('change', function() {
         case 'annotation':   viewProp.annotationMode = true;      setAnnotationActive(true);   viewProp.isSelectAllowed = false; break;
         case 'annotation3d': viewProp.annotation3dMode = true;    setAnnotation3dActive(true); viewProp.isSelectAllowed = false; break;
     }
+    const _circleDetectModes = ['measure', 'angle', 'cadDim', 'cadDim3d'];
+    statusCircleDetectEl.style.display = _circleDetectModes.includes(val) ? '' : 'none';
     _syncModeBtns();
     _modeIndicatorCache = '';
     render();
 });
+// Detect circle center toggle (shown only for measure/angle/cadDim/cadDim3d modes)
+const statusCircleDetectEl = document.createElement('label');
+statusCircleDetectEl.id = 'circle-detect-btn';
+statusCircleDetectEl.className = 'status-circle-detect';
+statusCircleDetectEl.style.display = 'none';
+const statusCircleDetectCb = document.createElement('input');
+statusCircleDetectCb.type = 'checkbox';
+statusCircleDetectCb.addEventListener('change', function() {
+    viewProp.detectCircleCenter = this.checked;
+});
+statusCircleDetectEl.appendChild(statusCircleDetectCb);
+statusCircleDetectEl.appendChild(document.createTextNode('Detect circle center'));
 const statusSepEl = document.createElement('span');
 statusSepEl.className = 'status-sep';
 statusSepEl.textContent = '|';
@@ -210,6 +224,7 @@ fsBtn.addEventListener('click', () => {
     fsBtn.classList.toggle('active', viewProp.fullscreen);
 });
 document.body.appendChild(fsBtn);
+document.body.appendChild(statusCircleDetectEl);
 
 // Wrapper reference for hit-testing (toolbar + panels + outliner)
 let outlinerPanelEl = null;
