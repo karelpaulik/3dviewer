@@ -1434,42 +1434,6 @@ function addMainGui() {
                 render();
             } }, 'fn').name('CAD dimension (3D)');
             measureFolder.close();
-        const annotationFolder = toolsGui.addFolder('Annotations');
-            _modeBtnCtrls.annotation = annotationFolder.add({ fn() {
-                viewProp.annotationMode = !viewProp.annotationMode;
-                setAnnotationActive(viewProp.annotationMode);
-                if (viewProp.annotationMode) {
-                    viewProp.isSelectAllowed = false;
-                    if (viewProp.measureMode) { viewProp.measureMode = false; setMeasureActive(false); }
-                    if (viewProp.angleMode) { viewProp.angleMode = false; setAngleActive(false); }
-                    if (viewProp.cadDimMode) { viewProp.cadDimMode = false; setCadDimActive(false); orbitControls.enabled = true; }
-                    if (viewProp.cadDim3dMode) { viewProp.cadDim3dMode = false; setCadDim3dActive(false); orbitControls.enabled = true; _updateCadDim3dHintUI(); }
-                    if (viewProp.selectDimensionMode) { viewProp.selectDimensionMode = false; setSelectDimActive(false); }
-                    if (viewProp.annotation3dMode) { viewProp.annotation3dMode = false; setAnnotation3dActive(false); }
-                } else {
-                    viewProp.isSelectAllowed = true;
-                }
-                _syncModeBtns();
-                render();
-            } }, 'fn').name('Add annotation (Flat)');
-            _modeBtnCtrls.annotation3d = annotationFolder.add({ fn() {
-                viewProp.annotation3dMode = !viewProp.annotation3dMode;
-                setAnnotation3dActive(viewProp.annotation3dMode);
-                if (viewProp.annotation3dMode) {
-                    viewProp.isSelectAllowed = false;
-                    if (viewProp.measureMode) { viewProp.measureMode = false; setMeasureActive(false); }
-                    if (viewProp.angleMode) { viewProp.angleMode = false; setAngleActive(false); }
-                    if (viewProp.cadDimMode) { viewProp.cadDimMode = false; setCadDimActive(false); orbitControls.enabled = true; }
-                    if (viewProp.cadDim3dMode) { viewProp.cadDim3dMode = false; setCadDim3dActive(false); orbitControls.enabled = true; _updateCadDim3dHintUI(); }
-                    if (viewProp.selectDimensionMode) { viewProp.selectDimensionMode = false; setSelectDimActive(false); }
-                    if (viewProp.annotationMode) { viewProp.annotationMode = false; setAnnotationActive(false); }
-                } else {
-                    viewProp.isSelectAllowed = true;
-                }
-                _syncModeBtns();
-                render();
-            } }, 'fn').name('Add annotation (3D)');
-            annotationFolder.close();
     registerGuiPanel('Tools', toolsGui);
 
     // --- File panel (Export / Import) ---
