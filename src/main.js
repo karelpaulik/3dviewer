@@ -1225,26 +1225,7 @@ function addMainGui() {
         folderProp.add({ fn: fitView }, 'fn').name('Fit View');
         folderProp.add({ fn: showHiddenObjects }, 'fn').name('Show hidden objects');
         folderProp.add({ fn: toggleHiddenObjects }, 'fn').name('Switch hidden objects');
-        let fsCtrl = folderProp.add(viewProp, 'fullscreen').name('Fullscreen').onChange(function(value){
-            if (value) {
-                document.documentElement.requestFullscreen().then(() => {
-                    // Lock Escape so it doesn't exit fullscreen (Chrome/Edge)
-                    if (navigator.keyboard && navigator.keyboard.lock) {
-                        navigator.keyboard.lock(['Escape']).catch(() => {});
-                    }
-                }).catch((err) => {
-                    console.warn('Fullscreen not available: ', err.message);
-                    viewProp.fullscreen = false;
-                    fsCtrl.updateDisplay();
-                });
-            } else {
-                if (navigator.keyboard && navigator.keyboard.unlock) navigator.keyboard.unlock();
-                if (document.fullscreenElement) document.exitFullscreen();
-            }
-        }).listen();
-        folderProp.add(viewProp, 'isSelectAllowed').name('Allow selection').onChange(render).listen();
         folderProp.add(viewProp, 'wireframe').name('Wireframe').onChange(function(value){ toggleWireframeAll(value); }).listen();
-        folderProp.add(viewProp, 'cadSelection', ['CAD', 'Detailed']).name('Selection').listen();
         folderProp.add(viewProp, 'orientedSelectionBox', ['local', 'world']).name('Selection box').onChange(function(){ render(); }).listen();
         folderProp.addColor(viewProp, 'backgroundColor').name('Background').onChange(function(value){ scene.background = new THREE.Color(value); render(); });
         folderProp.add(viewProp, 'perspCam').name('Persp. camera').onChange(function(value){setCamera(); render(); });
@@ -1332,7 +1313,6 @@ function addMainGui() {
         viewProp.fullscreen = !!document.fullscreenElement;
         if (!document.fullscreenElement && navigator.keyboard && navigator.keyboard.unlock) navigator.keyboard.unlock();
         fsBtn.classList.toggle('active', viewProp.fullscreen);
-        if (fsCtrl && fsCtrl.updateDisplay) fsCtrl.updateDisplay();
     });
 
     registerGuiPanel('View', folderProp);
@@ -1346,22 +1326,6 @@ function addMainGui() {
             setCadDim3dDepthTest(!value);
             render();
         });
-        toolsGui.add(viewProp, 'selectDimensionMode').name('Edit labels').onChange(function(value) {
-            setSelectDimActive(value);
-            if (value) {
-                viewProp.isSelectAllowed = false;
-                if (viewProp.measureMode) { viewProp.measureMode = false; setMeasureActive(false); }
-                if (viewProp.angleMode) { viewProp.angleMode = false; setAngleActive(false); }
-                if (viewProp.cadDimMode) { viewProp.cadDimMode = false; setCadDimActive(false); orbitControls.enabled = true; }
-                if (viewProp.cadDim3dMode) { viewProp.cadDim3dMode = false; setCadDim3dActive(false); orbitControls.enabled = true; _updateCadDim3dHintUI(); }
-                if (viewProp.annotationMode) { viewProp.annotationMode = false; setAnnotationActive(false); }
-                if (viewProp.annotation3dMode) { viewProp.annotation3dMode = false; setAnnotation3dActive(false); }
-            } else {
-                viewProp.isSelectAllowed = true;
-            }
-            render();
-        }).listen();
-
         const _rotOpts = { '0°': 0, '90°': Math.PI / 2, '180°': Math.PI, '270°': 3 * Math.PI / 2 };
         const _orientOpts = { 'Face camera': 'camera', 'XY plane': 'XY', 'XZ plane': 'XZ', 'YZ plane': 'YZ' };
 
