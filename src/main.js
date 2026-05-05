@@ -248,7 +248,7 @@ outlinerBtn.addEventListener('click', () => {
 guiToolbar.insertBefore(outlinerBtn, guiToolbar.firstChild);
 
 // Pre-create all toolbar buttons in desired order: Selected, File, Edit, View, Tools, Assembly, Docs, Help
-['Selected', 'File', 'Edit', 'View', 'Tools', 'Assembly', 'Docs', 'Help'].forEach(name => {
+['Selected', 'File', 'Edit', 'View', 'Assembly', 'Docs', 'Help'].forEach(name => {
     const btn = document.createElement('button');
     btn.className = 'gui-toolbar-btn';
     btn.textContent = name;
@@ -1357,84 +1357,6 @@ function addMainGui() {
     });
 
     registerGuiPanel('View', folderProp);
-
-    // --- Tools panel (Measurement & Annotations) ---
-    const toolsGui = new GUI({ container: guiContainer, title: 'Tools' });
-        const measureFolder = toolsGui.addFolder('Measurement');
-            _modeBtnCtrls.measure = measureFolder.add({ fn() {
-                viewProp.measureMode = !viewProp.measureMode;
-                setMeasureActive(viewProp.measureMode);
-                if (viewProp.measureMode) {
-                    viewProp.isSelectAllowed = false;
-                    if (viewProp.angleMode) { viewProp.angleMode = false; setAngleActive(false); }
-                    if (viewProp.cadDimMode) { viewProp.cadDimMode = false; setCadDimActive(false); orbitControls.enabled = true; }
-                    if (viewProp.cadDim3dMode) { viewProp.cadDim3dMode = false; setCadDim3dActive(false); orbitControls.enabled = true; _updateCadDim3dHintUI(); }
-                    if (viewProp.selectDimensionMode) { viewProp.selectDimensionMode = false; setSelectDimActive(false); }
-                    if (viewProp.annotationMode) { viewProp.annotationMode = false; setAnnotationActive(false); }
-                    if (viewProp.annotation3dMode) { viewProp.annotation3dMode = false; setAnnotation3dActive(false); }
-                } else {
-                    viewProp.isSelectAllowed = true;
-                }
-                _syncModeBtns();
-                render();
-            } }, 'fn').name('Measure (point-to-point)');
-            _modeBtnCtrls.angle = measureFolder.add({ fn() {
-                viewProp.angleMode = !viewProp.angleMode;
-                setAngleActive(viewProp.angleMode);
-                if (viewProp.angleMode) {
-                    viewProp.isSelectAllowed = false;
-                    if (viewProp.measureMode) { viewProp.measureMode = false; setMeasureActive(false); }
-                    if (viewProp.cadDimMode) { viewProp.cadDimMode = false; setCadDimActive(false); orbitControls.enabled = true; }
-                    if (viewProp.cadDim3dMode) { viewProp.cadDim3dMode = false; setCadDim3dActive(false); orbitControls.enabled = true; _updateCadDim3dHintUI(); }
-                    if (viewProp.selectDimensionMode) { viewProp.selectDimensionMode = false; setSelectDimActive(false); }
-                    if (viewProp.annotationMode) { viewProp.annotationMode = false; setAnnotationActive(false); }
-                    if (viewProp.annotation3dMode) { viewProp.annotation3dMode = false; setAnnotation3dActive(false); }
-                } else {
-                    viewProp.isSelectAllowed = true;
-                }
-                _syncModeBtns();
-                render();
-            } }, 'fn').name('Measure angle (4 pts)');
-            _modeBtnCtrls.cadDim = measureFolder.add({ fn() {
-                viewProp.cadDimMode = !viewProp.cadDimMode;
-                setCadDimActive(viewProp.cadDimMode);
-                if (viewProp.cadDimMode) {
-                    viewProp.isSelectAllowed = false;
-                    if (viewProp.measureMode) { viewProp.measureMode = false; setMeasureActive(false); }
-                    if (viewProp.angleMode) { viewProp.angleMode = false; setAngleActive(false); }
-                    if (viewProp.cadDim3dMode) { viewProp.cadDim3dMode = false; setCadDim3dActive(false); orbitControls.enabled = true; _updateCadDim3dHintUI(); }
-                    if (viewProp.selectDimensionMode) { viewProp.selectDimensionMode = false; setSelectDimActive(false); }
-                    if (viewProp.annotationMode) { viewProp.annotationMode = false; setAnnotationActive(false); }
-                    if (viewProp.annotation3dMode) { viewProp.annotation3dMode = false; setAnnotation3dActive(false); }
-                } else {
-                    orbitControls.enabled = true;
-                    viewProp.isSelectAllowed = true;
-                    _updateCadDimHintUI();
-                }
-                _syncModeBtns();
-                render();
-            } }, 'fn').name('CAD dimension (Flat)');
-            _modeBtnCtrls.cadDim3d = measureFolder.add({ fn() {
-                viewProp.cadDim3dMode = !viewProp.cadDim3dMode;
-                setCadDim3dActive(viewProp.cadDim3dMode);
-                if (viewProp.cadDim3dMode) {
-                    viewProp.isSelectAllowed = false;
-                    if (viewProp.measureMode) { viewProp.measureMode = false; setMeasureActive(false); }
-                    if (viewProp.angleMode) { viewProp.angleMode = false; setAngleActive(false); }
-                    if (viewProp.cadDimMode) { viewProp.cadDimMode = false; setCadDimActive(false); orbitControls.enabled = true; _updateCadDimHintUI(); }
-                    if (viewProp.selectDimensionMode) { viewProp.selectDimensionMode = false; setSelectDimActive(false); }
-                    if (viewProp.annotationMode) { viewProp.annotationMode = false; setAnnotationActive(false); }
-                    if (viewProp.annotation3dMode) { viewProp.annotation3dMode = false; setAnnotation3dActive(false); }
-                } else {
-                    orbitControls.enabled = true;
-                    viewProp.isSelectAllowed = true;
-                    _updateCadDim3dHintUI();
-                }
-                _syncModeBtns();
-                render();
-            } }, 'fn').name('CAD dimension (3D)');
-            measureFolder.close();
-    registerGuiPanel('Tools', toolsGui);
 
     // --- File panel (Export / Import) ---
     const fileGui = new GUI({ container: guiContainer, title: 'File' });
