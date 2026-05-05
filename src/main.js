@@ -1229,6 +1229,23 @@ function addMainGui() {
         folderProp.add(viewProp, 'orientedSelectionBox', ['local', 'world']).name('Selection box').onChange(function(){ render(); }).listen();
         folderProp.addColor(viewProp, 'backgroundColor').name('Background').onChange(function(value){ scene.background = new THREE.Color(value); render(); });
         folderProp.add(viewProp, 'perspCam').name('Persp. camera').onChange(function(value){setCamera(); render(); });
+        folderProp.add(viewProp, 'showMeasurements').name('Show measurements').onChange(function(value) {
+            setMeasurementsVisible(value);
+            setCadDim3dVisible(value);
+            render();
+        });
+        folderProp.add(viewProp, 'showAnnotations').name('Show annotations').onChange(function(value) {
+            setAnnotationsVisible(value);
+            setAnnotations3dVisible(value);
+            render();
+        });
+        folderProp.add(viewProp, 'showBehindModel').name('Show behind model').onChange(function(value) {
+            setMeasurementDepthTest(!value);
+            setAnnotationDepthTest(!value);
+            setAnnotation3dDepthTest(!value);
+            setCadDim3dDepthTest(!value);
+            render();
+        });
         const sectionFolder = folderProp.addFolder("Section view");   
             sectionFolder.add(viewProp, 'section').name('Section').onChange(function(value){renderer.localClippingEnabled = value; viewProp.sectionGizmo = value; activateSectionGizmo(value); updateSectionCrossLines(); render(); });
             sectionFolder.add(viewProp, 'sectionCrossLines').name('Cross Section Lines').onChange(function(value){updateSectionCrossLines(); render(); });
@@ -1331,23 +1348,6 @@ function addMainGui() {
             ann3dDefaultsFolder.addColor(_ann3dDef, 'textColor').name('Text color');
             ann3dDefaultsFolder.addColor(_ann3dDef, 'bgColor').name('Background');
             ann3dDefaultsFolder.close();
-        folderProp.add(viewProp, 'showMeasurements').name('Show measurements').onChange(function(value) {
-            setMeasurementsVisible(value);
-            setCadDim3dVisible(value);
-            render();
-        });
-        folderProp.add(viewProp, 'showAnnotations').name('Show annotations').onChange(function(value) {
-            setAnnotationsVisible(value);
-            setAnnotations3dVisible(value);
-            render();
-        });
-        folderProp.add(viewProp, 'showBehindModel').name('Show behind model').onChange(function(value) {
-            setMeasurementDepthTest(!value);
-            setAnnotationDepthTest(!value);
-            setAnnotation3dDepthTest(!value);
-            setCadDim3dDepthTest(!value);
-            render();
-        });
 
     // Sync toggle when fullscreen is exited externally (e.g. F11)
     document.addEventListener('fullscreenchange', function() {
@@ -1379,6 +1379,16 @@ function addMainGui() {
     const editGui = new GUI({ container: guiContainer, title: 'Edit' });
     editGui.add({ fn: resetWholeModel }, 'fn').name('Reset whole model');
     editGui.add({ fn: cleanupModel }, 'fn').name('Cleanup (flatten unnamed nodes)');
+    editGui.add({ fn() {
+        if (!confirm('Clear all measurements/dimensions?')) return;
+        clearMeasurements(render);
+        clearCadDim3dMeasurements(render);
+    } }, 'fn').name('Clear measurements');
+    editGui.add({ fn() {
+        if (!confirm('Clear all annotations?')) return;
+        clearAnnotations(render);
+        clearAnnotations3d(render);
+    } }, 'fn').name('Clear annotations');
     editGui.add(viewProp, 'transformSpace').name('Transform: World space').onChange(function(value) {
         transformControls.setSpace( value ? 'world' : 'local' );
     }).listen();
@@ -1398,16 +1408,6 @@ function addMainGui() {
             snapFolder.add(viewProp, 'snapRotationDeg', 1, 90, 1).name('Rotation (°)').onChange(function() { applySnapSettings(); }).listen();
             snapFolder.add(viewProp, 'snapScale', 0.01, 2, 0.01).name('Scale').onChange(function() { applySnapSettings(); }).listen();
             snapFolder.close();
-    editGui.add({ fn() {
-        if (!confirm('Clear all measurements/dimensions?')) return;
-        clearMeasurements(render);
-        clearCadDim3dMeasurements(render);
-    } }, 'fn').name('Clear measurements');
-    editGui.add({ fn() {
-        if (!confirm('Clear all annotations?')) return;
-        clearAnnotations(render);
-        clearAnnotations3d(render);
-    } }, 'fn').name('Clear annotations');
     registerGuiPanel('Edit', editGui);
 }
 
