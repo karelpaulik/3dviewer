@@ -1307,6 +1307,30 @@ function addMainGui() {
                 applyToolbarPreferences();
             } }, 'fn').name('Set to default');
             toolbarPrefFolder.close();
+        const _rotOpts = { '0°': 0, '90°': Math.PI / 2, '180°': Math.PI, '270°': 3 * Math.PI / 2 };
+        const _orientOpts = { 'Face camera': 'camera', 'XY plane': 'XY', 'XZ plane': 'XZ', 'YZ plane': 'YZ' };
+        const cadDim3dDefaultsFolder = folderProp.addFolder('3D dimension defaults');
+            const _cadDim3dDef = getCadDim3dDefaults();
+            cadDim3dDefaultsFolder.add(_cadDim3dDef, 'labelScale', 0.1, 10, 0.1).name('Size');
+            cadDim3dDefaultsFolder.add(_cadDim3dDef, 'rotationCamera', _rotOpts).name('Rotation (Face camera)');
+            cadDim3dDefaultsFolder.add(_cadDim3dDef, 'rotationXY',     _rotOpts).name('Rotation (XY plane)');
+            cadDim3dDefaultsFolder.add(_cadDim3dDef, 'rotationXZ',     _rotOpts).name('Rotation (XZ plane)');
+            cadDim3dDefaultsFolder.add(_cadDim3dDef, 'rotationYZ',     _rotOpts).name('Rotation (YZ plane)');
+            cadDim3dDefaultsFolder.add(_cadDim3dDef, 'orientationMode', _orientOpts).name('Orientation');
+            cadDim3dDefaultsFolder.addColor(_cadDim3dDef, 'textColor').name('Text color');
+            cadDim3dDefaultsFolder.addColor(_cadDim3dDef, 'bgColor').name('Background');
+            cadDim3dDefaultsFolder.close();
+        const ann3dDefaultsFolder = folderProp.addFolder('3D annotation defaults');
+            const _ann3dDef = getAnnotation3dDefaults();
+            ann3dDefaultsFolder.add(_ann3dDef, 'labelScale', 0.1, 10, 0.1).name('Size');
+            ann3dDefaultsFolder.add(_ann3dDef, 'rotationCamera', _rotOpts).name('Rotation (Face camera)');
+            ann3dDefaultsFolder.add(_ann3dDef, 'rotationXY',     _rotOpts).name('Rotation (XY plane)');
+            ann3dDefaultsFolder.add(_ann3dDef, 'rotationXZ',     _rotOpts).name('Rotation (XZ plane)');
+            ann3dDefaultsFolder.add(_ann3dDef, 'rotationYZ',     _rotOpts).name('Rotation (YZ plane)');
+            ann3dDefaultsFolder.add(_ann3dDef, 'orientationMode', _orientOpts).name('Orientation');
+            ann3dDefaultsFolder.addColor(_ann3dDef, 'textColor').name('Text color');
+            ann3dDefaultsFolder.addColor(_ann3dDef, 'bgColor').name('Background');
+            ann3dDefaultsFolder.close();
         folderProp.add(viewProp, 'showMeasurements').name('Show measurements').onChange(function(value) {
             setMeasurementsVisible(value);
             setCadDim3dVisible(value);
@@ -1336,33 +1360,6 @@ function addMainGui() {
 
     // --- Tools panel (Measurement & Annotations) ---
     const toolsGui = new GUI({ container: guiContainer, title: 'Tools' });
-        const _rotOpts = { '0°': 0, '90°': Math.PI / 2, '180°': Math.PI, '270°': 3 * Math.PI / 2 };
-        const _orientOpts = { 'Face camera': 'camera', 'XY plane': 'XY', 'XZ plane': 'XZ', 'YZ plane': 'YZ' };
-
-        const cadDim3dDefaultsFolder = toolsGui.addFolder('3D dimension defaults');
-            const _cadDim3dDef = getCadDim3dDefaults();
-            cadDim3dDefaultsFolder.add(_cadDim3dDef, 'labelScale', 0.1, 10, 0.1).name('Size');
-            cadDim3dDefaultsFolder.add(_cadDim3dDef, 'rotationCamera', _rotOpts).name('Rotation (Face camera)');
-            cadDim3dDefaultsFolder.add(_cadDim3dDef, 'rotationXY',     _rotOpts).name('Rotation (XY plane)');
-            cadDim3dDefaultsFolder.add(_cadDim3dDef, 'rotationXZ',     _rotOpts).name('Rotation (XZ plane)');
-            cadDim3dDefaultsFolder.add(_cadDim3dDef, 'rotationYZ',     _rotOpts).name('Rotation (YZ plane)');
-            cadDim3dDefaultsFolder.add(_cadDim3dDef, 'orientationMode', _orientOpts).name('Orientation');
-            cadDim3dDefaultsFolder.addColor(_cadDim3dDef, 'textColor').name('Text color');
-            cadDim3dDefaultsFolder.addColor(_cadDim3dDef, 'bgColor').name('Background');
-            cadDim3dDefaultsFolder.close();
-
-        const ann3dDefaultsFolder = toolsGui.addFolder('3D annotation defaults');
-            const _ann3dDef = getAnnotation3dDefaults();
-            ann3dDefaultsFolder.add(_ann3dDef, 'labelScale', 0.1, 10, 0.1).name('Size');
-            ann3dDefaultsFolder.add(_ann3dDef, 'rotationCamera', _rotOpts).name('Rotation (Face camera)');
-            ann3dDefaultsFolder.add(_ann3dDef, 'rotationXY',     _rotOpts).name('Rotation (XY plane)');
-            ann3dDefaultsFolder.add(_ann3dDef, 'rotationXZ',     _rotOpts).name('Rotation (XZ plane)');
-            ann3dDefaultsFolder.add(_ann3dDef, 'rotationYZ',     _rotOpts).name('Rotation (YZ plane)');
-            ann3dDefaultsFolder.add(_ann3dDef, 'orientationMode', _orientOpts).name('Orientation');
-            ann3dDefaultsFolder.addColor(_ann3dDef, 'textColor').name('Text color');
-            ann3dDefaultsFolder.addColor(_ann3dDef, 'bgColor').name('Background');
-            ann3dDefaultsFolder.close();
-
         const measureFolder = toolsGui.addFolder('Measurement');
             _modeBtnCtrls.measure = measureFolder.add({ fn() {
                 viewProp.measureMode = !viewProp.measureMode;
