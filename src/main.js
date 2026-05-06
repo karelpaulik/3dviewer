@@ -1382,14 +1382,14 @@ function addMainGui() {
     } }, 'fn').name('Import demo GLB');
     fileGui.add({ fn: importGlbFile }, 'fn').name('Import GLB…');
     fileGui.add({ fn: exportAllModels }, 'fn').name('Export all to GLB');
-    fileGui.add({ fn: exportAllModelsDraco }, 'fn').name('Export all to GLB (Draco)');
+    fileGui.add({ fn: exportAllModelsDraco }, 'fn').name('Export all to GLB (Compression)');
     fileGui.add({ fn: exportSelectedObject }, 'fn').name('Export selected to GLB');
     const exportHtmlFolder = fileGui.addFolder('Export self-contained HTML');
     exportHtmlFolder.close();
     exportHtmlFolder.add({ fn() { exportToHTML(loadedModels, assemblyGui, viewProp, assemblyWriteToUserData, assemblyClearUserData); } }, 'fn').name('Export to HTML');
-    exportHtmlFolder.add({ fn() { exportToHTMLDraco(loadedModels, assemblyGui, viewProp, assemblyWriteToUserData, assemblyClearUserData); } }, 'fn').name('Export to HTML (Draco)');
+    exportHtmlFolder.add({ fn() { exportToHTMLDraco(loadedModels, assemblyGui, viewProp, assemblyWriteToUserData, assemblyClearUserData); } }, 'fn').name('Export to HTML (Compression)');
     exportHtmlFolder.add({ fn() { exportToHTMLObfuscated(loadedModels, assemblyGui, viewProp, assemblyWriteToUserData, assemblyClearUserData); } }, 'fn').name('Export to HTML obfuscated');
-    exportHtmlFolder.add({ fn() { exportToHTMLObfuscatedDraco(loadedModels, assemblyGui, viewProp, assemblyWriteToUserData, assemblyClearUserData); } }, 'fn').name('Export to HTML obfuscated (Draco)');
+    exportHtmlFolder.add({ fn() { exportToHTMLObfuscatedDraco(loadedModels, assemblyGui, viewProp, assemblyWriteToUserData, assemblyClearUserData); } }, 'fn').name('Export to HTML obfuscated (Compression)');
     registerGuiPanel('File', fileGui);
 
     // --- Edit panel ---
