@@ -203,6 +203,8 @@ _statusLeft.appendChild(statusSepEl);
 _statusLeft.appendChild(statusSelLabelEl);
 _statusLeft.appendChild(statusSelEl);
 
+let sectionCtrl = null; // Reference to the GUI 'Section' controller for syncing
+
 // Fullscreen toggle button (bottom-left, next to ViewHelper gizmo)
 const fsBtn = document.createElement('button');
 fsBtn.id = 'fs-btn';
@@ -224,6 +226,24 @@ fsBtn.addEventListener('click', () => {
     fsBtn.classList.toggle('active', viewProp.fullscreen);
 });
 document.body.appendChild(fsBtn);
+
+// Section toggle button (bottom-left, next to fs-btn)
+const sectionBtn = document.createElement('button');
+sectionBtn.id = 'section-btn';
+sectionBtn.title = 'Section View';
+sectionBtn.textContent = '✂';
+sectionBtn.addEventListener('click', () => {
+    viewProp.section = !viewProp.section;
+    renderer.localClippingEnabled = viewProp.section;
+    viewProp.sectionGizmo = viewProp.section;
+    activateSectionGizmo(viewProp.section);
+    updateSectionCrossLines();
+    render();
+    sectionBtn.classList.toggle('active', viewProp.section);
+    if (sectionCtrl) sectionCtrl.updateDisplay();
+});
+document.body.appendChild(sectionBtn);
+
 document.body.appendChild(statusCircleDetectEl);
 
 // Wrapper reference for hit-testing (toolbar + panels + outliner)
@@ -367,8 +387,8 @@ const viewProp = {
     sectionGizmo: false, // Toggle section gizmo on/off
     sectionSnapTranslation: 1, // Snap step for section gizmo translation
     autoUpdateSectionLines: false, // Automaticky aktualizovat průřezové čáry při změnách scény
-    sectionCrossLines: false, // Průřezové čáry vázané na section view clip planes
-    solidSection: false, // Solid (capped) section cut
+    sectionCrossLines: true, // Průřezové čáry vázané na section view clip planes
+    solidSection: true, // Solid (capped) section cut
     capColor: '#00ffff', // Color of the solid section cap faces
     transformSpace: true,  // true = world, false = local
     snapEnabled: true,     // true = snap vždy aktivní, false = snap jen při Shift
@@ -1247,7 +1267,7 @@ function addMainGui() {
             render();
         });
         const sectionFolder = folderProp.addFolder("Section view");   
-            sectionFolder.add(viewProp, 'section').name('Section').onChange(function(value){renderer.localClippingEnabled = value; viewProp.sectionGizmo = value; activateSectionGizmo(value); updateSectionCrossLines(); render(); });
+            sectionCtrl = sectionFolder.add(viewProp, 'section').name('Section').onChange(function(value){renderer.localClippingEnabled = value; viewProp.sectionGizmo = value; activateSectionGizmo(value); updateSectionCrossLines(); render(); sectionBtn.classList.toggle('active', value); }).listen();
             sectionFolder.add(viewProp, 'sectionCrossLines').name('Cross Section Lines').onChange(function(value){updateSectionCrossLines(); render(); });
             sectionFolder.addColor(viewProp, 'crossSectionColor').name('Cross Lines Color').onChange(function(value){ if(viewProp.sectionCrossLines) { updateSectionCrossLines(); render(); } });
             sectionFolder.add(viewProp, 'solidSection').name('Solid Section').onChange(function(value) {
