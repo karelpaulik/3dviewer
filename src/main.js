@@ -908,11 +908,13 @@ function init() {
                     render();
                 }
                 _syncModeBtns();
+                statusCircleDetectEl.style.display = 'none';
                 cancelAddLeaderLine();
                 cancelAddLeaderLine3d();
                 render();
                 if (viewProp.detectCircleCenter) {
                     viewProp.detectCircleCenter = false;
+                    statusCircleDetectCb.checked = false;
                     render();
                 }
                 deselectObject();
