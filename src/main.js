@@ -3386,6 +3386,7 @@ function removeModel(part) {
 
         removeMeasurementsForOwner(part);
         removeAnnotationsForOwner(part);
+        removeAnnotations3dForOwner(part);
         removeCadDim3dMeasurementsForOwner(part);
 
         // Odstraníme part i všechny jeho potomky z meshObjects a hiddenObjects.
@@ -3450,7 +3451,15 @@ function removeModel(part) {
         if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) {
             updateCrossSectionLines();
         }
-        
+
+        // Aktualizace section cross lines (vázaných na clip planes)
+        if (viewProp.sectionCrossLines) {
+            updateSectionCrossLines();
+        }
+
+        // Aktualizace solid section (odebraný objekt nesmí figurovat ve stencilu)
+        if (viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render);
+
         rebuildTree(loadedModels);
         render();
     } catch(err) {
