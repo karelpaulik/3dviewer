@@ -4715,10 +4715,11 @@ function exportAllModels() {
         console.warn('Žádné modely k exportu.');
         return;
     }
-    const defaultName = 'export_all.glb';
-    const filename = window.prompt('Název souboru pro export:', defaultName);
-    if (filename === null) return; // uživatel stiskl Cancel
-    const finalName = filename.trim() || defaultName;
+    const importedName = loadedModels[0]?.userData?.fileName;
+    const baseName = importedName ? importedName.replace(/\.[^.]+$/, '') : 'export_all';
+    const input = window.prompt('File name (.glb will be added):', baseName);
+    if (input === null) return; // uživatel stiskl Cancel
+    const finalName = (input.trim() || baseName).replace(/\.glb$/i, '') + '.glb';
 
     // Write assembly workflow into userData before cloning
     assemblyWriteToUserData();
@@ -4772,10 +4773,11 @@ async function exportAllModelsDraco() {
         console.warn('Žádné modely k exportu.');
         return;
     }
-    const defaultName = 'export_all_draco.glb';
-    const filename = window.prompt('Název souboru pro export (Draco):', defaultName);
-    if (filename === null) return;
-    const finalName = filename.trim() || defaultName;
+    const importedName = loadedModels[0]?.userData?.fileName;
+    const baseName = importedName ? importedName.replace(/\.[^.]+$/, '') : 'export_all_draco';
+    const input = window.prompt('File name (.glb will be added):', baseName);
+    if (input === null) return;
+    const finalName = (input.trim() || baseName).replace(/\.glb$/i, '') + '.glb';
 
     // Zobrazíme overlay
     let overlay = document.getElementById('dracoOverlay');
