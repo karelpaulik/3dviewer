@@ -5422,6 +5422,7 @@ function animateAssemblyStep(transformations, forward, onComplete) {
         }
         applyTransforms(transformations, startStates, 1);
         if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) updateCrossSectionLines();
+        if (viewProp.sectionCrossLines) updateSectionCrossLines();
         render();
         assemblyAnimationFinalize = null;
     };
@@ -5430,6 +5431,7 @@ function animateAssemblyStep(transformations, forward, onComplete) {
     if (duration <= 0) {
         applyTransforms(transformations, startStates, 1);
         if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) updateCrossSectionLines();
+        if (viewProp.sectionCrossLines) updateSectionCrossLines();
         render();
         assemblyAnimationFinalize = null;
         if (onComplete) onComplete();
@@ -5464,11 +5466,13 @@ function animateAssemblyStep(transformations, forward, onComplete) {
             onUpdate() {
                 applyTransforms(transformations, startStates, proxy.t);
                 if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) updateCrossSectionLines();
+                if (viewProp.sectionCrossLines) updateSectionCrossLines();
                 render();
             },
             onComplete() {
                 assemblyAnimation = null;
                 assemblyAnimationFinalize = null;
+                if (viewProp.sectionCrossLines) { updateSectionCrossLines(); render(); }
                 if (onComplete) onComplete();
             },
         });
@@ -5479,6 +5483,7 @@ function animateAssemblyStep(transformations, forward, onComplete) {
             onComplete() {
                 assemblyAnimation = null;
                 assemblyAnimationFinalize = null;
+                if (viewProp.sectionCrossLines) { updateSectionCrossLines(); render(); }
                 if (onComplete) onComplete();
             },
         });
@@ -5493,6 +5498,7 @@ function animateAssemblyStep(transformations, forward, onComplete) {
                     if (s.hasRot)   tr.objectRef.quaternion.slerpQuaternions(s.quat, s.targetQuat, proxy.t);
                     if (s.hasScale) tr.objectRef.scale.lerpVectors(s.scale, s.targetScale, proxy.t);
                     if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) updateCrossSectionLines();
+                    if (viewProp.sectionCrossLines) updateSectionCrossLines();
                     render();
                 },
             }, i * staggerSec);
@@ -5520,8 +5526,8 @@ function assemblyResetToFinish() {
 
     assemblyState.currentStepIndex = assemblyData.steps.length - 1;
     updateAssemblyGuiInfo();
-    render();
     if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) updateCrossSectionLines();
+    if (viewProp.sectionCrossLines) updateSectionCrossLines();
     render();
 }
 
@@ -5545,8 +5551,8 @@ function assemblyResetToStart() {
 
     assemblyState.currentStepIndex = -1;
     updateAssemblyGuiInfo();
-    render();
     if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) updateCrossSectionLines();
+    if (viewProp.sectionCrossLines) updateSectionCrossLines();
     render();
 }
 
