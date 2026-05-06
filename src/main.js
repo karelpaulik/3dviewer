@@ -1279,11 +1279,6 @@ function addMainGui() {
             crossSectionFolder.close();
             
             sectionFolder.close();
-        const oritationFolder = folderProp.addFolder("View orientation");
-            oritationFolder.add({ fn() { viewFromPoint(1000, 0, 0); } }, 'fn').name('View from X');
-            oritationFolder.add({ fn() { viewFromPoint(0, 1000, 0); } }, 'fn').name('View from Y');
-            oritationFolder.add({ fn() { viewFromPoint(0, 0, 1000); } }, 'fn').name('View from Z');
-            oritationFolder.close();
         const helpersFolder = folderProp.addFolder("Helpers");
             helpersFolder.add(viewProp, 'showAxesHelper').name('axes').onChange(function() { updateAxesHelper(); }).listen();
             helpersFolder.add(viewProp, 'axesHelperSize', 1, 2000, 1).name('axes size').onChange(function() { updateAxesHelper(); }).listen();
