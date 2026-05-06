@@ -949,6 +949,37 @@ a, button, input, select {
 .doc-editor-content .ProseMirror[contenteditable="false"] {
     cursor: default;
 }
+.doc-editor-content .ProseMirror a {
+    color: #1a6fc4;
+    text-decoration: underline;
+    cursor: pointer;
+    position: relative;
+}
+.doc-editor-content .ProseMirror a:hover {
+    color: #1254a0;
+    text-decoration: underline;
+}
+.doc-editor-content .ProseMirror a[href]:hover::after {
+    content: attr(href);
+    position: absolute;
+    left: 0;
+    top: calc(100% + 4px);
+    background: #222;
+    color: #fff;
+    font-size: 11px;
+    font-style: normal;
+    font-weight: normal;
+    text-decoration: none;
+    white-space: nowrap;
+    max-width: 320px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 3px 7px;
+    border-radius: 4px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+    pointer-events: none;
+    z-index: 9999;
+}
 
 /* Scrollbar for editor */
 .doc-editor-content::-webkit-scrollbar { width: 8px; }

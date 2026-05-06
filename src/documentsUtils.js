@@ -297,7 +297,7 @@ function _createEditor(el, content, readOnly) {
     const editor = new Editor({
         element: el,
         extensions: [
-            StarterKit,
+            StarterKit.configure({ link: { openOnClick: false } }),
             TextStyle,
             Color,
             FontSize,
@@ -312,6 +312,20 @@ function _createEditor(el, content, readOnly) {
         content,
         editable: !readOnly,
         editorProps: {
+            handleClick(view, pos, event) {
+                if ((event.ctrlKey || event.metaKey) && !event.shiftKey) {
+                    const { schema, doc } = view.state;
+                    const linkMark = schema.marks.link;
+                    const resolved = doc.resolve(pos);
+                    const marks = resolved.marks();
+                    const mark = marks.find(m => m.type === linkMark);
+                    if (mark) {
+                        window.open(mark.attrs.href, '_blank', 'noopener,noreferrer');
+                        return true;
+                    }
+                }
+                return false;
+            },
             handlePaste(view, event) {
                 const items = Array.from(event.clipboardData?.items || []);
                 const imageItem = items.find(item => item.type.startsWith('image/'));
@@ -458,6 +472,7 @@ function _updateToolbarState() {
         else if (action === 'alignLeft') active = _editor.isActive({ textAlign: 'left' });
         else if (action === 'alignCenter') active = _editor.isActive({ textAlign: 'center' });
         else if (action === 'alignRight') active = _editor.isActive({ textAlign: 'right' });
+        else if (action === 'link') active = _editor.isActive('link');
         btn.classList.toggle('active', active);
     });
 
@@ -499,6 +514,7 @@ function _handleToolbarClick(action) {
         case 'undo':        _editor.chain().focus().undo().run(); break;
         case 'redo':        _editor.chain().focus().redo().run(); break;
         case 'image':           _insertImageFromFile(); break;
+        case 'link':            _insertLinkDialog(); break;
         case 'tableInsert':     _insertTableDialog(); break;
         case 'tableAddRowAfter':  _editor.chain().focus().addRowAfter().run(); break;
         case 'tableAddColAfter':  _editor.chain().focus().addColumnAfter().run(); break;
@@ -509,6 +525,40 @@ function _handleToolbarClick(action) {
         case 'tableSplitCell':    _editor.chain().focus().splitCell().run(); break;
     }
     _updateToolbarState();
+}
+
+function _insertLinkDialog() {
+    if (!_editor) return;
+    const isLink = _editor.isActive('link');
+    if (isLink) _editor.chain().focus().extendMarkRange('link').run();
+    const currentHref = _editor.getAttributes('link').href || '';
+    const href = window.prompt('URL odkazu (prázdné = odebrat):', currentHref);
+    if (href === null) return;
+    if (!href.trim()) { _editor.chain().focus().unsetLink().run(); return; }
+    const { from, to } = _editor.state.selection;
+    // Po vložení odkazu odstraníme mark ze stored marks, aby nový text link nezdědil
+    const escapeLink = ({ tr, state, dispatch }) => {
+        if (dispatch) tr.removeStoredMark(state.schema.marks.link);
+        return true;
+    };
+    if (from === to) {
+        // Žádný výběr – vloží URL jako text odkazu
+        const mark = _editor.schema.marks.link.create({ href: href.trim() });
+        _editor.chain().focus().command(({ tr, dispatch }) => {
+            if (dispatch) tr.replaceWith(from, to, _editor.schema.text(href.trim(), [mark]));
+            return true;
+        }).command(escapeLink).run();
+    } else if (isLink) {
+        // Editace existujícího odkazu – pouze URL, text zachováme
+        const mark = _editor.schema.marks.link.create({ href: href.trim() });
+        _editor.chain().focus().command(({ tr, dispatch }) => {
+            if (dispatch) tr.replaceWith(from, to, _editor.schema.text(_editor.state.doc.textBetween(from, to), [mark]));
+            return true;
+        }).command(escapeLink).run();
+    } else {
+        // Výběr textu – aplikuje odkaz na stávající text
+        _editor.chain().focus().setLink({ href: href.trim() }).command(escapeLink).run();
+    }
 }
 
 function _insertTableDialog() {
@@ -1018,6 +1068,7 @@ function _buildEditorOverlay() {
         { action: 'alignRight',   label: '▭▭⬛', title: 'Align right' },
         { sep: true },
         { action: 'image',          label: '🖼️',  title: 'Insert image' },
+        { action: 'link',           label: '🔗',  title: 'Insert / edit link' },
         { sep: true },
         { action: 'tableInsert',      label: '⊞',   title: 'Insert table (e.g. 3x4)' },
         { action: 'tableAddRowAfter', label: '+row', title: 'Add row below' },
