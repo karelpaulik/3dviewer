@@ -1344,25 +1344,25 @@ function addMainGui() {
             const _orientOpts = { 'Face camera': 'camera', 'XY plane': 'XY', 'XZ plane': 'XZ', 'YZ plane': 'YZ' };
             const cadDim3dDefaultsFolder = preferencesFolder.addFolder('3D dimension defaults');
                 const _cadDim3dDef = getCadDim3dDefaults();
-                cadDim3dDefaultsFolder.add(_cadDim3dDef, 'labelScale', 0.1, 10, 0.1).name('Size');
-                cadDim3dDefaultsFolder.add(_cadDim3dDef, 'rotationCamera', _rotOpts).name('Rotation (Face camera)');
-                cadDim3dDefaultsFolder.add(_cadDim3dDef, 'rotationXY',     _rotOpts).name('Rotation (XY plane)');
-                cadDim3dDefaultsFolder.add(_cadDim3dDef, 'rotationXZ',     _rotOpts).name('Rotation (XZ plane)');
-                cadDim3dDefaultsFolder.add(_cadDim3dDef, 'rotationYZ',     _rotOpts).name('Rotation (YZ plane)');
-                cadDim3dDefaultsFolder.add(_cadDim3dDef, 'orientationMode', _orientOpts).name('Orientation');
-                cadDim3dDefaultsFolder.addColor(_cadDim3dDef, 'textColor').name('Text color');
-                cadDim3dDefaultsFolder.addColor(_cadDim3dDef, 'bgColor').name('Background');
+                cadDim3dDefaultsFolder.add(_cadDim3dDef, 'labelScale', 0.1, 10, 0.1).name('Size').listen();
+                cadDim3dDefaultsFolder.add(_cadDim3dDef, 'rotationCamera', _rotOpts).name('Rotation (Face camera)').listen();
+                cadDim3dDefaultsFolder.add(_cadDim3dDef, 'rotationXY',     _rotOpts).name('Rotation (XY plane)').listen();
+                cadDim3dDefaultsFolder.add(_cadDim3dDef, 'rotationXZ',     _rotOpts).name('Rotation (XZ plane)').listen();
+                cadDim3dDefaultsFolder.add(_cadDim3dDef, 'rotationYZ',     _rotOpts).name('Rotation (YZ plane)').listen();
+                cadDim3dDefaultsFolder.add(_cadDim3dDef, 'orientationMode', _orientOpts).name('Orientation').listen();
+                cadDim3dDefaultsFolder.addColor(_cadDim3dDef, 'textColor').name('Text color').listen();
+                cadDim3dDefaultsFolder.addColor(_cadDim3dDef, 'bgColor').name('Background').listen();
                 cadDim3dDefaultsFolder.close();
             const ann3dDefaultsFolder = preferencesFolder.addFolder('3D annotation defaults');
                 const _ann3dDef = getAnnotation3dDefaults();
-                ann3dDefaultsFolder.add(_ann3dDef, 'labelScale', 0.1, 10, 0.1).name('Size');
-                ann3dDefaultsFolder.add(_ann3dDef, 'rotationCamera', _rotOpts).name('Rotation (Face camera)');
-                ann3dDefaultsFolder.add(_ann3dDef, 'rotationXY',     _rotOpts).name('Rotation (XY plane)');
-                ann3dDefaultsFolder.add(_ann3dDef, 'rotationXZ',     _rotOpts).name('Rotation (XZ plane)');
-                ann3dDefaultsFolder.add(_ann3dDef, 'rotationYZ',     _rotOpts).name('Rotation (YZ plane)');
-                ann3dDefaultsFolder.add(_ann3dDef, 'orientationMode', _orientOpts).name('Orientation');
-                ann3dDefaultsFolder.addColor(_ann3dDef, 'textColor').name('Text color');
-                ann3dDefaultsFolder.addColor(_ann3dDef, 'bgColor').name('Background');
+                ann3dDefaultsFolder.add(_ann3dDef, 'labelScale', 0.1, 10, 0.1).name('Size').listen();
+                ann3dDefaultsFolder.add(_ann3dDef, 'rotationCamera', _rotOpts).name('Rotation (Face camera)').listen();
+                ann3dDefaultsFolder.add(_ann3dDef, 'rotationXY',     _rotOpts).name('Rotation (XY plane)').listen();
+                ann3dDefaultsFolder.add(_ann3dDef, 'rotationXZ',     _rotOpts).name('Rotation (XZ plane)').listen();
+                ann3dDefaultsFolder.add(_ann3dDef, 'rotationYZ',     _rotOpts).name('Rotation (YZ plane)').listen();
+                ann3dDefaultsFolder.add(_ann3dDef, 'orientationMode', _orientOpts).name('Orientation').listen();
+                ann3dDefaultsFolder.addColor(_ann3dDef, 'textColor').name('Text color').listen();
+                ann3dDefaultsFolder.addColor(_ann3dDef, 'bgColor').name('Background').listen();
                 ann3dDefaultsFolder.close();
             preferencesFolder.close();
 
@@ -3241,6 +3241,9 @@ function loadGlbModel(model, name, scale, colored) {
             
             // Import documents stored in userData (if any)
             importDocumentsFromGltfScene(gltf.scene);
+
+            // Import 3D dimension defaults, 3D annotation defaults, section settings
+            importSettingsFromGltfScene(gltf.scene);
             
             // Reconstruct measurements stored in userData
             reconstructMeasurements(gltf.scene, render);
@@ -4496,6 +4499,65 @@ function importGlbFile() {
     input.click();
 }
 
+// ===== Settings Import from GLB ===============================================================
+
+// Apply 3D dimension defaults, 3D annotation defaults, and section settings
+// stored in a node's userData during a previous GLB export.
+// GLTFLoader wraps the exported group as a child of gltf.scene, so we traverse.
+function importSettingsFromGltfScene(gltfScene) {
+    let cadDim3dDef = null;
+    let ann3dDef = null;
+    let sectionSett = null;
+
+    gltfScene.traverse(node => {
+        if (!cadDim3dDef && node.userData.cadDim3dDefaults) {
+            cadDim3dDef = node.userData.cadDim3dDefaults;
+            delete node.userData.cadDim3dDefaults;
+        }
+        if (!ann3dDef && node.userData.annotation3dDefaults) {
+            ann3dDef = node.userData.annotation3dDefaults;
+            delete node.userData.annotation3dDefaults;
+        }
+        if (!sectionSett && node.userData.sectionSettings) {
+            sectionSett = node.userData.sectionSettings;
+            delete node.userData.sectionSettings;
+        }
+    });
+
+    if (cadDim3dDef) {
+        Object.assign(getCadDim3dDefaults(), cadDim3dDef);
+    }
+
+    if (ann3dDef) {
+        Object.assign(getAnnotation3dDefaults(), ann3dDef);
+    }
+
+    if (sectionSett) {
+        const s = sectionSett;
+        const scalarKeys = ['px', 'py', 'pz', 'sectionCrossLines', 'crossSectionColor', 'solidSection', 'capColor', 'showSectionMesh'];
+        scalarKeys.forEach(k => { if (s[k] !== undefined) viewProp[k] = s[k]; });
+
+        // Apply clip plane positions
+        clipPlanes[0].constant = viewProp.px;
+        clipPlanes[1].constant = viewProp.py;
+        clipPlanes[2].constant = viewProp.pz;
+
+        // Apply section on/off
+        if (s.section !== undefined) {
+            viewProp.section = s.section;
+            renderer.localClippingEnabled = s.section;
+            if (s.section) {
+                viewProp.sectionGizmo = true;
+                activateSectionGizmo(true);
+            }
+        }
+
+        if (viewProp.sectionCrossLines) updateSectionCrossLines();
+        if (viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render);
+        if (viewProp.showSectionMesh) toggleSectionMeshAll();
+    }
+}
+
 // ===== Assembly Workflow Export/Import Helpers =================================================
 
 // Write assemblyData.steps into each objectRef's userData.assemblyTransformations
@@ -4664,6 +4726,21 @@ function exportAllModels() {
     // Embed documents into export
     group.userData.documents = getDocumentsStore().map(d => ({ ...d }));
 
+    // Embed 3D dimension defaults, 3D annotation defaults, section settings
+    group.userData.cadDim3dDefaults = { ...getCadDim3dDefaults() };
+    group.userData.annotation3dDefaults = { ...getAnnotation3dDefaults() };
+    group.userData.sectionSettings = {
+        section:           viewProp.section,
+        px:                viewProp.px,
+        py:                viewProp.py,
+        pz:                viewProp.pz,
+        sectionCrossLines: viewProp.sectionCrossLines,
+        crossSectionColor: viewProp.crossSectionColor,
+        solidSection:      viewProp.solidSection,
+        capColor:          viewProp.capColor,
+        showSectionMesh:   viewProp.showSectionMesh,
+    };
+
     // Clean up originals — clones already carry the assembly data
     assemblyClearUserData();
 
@@ -4715,6 +4792,21 @@ async function exportAllModelsDraco() {
 
     // Embed documents into export
     group.userData.documents = getDocumentsStore().map(d => ({ ...d }));
+
+    // Embed 3D dimension defaults, 3D annotation defaults, section settings
+    group.userData.cadDim3dDefaults = { ...getCadDim3dDefaults() };
+    group.userData.annotation3dDefaults = { ...getAnnotation3dDefaults() };
+    group.userData.sectionSettings = {
+        section:           viewProp.section,
+        px:                viewProp.px,
+        py:                viewProp.py,
+        pz:                viewProp.pz,
+        sectionCrossLines: viewProp.sectionCrossLines,
+        crossSectionColor: viewProp.crossSectionColor,
+        solidSection:      viewProp.solidSection,
+        capColor:          viewProp.capColor,
+        showSectionMesh:   viewProp.showSectionMesh,
+    };
 
     assemblyClearUserData();
 
@@ -4809,6 +4901,21 @@ function exportSelectedObject() {
 
     const exporter = new GLTFExporter();
     const clone = lastSelectedObject.clone(true);
+
+    // Embed 3D dimension defaults, 3D annotation defaults, section settings
+    clone.userData.cadDim3dDefaults = { ...getCadDim3dDefaults() };
+    clone.userData.annotation3dDefaults = { ...getAnnotation3dDefaults() };
+    clone.userData.sectionSettings = {
+        section:           viewProp.section,
+        px:                viewProp.px,
+        py:                viewProp.py,
+        pz:                viewProp.pz,
+        sectionCrossLines: viewProp.sectionCrossLines,
+        crossSectionColor: viewProp.crossSectionColor,
+        solidSection:      viewProp.solidSection,
+        capColor:          viewProp.capColor,
+        showSectionMesh:   viewProp.showSectionMesh,
+    };
 
     // Clean up originals — clone already carries the assembly data
     assemblyClearUserData();
