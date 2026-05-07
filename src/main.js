@@ -23,7 +23,7 @@ import { initAnnotations, isAnnotationActive, setAnnotationActive, addAnnotation
 import { initAnnotations3d, isAnnotation3dActive, setAnnotation3dActive, addAnnotation3dPoint, getAnnotation3dPendingPoint, updateAnnotation3dPreview, updateAnnotation3dMarkerScales, updateAnnotation3dOrientations, setAnnotations3dVisible, clearAnnotations3d, stripAnnotation3dVisuals, reconstructAnnotations3d, setAnnotation3dDepthTest, removeAnnotations3dForOwner, isAddLeaderLine3dActive, cancelAddLeaderLine3d, commitAddLeaderLine3d, getAnnotation3dDefaults, deleteAnnotation3dByRef, setConvertTo2dFn, reconstructAnnotation3dFromRec } from './annotation3dUtils.js';
 import { initCadDim3d, isCadDim3dActive, getCadDim3dStep, getCadDim3dAxis, setCadDim3dActive, addCadDim3dPoint, updateCadDim3dPreview, updateCadDim3dHoverPreview, cycleCadDim3dAxis, placeCadDim3d, clearCadDim3dMeasurements, removeCadDim3dMeasurementsForOwner, setCadDim3dVisible, setCadDim3dDepthTest, updateCadDim3dOrientations, updateCadDim3dMarkerScales, reconstructCadDim3d, stripCadDim3dVisuals, setCadDim3dLabelMode, setCadDim3dDragMode, setCadDim3dOrientationMode, setCadDim3dRotate, setCadDim3dLabelScaleDialog, setCadDim3dMirrored, setCadDim3dTextColor, setCadDim3dBgColor, getCadDim3dDefaults, convertCadDimTo3d } from './cadDim3dUtils.js';
 import { computeSolidSection, clearSolidSection } from './solidSectionUtils.js';
-import { initDocumentsGui, importDocumentsFromGltfScene, getDocumentsStore, flushDocumentEdits, isDocOverlayBlockingInput } from './documentsUtils.js';
+import { initDocumentsGui, importDocumentsFromGltfScene, getDocumentsStore, flushDocumentEdits, isDocOverlayBlockingInput, setDocLabelOptions } from './documentsUtils.js';
 
 // Proměnné globálního rozsahu----------------------------------------------------------------------------------------
 let container, stats;
@@ -1366,6 +1366,11 @@ function addMainGui() {
                 ann3dDefaultsFolder.addColor(_ann3dDef, 'textColor').name('Text color').listen();
                 ann3dDefaultsFolder.addColor(_ann3dDef, 'bgColor').name('Background').listen();
                 ann3dDefaultsFolder.close();
+            const docNameFolder = preferencesFolder.addFolder('Document name');
+                const _docLabelOpts = { showLastEditDate: true, showImportDate: false };
+                docNameFolder.add(_docLabelOpts, 'showLastEditDate').name('Show last edit date').onChange(v => setDocLabelOptions({ showLastEditDate: v }));
+                docNameFolder.add(_docLabelOpts, 'showImportDate').name('Show import date').onChange(v => setDocLabelOptions({ showImportDate: v }));
+                docNameFolder.close();
             preferencesFolder.close();
 
     // Sync toggle when fullscreen is exited externally (e.g. F11)

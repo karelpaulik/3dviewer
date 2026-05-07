@@ -119,8 +119,16 @@ let _currentDocId = null;  // id of document currently open in editor
 let _isEditMode = false;   // true = editor mode, false = read-only mode
 let _bgOpacity = 1.0;      // editor content background opacity (0 = transparent, 1 = opaque)
 let _nav3d = false;        // true = pointer-events off on overlay → 3D navigation active
+let _showLastEditDate = true;  // show (le. ...) in document button label
+let _showImportDate = false;    // show (imp. ...) in document button label
 
 // ── Public API ────────────────────────────────────────────────────────────────
+
+export function setDocLabelOptions({ showLastEditDate, showImportDate }) {
+    if (showLastEditDate !== undefined) _showLastEditDate = showLastEditDate;
+    if (showImportDate !== undefined) _showImportDate = showImportDate;
+    refreshDocumentsGui();
+}
 
 export function getDocumentsStore() {
     return documentsStore;
@@ -179,10 +187,22 @@ export function refreshDocumentsGui() {
 
     // "New document" button
     _guiRef.add({ fn: _newDocument }, 'fn').name('+ New document');
+    _guiRef.add({ fn: _importDocJson }, 'fn').name('⬆ Import JSON');
 
     // One button per document
     documentsStore.forEach(doc => {
-        _guiRef.add({ fn: () => openDocumentViewer(doc.id) }, 'fn').name(doc.title || '(no title)');
+        let docLabel = doc.title || '(no title)';
+        if (_showLastEditDate && doc.lastEditAt) {
+            const le = new Date(doc.lastEditAt);
+            const lts = `${le.getDate().toString().padStart(2, '0')}.${(le.getMonth() + 1).toString().padStart(2, '0')}. ${le.getHours().toString().padStart(2, '0')}:${le.getMinutes().toString().padStart(2, '0')}`;
+            docLabel += ` (le. ${lts})`;
+        }
+        if (_showImportDate && doc.importedAt) {
+            const d = new Date(doc.importedAt);
+            const ts = `${d.getDate().toString().padStart(2, '0')}.${(d.getMonth() + 1).toString().padStart(2, '0')}. ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+            docLabel += ` (imp. ${ts})`;
+        }
+        _guiRef.add({ fn: () => openDocumentViewer(doc.id) }, 'fn').name(docLabel);
     });
 }
 
@@ -349,7 +369,7 @@ function _createEditor(el, content, readOnly) {
     return editor;
 }
 
-function _saveCurrentDocument() {
+function _saveCurrentDocument(updateLastEdit = false) {
     if (!_editor || !_currentDocId) return;
     const doc = documentsStore.find(d => d.id === _currentDocId);
     if (!doc) return;
@@ -362,6 +382,7 @@ function _saveCurrentDocument() {
     doc.paraSpacing = (_overlayEl.querySelector('.doc-para-spacing-select') || {}).value || _DEFAULT_PARA_SPACING;
     doc.docWidth = (_overlayEl.querySelector('.doc-width-select') || {}).value || _DEFAULT_DOC_WIDTH;
     doc.tableBorder = (_overlayEl.querySelector('.doc-table-border-select') || {}).value || _DEFAULT_TABLE_BORDER;
+    if (updateLastEdit) doc.lastEditAt = new Date().toISOString();
 
     refreshDocumentsGui();
 }
@@ -449,6 +470,56 @@ function _deleteCurrentDocument() {
     documentsStore = documentsStore.filter(d => d.id !== _currentDocId);
     _closeOverlay();
     refreshDocumentsGui();
+}
+
+// ── JSON export / import ──────────────────────────────────────────────────────
+
+function _exportCurrentDocJson() {
+    if (!_currentDocId) return;
+    if (_isEditMode && _editor) _saveCurrentDocument();
+    const doc = documentsStore.find(d => d.id === _currentDocId);
+    if (!doc) return;
+    const json = JSON.stringify(doc, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const safeName = (doc.title || 'document').replace(/[^a-z0-9_\-]/gi, '_').toLowerCase();
+    a.href = url;
+    a.download = safeName + '.docs.json';
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+function _importDocJson() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json,application/json';
+    input.onchange = () => {
+        const file = input.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const doc = JSON.parse(e.target.result);
+                if (!doc || typeof doc !== 'object' || !doc.content) {
+                    alert('Neplatný soubor dokumentu.');
+                    return;
+                }
+                const importedDoc = {
+                    ...doc,
+                    id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+                    originalId: doc.id,
+                    importedAt: new Date().toISOString(),
+                };
+                documentsStore.push(importedDoc);
+                refreshDocumentsGui();
+            } catch (err) {
+                alert('Chyba při načítání souboru: ' + err.message);
+            }
+        };
+        reader.readAsText(file);
+    };
+    input.click();
 }
 
 // ── Toolbar state ─────────────────────────────────────────────────────────────
@@ -827,7 +898,7 @@ function _buildEditorOverlay() {
     btnSave.className = 'doc-btn doc-btn-save';
     btnSave.textContent = '💾 Save';
     btnSave.addEventListener('click', () => {
-        _saveCurrentDocument();
+        _saveCurrentDocument(true);
         // Switch to view mode
         const titleInput = overlay.querySelector('.doc-title-input');
         titleInput.readOnly = true;
@@ -843,6 +914,12 @@ function _buildEditorOverlay() {
     btnPrint.textContent = '🖨 Print';
     btnPrint.title = 'Print document';
     btnPrint.addEventListener('click', _printDocument);
+
+    const btnExportJson = document.createElement('button');
+    btnExportJson.className = 'doc-btn doc-btn-export-json';
+    btnExportJson.textContent = '⬇ Export';
+    btnExportJson.title = 'Export document as JSON';
+    btnExportJson.addEventListener('click', _exportCurrentDocJson);
 
     const btnDelete = document.createElement('button');
     btnDelete.className = 'doc-btn doc-btn-delete';
@@ -1039,6 +1116,7 @@ function _buildEditorOverlay() {
     header.appendChild(btnEdit);
     header.appendChild(btnSave);
     header.appendChild(btnPrint);
+    header.appendChild(btnExportJson);
     header.appendChild(btnDelete);
     header.appendChild(btnClose);
 
