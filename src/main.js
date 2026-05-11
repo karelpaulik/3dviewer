@@ -3217,50 +3217,108 @@ function loadGlbModel(model, name, scale, colored) {
             });
             // Rotace byla odstraněna - lze nyní nastavit pomocí GUI tlačítek
 
-            scene.add(gltf.scene);
-            gltf.scene.userData.fileName = name || fileNameWithoutExtension(model);
-            loadedModels.push(gltf.scene); // Uložení reference na načtený model
-            console.log(gltf.scene);
+            // ---- Detect app export root wrapper ----
+            // When this app exports, it wraps all models in a single unnamed Group tagged
+            // with _appExportRoot=true. GLTFLoader then wraps that again in gltf.scene,
+            // producing 2 extra anonymous layers per export/import cycle.
+            // If we detect the tag, we unwrap and add each original model directly.
+            const wrapperChild = gltf.scene.children[0];
+            const isAppExport = wrapperChild && wrapperChild.userData._appExportRoot === true;
 
-            const meshes = [];
-            gltf.scene.traverse(function (child) {
-                // Uložení počátečních hodnot v userData pro všechny objekty (Group, Object3D, Mesh)
-                child.userData.initPosition = child.position.clone();
-                child.userData.initRotation = child.rotation.clone();
-                child.userData.initScale = child.scale.clone();
-                
-                if (child.isMesh) {
-                    if (child.material) {
-                        child.material = child.material.clone();// Naklonujeme materiál, aby byl unikátní. Jinak jeden typ materiálu pro více častí stejné barvy.
-                        child.material.clippingPlanes = clipPlanes;
-                        child.material.clipIntersection = true;
-                        child.material.side = THREE.DoubleSide;
-                        child.material.polygonOffset = true;
-                        child.material.polygonOffsetFactor = 1;    
-                    }                    
-                    meshes.push(child);
-                    meshObjects.push(child);
+            if (isAppExport) {
+                // Move app-level userData (documents, settings, …) up to gltf.scene
+                // so the import utility functions (which traverse from gltf.scene) find them.
+                Object.assign(gltf.scene.userData, wrapperChild.userData);
+                delete gltf.scene.userData._appExportRoot;
+
+                // Collect the actual models before detaching them from the wrapper
+                const extractedModels = [...wrapperChild.children];
+
+                // Import app-level data (traverses gltf.scene, finds data in userData)
+                importAssemblyFromGltfScene(gltf.scene);
+                importDocumentsFromGltfScene(gltf.scene);
+                importSettingsFromGltfScene(gltf.scene);
+
+                const fallbackName = name || fileNameWithoutExtension(model);
+                for (const mdl of extractedModels) {
+                    // Preserve the original model name; fall back to file name only when absent
+                    if (!mdl.userData.fileName) mdl.userData.fileName = fallbackName;
+
+                    scene.add(mdl);
+                    loadedModels.push(mdl);
+
+                    mdl.traverse(function (child) {
+                        child.userData.initPosition = child.position.clone();
+                        child.userData.initRotation = child.rotation.clone();
+                        child.userData.initScale = child.scale.clone();
+
+                        if (child.isMesh && child.material) {
+                            child.material = child.material.clone();
+                            child.material.clippingPlanes = clipPlanes;
+                            child.material.clipIntersection = true;
+                            child.material.side = THREE.DoubleSide;
+                            child.material.polygonOffset = true;
+                            child.material.polygonOffsetFactor = 1;
+                            meshObjects.push(child);
+                        }
+                    });
+
+                    reconstructMeasurements(mdl, render);
+                    reconstructAnnotations(mdl, render);
+                    reconstructAnnotations3d(mdl, render);
+                    reconstructCadDim3d(mdl);
                 }
-            });
-            
-            // Import assembly workflow stored in userData (if any)
-            importAssemblyFromGltfScene(gltf.scene);
-            
-            // Import documents stored in userData (if any)
-            importDocumentsFromGltfScene(gltf.scene);
 
-            // Import 3D dimension defaults, 3D annotation defaults, section settings
-            importSettingsFromGltfScene(gltf.scene);
-            
-            // Reconstruct measurements stored in userData
-            reconstructMeasurements(gltf.scene, render);
-            reconstructAnnotations(gltf.scene, render);
-            reconstructAnnotations3d(gltf.scene, render);
-            reconstructCadDim3d(gltf.scene);
-            
-            rebuildTree(loadedModels);
-            render();
-            resolve(gltf.scene);
+                rebuildTree(loadedModels);
+                render();
+                resolve(extractedModels[0] || gltf.scene);
+            } else {
+                // ---- Standard loading path (external GLB or legacy file) ----
+                scene.add(gltf.scene);
+                gltf.scene.userData.fileName = name || fileNameWithoutExtension(model);
+                loadedModels.push(gltf.scene); // Uložení reference na načtený model
+                console.log(gltf.scene);
+
+                const meshes = [];
+                gltf.scene.traverse(function (child) {
+                    // Uložení počátečních hodnot v userData pro všechny objekty (Group, Object3D, Mesh)
+                    child.userData.initPosition = child.position.clone();
+                    child.userData.initRotation = child.rotation.clone();
+                    child.userData.initScale = child.scale.clone();
+                    
+                    if (child.isMesh) {
+                        if (child.material) {
+                            child.material = child.material.clone();// Naklonujeme materiál, aby byl unikátní. Jinak jeden typ materiálu pro více častí stejné barvy.
+                            child.material.clippingPlanes = clipPlanes;
+                            child.material.clipIntersection = true;
+                            child.material.side = THREE.DoubleSide;
+                            child.material.polygonOffset = true;
+                            child.material.polygonOffsetFactor = 1;    
+                        }                    
+                        meshes.push(child);
+                        meshObjects.push(child);
+                    }
+                });
+                
+                // Import assembly workflow stored in userData (if any)
+                importAssemblyFromGltfScene(gltf.scene);
+                
+                // Import documents stored in userData (if any)
+                importDocumentsFromGltfScene(gltf.scene);
+
+                // Import 3D dimension defaults, 3D annotation defaults, section settings
+                importSettingsFromGltfScene(gltf.scene);
+                
+                // Reconstruct measurements stored in userData
+                reconstructMeasurements(gltf.scene, render);
+                reconstructAnnotations(gltf.scene, render);
+                reconstructAnnotations3d(gltf.scene, render);
+                reconstructCadDim3d(gltf.scene);
+                
+                rebuildTree(loadedModels);
+                render();
+                resolve(gltf.scene);
+            }
         }, undefined, function (error) {
             reject(error); // Doporučuji přidat i error handling
         });
@@ -4736,9 +4794,16 @@ function exportAllModels() {
 
     const exporter = new GLTFExporter();
     const group = new THREE.Group();
-    loadedModels.forEach(model => {
-        group.add(model.clone(true));
+    const exportBaseName = finalName.replace(/\.glb$/i, '');
+    loadedModels.forEach((model, i) => {
+        const clone = model.clone(true);
+        clone.name = loadedModels.length > 1 ? `${exportBaseName}_${i + 1}` : exportBaseName;
+        clone.userData.fileName = finalName;
+        group.add(clone);
     });
+
+    // Mark as app export root so import can unwrap the extra wrapper layer
+    group.userData._appExportRoot = true;
 
     // Embed documents into export
     group.userData.documents = getDocumentsStore().map(d => ({ ...d }));
@@ -4804,9 +4869,16 @@ async function exportAllModelsDraco() {
 
     const exporter = new GLTFExporter();
     const group = new THREE.Group();
-    loadedModels.forEach(model => {
-        group.add(model.clone(true));
+    const exportBaseName = finalName.replace(/\.glb$/i, '');
+    loadedModels.forEach((model, i) => {
+        const clone = model.clone(true);
+        clone.name = loadedModels.length > 1 ? `${exportBaseName}_${i + 1}` : exportBaseName;
+        clone.userData.fileName = finalName;
+        group.add(clone);
     });
+
+    // Mark as app export root so import can unwrap the extra wrapper layer
+    group.userData._appExportRoot = true;
 
     // Embed documents into export
     group.userData.documents = getDocumentsStore().map(d => ({ ...d }));
