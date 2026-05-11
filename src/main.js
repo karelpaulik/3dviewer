@@ -24,6 +24,7 @@ import { initAnnotations3d, isAnnotation3dActive, setAnnotation3dActive, addAnno
 import { initCadDim3d, isCadDim3dActive, getCadDim3dStep, getCadDim3dAxis, setCadDim3dActive, addCadDim3dPoint, updateCadDim3dPreview, updateCadDim3dHoverPreview, cycleCadDim3dAxis, placeCadDim3d, clearCadDim3dMeasurements, removeCadDim3dMeasurementsForOwner, setCadDim3dVisible, setCadDim3dDepthTest, updateCadDim3dOrientations, updateCadDim3dMarkerScales, reconstructCadDim3d, stripCadDim3dVisuals, setCadDim3dLabelMode, setCadDim3dDragMode, setCadDim3dOrientationMode, setCadDim3dRotate, setCadDim3dLabelScaleDialog, setCadDim3dMirrored, setCadDim3dTextColor, setCadDim3dBgColor, getCadDim3dDefaults, convertCadDimTo3d } from './cadDim3dUtils.js';
 import { computeSolidSection, clearSolidSection } from './solidSectionUtils.js';
 import { initDocumentsGui, importDocumentsFromGltfScene, getDocumentsStore, flushDocumentEdits, isDocOverlayBlockingInput, setDocLabelOptions } from './documentsUtils.js';
+import { initAttachmentsGui, importAttachmentsFromGltfScene, getAttachmentsStore } from './attachmentsUtils.js';
 
 // Proměnné globálního rozsahu----------------------------------------------------------------------------------------
 let container, stats;
@@ -268,7 +269,7 @@ outlinerBtn.addEventListener('click', () => {
 guiToolbar.insertBefore(outlinerBtn, guiToolbar.firstChild);
 
 // Pre-create all toolbar buttons in desired order: Selected, File, Edit, View, Tools, Assembly, Docs, Help
-['Selected', 'File', 'Edit', 'View', 'Assembly', 'Docs', 'Help'].forEach(name => {
+['Selected', 'File', 'Edit', 'View', 'Assembly', 'Docs', 'Files', 'Help'].forEach(name => {
     const btn = document.createElement('button');
     btn.className = 'gui-toolbar-btn';
     btn.textContent = name;
@@ -1079,6 +1080,7 @@ function init() {
     addMainGui();
     addAssemblyGui();
     addDocumentsGui();
+    addAttachmentsGui();
     addHelpGui();
     applyToolbarPreferences(); // Apply initial toolbar CSS from viewProp defaults
     initMeasurement(scene);
@@ -3237,6 +3239,7 @@ function loadGlbModel(model, name, scale, colored) {
                 // Import app-level data (traverses gltf.scene, finds data in userData)
                 importAssemblyFromGltfScene(gltf.scene);
                 importDocumentsFromGltfScene(gltf.scene);
+                importAttachmentsFromGltfScene(gltf.scene);
                 importSettingsFromGltfScene(gltf.scene);
 
                 const fallbackName = name || fileNameWithoutExtension(model);
@@ -3305,6 +3308,9 @@ function loadGlbModel(model, name, scale, colored) {
                 
                 // Import documents stored in userData (if any)
                 importDocumentsFromGltfScene(gltf.scene);
+
+                // Import attachments stored in userData (if any)
+                importAttachmentsFromGltfScene(gltf.scene);
 
                 // Import 3D dimension defaults, 3D annotation defaults, section settings
                 importSettingsFromGltfScene(gltf.scene);
@@ -4808,6 +4814,9 @@ function exportAllModels() {
     // Embed documents into export
     group.userData.documents = getDocumentsStore().map(d => ({ ...d }));
 
+    // Embed attachments into export
+    group.userData.attachments = getAttachmentsStore().map(a => ({ ...a }));
+
     // Embed 3D dimension defaults, 3D annotation defaults, section settings
     group.userData.cadDim3dDefaults = { ...getCadDim3dDefaults() };
     group.userData.annotation3dDefaults = { ...getAnnotation3dDefaults() };
@@ -4882,6 +4891,9 @@ async function exportAllModelsDraco() {
 
     // Embed documents into export
     group.userData.documents = getDocumentsStore().map(d => ({ ...d }));
+
+    // Embed attachments into export
+    group.userData.attachments = getAttachmentsStore().map(a => ({ ...a }));
 
     // Embed 3D dimension defaults, 3D annotation defaults, section settings
     group.userData.cadDim3dDefaults = { ...getCadDim3dDefaults() };
@@ -5166,6 +5178,12 @@ function addDocumentsGui() {
     const docsGui = new GUI({ container: guiContainer, title: 'Documents' });
     initDocumentsGui(docsGui);
     registerGuiPanel('Docs', docsGui);
+}
+
+function addAttachmentsGui() {
+    const attGui = new GUI({ container: guiContainer, title: 'Files' });
+    initAttachmentsGui(attGui);
+    registerGuiPanel('Files', attGui);
 }
 
 function addHelpGui() {
