@@ -129,6 +129,8 @@ function _canOpenInBrowser(mimeType) {
 
 let _modalEl = null;
 let _activeBlobUrl = null;
+let _carouselList = []; // filtered list of openable attachments
+let _carouselIndex = 0;
 
 function _buildModal() {
     if (_modalEl) return;
@@ -137,15 +139,35 @@ function _buildModal() {
     _modalEl.style.cssText = 'position:fixed;inset:0;z-index:99990;background:rgba(0,0,0,0.82);display:none;flex-direction:column;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;';
     _modalEl.innerHTML = `
         <div style="position:relative;width:100%;max-width:1100px;height:90vh;background:#1a1a1a;border-radius:8px;overflow:hidden;display:flex;flex-direction:column;">
-            <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 14px;background:#2a2a2a;flex-shrink:0;">
-                <span id="att-modal-title" style="color:#eee;font-size:13px;font-family:sans-serif;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:88%;"></span>
-                <button id="att-modal-close" style="background:none;border:none;color:#eee;font-size:20px;cursor:pointer;line-height:1;padding:0 4px;">✕</button>
+            <div style="display:flex;align-items:center;gap:6px;padding:8px 14px;background:#2a2a2a;flex-shrink:0;">
+                <button id="att-modal-prev" style="background:none;border:none;color:#eee;font-size:18px;cursor:pointer;line-height:1;padding:0 4px;">‹</button>
+                <span id="att-modal-counter" style="color:#aaa;font-size:12px;font-family:sans-serif;white-space:nowrap;"></span>
+                <button id="att-modal-next" style="background:none;border:none;color:#eee;font-size:18px;cursor:pointer;line-height:1;padding:0 4px;">›</button>
+                <span id="att-modal-title" style="color:#eee;font-size:13px;font-family:sans-serif;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;margin-left:4px;"></span>
+                <button id="att-modal-close" style="background:none;border:none;color:#eee;font-size:20px;cursor:pointer;line-height:1;padding:0 4px;margin-left:auto;flex-shrink:0;">✕</button>
             </div>
             <div id="att-modal-content" style="flex:1;overflow:hidden;"></div>
         </div>`;
     document.body.appendChild(_modalEl);
     _modalEl.addEventListener('click', e => { if (e.target === _modalEl) _closeModal(); });
     _modalEl.querySelector('#att-modal-close').addEventListener('click', _closeModal);
+    _modalEl.querySelector('#att-modal-prev').addEventListener('click', () => _carouselStep(-1));
+    _modalEl.querySelector('#att-modal-next').addEventListener('click', () => _carouselStep(+1));
+
+    // Keyboard navigation
+    document.addEventListener('keydown', e => {
+        if (!_modalEl || _modalEl.style.display === 'none') return;
+        if (e.key === 'ArrowLeft')  _carouselStep(-1);
+        if (e.key === 'ArrowRight') _carouselStep(+1);
+        if (e.key === 'Escape')     _closeModal();
+    });
+}
+
+function _carouselStep(dir) {
+    const next = _carouselIndex + dir;
+    if (next < 0 || next >= _carouselList.length) return;
+    _carouselIndex = next;
+    _renderModal(_carouselList[_carouselIndex]);
 }
 
 function _closeModal() {
@@ -153,19 +175,49 @@ function _closeModal() {
 }
 
 function _openAttachment(att) {
+    _carouselList = attachmentsStore.filter(a => _canOpenInBrowser(a.mimeType));
+    _carouselIndex = _carouselList.findIndex(a => a.id === att.id);
+    if (_carouselIndex < 0) _carouselIndex = 0;
+    _buildModal();
+    _renderModal(att);
+    _modalEl.style.display = 'flex';
+}
+
+function _renderModal(att) {
+    if (_activeBlobUrl) setTimeout(() => URL.revokeObjectURL(_activeBlobUrl), 10000);
+
     const binary = atob(att.data);
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
     const blob = new Blob([bytes], { type: att.mimeType });
-
-    if (_activeBlobUrl) setTimeout(() => URL.revokeObjectURL(_activeBlobUrl), 10000);
     _activeBlobUrl = URL.createObjectURL(blob);
 
-    _buildModal();
+    // Update title and counter
     _modalEl.querySelector('#att-modal-title').textContent = att.name;
+    const total = _carouselList.length;
+    _modalEl.querySelector('#att-modal-counter').textContent = total > 1 ? `${_carouselIndex + 1} / ${total}` : '';
+
+    // Update arrow state
+    const prevBtn = _modalEl.querySelector('#att-modal-prev');
+    const nextBtn = _modalEl.querySelector('#att-modal-next');
+    const disabledStyle = 'opacity:0.25;cursor:default;';
+    const enabledStyle  = 'opacity:1;cursor:pointer;';
+    prevBtn.style.cssText = prevBtn.style.cssText.replace(/opacity:[^;]+;cursor:[^;]+;/g, '');
+    nextBtn.style.cssText = nextBtn.style.cssText.replace(/opacity:[^;]+;cursor:[^;]+;/g, '');
+    prevBtn.disabled = (_carouselIndex === 0 || total <= 1);
+    nextBtn.disabled = (_carouselIndex === total - 1 || total <= 1);
+    prevBtn.style.opacity = prevBtn.disabled ? '0.25' : '1';
+    prevBtn.style.cursor  = prevBtn.disabled ? 'default' : 'pointer';
+    nextBtn.style.opacity = nextBtn.disabled ? '0.25' : '1';
+    nextBtn.style.cursor  = nextBtn.disabled ? 'default' : 'pointer';
+
+    // Render content
     const content = _modalEl.querySelector('#att-modal-content');
     content.innerHTML = '';
     const mime = att.mimeType || '';
+
+    // Light background for text so it stays readable; dark for everything else
+    content.style.background = mime.startsWith('text/') ? '#f5f5f5' : '#1a1a1a';
 
     if (mime.startsWith('image/')) {
         const wrap = document.createElement('div');
@@ -191,14 +243,11 @@ function _openAttachment(att) {
         wrap.appendChild(a);
         content.appendChild(wrap);
     } else {
-        // PDF and text/* — iframe
         const iframe = document.createElement('iframe');
         iframe.src = _activeBlobUrl;
         iframe.style.cssText = 'width:100%;height:100%;border:none;display:block;';
         content.appendChild(iframe);
     }
-
-    _modalEl.style.display = 'flex';
 }
 
 function _downloadAttachment(att) {
