@@ -127,15 +127,78 @@ function _canOpenInBrowser(mimeType) {
     );
 }
 
+let _modalEl = null;
+let _activeBlobUrl = null;
+
+function _buildModal() {
+    if (_modalEl) return;
+    _modalEl = document.createElement('div');
+    _modalEl.id = 'att-modal';
+    _modalEl.style.cssText = 'position:fixed;inset:0;z-index:99990;background:rgba(0,0,0,0.82);display:none;flex-direction:column;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;';
+    _modalEl.innerHTML = `
+        <div style="position:relative;width:100%;max-width:1100px;height:90vh;background:#1a1a1a;border-radius:8px;overflow:hidden;display:flex;flex-direction:column;">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 14px;background:#2a2a2a;flex-shrink:0;">
+                <span id="att-modal-title" style="color:#eee;font-size:13px;font-family:sans-serif;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:88%;"></span>
+                <button id="att-modal-close" style="background:none;border:none;color:#eee;font-size:20px;cursor:pointer;line-height:1;padding:0 4px;">✕</button>
+            </div>
+            <div id="att-modal-content" style="flex:1;overflow:hidden;"></div>
+        </div>`;
+    document.body.appendChild(_modalEl);
+    _modalEl.addEventListener('click', e => { if (e.target === _modalEl) _closeModal(); });
+    _modalEl.querySelector('#att-modal-close').addEventListener('click', _closeModal);
+}
+
+function _closeModal() {
+    if (_modalEl) _modalEl.style.display = 'none';
+}
+
 function _openAttachment(att) {
     const binary = atob(att.data);
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
     const blob = new Blob([bytes], { type: att.mimeType });
-    const url = URL.createObjectURL(blob);
-    window.open(url, '_blank');
-    // Revoke after a short delay to give the browser time to load the resource
-    setTimeout(() => URL.revokeObjectURL(url), 10000);
+
+    if (_activeBlobUrl) setTimeout(() => URL.revokeObjectURL(_activeBlobUrl), 10000);
+    _activeBlobUrl = URL.createObjectURL(blob);
+
+    _buildModal();
+    _modalEl.querySelector('#att-modal-title').textContent = att.name;
+    const content = _modalEl.querySelector('#att-modal-content');
+    content.innerHTML = '';
+    const mime = att.mimeType || '';
+
+    if (mime.startsWith('image/')) {
+        const wrap = document.createElement('div');
+        wrap.style.cssText = 'width:100%;height:100%;display:flex;align-items:center;justify-content:center;';
+        const img = document.createElement('img');
+        img.src = _activeBlobUrl;
+        img.style.cssText = 'max-width:100%;max-height:100%;object-fit:contain;';
+        wrap.appendChild(img);
+        content.appendChild(wrap);
+    } else if (mime.startsWith('video/')) {
+        const v = document.createElement('video');
+        v.src = _activeBlobUrl;
+        v.controls = true;
+        v.style.cssText = 'width:100%;height:100%;display:block;background:#000;';
+        content.appendChild(v);
+    } else if (mime.startsWith('audio/')) {
+        const wrap = document.createElement('div');
+        wrap.style.cssText = 'width:100%;height:100%;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;';
+        const a = document.createElement('audio');
+        a.src = _activeBlobUrl;
+        a.controls = true;
+        a.style.width = '100%';
+        wrap.appendChild(a);
+        content.appendChild(wrap);
+    } else {
+        // PDF and text/* — iframe
+        const iframe = document.createElement('iframe');
+        iframe.src = _activeBlobUrl;
+        iframe.style.cssText = 'width:100%;height:100%;border:none;display:block;';
+        content.appendChild(iframe);
+    }
+
+    _modalEl.style.display = 'flex';
 }
 
 function _downloadAttachment(att) {
