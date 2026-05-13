@@ -119,6 +119,7 @@ let _currentDocId = null;  // id of document currently open in editor
 let _isEditMode = false;   // true = editor mode, false = read-only mode
 let _bgOpacity = 1.0;      // editor content background opacity (0 = transparent, 1 = opaque)
 let _nav3d = false;        // true = pointer-events off on overlay → 3D navigation active
+let _tocScrollHandler = null; // scroll spy handler for TOC
 let _showLastEditDate = true;  // show (le. ...) in document button label
 let _showImportDate = false;    // show (imp. ...) in document button label
 
@@ -307,6 +308,7 @@ function _showOverlay(doc, editMode) {
     requestAnimationFrame(() => {
         if (_overlayEl && _overlayEl.style.display !== 'none') {
             _editor = _createEditor(editorEl, docContent, readOnly);
+            _buildToc(docContent);
         }
     });
 
@@ -397,8 +399,75 @@ function _closeOverlay() {
         _editor.destroy();
         _editor = null;
     }
+    if (_tocScrollHandler && _overlayEl) {
+        const contentEl = _overlayEl.querySelector('.doc-editor-content');
+        if (contentEl) contentEl.removeEventListener('scroll', _tocScrollHandler);
+        _tocScrollHandler = null;
+    }
     _currentDocId = null;
     _isEditMode = false;
+}
+
+function _buildToc(htmlContent) {
+    if (!_overlayEl) return;
+    const tocEl = _overlayEl.querySelector('.doc-toc');
+    const contentEl = _overlayEl.querySelector('.doc-editor-content');
+    if (!tocEl || !contentEl) return;
+
+    // Remove previous scroll spy
+    if (_tocScrollHandler) {
+        contentEl.removeEventListener('scroll', _tocScrollHandler);
+        _tocScrollHandler = null;
+    }
+
+    // Parse headings from HTML string
+    const tmp = document.createElement('div');
+    tmp.innerHTML = htmlContent || '';
+    const headings = Array.from(tmp.querySelectorAll('h1, h2, h3, h4'));
+
+    tocEl.innerHTML = '';
+
+    if (headings.length < 2) {
+        tocEl.style.display = 'none';
+        return;
+    }
+
+    tocEl.style.display = '';
+    const ul = document.createElement('ul');
+    const tocItems = []; // { a, idx }
+
+    headings.forEach((h, idx) => {
+        const level = parseInt(h.tagName[1]);
+        const text = h.textContent.trim();
+        const li = document.createElement('li');
+        li.className = 'toc-level-' + level;
+        const a = document.createElement('a');
+        a.href = '#';
+        a.textContent = text || '—';
+        a.addEventListener('click', e => {
+            e.preventDefault();
+            const domHeadings = contentEl.querySelectorAll('h1, h2, h3, h4');
+            if (domHeadings[idx]) domHeadings[idx].scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+        tocItems.push({ a, idx });
+        li.appendChild(a);
+        ul.appendChild(li);
+    });
+    tocEl.appendChild(ul);
+
+    if (tocItems.length > 0) tocItems[0].a.classList.add('active');
+
+    _tocScrollHandler = () => {
+        const domHeadings = Array.from(contentEl.querySelectorAll('h1, h2, h3, h4'));
+        if (domHeadings.length === 0) return;
+        const threshold = contentEl.getBoundingClientRect().top + 100;
+        let activeIdx = 0;
+        domHeadings.forEach((h, i) => {
+            if (h.getBoundingClientRect().top <= threshold) activeIdx = i;
+        });
+        tocItems.forEach(({ a, idx }) => a.classList.toggle('active', idx === activeIdx));
+    };
+    contentEl.addEventListener('scroll', _tocScrollHandler, { passive: true });
 }
 
 function _printDocument() {
@@ -486,6 +555,134 @@ function _exportCurrentDocJson() {
     const safeName = (doc.title || 'document').replace(/[^a-z0-9_\-]/gi, '_').toLowerCase();
     a.href = url;
     a.download = safeName + '.docs.json';
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+function _exportCurrentDocHtml() {
+    if (!_currentDocId) return;
+    if (_isEditMode && _editor) _saveCurrentDocument();
+    const doc = documentsStore.find(d => d.id === _currentDocId);
+    if (!doc) return;
+
+    const title = doc.title || 'Document';
+    const fontFamily = doc.font || _DEFAULT_FONT;
+    const lineHeight = doc.lineHeight || _DEFAULT_LINE_HEIGHT;
+    const paraSpacing = doc.paraSpacing || _DEFAULT_PARA_SPACING;
+    const docWidth = doc.docWidth || _DEFAULT_DOC_WIDTH;
+    const tableBorder = doc.tableBorder || _DEFAULT_TABLE_BORDER;
+
+    // Inject heading IDs and build TOC data
+    const tmp = document.createElement('div');
+    tmp.innerHTML = doc.content || '';
+    const toc = [];
+    Array.from(tmp.querySelectorAll('h1, h2, h3, h4')).forEach((h, i) => {
+        const id = 'h-' + i;
+        h.id = id;
+        toc.push({ level: parseInt(h.tagName[1]), text: h.textContent.trim(), id });
+    });
+    const contentHtml = tmp.innerHTML;
+
+    const showToc = toc.length >= 2;
+    const tocHtml = showToc ? `
+    <nav id="docToc">
+      <ul>
+        ${toc.map(item =>
+            `<li class="toc-level-${item.level}"><a href="#${item.id}" data-id="${item.id}">${item.text.replace(/</g, '&lt;')}</a></li>`
+        ).join('\n        ')}
+      </ul>
+    </nav>` : '';
+
+    const safeName = title.replace(/[^a-z0-9_\-]/gi, '_').toLowerCase();
+
+    const html = `<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${title.replace(/</g, '&lt;')}</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; padding: 0; font-family: ${fontFamily}; font-size: 15px; background: #1a1a1a; color: #ddd; overflow: hidden; }
+#docHeader { height: 44px; background: #2a2a2a; border-bottom: 1px solid #444; display: flex; align-items: center; padding: 0 20px; flex-shrink: 0; }
+#docHeaderTitle { font-size: 15px; font-weight: 600; color: #fff; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#docBody { display: flex; height: calc(100vh - 44px); overflow: hidden; }
+#docToc { width: 240px; flex-shrink: 0; overflow-y: auto; background: #222; border-right: 1px solid #444; padding: 10px 0; }
+#docToc ul { list-style: none; margin: 0; padding: 0; }
+#docToc li { margin: 0; }
+#docToc a { display: block; padding: 4px 14px; color: #bbb; text-decoration: none; font-size: 12px; border-left: 3px solid transparent; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.5; transition: background 0.1s, color 0.1s; }
+#docToc a:hover { background: rgba(255,255,255,0.07); color: #fff; }
+#docToc a.active { border-left-color: #5af; color: #5af; background: rgba(85,170,255,0.08); }
+#docToc .toc-level-1 > a { font-weight: 600; padding-left: 8px; color: #ddd; }
+#docToc .toc-level-2 > a { padding-left: 22px; }
+#docToc .toc-level-3 > a { padding-left: 36px; font-size: 11px; color: #999; }
+#docToc .toc-level-4 > a { padding-left: 50px; font-size: 11px; color: #888; }
+#docContentWrap { flex: 1; overflow-y: auto; background: #c8c8c8; }
+#docContentInner { padding: 40px 48px; max-width: ${docWidth}; margin: 0 auto; background: #fff; min-height: 100%; color: #111; line-height: ${lineHeight}; }
+#docContentInner h1 { font-size: 2em; margin: 0.6em 0 0.4em; }
+#docContentInner h2 { font-size: 1.5em; margin: 1em 0 0.3em; border-bottom: 1px solid #e0e0e0; padding-bottom: 4px; }
+#docContentInner h3 { font-size: 1.2em; margin: 0.8em 0 0.3em; }
+#docContentInner h4 { font-size: 1em; margin: 0.6em 0 0.3em; font-weight: 600; }
+#docContentInner p { margin: 0 0 ${paraSpacing}; }
+#docContentInner ul, #docContentInner ol { padding-left: 2em; margin: 0 0 0.8em; }
+#docContentInner blockquote { border-left: 4px solid #ccc; margin: 0.8em 0; padding: 0.2em 1em; color: #555; }
+#docContentInner img { max-width: 100%; height: auto; display: inline-block; vertical-align: top; margin: 0.4em 4px; }
+#docContentInner a { color: #1a6fc4; text-decoration: underline; }
+#docContentInner a:hover { color: #1254a0; }
+#docContentInner strong { font-weight: 700; }
+#docContentInner em { font-style: italic; }
+#docContentInner table { border-collapse: collapse; width: 100%; margin: 1em 0; table-layout: fixed; }
+#docContentInner td, #docContentInner th { border: ${tableBorder}; padding: 6px 10px; vertical-align: top; box-sizing: border-box; }
+#docContentInner th { background: #f0f0f0; font-weight: 600; text-align: left; }
+#docContentInner hr { border: none; border-top: 1px solid #ddd; margin: 1.5em 0; }
+#docContentWrap::-webkit-scrollbar { width: 8px; }
+#docContentWrap::-webkit-scrollbar-track { background: #b0b0b0; }
+#docContentWrap::-webkit-scrollbar-thumb { background: #888; border-radius: 4px; }
+#docToc::-webkit-scrollbar { width: 6px; }
+#docToc::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
+</style>
+</head>
+<body>
+<div id="docHeader"><span id="docHeaderTitle">${title.replace(/</g, '&lt;')}</span></div>
+<div id="docBody">
+  ${tocHtml}
+  <div id="docContentWrap">
+    <div id="docContentInner">${contentHtml}</div>
+  </div>
+</div>
+<script>
+(function(){
+  var tocLinks = Array.from(document.querySelectorAll('#docToc a'));
+  var contentWrap = document.getElementById('docContentWrap');
+  if (!contentWrap || tocLinks.length === 0) return;
+  var headings = Array.from(document.querySelectorAll('#docContentInner h1,#docContentInner h2,#docContentInner h3,#docContentInner h4'));
+  tocLinks.forEach(function(a){
+    a.addEventListener('click', function(e){
+      e.preventDefault();
+      var target = document.getElementById(a.dataset.id);
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+  function setActive(id){
+    tocLinks.forEach(function(a){ a.classList.toggle('active', a.dataset.id === id); });
+  }
+  if (headings.length > 0) setActive(headings[0].id);
+  contentWrap.addEventListener('scroll', function(){
+    var top = contentWrap.getBoundingClientRect().top + 100;
+    var activeId = headings[0] ? headings[0].id : null;
+    headings.forEach(function(h){ if (h.getBoundingClientRect().top <= top) activeId = h.id; });
+    if (activeId) setActive(activeId);
+  }, { passive: true });
+})();
+<\/script>
+</body>
+</html>`;
+
+    const blob = new Blob([html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = safeName + '.html';
     a.click();
     URL.revokeObjectURL(url);
 }
@@ -899,6 +1096,7 @@ function _buildEditorOverlay() {
     btnSave.textContent = '💾 Save';
     btnSave.addEventListener('click', () => {
         _saveCurrentDocument(true);
+        if (_editor) _buildToc(_editor.getHTML());
         // Switch to view mode
         const titleInput = overlay.querySelector('.doc-title-input');
         titleInput.readOnly = true;
@@ -917,9 +1115,15 @@ function _buildEditorOverlay() {
 
     const btnExportJson = document.createElement('button');
     btnExportJson.className = 'doc-btn doc-btn-export-json';
-    btnExportJson.textContent = '⬇ Export';
+    btnExportJson.textContent = '⬇ JSON';
     btnExportJson.title = 'Export document as JSON';
     btnExportJson.addEventListener('click', _exportCurrentDocJson);
+
+    const btnExportHtml = document.createElement('button');
+    btnExportHtml.className = 'doc-btn doc-btn-export-html';
+    btnExportHtml.textContent = '⬇ HTML';
+    btnExportHtml.title = 'Export document as self-contained HTML';
+    btnExportHtml.addEventListener('click', _exportCurrentDocHtml);
 
     const btnDelete = document.createElement('button');
     btnDelete.className = 'doc-btn doc-btn-delete';
@@ -1117,6 +1321,7 @@ function _buildEditorOverlay() {
     header.appendChild(btnSave);
     header.appendChild(btnPrint);
     header.appendChild(btnExportJson);
+    header.appendChild(btnExportHtml);
     header.appendChild(btnDelete);
     header.appendChild(btnClose);
 
@@ -1258,13 +1463,24 @@ function _buildEditorOverlay() {
     });
     toolbar.appendChild(indentSelect);
 
+    // TOC panel
+    const tocEl = document.createElement('nav');
+    tocEl.className = 'doc-toc';
+    tocEl.style.display = 'none';
+
     // Editor content area
     const editorContent = document.createElement('div');
     editorContent.className = 'doc-editor-content';
 
+    // Body row (TOC + editor side by side)
+    const docBody = document.createElement('div');
+    docBody.className = 'doc-body';
+    docBody.appendChild(tocEl);
+    docBody.appendChild(editorContent);
+
     overlay.appendChild(header);
     overlay.appendChild(toolbar);
-    overlay.appendChild(editorContent);
+    overlay.appendChild(docBody);
 
     overlay.style.setProperty('--doc-bg-opacity', _bgOpacity);
     document.body.appendChild(overlay);
