@@ -315,6 +315,25 @@ function _showOverlay(doc, editMode) {
     _overlayEl.style.display = 'flex';
 }
 
+// In read-only mode the ImageResize nodeview returns the bare container div (no wrapper),
+// so images that were never interacted with in edit mode have style="" and no float.
+// Pre-process the HTML to add containerstyle with float:left to such images so that
+// TipTap's parseHTML picks it up and the read-only layout matches the edit-mode layout.
+function _prepareReadOnlyContent(html) {
+    if (!html) return html;
+    const div = document.createElement('div');
+    div.innerHTML = html;
+    div.querySelectorAll('img').forEach(img => {
+        const cs = img.getAttribute('containerstyle') || '';
+        if (!cs.includes('float')) {
+            const width = img.getAttribute('width');
+            const widthPart = width ? `width: ${width}px; height: auto; cursor: pointer; ` : '';
+            img.setAttribute('containerstyle', `${widthPart}display: inline-block; float: left; padding-right: 8px;`);
+        }
+    });
+    return div.innerHTML;
+}
+
 function _createEditor(el, content, readOnly) {
     const editor = new Editor({
         element: el,
@@ -331,7 +350,7 @@ function _createEditor(el, content, readOnly) {
             TableHeader,
             TableCell,
         ],
-        content,
+        content: readOnly ? _prepareReadOnlyContent(content) : content,
         editable: !readOnly,
         editorProps: {
             handleClick(view, pos, event) {
