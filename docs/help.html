@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Help</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    font-family: Arial, sans-serif;
+    font-size: 14px;
+    background: #1a1a1a;
+    color: #ddd;
+    overflow: hidden;
+}
+
+/* ── Header ── */
+#helpHeader {
+    height: 48px;
+    background: #2a2a2a;
+    border-bottom: 1px solid #444;
+    display: flex;
+    align-items: center;
+    padding: 0 20px;
+    flex-shrink: 0;
+    gap: 12px;
+}
+#helpTitle {
+    font-size: 16px;
+    font-weight: 600;
+    color: #fff;
+    margin: 0;
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ── Layout ── */
+#helpBody {
+    display: flex;
+    height: calc(100vh - 48px);
+    overflow: hidden;
+}
+
+/* ── TOC panel ── */
+#helpToc {
+    width: 260px;
+    flex-shrink: 0;
+    overflow-y: auto;
+    background: #222;
+    border-right: 1px solid #444;
+    padding: 12px 0;
+}
+#helpToc ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+#helpToc li { margin: 0; }
+#helpToc a {
+    display: block;
+    padding: 5px 16px;
+    color: #bbb;
+    text-decoration: none;
+    font-size: 13px;
+    border-left: 3px solid transparent;
+    transition: background 0.1s, color 0.1s, border-color 0.1s;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.5;
+}
+#helpToc a:hover {
+    background: #333;
+    color: #fff;
+}
+#helpToc a.active {
+    border-left-color: #5af;
+    color: #5af;
+    background: rgba(85, 170, 255, 0.1);
+}
+#helpToc .toc-level-1 > a { font-weight: 600; padding-left: 8px; color: #ddd; }
+#helpToc .toc-level-2 > a { padding-left: 22px; }
+#helpToc .toc-level-3 > a { padding-left: 38px; font-size: 12px; color: #999; }
+#helpToc .toc-level-4 > a { padding-left: 54px; font-size: 12px; color: #888; }
+
+/* ── Content panel ── */
+#helpContentWrap {
+    flex: 1;
+    overflow-y: auto;
+    background: #c8c8c8;
+}
+#helpContentInner {
+    padding: 40px 48px;
+    max-width: var(--doc-width, 860px);
+    margin: 0 auto;
+    background: #fff;
+    min-height: 100%;
+    color: #111;
+    font-size: 15px;
+    --para-spacing: 8px;
+    --table-border: 1px solid #ccc;
+}
+#helpContentInner h1 { font-size: 2em; margin: 0.6em 0 0.4em; }
+#helpContentInner h2 { font-size: 1.5em; margin: 1em 0 0.3em; }
+#helpContentInner h3 { font-size: 1.2em; margin: 0.8em 0 0.3em; }
+#helpContentInner h4 { font-size: 1em; margin: 0.6em 0 0.3em; font-weight: 600; }
+#helpContentInner p  { margin: 0 0 var(--para-spacing); }
+#helpContentInner ul,
+#helpContentInner ol { padding-left: 2em; margin: 0 0 0.8em; }
+#helpContentInner blockquote {
+    border-left: 4px solid #ccc;
+    margin: 0.8em 0;
+    padding: 0.2em 1em;
+    color: #555;
+}
+#helpContentInner img {
+    max-width: 100%;
+    height: auto;
+    display: inline-block;
+    vertical-align: top;
+    margin: 0.4em 4px;
+}
+#helpContentInner a { color: #1a6fc4; text-decoration: underline; }
+#helpContentInner a:hover { color: #1254a0; }
+#helpContentInner strong { font-weight: 700; }
+#helpContentInner em { font-style: italic; }
+#helpContentInner code {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.9em;
+    background: #f0f0f0;
+    padding: 1px 4px;
+    border-radius: 3px;
+}
+#helpContentInner pre {
+    background: #f5f5f5;
+    padding: 12px 16px;
+    border-radius: 4px;
+    overflow-x: auto;
+    font-size: 13px;
+}
+#helpContentInner pre code { background: none; padding: 0; }
+#helpContentInner table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 1em 0;
+    table-layout: fixed;
+}
+#helpContentInner td,
+#helpContentInner th {
+    border: var(--table-border, 1px solid #ccc);
+    padding: 6px 10px;
+    vertical-align: top;
+    box-sizing: border-box;
+}
+#helpContentInner th {
+    background: #f0f0f0;
+    font-weight: 600;
+    text-align: left;
+}
+#helpContentInner hr {
+    border: none;
+    border-top: 1px solid #ddd;
+    margin: 1.5em 0;
+}
+
+/* ── Scrollbars ── */
+#helpToc::-webkit-scrollbar { width: 6px; }
+#helpToc::-webkit-scrollbar-track { background: transparent; }
+#helpToc::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
+#helpToc::-webkit-scrollbar-thumb:hover { background: #666; }
+
+#helpContentWrap::-webkit-scrollbar { width: 8px; }
+#helpContentWrap::-webkit-scrollbar-track { background: #b0b0b0; }
+#helpContentWrap::-webkit-scrollbar-thumb { background: #888; border-radius: 4px; }
+#helpContentWrap::-webkit-scrollbar-thumb:hover { background: #666; }
+
+/* ── Error / loading state ── */
+#helpLoading {
+    padding: 40px 48px;
+    color: #888;
+    font-size: 15px;
+}
+#helpError {
+    padding: 40px 48px;
+    color: #c44;
+    font-size: 15px;
+}
+</style>
+</head>
+<body>
+
+<div id="helpHeader">
+    <span id="helpTitle">Help</span>
+</div>
+
+<div id="helpBody">
+    <nav id="helpToc"></nav>
+    <div id="helpContentWrap">
+        <div id="helpContentInner">
+            <div id="helpLoading">Načítání…</div>
+        </div>
+    </div>
+</div>
+
+<script>
+(async () => {
+    const params = new URLSearchParams(location.search);
+    const docPath = params.get('doc') || '/help/help.json';
+
+    const contentInner = document.getElementById('helpContentInner');
+    const tocEl = document.getElementById('helpToc');
+    const titleEl = document.getElementById('helpTitle');
+    const contentWrap = document.getElementById('helpContentWrap');
+
+    // ── Fetch ──────────────────────────────────────────────────────────────────
+    let helpDoc;
+    try {
+        const resp = await fetch(docPath);
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        helpDoc = await resp.json();
+    } catch (e) {
+        contentInner.innerHTML = '<div id="helpError">Chybu při načítání helpu: ' + e.message + '</div>';
+        return;
+    }
+
+    // ── Title ─────────────────────────────────────────────────────────────────
+    document.title = (helpDoc.title || 'Help') + ' – Help';
+    titleEl.textContent = helpDoc.title || 'Help';
+
+    // ── Apply document styles ─────────────────────────────────────────────────
+    const font        = helpDoc.font        || 'Arial, sans-serif';
+    const lineHeight  = helpDoc.lineHeight  || '1.4';
+    const paraSpacing = helpDoc.paraSpacing || '8px';
+    const docWidth    = helpDoc.docWidth    || '860px';
+    const tableBorder = helpDoc.tableBorder || '1px solid #ccc';
+
+    contentInner.style.fontFamily = font;
+    contentInner.style.lineHeight = lineHeight;
+    contentInner.style.setProperty('--para-spacing', paraSpacing);
+    contentInner.style.setProperty('--doc-width', docWidth);
+    contentInner.style.setProperty('--table-border', tableBorder);
+    contentInner.style.maxWidth = docWidth;
+
+    // ── Parse HTML & inject heading IDs ───────────────────────────────────────
+    const tmp = document.createElement('div');
+    tmp.innerHTML = helpDoc.content || '';
+
+    const toc = [];
+    Array.from(tmp.querySelectorAll('h1, h2, h3, h4')).forEach((h, i) => {
+        const id = 'h-' + i;
+        h.id = id;
+        toc.push({ level: parseInt(h.tagName[1]), text: h.textContent.trim(), id });
+    });
+
+    // Render content
+    contentInner.innerHTML = tmp.innerHTML;
+
+    // ── Build TOC ─────────────────────────────────────────────────────────────
+    if (toc.length === 0) {
+        tocEl.style.display = 'none';
+        return;
+    }
+
+    const ul = document.createElement('ul');
+    const tocLinks = [];
+
+    toc.forEach(item => {
+        const li = document.createElement('li');
+        li.className = 'toc-level-' + item.level;
+
+        const a = document.createElement('a');
+        a.href = '#' + item.id;
+        a.textContent = item.text;
+        a.dataset.targetId = item.id;
+
+        a.addEventListener('click', e => {
+            e.preventDefault();
+            const target = document.getElementById(item.id);
+            if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+
+        tocLinks.push(a);
+        li.appendChild(a);
+        ul.appendChild(li);
+    });
+    tocEl.appendChild(ul);
+
+    // ── Scroll spy ────────────────────────────────────────────────────────────
+    const renderedHeadings = Array.from(contentInner.querySelectorAll('h1, h2, h3, h4'));
+
+    function setActive(id) {
+        tocLinks.forEach(a => {
+            const isActive = a.dataset.targetId === id;
+            if (isActive && !a.classList.contains('active')) {
+                a.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+            }
+            a.classList.toggle('active', isActive);
+        });
+    }
+
+    // Set first heading active initially
+    if (toc.length > 0) setActive(toc[0].id);
+
+    contentWrap.addEventListener('scroll', () => {
+        const wrapTop = contentWrap.getBoundingClientRect().top;
+        const threshold = wrapTop + 100;
+        let activeId = renderedHeadings[0]?.id;
+        for (const h of renderedHeadings) {
+            if (h.getBoundingClientRect().top <= threshold) {
+                activeId = h.id;
+            }
+        }
+        if (activeId) setActive(activeId);
+    }, { passive: true });
+
+})();
+</script>
+</body>
+</html>
