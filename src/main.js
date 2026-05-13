@@ -25,6 +25,7 @@ import { initCadDim3d, isCadDim3dActive, getCadDim3dStep, getCadDim3dAxis, setCa
 import { computeSolidSection, clearSolidSection } from './solidSectionUtils.js';
 import { initDocumentsGui, importDocumentsFromGltfScene, getDocumentsStore, flushDocumentEdits, isDocOverlayBlockingInput, setDocLabelOptions } from './documentsUtils.js';
 import { initAttachmentsGui, importAttachmentsFromGltfScene, getAttachmentsStore } from './attachmentsUtils.js';
+import { openHelp } from './helpUtils.js';
 
 // Proměnné globálního rozsahu----------------------------------------------------------------------------------------
 let container, stats;
@@ -5201,6 +5202,7 @@ function addHelpGui() {
     document.body.appendChild(aboutDialog);
 
     const helpGui = new GUI({ container: guiContainer, title: 'Help' });
+    helpGui.add({ fn() { openHelp(); } }, 'fn').name('📖 Documentation');
     helpGui.add({ fn() { aboutDialog.showModal(); } }, 'fn').name('About');
     registerGuiPanel('Help', helpGui);
 }
