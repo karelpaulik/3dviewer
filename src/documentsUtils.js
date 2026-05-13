@@ -756,6 +756,7 @@ function _updateToolbarState() {
         else if (action === 'bulletList') active = _editor.isActive('bulletList');
         else if (action === 'orderedList') active = _editor.isActive('orderedList');
         else if (action === 'blockquote') active = _editor.isActive('blockquote');
+        else if (action === 'code') active = _editor.isActive('code');
         else if (action === 'alignLeft') active = _editor.isActive({ textAlign: 'left' });
         else if (action === 'alignCenter') active = _editor.isActive({ textAlign: 'center' });
         else if (action === 'alignRight') active = _editor.isActive({ textAlign: 'right' });
@@ -795,6 +796,8 @@ function _handleToolbarClick(action) {
         case 'bulletList':  _editor.chain().focus().toggleBulletList().run(); break;
         case 'orderedList': _editor.chain().focus().toggleOrderedList().run(); break;
         case 'blockquote':  _editor.chain().focus().toggleBlockquote().run(); break;
+        case 'code':        _editor.chain().focus().toggleCode().run(); break;
+        case 'hr':          _editor.chain().focus().setHorizontalRule().run(); break;
         case 'alignLeft':   _editor.chain().focus().setTextAlign('left').run(); break;
         case 'alignCenter': _editor.chain().focus().setTextAlign('center').run(); break;
         case 'alignRight':  _editor.chain().focus().setTextAlign('right').run(); break;
@@ -1364,6 +1367,8 @@ function _buildEditorOverlay() {
         { action: 'bulletList',   label: '•—', title: 'Bullet list' },
         { action: 'orderedList',  label: '1—', title: 'Ordered list' },
         { action: 'blockquote',   label: '❝',  title: 'Blockquote' },
+        { action: 'code',         label: '<>',  title: 'Inline code' },
+        { action: 'hr',           label: '—',   title: 'Horizontal rule' },
         { sep: true },
         { action: 'alignLeft',    label: '⬛▭▭', title: 'Align left' },
         { action: 'alignCenter',  label: '▭⬛▭', title: 'Align center' },
