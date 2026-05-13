@@ -444,14 +444,17 @@ function _buildToc(htmlContent) {
     tmp.innerHTML = htmlContent || '';
     const headings = Array.from(tmp.querySelectorAll('h1, h2, h3, h4'));
 
+    const tocBtn = _overlayEl.querySelector('.doc-btn-toc');
     tocEl.innerHTML = '';
 
     if (headings.length < 2) {
         tocEl.style.display = 'none';
+        if (tocBtn) tocBtn.style.display = 'none';
         return;
     }
 
     tocEl.style.display = '';
+    if (tocBtn) tocBtn.style.display = '';
     const ul = document.createElement('ul');
     const tocItems = []; // { a, idx }
 
@@ -467,6 +470,12 @@ function _buildToc(htmlContent) {
             e.preventDefault();
             const domHeadings = contentEl.querySelectorAll('h1, h2, h3, h4');
             if (domHeadings[idx]) domHeadings[idx].scrollIntoView({ behavior: 'smooth', block: 'start' });
+            if (window.innerWidth <= 768 && _overlayEl) {
+                const toc = _overlayEl.querySelector('.doc-toc');
+                const backdrop = _overlayEl.querySelector('.doc-toc-backdrop');
+                if (toc) toc.classList.remove('toc-open');
+                if (backdrop) backdrop.classList.remove('visible');
+            }
         });
         tocItems.push({ a, idx });
         li.appendChild(a);
@@ -1200,6 +1209,13 @@ function _buildEditorOverlay() {
         }
     });
 
+    const btnToc = document.createElement('button');
+    btnToc.className = 'doc-btn doc-btn-toc';
+    btnToc.title = 'Toggle table of contents';
+    btnToc.innerHTML = '<svg width="16" height="12" viewBox="0 0 16 12" fill="currentColor"><rect y="0" width="16" height="2" rx="1"/><rect y="5" width="16" height="2" rx="1"/><rect y="10" width="16" height="2" rx="1"/></svg>';
+    btnToc.style.display = 'none';
+
+    header.appendChild(btnToc);
     header.appendChild(titleInput);
     header.appendChild(bgWrap);
     header.appendChild(btnNav3d);
@@ -1492,6 +1508,10 @@ function _buildEditorOverlay() {
     tocEl.className = 'doc-toc';
     tocEl.style.display = 'none';
 
+    // Backdrop for mobile TOC drawer
+    const tocBackdrop = document.createElement('div');
+    tocBackdrop.className = 'doc-toc-backdrop';
+
     // Editor content area
     const editorContent = document.createElement('div');
     editorContent.className = 'doc-editor-content';
@@ -1500,7 +1520,44 @@ function _buildEditorOverlay() {
     const docBody = document.createElement('div');
     docBody.className = 'doc-body';
     docBody.appendChild(tocEl);
+    docBody.appendChild(tocBackdrop);
     docBody.appendChild(editorContent);
+
+    // ── TOC toggle ────────────────────────────────────────────────────────────
+    const _docIsMobile = () => window.innerWidth <= 768;
+    const _applyDocTocState = () => {
+        if (!_docIsMobile()) {
+            tocEl.classList.remove('toc-open');
+            tocBackdrop.classList.remove('visible');
+            if (localStorage.getItem('docTocHidden') === '1') {
+                tocEl.classList.add('toc-hidden');
+            } else {
+                tocEl.classList.remove('toc-hidden');
+            }
+        } else {
+            tocEl.classList.remove('toc-hidden');
+            tocEl.classList.remove('toc-open');
+            tocBackdrop.classList.remove('visible');
+        }
+    };
+    _applyDocTocState();
+
+    btnToc.addEventListener('click', () => {
+        if (_docIsMobile()) {
+            const opening = !tocEl.classList.contains('toc-open');
+            tocEl.classList.toggle('toc-open', opening);
+            tocBackdrop.classList.toggle('visible', opening);
+        } else {
+            const hiding = !tocEl.classList.contains('toc-hidden');
+            tocEl.classList.toggle('toc-hidden', hiding);
+            localStorage.setItem('docTocHidden', hiding ? '1' : '0');
+        }
+    });
+    tocBackdrop.addEventListener('click', () => {
+        tocEl.classList.remove('toc-open');
+        tocBackdrop.classList.remove('visible');
+    });
+    window.addEventListener('resize', _applyDocTocState);
 
     overlay.appendChild(header);
     overlay.appendChild(toolbar);
