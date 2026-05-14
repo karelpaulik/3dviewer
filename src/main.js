@@ -16,7 +16,7 @@ import { GUI } from 'lil-gui';
 import ZipLoader from 'zip-loader';
 import { updateCrossSectionLines as updateCrossSectionLinesCore, updateSectionCrossLines as updateSectionCrossLinesCore } from './crossSectionUtils.js';
 import { exportToHTML, exportToHTMLDraco, exportToHTMLObfuscated, exportToHTMLObfuscatedDraco } from './htmlExport.js';
-import { initOutliner, toggleOutliner, rebuildTree, highlightObject as outlinerHighlight, updateVisibilityIcon, updateObjectLabel, isOutlinerOpen } from './sceneOutliner.js';
+import { initOutliner, toggleOutliner, rebuildTree, highlightObject as outlinerHighlight, updateVisibilityIcon, updateObjectLabel, isOutlinerOpen, navigateOutliner } from './sceneOutliner.js';
 import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements, isSelectDimActive, setSelectDimActive, deleteSelectedDimension, initSelectDimension, updateSelectDimensionCamera, reconstructMeasurements, stripMeasurementVisuals, setMeasurementsVisible, setMeasurementDepthTest, removeMeasurementsForOwner, isCadDimActive, setCadDimActive, getCadDimStep, getCadDimAxis, addCadDimPoint, updateCadDimPreview, updateCadDimHoverPreview, cycleCadDimAxis, placeCadDim, clearCadDimMeasurements, removeCadDimMeasurementsForOwner, getSelectedCadDim, setCadDimLabelMode, setCadDimDragMode, selectDimTouchStart, selectDimTouchMove, selectDimTouchEnd, registerLabelForSelection, getSelectedCadDim3d, getCadDimMeasurements, deleteCadDimByRef, convertCadDim3dTo2d } from './measurementUtils.js';
 import { detectCircleCenterFromHit } from './circleDetectionUtils.js';
 import { initAnnotations, isAnnotationActive, setAnnotationActive, addAnnotationPoint, getAnnotationPendingPoint, updateAnnotationPreview, updateAnnotationMarkerScales, setAnnotationsVisible, clearAnnotations, stripAnnotationVisuals, reconstructAnnotations, setAnnotationDepthTest, removeAnnotationsForOwner, getAnnotations, isAddLeaderLineActive, cancelAddLeaderLine, commitAddLeaderLine, deleteAnnotationByRef, setConvertTo3dFn, reconstructAnnotationFromRec } from './annotationUtils.js';
@@ -1020,11 +1020,27 @@ function init() {
                 }
                 break;
             
-            case 'ArrowUp': // select parent of the selected object
+            case 'ArrowUp': // move up in the outliner
+                if (isOutlinerOpen()) {
+                    const obj = navigateOutliner('up');
+                    if (obj) { selectObject(obj); render(); }
+                    event.preventDefault();
+                }
+                break;
+
+            case 'ArrowDown': // move down in the outliner
+                if (isOutlinerOpen()) {
+                    const obj = navigateOutliner('down');
+                    if (obj) { selectObject(obj); render(); }
+                    event.preventDefault();
+                }
+                break;
+
+            case 'ArrowLeft': // select parent in model hierarchy
                 selectParent();
                 break;
 
-            case 'ArrowDown': // select previous selected object
+            case 'ArrowRight': // select previous in selection history
                 selectPrevious();
                 break;
 
@@ -2415,6 +2431,13 @@ function selectParent() {
             selectObject(parentObject); //Tj. lastSelectedObject = parentObject; + další
             render();
         }
+    }
+}
+
+function selectFirstChild() {
+    if (lastSelectedObject && lastSelectedObject.children.length > 0) {
+        selectObject(lastSelectedObject.children[0]);
+        render();
     }
 }
 

@@ -146,6 +146,44 @@ export function updateVisibilityIcon(object) {
 }
 
 /**
+ * Navigate the outliner selection up or down through the currently visible nodes.
+ * Returns the Object3D that should become selected, or null if nothing to navigate to.
+ * @param {'up'|'down'} direction
+ * @returns {import('three').Object3D|null}
+ */
+export function navigateOutliner(direction) {
+    if (!treeEl) return null;
+    const allNodes = Array.from(treeEl.querySelectorAll('.outliner-node'));
+    const visibleNodes = allNodes.filter(li => isNodeVisible(li));
+    if (visibleNodes.length === 0) return null;
+
+    let idx = activeTreeNode ? visibleNodes.indexOf(activeTreeNode) : -1;
+    if (direction === 'up') {
+        idx = idx <= 0 ? 0 : idx - 1;
+    } else {
+        idx = idx >= visibleNodes.length - 1 ? visibleNodes.length - 1 : idx + 1;
+    }
+    if (idx === -1) idx = 0;
+
+    const targetLi = visibleNodes[idx];
+    return domToObject.get(targetLi) || null;
+}
+
+/**
+ * Check whether a tree <li> node is currently visible (not inside a collapsed container).
+ * @param {HTMLLIElement} li
+ * @returns {boolean}
+ */
+function isNodeVisible(li) {
+    let el = li.parentElement;
+    while (el && el !== treeEl) {
+        if (el.style && el.style.display === 'none') return false;
+        el = el.parentElement;
+    }
+    return true;
+}
+
+/**
  * Update the label text for a specific object (e.g. after renaming).
  * @param {import('three').Object3D} object
  */
