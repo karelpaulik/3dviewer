@@ -1678,6 +1678,108 @@ function refreshSelectedObjGui(obj) {
     selectedFolder.open();
 }
 
+// GUI panel for an active group selection (multi-select pivot).
+// Shows the first object's name, operations applied to all selectedObjects,
+// and Location sliders bound directly to the pivotObject.
+function refreshGroupGui() {
+    if (selectedFolder) {
+        selectedFolder.destroy();
+        selectedFolder = null;
+    }
+
+    const n = selectedObjects.length;
+    selectedFolder = new GUI({ container: guiContainer, title: `Group (${n} objects)` });
+    guiPanels['Selected'].gui = selectedFolder;
+    guiPanels['Selected'].btn.style.display = '';
+    selectedFolder.domElement.style.display = '';
+    guiPanels['Selected'].btn.classList.add('active');
+    applyToolbarPreferences();
+
+    // Read-only list of object names
+    const namesStr = selectedObjects.map(o => o.name || 'Unnamed').join(', ');
+    selectedFolder.add({ names: namesStr }, 'names').name('Objects').disable();
+
+    // Color picker – applies to ALL objects in the group
+    const groupColor = { color: '#888888' };
+    selectedFolder.addColor(groupColor, 'color').name('Specif. color (all)').onChange(function(value) {
+        selectedObjects.forEach(obj => changeColor(obj, value));
+    });
+
+    // --- Operations (all objects) ---
+    selectedFolder.add({ fn() { selectedObjects.forEach(obj => changeColor(obj)); } }, 'fn').name('Random color (all)');
+
+    // Hide all – inline to avoid deselectObject() firing per-object
+    selectedFolder.add({ fn() {
+        selectedObjects.forEach(obj => {
+            obj.visible = false;
+            if (!hiddenObjects.includes(obj)) hiddenObjects.push(obj);
+            updateVisibilityIcon(obj);
+        });
+        render();
+    } }, 'fn').name('Hide all');
+
+    selectedFolder.add({ fn() {
+        selectedObjects.forEach(obj => {
+            obj.traverse(child => { if (child.isMesh) applyEmissive(child, 0x000000); });
+            toggleCadStyle(obj, false);
+        });
+        render();
+    } }, 'fn').name('CAD Style (original colors)');
+
+    selectedFolder.add({ fn() {
+        selectedObjects.forEach(obj => {
+            obj.traverse(child => { if (child.isMesh) applyEmissive(child, 0x000000); });
+            toggleCadStyle(obj, true);
+        });
+        render();
+    } }, 'fn').name('CAD Style (random colors)');
+
+    // --- Location: sliders bound to pivotObject ---
+    if (pivotObject) {
+        const folder2 = selectedFolder.addFolder("Location (pivot)");
+
+        folder2.add({ fn() {
+            // Objects are currently children of pivotObject, so their local coords are
+            // relative to the pivot, not to their original parents where initPosition was saved.
+            // Deactivate → reset in original parent space → reactivate.
+            const saved = [...selectedObjects];
+            deactivateMultiSelect();
+            saved.forEach(obj => setDefPosRotScale(obj));
+            activateMultiSelect();
+        } }, 'fn').name('Reset init. location (all)');
+        folder2.add({ fn() { undoLastTransform(pivotObject); } }, 'fn').name('Undo last transform');
+
+        // Save pivot's current state as the "before" baseline for undo.
+        savePreviousTransformState();
+
+        function _onGroupGuiLocationFinish() {
+            if (assemblyState.editMode && assemblyState.currentStepIndex >= 0) {
+                recordGroupTransformations();
+            }
+            savePreviousTransformState();
+        }
+
+        folder2.add(pivotObject.position, 'x', extent.pn, extent.pp, extent.pStep)
+            .name('Px').onChange(() => render()).onFinishChange(_onGroupGuiLocationFinish).listen();
+        folder2.add(pivotObject.position, 'y', extent.pn, extent.pp, extent.pStep)
+            .name('Py').onChange(() => render()).onFinishChange(_onGroupGuiLocationFinish).listen();
+        folder2.add(pivotObject.position, 'z', extent.pn, extent.pp, extent.pStep)
+            .name('Pz').onChange(() => render()).onFinishChange(_onGroupGuiLocationFinish).listen();
+        folder2.add(pivotObject.rotation, 'x', extent.rn, extent.rp, extent.rStep)
+            .name('Rx').onChange(() => render()).onFinishChange(_onGroupGuiLocationFinish).listen();
+        folder2.add(pivotObject.rotation, 'y', extent.rn, extent.rp, extent.rStep)
+            .name('Ry').onChange(() => render()).onFinishChange(_onGroupGuiLocationFinish).listen();
+        folder2.add(pivotObject.rotation, 'z', extent.rn, extent.rp, extent.rStep)
+            .name('Rz').onChange(() => render()).onFinishChange(_onGroupGuiLocationFinish).listen();
+        folder2.add(pivotObject.scale, 'x', extent.sn, extent.sp, extent.sStep)
+            .name('Scale').onChange(function(value) { pivotObject.scale.set(value, value, value); render(); })
+            .onFinishChange(_onGroupGuiLocationFinish).listen();
+        folder2.close();
+    }
+
+    selectedFolder.open();
+}
+
 // Builds a lil-gui folder with all editable material properties for a Mesh.
 // If the folder already exists it is removed and recreated (toggle behaviour).
 let _materialFolder = null;
@@ -3011,6 +3113,7 @@ function activateMultiSelect() {
     transformControls.attach(pivotObject);
     viewProp.isGroupTransformActive = true;
     console.log(`Multi-selection activated, ${selectedObjects.length} objects.`);
+    refreshGroupGui();
     render();
 }
 
@@ -3020,6 +3123,15 @@ function deactivateMultiSelect() {
     if (!viewProp.isGroupTransformActive) return;
 
     if (transformControls.object === pivotObject) transformControls.detach();
+
+    // Zrušíme group GUI
+    if (selectedFolder) {
+        selectedFolder.destroy();
+        selectedFolder = null;
+        guiPanels['Selected'].gui = null;
+        guiPanels['Selected'].btn.classList.remove('active');
+        guiPanels['Selected'].btn.style.display = 'none';
+    }
 
     // Vrátíme objekty zpět jejich původním rodičům (zachová se world-space pozice)
     selectedObjects.forEach((obj, i) => {
