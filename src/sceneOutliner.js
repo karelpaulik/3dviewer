@@ -145,6 +145,17 @@ export function updateVisibilityIcon(object) {
     }
 }
 
+/**
+ * Update the label text for a specific object (e.g. after renaming).
+ * @param {import('three').Object3D} object
+ */
+export function updateObjectLabel(object) {
+    const li = objectToDom.get(object);
+    if (!li) return;
+    const label = li.querySelector(':scope > .outliner-row > .outliner-label');
+    if (label) label.textContent = getDisplayName(object);
+}
+
 // -------------------------------------------------------------------
 // Internal helpers
 // -------------------------------------------------------------------
@@ -278,7 +289,6 @@ function getDepth(li) {
 }
 
 function getDisplayName(obj) {
-    if (obj.userData && obj.userData.fileName) return obj.userData.fileName;
     if (obj.name) return obj.name;
     if (obj.isMesh) return `Mesh`;
     if (obj.isGroup) return `Group`;

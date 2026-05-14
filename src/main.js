@@ -16,7 +16,7 @@ import { GUI } from 'lil-gui';
 import ZipLoader from 'zip-loader';
 import { updateCrossSectionLines as updateCrossSectionLinesCore, updateSectionCrossLines as updateSectionCrossLinesCore } from './crossSectionUtils.js';
 import { exportToHTML, exportToHTMLDraco, exportToHTMLObfuscated, exportToHTMLObfuscatedDraco } from './htmlExport.js';
-import { initOutliner, toggleOutliner, rebuildTree, highlightObject as outlinerHighlight, updateVisibilityIcon, isOutlinerOpen } from './sceneOutliner.js';
+import { initOutliner, toggleOutliner, rebuildTree, highlightObject as outlinerHighlight, updateVisibilityIcon, updateObjectLabel, isOutlinerOpen } from './sceneOutliner.js';
 import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements, isSelectDimActive, setSelectDimActive, deleteSelectedDimension, initSelectDimension, updateSelectDimensionCamera, reconstructMeasurements, stripMeasurementVisuals, setMeasurementsVisible, setMeasurementDepthTest, removeMeasurementsForOwner, isCadDimActive, setCadDimActive, getCadDimStep, getCadDimAxis, addCadDimPoint, updateCadDimPreview, updateCadDimHoverPreview, cycleCadDimAxis, placeCadDim, clearCadDimMeasurements, removeCadDimMeasurementsForOwner, getSelectedCadDim, setCadDimLabelMode, setCadDimDragMode, selectDimTouchStart, selectDimTouchMove, selectDimTouchEnd, registerLabelForSelection, getSelectedCadDim3d, getCadDimMeasurements, deleteCadDimByRef, convertCadDim3dTo2d } from './measurementUtils.js';
 import { detectCircleCenterFromHit } from './circleDetectionUtils.js';
 import { initAnnotations, isAnnotationActive, setAnnotationActive, addAnnotationPoint, getAnnotationPendingPoint, updateAnnotationPreview, updateAnnotationMarkerScales, setAnnotationsVisible, clearAnnotations, stripAnnotationVisuals, reconstructAnnotations, setAnnotationDepthTest, removeAnnotationsForOwner, getAnnotations, isAddLeaderLineActive, cancelAddLeaderLine, commitAddLeaderLine, deleteAnnotationByRef, setConvertTo3dFn, reconstructAnnotationFromRec } from './annotationUtils.js';
@@ -268,6 +268,14 @@ outlinerBtn.addEventListener('click', () => {
     outlinerBtn.classList.toggle('active', open);
 });
 guiToolbar.insertBefore(outlinerBtn, guiToolbar.firstChild);
+
+// File name input – shows the name of the imported file; used as default export name
+const fileNameInput = document.createElement('input');
+fileNameInput.id = 'toolbar-filename-input';
+fileNameInput.type = 'text';
+fileNameInput.placeholder = 'file name…';
+fileNameInput.title = 'File name (default name for export)';
+guiToolbar.insertBefore(fileNameInput, outlinerBtn.nextSibling);
 
 // Pre-create all toolbar buttons in desired order: Selected, File, Edit, View, Tools, Assembly, Docs, Help
 ['Selected', 'File', 'Edit', 'View', 'Assembly', 'Docs', 'Files', 'Help'].forEach(name => {
@@ -1504,7 +1512,7 @@ function refreshSelectedObjGui(obj) {
     selectedFolder.domElement.style.display = '';
     guiPanels['Selected'].btn.classList.add('active');
     applyToolbarPreferences(); // Apply current toolbar CSS to the new Selected panel
-    selectedFolder.add(obj, 'name').name('Name').listen();
+    selectedFolder.add(obj, 'name').name('Name').onChange(() => updateObjectLabel(obj)).listen();
     selectedFolder.addColor(part, 'color').name('Specif. color').onChange(function(value){ changeColor(obj, value); });
 
     // Bounding box dimensions text
@@ -1978,6 +1986,7 @@ function initLoad() {
 
         document.getElementById('fileNameLabel').textContent = fileName;
         document.getElementById('pageTitle').textContent = fileName;
+        if (!fileNameInput.value) fileNameInput.value = fileName.replace(/\.[^.]+$/, '');
 
         switch ( fileExtension ) {
             case 'zip':      
@@ -4570,6 +4579,7 @@ function importGlbFile() {
         const url = URL.createObjectURL(file);
         loadGlbModel(url, file.name, 0.001, true).then(() => {
             URL.revokeObjectURL(url);
+            if (!fileNameInput.value) fileNameInput.value = file.name.replace(/\.[^.]+$/, '');
             fitView();
             console.log(`[Import] GLB "${file.name}" loaded successfully.`);
         }).catch(err => {
@@ -4787,8 +4797,7 @@ function exportAllModels() {
         console.warn('Žádné modely k exportu.');
         return;
     }
-    const importedName = loadedModels[0]?.userData?.fileName;
-    const baseName = importedName ? importedName.replace(/\.[^.]+$/, '') : 'export_all';
+    const baseName = fileNameInput.value.trim() || (loadedModels[0]?.userData?.fileName?.replace(/\.[^.]+$/, '') ?? 'export_all');
     const input = window.prompt('File name (.glb will be added):', baseName);
     if (input === null) return; // uživatel stiskl Cancel
     const finalName = (input.trim() || baseName).replace(/\.glb$/i, '') + '.glb';
@@ -4801,10 +4810,8 @@ function exportAllModels() {
 
     const exporter = new GLTFExporter();
     const group = new THREE.Group();
-    const exportBaseName = finalName.replace(/\.glb$/i, '');
-    loadedModels.forEach((model, i) => {
+    loadedModels.forEach((model) => {
         const clone = model.clone(true);
-        clone.name = loadedModels.length > 1 ? `${exportBaseName}_${i + 1}` : exportBaseName;
         clone.userData.fileName = finalName;
         group.add(clone);
     });
@@ -4855,8 +4862,7 @@ async function exportAllModelsDraco() {
         console.warn('Žádné modely k exportu.');
         return;
     }
-    const importedName = loadedModels[0]?.userData?.fileName;
-    const baseName = importedName ? importedName.replace(/\.[^.]+$/, '') : 'export_all_draco';
+    const baseName = fileNameInput.value.trim() || (loadedModels[0]?.userData?.fileName?.replace(/\.[^.]+$/, '') ?? 'export_all_draco');
     const input = window.prompt('File name (.glb will be added):', baseName);
     if (input === null) return;
     const finalName = (input.trim() || baseName).replace(/\.glb$/i, '') + '.glb';
@@ -4879,10 +4885,8 @@ async function exportAllModelsDraco() {
 
     const exporter = new GLTFExporter();
     const group = new THREE.Group();
-    const exportBaseName = finalName.replace(/\.glb$/i, '');
-    loadedModels.forEach((model, i) => {
+    loadedModels.forEach((model) => {
         const clone = model.clone(true);
-        clone.name = loadedModels.length > 1 ? `${exportBaseName}_${i + 1}` : exportBaseName;
         clone.userData.fileName = finalName;
         group.add(clone);
     });
