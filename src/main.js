@@ -2507,11 +2507,15 @@ function fitView() {
         recalibrateOrthoCamera();
         recalibratePerspCamera();
 
-    // Výpočet ohraničujícího boxu všech objektů ve scéně
+    // Výpočet ohraničujícího boxu všech viditelných objektů ve scéně
     let box = new THREE.Box3();
-    
+
     meshObjects.forEach(obj => {
-        box.expandByObject(obj);
+        // Přeskočíme objekty, které jsou skryté nebo mají skrytého předka
+        let visible = true;
+        let cur = obj;
+        while (cur) { if (!cur.visible) { visible = false; break; } cur = cur.parent; }
+        if (visible) box.expandByObject(obj);
     });
 
     // Pokud je box prázdný, použijeme výchozí pozici
