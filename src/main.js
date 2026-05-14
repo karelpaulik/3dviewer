@@ -1531,6 +1531,36 @@ function refreshSelectedObjGui(obj) {
     selectedFolder.add(obj, 'name').name('Name').onChange(() => updateObjectLabel(obj)).listen();
     selectedFolder.addColor(part, 'color').name('Specif. color').onChange(function(value){ changeColor(obj, value); });
 
+    // Roughness / Metalness – read initial value from first material found, apply to all
+    const _matProxy = { roughness: 0.5, metalness: 0 };
+    let _matFirst = false;
+    obj.traverse(child => {
+        if (!_matFirst && child.isMesh && child.material) {
+            const m = Array.isArray(child.material) ? child.material[0] : child.material;
+            if (m.roughness !== undefined) _matProxy.roughness = m.roughness;
+            if (m.metalness !== undefined) _matProxy.metalness = m.metalness;
+            _matFirst = true;
+        }
+    });
+    selectedFolder.add(_matProxy, 'roughness', 0, 1, 0.01).name('Roughness').onChange(function(value) {
+        obj.traverse(child => {
+            if (child.isMesh) {
+                const mats = Array.isArray(child.material) ? child.material : [child.material];
+                mats.forEach(m => { if (m.roughness !== undefined) { m.roughness = value; m.needsUpdate = true; } });
+            }
+        });
+        render();
+    });
+    selectedFolder.add(_matProxy, 'metalness', 0, 1, 0.01).name('Metalness').onChange(function(value) {
+        obj.traverse(child => {
+            if (child.isMesh) {
+                const mats = Array.isArray(child.material) ? child.material : [child.material];
+                mats.forEach(m => { if (m.metalness !== undefined) { m.metalness = value; m.needsUpdate = true; } });
+            }
+        });
+        render();
+    });
+
     // Bounding box dimensions text
     updateBBoxSize(obj);
     selectedFolder.add(part, 'bbSize').name('Bounding box').disable().listen();
@@ -1703,6 +1733,38 @@ function refreshGroupGui() {
     const groupColor = { color: '#888888' };
     selectedFolder.addColor(groupColor, 'color').name('Specif. color (all)').onChange(function(value) {
         selectedObjects.forEach(obj => changeColor(obj, value));
+    });
+
+    // Roughness / Metalness – read initial value from first material found, apply to all objects
+    const _grpMatProxy = { roughness: 0.5, metalness: 0 };
+    let _grpMatFirst = false;
+    selectedObjects.forEach(o => {
+        if (!_grpMatFirst) o.traverse(child => {
+            if (!_grpMatFirst && child.isMesh && child.material) {
+                const m = Array.isArray(child.material) ? child.material[0] : child.material;
+                if (m.roughness !== undefined) _grpMatProxy.roughness = m.roughness;
+                if (m.metalness !== undefined) _grpMatProxy.metalness = m.metalness;
+                _grpMatFirst = true;
+            }
+        });
+    });
+    selectedFolder.add(_grpMatProxy, 'roughness', 0, 1, 0.01).name('Roughness (all)').onChange(function(value) {
+        selectedObjects.forEach(o => o.traverse(child => {
+            if (child.isMesh) {
+                const mats = Array.isArray(child.material) ? child.material : [child.material];
+                mats.forEach(m => { if (m.roughness !== undefined) { m.roughness = value; m.needsUpdate = true; } });
+            }
+        }));
+        render();
+    });
+    selectedFolder.add(_grpMatProxy, 'metalness', 0, 1, 0.01).name('Metalness (all)').onChange(function(value) {
+        selectedObjects.forEach(o => o.traverse(child => {
+            if (child.isMesh) {
+                const mats = Array.isArray(child.material) ? child.material : [child.material];
+                mats.forEach(m => { if (m.metalness !== undefined) { m.metalness = value; m.needsUpdate = true; } });
+            }
+        }));
+        render();
     });
 
     // --- Operations (all objects) ---
