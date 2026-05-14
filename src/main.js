@@ -3053,14 +3053,10 @@ function updateLightHelper() {
 
 // --- Multi-výběr: funkce ---
 
-// Přidá / odebere lastSelectedObject do/z multi-výběru. Volá se klávesou "+".".
-function addCurrentToMultiSelect() {
-    if (!lastSelectedObject) return;
-    if (viewProp.isGroupTransformActive) {
-        console.log('Multi-selection is active – deactivate the group first.');
-        return;
-    }
-    const obj = lastSelectedObject;
+// Přidá / odebere konkrétní objekt do/z multi-výběru.
+// Předpokládá, že skupina NENÍ aktivní (objekty jsou u svých původních rodičů).
+function toggleObjectInMultiSelect(obj) {
+    if (!obj) return;
     const idx = selectedObjects.indexOf(obj);
     if (idx !== -1) {
         // Odebrat z multi-výběru
@@ -3079,6 +3075,16 @@ function addCurrentToMultiSelect() {
         console.log(`Multi-selection: added "${obj.name}", total: ${selectedObjects.length}`);
     }
     render();
+}
+
+// Přidá / odebere lastSelectedObject do/z multi-výběru. Volá se klávesou "/".
+function addCurrentToMultiSelect() {
+    if (!lastSelectedObject) return;
+    if (viewProp.isGroupTransformActive) {
+        console.log('Multi-selection is active – deactivate the group first.');
+        return;
+    }
+    toggleObjectInMultiSelect(lastSelectedObject);
 }
 
 // Aktivuje skupinovou transformaci: reparentuje objekty do pivotu, TC se přepne na pivot.
@@ -3108,6 +3114,9 @@ function activateMultiSelect() {
 
     // Reparentujeme objekty do pivotu (Three.js zachová world-space pozici)
     selectedObjects.forEach(obj => pivotObject.attach(obj));
+
+    // Aktualizujeme BoxHelpery na aktuální pozice objektů
+    multiSelectionHelpers.forEach((h, i) => { if (selectedObjects[i]) h.setFromObject(selectedObjects[i]); });
 
     // Připojíme TC k pivotu
     transformControls.attach(pivotObject);
@@ -4522,7 +4531,6 @@ function onClick( event ) {
 
     // Pokud je selekce zakázána v GUI, ignorujeme click
     if (!viewProp.isSelectAllowed) return;
-    if (viewProp.isGroupTransformActive) return;
     if (isDocOverlayBlockingInput()) return;
 
     // Pokud právě probíhá drag transformací, ignorujeme click
@@ -4542,6 +4550,23 @@ function onClick( event ) {
 
     // Čerstvý raycast – INTERSECTED mohl být smazán během mousedown (isMouseDown=true blokuje render highlight)
     const clickTarget = getFreshRaycastTarget();
+
+    // Ctrl+click: přidat / odebrat objekt do/z skupiny
+    if (event.ctrlKey && clickTarget) {
+        const obj = resolveCADSelection(clickTarget);
+        if (viewProp.isGroupTransformActive) {
+            // Dočasně deaktivujeme skupinu, upravíme seznam, pak případně znovu aktivujeme
+            deactivateMultiSelect();
+            toggleObjectInMultiSelect(obj);
+            if (selectedObjects.length >= 2) activateMultiSelect();
+        } else {
+            toggleObjectInMultiSelect(obj);
+        }
+        return;
+    }
+
+    // Normální selekce – zakázaná, pokud je skupina aktivní
+    if (viewProp.isGroupTransformActive) return;
 
     if (clickTarget) {
         INTERSECTED = clickTarget;
