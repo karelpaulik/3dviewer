@@ -4847,6 +4847,10 @@ function onTouchEnd( event ) {
                 clearMultiSelect();
             }
         }
+
+        // Zabránění syntetickému click eventu prohlížeče, který by po touchend mohl
+        // zasáhnout tlačítko GUI panelu (Selected), který se právě zobrazil na místě dotyku.
+        event.preventDefault();
         
         isTouchDragging = false;
     }
