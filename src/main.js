@@ -1424,6 +1424,7 @@ function addMainGui() {
     fileGui.add({ fn: exportAllModels }, 'fn').name('Export all to GLB');
     fileGui.add({ fn: exportAllModelsDraco }, 'fn').name('Export all to GLB (Compression)');
     fileGui.add({ fn: exportSelectedObject }, 'fn').name('Export selected to GLB');
+    fileGui.add({ fn: exportSelectedObjectDraco }, 'fn').name('Export selected to GLB (Compression)');
     const exportHtmlFolder = fileGui.addFolder('Export self-contained HTML');
     exportHtmlFolder.close();
     exportHtmlFolder.add({ fn() { exportToHTML(loadedModels, assemblyGui, viewProp, assemblyWriteToUserData, assemblyClearUserData); } }, 'fn').name('Export to HTML');
@@ -5359,6 +5360,121 @@ function exportSelectedObject() {
         saveArrayBuffer(result, finalName);
         console.log(`Export selected: hotovo.`);
     }, function(error) {
+        console.error('Chyba při exportu:', error);
+    }, { binary: true, onlyVisible: false });
+}
+
+async function exportSelectedObjectDraco() {
+    if (!lastSelectedObject) {
+        console.warn('Žádný objekt není vybrán.');
+        return;
+    }
+    const defaultName = `export_${lastSelectedObject.name || 'selected'}_draco.glb`;
+    const input = window.prompt('File name (.glb will be added):', defaultName.replace(/\.glb$/i, ''));
+    if (input === null) return;
+    const finalName = (input.trim() || defaultName.replace(/\.glb$/i, '')).replace(/\.glb$/i, '') + '.glb';
+
+    // Zobrazíme overlay
+    let overlay = document.getElementById('dracoOverlay');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'dracoOverlay';
+        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:99999;color:#fff;font-size:22px;font-family:sans-serif;';
+        overlay.textContent = 'Draco compressing… please wait';
+        document.body.appendChild(overlay);
+    }
+    overlay.style.display = 'flex';
+
+    // Vypneme emissive (zvýraznění výběru) před exportem
+    lastSelectedObject.traverse((child) => {
+        if (child.isMesh && child.material) {
+            const mats = Array.isArray(child.material) ? child.material : [child.material];
+            mats.forEach(mat => { if (mat.emissive) mat.emissive.setHex(0x000000); });
+        }
+    });
+
+    assemblyWriteToUserData();
+    flushDocumentEdits();
+
+    const exporter = new GLTFExporter();
+    const clone = lastSelectedObject.clone(true);
+
+    clone.userData.cadDim3dDefaults = { ...getCadDim3dDefaults() };
+    clone.userData.annotation3dDefaults = { ...getAnnotation3dDefaults() };
+    clone.userData.sectionSettings = {
+        section:           viewProp.section,
+        px:                viewProp.px,
+        py:                viewProp.py,
+        pz:                viewProp.pz,
+        sectionCrossLines: viewProp.sectionCrossLines,
+        crossSectionColor: viewProp.crossSectionColor,
+        solidSection:      viewProp.solidSection,
+        capColor:          viewProp.capColor,
+        showSectionMesh:   viewProp.showSectionMesh,
+    };
+
+    assemblyClearUserData();
+
+    stripMeasurementVisuals(clone);
+    stripAnnotationVisuals(clone);
+    stripAnnotation3dVisuals(clone);
+    stripCadDim3dVisuals(clone);
+
+    lastSelectedObject.updateWorldMatrix(true, false);
+    const worldPos = new THREE.Vector3();
+    const worldQuat = new THREE.Quaternion();
+    const worldScale = new THREE.Vector3();
+    lastSelectedObject.matrixWorld.decompose(worldPos, worldQuat, worldScale);
+    clone.position.copy(worldPos);
+    clone.quaternion.copy(worldQuat);
+    clone.scale.copy(worldScale);
+
+    exporter.parse(clone, function(result) {
+        setTimeout(async () => {
+            try {
+                const { WebIO } = await import('@gltf-transform/core');
+                const { KHRDracoMeshCompression } = await import('@gltf-transform/extensions');
+                const { draco } = await import('@gltf-transform/functions');
+
+                const loadDracoScript = (url) => new Promise((resolve, reject) => {
+                    const id = url.includes('encoder') ? 'DracoEncoderModule' : 'DracoDecoderModule';
+                    if (window[id]) { resolve(); return; }
+                    const s = document.createElement('script');
+                    s.src = url;
+                    s.onload = resolve;
+                    s.onerror = () => reject(new Error('Failed to load ' + url));
+                    document.head.appendChild(s);
+                });
+
+                await loadDracoScript('./draco/draco_encoder_wasm.js');
+                await loadDracoScript('./draco/draco_decoder_wasm.js');
+
+                const encoder = await window.DracoEncoderModule();
+                const decoder = await window.DracoDecoderModule();
+
+                const io = new WebIO()
+                    .registerExtensions([KHRDracoMeshCompression])
+                    .registerDependencies({
+                        'draco3d.decoder': decoder,
+                        'draco3d.encoder': encoder,
+                    });
+
+                const gltfDoc = await io.readBinary(new Uint8Array(result));
+                await gltfDoc.transform(draco());
+                const compressedGlb = await io.writeBinary(gltfDoc);
+
+                saveArrayBuffer(compressedGlb, finalName);
+                console.log('Export selected (Draco): hotovo.');
+            } catch (err) {
+                console.error('Chyba při Draco kompresi:', err);
+                saveArrayBuffer(result, finalName);
+                console.warn('Uloženo bez Draco komprese (fallback).');
+            } finally {
+                overlay.style.display = 'none';
+            }
+        }, 50);
+    }, function(error) {
+        overlay.style.display = 'none';
         console.error('Chyba při exportu:', error);
     }, { binary: true, onlyVisible: false });
 }
