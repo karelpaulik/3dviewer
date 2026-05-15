@@ -443,6 +443,19 @@ const toolbarDefaults = {
 
 const toolbarInitDefaults = { ...toolbarDefaults };
 
+const dracoDefaults = {
+    useCustomSettings: false,        // false = draco() defaults, true = use settings below
+    method:           'edgebreaker', // 'edgebreaker' | 'sequential'
+    encodeSpeed:      5,             // 0–10
+    decodeSpeed:      5,             // 0–10
+    quantizePosition: 14,            // bits
+    quantizeNormal:   10,            // bits
+    quantizeColor:    8,             // bits
+    quantizeTexcoord: 12,            // bits
+    quantizeGeneric:  12,            // bits
+};
+const dracoInitDefaults = { ...dracoDefaults };
+
 const extent = {
     pn: -1000,
     pp: +1000,
@@ -1402,6 +1415,19 @@ function addMainGui() {
                 docNameFolder.add(_docLabelOpts, 'showLastEditDate').name('Show last edit date').onChange(v => setDocLabelOptions({ showLastEditDate: v }));
                 docNameFolder.add(_docLabelOpts, 'showImportDate').name('Show import date').onChange(v => setDocLabelOptions({ showImportDate: v }));
                 docNameFolder.close();
+            const dracoCompFolder = preferencesFolder.addFolder('Export Compression');
+                const _dracoMethodOpts = { 'Edgebreaker': 'edgebreaker', 'Sequential': 'sequential' };
+                dracoCompFolder.add(dracoDefaults, 'useCustomSettings').name('Use custom settings').listen();
+                dracoCompFolder.add(dracoDefaults, 'method', _dracoMethodOpts).name('Method').listen();
+                dracoCompFolder.add(dracoDefaults, 'encodeSpeed', 0, 10, 1).name('Encode speed (0=best)').listen();
+                dracoCompFolder.add(dracoDefaults, 'decodeSpeed', 0, 10, 1).name('Decode speed (0=best)').listen();
+                dracoCompFolder.add(dracoDefaults, 'quantizePosition', 1, 16, 1).name('Quantize position (bits)').listen();
+                dracoCompFolder.add(dracoDefaults, 'quantizeNormal', 1, 16, 1).name('Quantize normal (bits)').listen();
+                dracoCompFolder.add(dracoDefaults, 'quantizeColor', 1, 16, 1).name('Quantize color (bits)').listen();
+                dracoCompFolder.add(dracoDefaults, 'quantizeTexcoord', 1, 16, 1).name('Quantize texcoord (bits)').listen();
+                dracoCompFolder.add(dracoDefaults, 'quantizeGeneric', 1, 16, 1).name('Quantize generic (bits)').listen();
+                dracoCompFolder.add({ fn() { Object.assign(dracoDefaults, dracoInitDefaults); } }, 'fn').name('Set to default');
+                dracoCompFolder.close();
             preferencesFolder.close();
 
     // Sync toggle when fullscreen is exited externally (e.g. F11)
@@ -5278,7 +5304,7 @@ async function exportAllModelsDraco() {
                 //     quantizeTexcoord: 12,     // bits for UV coordinates
                 //     quantizeGeneric: 12,      // bits for other attributes
                 // }));
-                await gltfDoc.transform(draco());
+                await gltfDoc.transform(dracoDefaults.useCustomSettings ? draco({ ...dracoDefaults }) : draco());
                 const compressedGlb = await io.writeBinary(gltfDoc);
 
                 saveArrayBuffer(compressedGlb, finalName);
@@ -5460,7 +5486,7 @@ async function exportSelectedObjectDraco() {
                     });
 
                 const gltfDoc = await io.readBinary(new Uint8Array(result));
-                await gltfDoc.transform(draco());
+                await gltfDoc.transform(dracoDefaults.useCustomSettings ? draco({ ...dracoDefaults }) : draco());
                 const compressedGlb = await io.writeBinary(gltfDoc);
 
                 saveArrayBuffer(compressedGlb, finalName);

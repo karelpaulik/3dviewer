@@ -453,7 +453,7 @@ a, button, input, select {
 #gui-container > .lil-gui {
     width: 300px !important;
     flex: 0 0 auto;
-    max-height: calc(100vh - 28px);
+    max-height: calc(100vh - 28px - 32px);
     overflow-y: auto;
 }
 
