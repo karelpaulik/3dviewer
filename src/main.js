@@ -385,7 +385,7 @@ const viewProp = {
     section: false,
     fullscreen: false,
     isSelectAllowed: true, // Povolit / zakázat selekci objektů myší
-    backgroundColor: "#888888",
+    backgroundColor: "#867e79",
     px: 0,
     py: 0,
     pz: 0,
@@ -692,14 +692,14 @@ function init() {
     
     //scene
     scene = new THREE.Scene();
-    scene.background = new THREE.Color( 0x72645b );						
+    scene.background = new THREE.Color(viewProp.backgroundColor);
 
     //lights
     const hemisLight = new THREE.HemisphereLight( 0x443333, 0x111122 );
     scene.add( hemisLight );
     sceneLights.push(hemisLight);
     sceneLights.push(addShadowedLight( 100, 100, 100, 0xffffff, 1 ));
-    sceneLights.push(addShadowedLight( 50, 100, - 100, 0xffaa00, 0.5 ));
+    sceneLights.push(addShadowedLight( 50, 100, - 100, 0xffffff, 0.5 ));
 
     // headlight - světlo z pohledu kamery
     const headlight = new THREE.DirectionalLight(0xffffff, 1.5);
@@ -1735,6 +1735,16 @@ function refreshGroupGui() {
 
     // Color picker – applies to ALL objects in the group
     const groupColor = { color: '#888888' };
+    // Read actual color from first mesh material found
+    let _colorFound = false;
+    selectedObjects.forEach(o => {
+        if (!_colorFound) o.traverse(child => {
+            if (!_colorFound && child.isMesh && child.material) {
+                const m = Array.isArray(child.material) ? child.material[0] : child.material;
+                if (m && m.color) { groupColor.color = '#' + m.color.getHexString(); _colorFound = true; }
+            }
+        });
+    });
     selectedFolder.addColor(groupColor, 'color').name('Specif. color (all)').onChange(function(value) {
         selectedObjects.forEach(obj => changeColor(obj, value));
     });

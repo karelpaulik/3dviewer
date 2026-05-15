@@ -537,7 +537,7 @@ scene.add(new THREE.HemisphereLight(0x443333, 0x111122));
 const dl1 = new THREE.DirectionalLight(0xffffff, 1.35);
 dl1.position.set(1, 1, 1);
 scene.add(dl1);
-const dl2 = new THREE.DirectionalLight(0xffaa00, 1);
+const dl2 = new THREE.DirectionalLight(0xffffff, 1);
 dl2.position.set(0.5, 1, -1);
 scene.add(dl2);
 
