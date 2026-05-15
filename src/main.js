@@ -1342,9 +1342,6 @@ function addMainGui() {
             rebuildLightsFolder();
             lightsFolder.close();
         const multiFolder = folderProp.addFolder("Group Selection");
-            multiFolder.add(viewProp, 'isGroupTransformActive').name('Group transform active (*)').onChange(function(value) {
-                if (value) activateMultiSelect(); else deactivateMultiSelect();
-            }).listen();
             multiFolder.add(viewProp, 'multiSelectBoxPadding', 0, 200, 1).name('Box padding').listen();
             multiFolder.add({ fn: addCurrentToMultiSelect }, 'fn').name('Add/remove selected (/)');
             multiFolder.add({ fn: clearMultiSelect }, 'fn').name('Clear group');
@@ -3115,44 +3112,76 @@ function updateLightHelper() {
 
 // --- Multi-výběr: funkce ---
 
-// Přidá / odebere konkrétní objekt do/z multi-výběru.
-// Předpokládá, že skupina NENÍ aktivní (objekty jsou u svých původních rodičů).
+// Přidá / odebere konkrétní objekt do/z skupiny.
+// Skupina se aktivuje automaticky při přidání prvního objektu
+// a zaniká, když je seznam prázdný – bez nutnosti ručního activate/deactivate.
 function toggleObjectInMultiSelect(obj) {
     if (!obj) return;
     const idx = selectedObjects.indexOf(obj);
     if (idx !== -1) {
-        // Odebrat z multi-výběru
+        // --- Odebrat ---
+        const originalParent = multiOriginalParents[idx] || scene;
+        originalParent.attach(obj);                  // vrátit do původního rodiče
         selectedObjects.splice(idx, 1);
         multiOriginalParents.splice(idx, 1);
         scene.remove(multiSelectionHelpers[idx]);
         multiSelectionHelpers.splice(idx, 1);
         console.log(`Multi-selection: removed "${obj.name}", remaining: ${selectedObjects.length}`);
+
+        if (selectedObjects.length === 0) {
+            // Poslední objekt odebrán – zničit pivot a group GUI
+            if (transformControls.object === pivotObject) transformControls.detach();
+            if (pivotObject) { scene.remove(pivotObject); pivotObject = null; }
+            viewProp.isGroupTransformActive = false;
+            if (selectedFolder) {
+                selectedFolder.destroy();
+                selectedFolder = null;
+                guiPanels['Selected'].gui = null;
+                guiPanels['Selected'].btn.classList.remove('active');
+                guiPanels['Selected'].btn.style.display = 'none';
+            }
+        } else {
+            refreshGroupGui();
+        }
     } else {
-        // Přidat do multi-výběru
+        // --- Přidat ---
+        if (!pivotObject) {
+            // První objekt – vytvořit pivot na jeho world pozici
+            deselectObject();   // odpojit případný single-select TC
+            obj.updateWorldMatrix(true, false);
+            const center = new THREE.Vector3().setFromMatrixPosition(obj.matrixWorld);
+            pivotObject = new THREE.Object3D();
+            pivotObject.name = '__multiSelectPivot__';
+            pivotObject.position.copy(center);
+            scene.add(pivotObject);
+            transformControls.attach(pivotObject);
+            viewProp.isGroupTransformActive = true;
+        }
         selectedObjects.push(obj);
-        multiOriginalParents.push(obj.parent);
+        multiOriginalParents.push(obj.parent);   // uložit před attach
+        pivotObject.attach(obj);
         const h = new PaddedBoxHelper(obj, 0x00ccff, viewProp.multiSelectBoxPadding);
         scene.add(h);
         multiSelectionHelpers.push(h);
         console.log(`Multi-selection: added "${obj.name}", total: ${selectedObjects.length}`);
+        refreshGroupGui();
     }
     render();
 }
 
-// Přidá / odebere lastSelectedObject do/z multi-výběru. Volá se klávesou "/".
+// Přidá / odebere lastSelectedObject do/z skupiny. Volá se klávesou "/".
 function addCurrentToMultiSelect() {
     if (!lastSelectedObject) return;
-    if (viewProp.isGroupTransformActive) {
-        console.log('Multi-selection is active – deactivate the group first.');
-        return;
-    }
+    // Vyčistíme emissivní zvýraznění před přidáním do skupiny
+    lastSelectedMeshes.forEach(child => applyEmissive(child, 0x000000));
+    lastSelectedMeshes.length = 0;
     toggleObjectInMultiSelect(lastSelectedObject);
 }
 
 // Aktivuje skupinovou transformaci: reparentuje objekty do pivotu, TC se přepne na pivot.
 function activateMultiSelect() {
-    if (selectedObjects.length < 2) {
-        console.log('Multi-selection: at least 2 objects required (key +).');
+    if (selectedObjects.length < 1) {
+        console.log('Multi-selection: at least 1 object required.');
         return;
     }
     if (viewProp.isGroupTransformActive) return;
@@ -3192,6 +3221,10 @@ function activateMultiSelect() {
 // Seznam selectedObjects zůstane zachován – lze skupinu znovu aktivovat.
 function deactivateMultiSelect() {
     if (!viewProp.isGroupTransformActive) return;
+
+    // Vyčistíme emissivní zvýraznění (z group-mode kliku)
+    lastSelectedMeshes.forEach(child => applyEmissive(child, 0x000000));
+    lastSelectedMeshes.length = 0;
 
     if (transformControls.object === pivotObject) transformControls.detach();
 
@@ -3333,6 +3366,7 @@ function restoreGroupFromHistory() {
     });
 
     console.log(`Group History: group "${snapshot.name}" restored (${selectedObjects.length} objects).`);
+    activateMultiSelect();
     render();
 }
 
@@ -4085,7 +4119,7 @@ function render() {
     const isMouseOverGui = _guiHitEl && (guiWrapper.contains(_guiHitEl) || _guiHitEl.closest('.lil-gui'));
     
     // Nezvýrazňujeme objekty při dragování (rotaci/posouvání) nebo při transformaci
-    if (!isTransformDragging && !isMouseOverGui && !isMouseDown && !isTouchDragging && viewProp.isSelectAllowed && !viewProp.isGroupTransformActive && !isDocOverlayBlockingInput()) {      
+    if (!isTransformDragging && !isMouseOverGui && !isMouseDown && !isTouchDragging && viewProp.isSelectAllowed && !isDocOverlayBlockingInput()) {      
         raycaster.setFromCamera(mouse, currentCamera);
         // Raycasting ArrowHelper – vizualizace paprsku pro ladění
         if (viewProp.showRaycastHelper) {
@@ -4143,7 +4177,7 @@ function render() {
     }
 
     // Pokud je selekce zakázána nebo je aktivní skupinová transformace nebo doc overlay blokuje vstup, zajistíme že nebude nic zvýrazněno
-    if ((!viewProp.isSelectAllowed || viewProp.isGroupTransformActive || isDocOverlayBlockingInput()) && INTERSECTED) {
+    if ((!viewProp.isSelectAllowed || isDocOverlayBlockingInput()) && INTERSECTED) {
         clearHighlight();
         INTERSECTED = null;
     }
@@ -4615,20 +4649,24 @@ function onClick( event ) {
 
     // Ctrl+click: přidat / odebrat objekt do/z skupiny
     if (event.ctrlKey && clickTarget) {
-        const obj = resolveCADSelection(clickTarget);
-        if (viewProp.isGroupTransformActive) {
-            // Dočasně deaktivujeme skupinu, upravíme seznam, pak případně znovu aktivujeme
-            deactivateMultiSelect();
-            toggleObjectInMultiSelect(obj);
-            if (selectedObjects.length >= 2) activateMultiSelect();
-        } else {
-            toggleObjectInMultiSelect(obj);
-        }
+        toggleObjectInMultiSelect(resolveCADSelection(clickTarget));
         return;
     }
 
     // Normální selekce – zakázaná, pokud je skupina aktivní
-    if (viewProp.isGroupTransformActive) return;
+    if (viewProp.isGroupTransformActive) {
+        if (clickTarget) {
+            // Vyčistíme předchozí emissivní zvýraznění
+            lastSelectedMeshes.forEach(child => applyEmissive(child, 0x000000));
+            lastSelectedMeshes.length = 0;
+            lastSelectedObject = resolveCADSelection(clickTarget);
+            // Aplikujeme emissivní zvýraznění na nový objekt
+            lastSelectedObject.traverse(child => { if (child.isMesh) lastSelectedMeshes.push(child); });
+            lastSelectedMeshes.forEach(child => applyEmissive(child, 0xff0000));
+            render();
+        }
+        return;
+    }
 
     if (clickTarget) {
         INTERSECTED = clickTarget;
