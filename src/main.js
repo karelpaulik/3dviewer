@@ -4837,6 +4837,22 @@ function onTouchEnd( event ) {
         if (touchTarget) {
             INTERSECTED = touchTarget;
             selectObject(resolveCADSelection(touchTarget));
+            // Po výběru objektu se může GUI panel "Selected" zobrazit přesně na místě dotyku.
+            // Prohlížeč po touchend vygeneruje syntetický click na prvku na té pozici – zachytíme
+            // ho v capture fázi a potlačíme, pokud míří na guiContainer (button { pointer-events: auto }
+            // by jinak přebil pointer-events: none na kontejneru).
+            const blockUntil = Date.now() + 400;
+            const blockGuiClick = (e) => {
+                if (guiContainer.contains(e.target)) {
+                    e.stopPropagation();
+                    e.preventDefault();
+                }
+                if (Date.now() >= blockUntil) {
+                    document.removeEventListener('click', blockGuiClick, true);
+                }
+            };
+            document.addEventListener('click', blockGuiClick, true);
+            setTimeout(() => document.removeEventListener('click', blockGuiClick, true), 400);
         } else {
             INTERSECTED = null;
             deselectObject();
@@ -4847,10 +4863,6 @@ function onTouchEnd( event ) {
                 clearMultiSelect();
             }
         }
-
-        // Zabránění syntetickému click eventu prohlížeče, který by po touchend mohl
-        // zasáhnout tlačítko GUI panelu (Selected), který se právě zobrazil na místě dotyku.
-        event.preventDefault();
         
         isTouchDragging = false;
     }
