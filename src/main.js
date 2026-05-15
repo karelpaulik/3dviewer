@@ -16,7 +16,7 @@ import { GUI } from 'lil-gui';
 import ZipLoader from 'zip-loader';
 import { updateCrossSectionLines as updateCrossSectionLinesCore, updateSectionCrossLines as updateSectionCrossLinesCore } from './crossSectionUtils.js';
 import { exportToHTML, exportToHTMLDraco, exportToHTMLObfuscated, exportToHTMLObfuscatedDraco } from './htmlExport.js';
-import { initOutliner, toggleOutliner, rebuildTree, highlightObject as outlinerHighlight, updateVisibilityIcon, updateObjectLabel, isOutlinerOpen, navigateOutliner } from './sceneOutliner.js';
+import { initOutliner, toggleOutliner, rebuildTree, highlightObject as outlinerHighlight, updateVisibilityIcon, updateObjectLabel, isOutlinerOpen, navigateOutliner, highlightGroupObjects, clearGroupHighlights, setNavigationPosition } from './sceneOutliner.js';
 import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements, isSelectDimActive, setSelectDimActive, deleteSelectedDimension, initSelectDimension, updateSelectDimensionCamera, reconstructMeasurements, stripMeasurementVisuals, setMeasurementsVisible, setMeasurementDepthTest, removeMeasurementsForOwner, isCadDimActive, setCadDimActive, getCadDimStep, getCadDimAxis, addCadDimPoint, updateCadDimPreview, updateCadDimHoverPreview, cycleCadDimAxis, placeCadDim, clearCadDimMeasurements, removeCadDimMeasurementsForOwner, getSelectedCadDim, setCadDimLabelMode, setCadDimDragMode, selectDimTouchStart, selectDimTouchMove, selectDimTouchEnd, registerLabelForSelection, getSelectedCadDim3d, getCadDimMeasurements, deleteCadDimByRef, convertCadDim3dTo2d } from './measurementUtils.js';
 import { detectCircleCenterFromHit } from './circleDetectionUtils.js';
 import { initAnnotations, isAnnotationActive, setAnnotationActive, addAnnotationPoint, getAnnotationPendingPoint, updateAnnotationPreview, updateAnnotationMarkerScales, setAnnotationsVisible, clearAnnotations, stripAnnotationVisuals, reconstructAnnotations, setAnnotationDepthTest, removeAnnotationsForOwner, getAnnotations, isAddLeaderLineActive, cancelAddLeaderLine, commitAddLeaderLine, deleteAnnotationByRef, setConvertTo3dFn, reconstructAnnotationFromRec } from './annotationUtils.js';
@@ -578,6 +578,7 @@ render();
 // Initialize scene outliner
 outlinerPanelEl = initOutliner({
     onSelect: (obj) => selectObject(obj),
+    onGroupAdd: (obj) => toggleObjectInMultiSelect(obj),
     onToggleVisibility: (obj) => {
         if (obj.visible) {
             hideObject(obj);
@@ -1023,7 +1024,10 @@ function init() {
             case 'ArrowUp': // move up in the outliner
                 if (isOutlinerOpen()) {
                     const obj = navigateOutliner('up');
-                    if (obj) { selectObject(obj); render(); }
+                    if (obj) {
+                        if (event.ctrlKey) { toggleObjectInMultiSelect(obj); setNavigationPosition(obj); }
+                        else { selectObject(obj); render(); }
+                    }
                     event.preventDefault();
                 }
                 break;
@@ -1031,7 +1035,10 @@ function init() {
             case 'ArrowDown': // move down in the outliner
                 if (isOutlinerOpen()) {
                     const obj = navigateOutliner('down');
-                    if (obj) { selectObject(obj); render(); }
+                    if (obj) {
+                        if (event.ctrlKey) { toggleObjectInMultiSelect(obj); setNavigationPosition(obj); }
+                        else { selectObject(obj); render(); }
+                    }
                     event.preventDefault();
                 }
                 break;
@@ -1836,6 +1843,7 @@ function refreshGroupGui() {
         folder2.close();
     }
 
+    highlightGroupObjects(selectedObjects);
     selectedFolder.open();
 }
 
@@ -3133,6 +3141,7 @@ function toggleObjectInMultiSelect(obj) {
             if (transformControls.object === pivotObject) transformControls.detach();
             if (pivotObject) { scene.remove(pivotObject); pivotObject = null; }
             viewProp.isGroupTransformActive = false;
+            clearGroupHighlights();
             if (selectedFolder) {
                 selectedFolder.destroy();
                 selectedFolder = null;
@@ -3159,6 +3168,7 @@ function toggleObjectInMultiSelect(obj) {
         }
         selectedObjects.push(obj);
         multiOriginalParents.push(obj.parent);   // uložit před attach
+        setNavigationPosition(obj);              // před attach – parent chain ještě odpovídá DOM
         pivotObject.attach(obj);
         const h = new PaddedBoxHelper(obj, 0x00ccff, viewProp.multiSelectBoxPadding);
         scene.add(h);
@@ -3225,6 +3235,8 @@ function deactivateMultiSelect() {
     // Vyčistíme emissivní zvýraznění (z group-mode kliku)
     lastSelectedMeshes.forEach(child => applyEmissive(child, 0x000000));
     lastSelectedMeshes.length = 0;
+
+    clearGroupHighlights();
 
     if (transformControls.object === pivotObject) transformControls.detach();
 
@@ -4663,6 +4675,14 @@ function onClick( event ) {
             // Aplikujeme emissivní zvýraznění na nový objekt
             lastSelectedObject.traverse(child => { if (child.isMesh) lastSelectedMeshes.push(child); });
             lastSelectedMeshes.forEach(child => applyEmissive(child, 0xff0000));
+            outlinerHighlight(lastSelectedObject);
+            render();
+        } else {
+            // Prázdné místo – zruš vybraný objekt, group ponech
+            lastSelectedMeshes.forEach(child => applyEmissive(child, 0x000000));
+            lastSelectedMeshes.length = 0;
+            lastSelectedObject = null;
+            outlinerHighlight(null);
             render();
         }
         return;

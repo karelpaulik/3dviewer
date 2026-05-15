@@ -10,6 +10,7 @@ let isOpen = false;
 // External callbacks set via init()
 let onSelectObject = null;
 let onToggleVisibility = null;
+let onGroupAdd = null;
 
 // WeakMap: DOM <li> → Object3D
 const domToObject = new WeakMap();
@@ -18,6 +19,9 @@ const objectToDom = new WeakMap();
 
 // Currently highlighted node in the tree (matches viewport selection)
 let activeTreeNode = null;
+
+// Set of <li> nodes highlighted as group members
+const groupHighlightNodes = new Set();
 
 // -------------------------------------------------------------------
 // Public API
@@ -28,9 +32,10 @@ let activeTreeNode = null;
  * @param {{ onSelect: Function, onToggleVisibility: Function }} callbacks
  * @returns {HTMLDivElement} the panel element (for guiWrapper hit-testing)
  */
-export function initOutliner({ onSelect, onToggleVisibility: onVis }) {
+export function initOutliner({ onSelect, onToggleVisibility: onVis, onGroupAdd: onGroupAddCb }) {
     onSelectObject = onSelect;
     onToggleVisibility = onVis;
+    onGroupAdd = onGroupAddCb || null;
 
     // --- Panel container ---
     panelEl = document.createElement('div');
@@ -126,6 +131,33 @@ export function highlightObject(object) {
     const targetLi = objectToDom.get(object);
     if (targetLi) {
         targetLi.classList.add('outliner-selected');
+        activeTreeNode = targetLi;
+        targetLi.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+}
+
+/**
+ * Aktualizuje pozici navigace (activeTreeNode) bez CSS zvýraznění.
+ * Používá se při Ctrl+šipka – objekt se přidává/odebírá ze skupiny.
+ * @param {import('three').Object3D} object
+ */
+export function setNavigationPosition(object) {
+    if (activeTreeNode) activeTreeNode.classList.remove('outliner-selected');
+    activeTreeNode = null;
+    if (!object) return;
+    // Rozbal rodiče stejně jako highlightObject
+    const path = [];
+    let cur = object;
+    while (cur) { path.unshift(cur); cur = cur.parent; }
+    for (let i = 0; i < path.length - 1; i++) {
+        const o = path[i];
+        const li = objectToDom.get(o);
+        if (!li) continue;
+        const childList = li.querySelector(':scope > .outliner-children');
+        if (childList && childList.style.display === 'none') toggleExpand(li, o, getDepth(li));
+    }
+    const targetLi = objectToDom.get(object);
+    if (targetLi) {
         activeTreeNode = targetLi;
         targetLi.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     }
@@ -240,7 +272,13 @@ function createTreeNode(obj, depth) {
     label.textContent = getDisplayName(obj);
     label.addEventListener('click', (e) => {
         e.stopPropagation();
-        if (onSelectObject) onSelectObject(obj);
+        if (e.ctrlKey && onGroupAdd) {
+            onGroupAdd(obj);
+            if (activeTreeNode) activeTreeNode.classList.remove('outliner-selected'); // vyčisti předchozí
+            activeTreeNode = li; // aktualizuj pozici pro navigaci šipkami (bez CSS zvýraznění)
+        } else if (onSelectObject) {
+            onSelectObject(obj);
+        }
     });
     row.appendChild(label);
 
@@ -331,6 +369,31 @@ function getDisplayName(obj) {
     if (obj.isMesh) return `Mesh`;
     if (obj.isGroup) return `Group`;
     return `Object3D`;
+}
+
+/**
+ * Highlight all objects in the group in the outliner tree.
+ * @param {Array<import('three').Object3D>} objects
+ */
+export function highlightGroupObjects(objects) {
+    groupHighlightNodes.forEach(li => li.classList.remove('outliner-group-member'));
+    groupHighlightNodes.clear();
+    if (!objects || objects.length === 0) return;
+    for (const obj of objects) {
+        const li = objectToDom.get(obj);
+        if (li) {
+            li.classList.add('outliner-group-member');
+            groupHighlightNodes.add(li);
+        }
+    }
+}
+
+/**
+ * Clear all group member highlights in the outliner.
+ */
+export function clearGroupHighlights() {
+    groupHighlightNodes.forEach(li => li.classList.remove('outliner-group-member'));
+    groupHighlightNodes.clear();
 }
 
 // -------------------------------------------------------------------

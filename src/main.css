@@ -631,6 +631,10 @@ a, button, input, select {
     background: #3a3a5a;
 }
 
+.outliner-node.outliner-group-member > .outliner-row {
+    background: #0d3a42;
+}
+
 .outliner-arrow {
     flex: 0 0 16px;
     text-align: center;
