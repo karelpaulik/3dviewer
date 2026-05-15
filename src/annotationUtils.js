@@ -39,7 +39,7 @@ function _createLabel(text, position) {
     const div = document.createElement('div');
     div.className = 'annotation-label';
     div.innerHTML = text;
-    div.style.cssText = 'color:#fff;background:rgba(40,140,40,0.88);padding:3px 8px;border-radius:4px;font-size:11px;line-height:1.4;pointer-events:auto;cursor:default;user-select:none;white-space:nowrap;';
+    div.style.cssText = 'color:#fff;background:rgba(40,140,40,0.88);padding:3px 8px;border-radius:4px;font-size:11px;line-height:1.4;pointer-events:none;cursor:default;user-select:none;white-space:nowrap;';
     const label = new CSS2DObject(div);
     label.position.copy(position);
     label.userData._isAnnotation = true;

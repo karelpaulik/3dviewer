@@ -73,8 +73,11 @@ function _createLabel3d(text, position) {
     const div = document.createElement('div');
     div.className = 'annotation-label annotation-label-3d';
     div.innerHTML = text;
-    div.style.cssText = 'color:#fff;background:rgba(40,80,160,0.88);padding:3px 8px;border-radius:4px;font-size:11px;line-height:1.4;pointer-events:auto;cursor:default;user-select:none;white-space:nowrap;';
+    div.style.cssText = 'color:#fff;background:rgba(40,80,160,0.88);padding:3px 8px;border-radius:4px;font-size:11px;line-height:1.4;pointer-events:none;cursor:default;user-select:none;white-space:nowrap;';
     const label = new CSS3DObject(div);
+    // CSS3DObject constructor forcefully sets pointerEvents='auto' — override it back to none.
+    // _setLabelPointerEvents() will re-enable 'auto' for specific labels in Edit Labels mode.
+    div.style.pointerEvents = 'none';
     label.position.copy(position);
     label.scale.setScalar(LABEL_SCALE);
     label.userData._isAnnotation3d = true;
