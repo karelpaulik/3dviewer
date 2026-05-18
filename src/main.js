@@ -6815,6 +6815,56 @@ function assemblyMoveStepDown() {
 
         m.appendChild(separator());
 
+        // Color pickers + size
+        const colorRow = (labelText, onInput) => {
+            const el = document.createElement('div');
+            el.style.cssText = 'padding:2px 12px;display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:default;';
+            const span = document.createElement('span');
+            span.textContent = labelText;
+            span.style.fontSize = '13px';
+            const inp = document.createElement('input');
+            inp.type = 'color';
+            inp.style.cssText = 'width:26px;height:18px;border:none;padding:0;cursor:pointer;background:none;';
+            inp.addEventListener('mousedown', e => e.stopPropagation());
+            inp.addEventListener('click', e => e.stopPropagation());
+            inp.addEventListener('input', e => { e.stopPropagation(); onInput(inp.value); });
+            el.appendChild(span); el.appendChild(inp);
+            m.appendChild(el);
+            return inp;
+        };
+        const sizeRow = (labelText, onInput) => {
+            const el = document.createElement('div');
+            el.style.cssText = 'padding:2px 12px;display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:default;';
+            const span = document.createElement('span');
+            span.textContent = labelText;
+            span.style.fontSize = '13px';
+            const inp = document.createElement('input');
+            inp.type = 'number';
+            inp.min = '6'; inp.max = '32'; inp.step = '1';
+            inp.style.cssText = 'width:46px;font-size:12px;background:#333;color:#fff;border:1px solid #555;border-radius:3px;padding:1px 3px;';
+            inp.addEventListener('mousedown', e => e.stopPropagation());
+            inp.addEventListener('click', e => e.stopPropagation());
+            inp.addEventListener('change', e => { e.stopPropagation(); onInput(parseInt(e.target.value)); });
+            el.appendChild(span); el.appendChild(inp);
+            m.appendChild(el);
+            return inp;
+        };
+
+        const inpTextColor = colorRow('Text color', (color) => {
+            const sel = getSelectedCadDim();
+            if (sel) { sel._textColor = color; if (sel.label) sel.label.element.style.color = color; render(); }
+        });
+        const inpBgColor = colorRow('Background', (color) => {
+            const sel = getSelectedCadDim();
+            if (sel) { sel._bgColor = color; if (sel.label) sel.label.element.style.background = color; render(); }
+        });
+        const inpFontSize = sizeRow('Size', (size) => {
+            const sel = getSelectedCadDim();
+            if (sel) { sel._fontSize = size; if (sel.label) sel.label.element.style.fontSize = size + 'px'; render(); }
+        });
+
+        m.appendChild(separator());
+
         m.appendChild(simpleItem('Convert to 3D dimension', () => {
             const sel = getSelectedCadDim();
             hideAll();
@@ -6831,8 +6881,11 @@ function assemblyMoveStepDown() {
 
         // Expose for refresh
         m._itemLabelOffset = itemLabelOffset;
-        m._itemSimple = itemSimple;
-        m._itemFull   = itemFull;
+        m._itemSimple      = itemSimple;
+        m._itemFull        = itemFull;
+        m._inpTextColor    = inpTextColor;
+        m._inpBgColor      = inpBgColor;
+        m._inpFontSize     = inpFontSize;
 
         return m;
     }
@@ -6846,6 +6899,11 @@ function assemblyMoveStepDown() {
         // Toggle label-offset item text
         menuCadDim._itemLabelOffset.textContent =
             sel.dragMode === 1 ? '✓ Label offset' : 'Label offset';
+        // Colors / size
+        const def = getFlatDimDefaults();
+        menuCadDim._inpTextColor.value = sel._textColor || def.textColor;
+        menuCadDim._inpBgColor.value   = sel._bgColor   || def.bgColor;
+        menuCadDim._inpFontSize.value  = sel._fontSize  != null ? sel._fontSize : def.fontSize;
     }
 
     // --- CAD dim 3D label-mode menu ---

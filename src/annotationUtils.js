@@ -349,6 +349,59 @@ function _showAnnotationContextMenu(annotation, x, y, renderFn) {
     }
 
     sep();
+
+    // Text color, Background, Size
+    const colorPickerRow = (labelText, currentVal, onInput) => {
+        const el = document.createElement('div');
+        el.style.cssText = 'padding:2px 12px;display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:default;';
+        const span = document.createElement('span');
+        span.textContent = labelText;
+        span.style.fontSize = '12px';
+        const inp = document.createElement('input');
+        inp.type = 'color';
+        inp.value = currentVal;
+        inp.style.cssText = 'width:26px;height:18px;border:none;padding:0;cursor:pointer;background:none;';
+        inp.addEventListener('mousedown', e => e.stopPropagation());
+        inp.addEventListener('click', e => e.stopPropagation());
+        inp.addEventListener('input', e => { e.stopPropagation(); onInput(inp.value); });
+        el.appendChild(span); el.appendChild(inp);
+        menu.appendChild(el);
+    };
+    const sizePickerRow = (labelText, currentVal, onInput) => {
+        const el = document.createElement('div');
+        el.style.cssText = 'padding:2px 12px;display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:default;';
+        const span = document.createElement('span');
+        span.textContent = labelText;
+        span.style.fontSize = '12px';
+        const inp = document.createElement('input');
+        inp.type = 'number';
+        inp.min = '6'; inp.max = '32'; inp.step = '1';
+        inp.value = currentVal;
+        inp.style.cssText = 'width:46px;font-size:12px;background:#333;color:#fff;border:1px solid #555;border-radius:3px;padding:1px 3px;';
+        inp.addEventListener('mousedown', e => e.stopPropagation());
+        inp.addEventListener('click', e => e.stopPropagation());
+        inp.addEventListener('change', e => { e.stopPropagation(); onInput(parseInt(e.target.value)); });
+        el.appendChild(span); el.appendChild(inp);
+        menu.appendChild(el);
+    };
+
+    colorPickerRow('Text color', annotation._textColor || _flatAnnDefaults.textColor, (color) => {
+        annotation._textColor = color;
+        if (annotation.label) annotation.label.element.style.color = color;
+        if (renderFn) renderFn();
+    });
+    colorPickerRow('Background', annotation._bgColor || _flatAnnDefaults.bgColor, (color) => {
+        annotation._bgColor = color;
+        if (annotation.label) annotation.label.element.style.background = color;
+        if (renderFn) renderFn();
+    });
+    sizePickerRow('Size', annotation._fontSize != null ? annotation._fontSize : _flatAnnDefaults.fontSize, (size) => {
+        annotation._fontSize = size;
+        if (annotation.label) annotation.label.element.style.fontSize = size + 'px';
+        if (renderFn) renderFn();
+    });
+
+    sep();
     item('✏ Edit text', () => { _editAnnotation(annotation, renderFn); });
     if (_convertTo3dFn) {
         sep();
