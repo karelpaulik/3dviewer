@@ -57,6 +57,35 @@ export function getAnnotation3dDefaults() {
     return _defaults3d;
 }
 
+/** Apply current defaults (size, orientation, colors) to all existing 3D annotations. */
+export function applyDefaultsToAllAnnotations3d(renderFn) {
+    const def = _defaults3d;
+    function _rotForMode(m) {
+        if (m === 'XY') return def.rotationXY;
+        if (m === 'XZ') return def.rotationXZ;
+        if (m === 'YZ') return def.rotationYZ;
+        return def.rotationCamera;
+    }
+    for (const ann of _annotations3d) {
+        ann.labelScale      = def.labelScale;
+        ann.orientationMode = def.orientationMode;
+        ann.rotationAngle   = _rotForMode(def.orientationMode);
+        ann.textColor       = def.textColor;
+        ann.bgColor         = def.bgColor;
+        _applyScale(ann);
+        _applyColors(ann);
+        if (_currentCamera) _applyOrientation(ann, _currentCamera);
+        if (ann._userDataRec) {
+            ann._userDataRec.labelScale      = ann.labelScale;
+            ann._userDataRec.orientationMode = ann.orientationMode;
+            ann._userDataRec.rotationAngle   = ann.rotationAngle;
+            ann._userDataRec.textColor       = ann.textColor;
+            ann._userDataRec.bgColor         = ann.bgColor;
+        }
+    }
+    if (renderFn) renderFn();
+}
+
 // --- Helpers ---
 
 function _createMarker(position) {

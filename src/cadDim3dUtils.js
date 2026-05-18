@@ -68,6 +68,36 @@ function _defaultCadDim3dRotation() {
 
 export function getCadDim3dDefaults() { return _cadDim3dDefaults; }
 
+/** Apply current defaults (size, orientation, colors) to all existing 3D dimensions. */
+export function applyDefaultsToAllCadDim3d(renderFn) {
+    const def = _cadDim3dDefaults;
+    function _rotForMode(m) {
+        if (m === 'XY') return def.rotationXY;
+        if (m === 'XZ') return def.rotationXZ;
+        if (m === 'YZ') return def.rotationYZ;
+        return def.rotationCamera;
+    }
+    for (const meas of _cadDim3dMeasurements) {
+        meas.labelScale      = def.labelScale;
+        meas.orientationMode = def.orientationMode;
+        meas.rotationAngle   = _rotForMode(def.orientationMode);
+        meas.textColor       = def.textColor;
+        meas.bgColor         = def.bgColor;
+        _applyScale3d(meas);
+        _applyColors3d(meas);
+        if (_currentCamera) _applyOrientationForMeas(meas, _currentCamera);
+        const rec = _findUserDataRec3d(meas);
+        if (rec) {
+            rec.labelScale      = meas.labelScale;
+            rec.orientationMode = meas.orientationMode;
+            rec.rotationAngle   = meas.rotationAngle;
+            rec.textColor       = meas.textColor;
+            rec.bgColor         = meas.bgColor;
+        }
+    }
+    if (renderFn) renderFn();
+}
+
 // --- Geometry helpers ---
 
 function _cadGetFoot3d(pointWorld, axis, offsetPoint) {
