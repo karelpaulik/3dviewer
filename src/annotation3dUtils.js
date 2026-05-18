@@ -183,7 +183,18 @@ function _applyOrientation(annotation, camera) {
 function _applyScale(annotation) {
     if (!annotation.label) return;
     const s = LABEL_SCALE * (annotation.labelScale || 1);
-    annotation.label.scale.set(annotation.mirrored ? -s : s, s, s);
+    const owner = annotation.ownerObject;
+    if (owner) {
+        owner.updateWorldMatrix(true, false);
+        const ws = new THREE.Vector3();
+        owner.matrixWorld.decompose(new THREE.Vector3(), new THREE.Quaternion(), ws);
+        const ix = ws.x !== 0 ? s / ws.x : s;
+        const iy = ws.y !== 0 ? s / ws.y : s;
+        const iz = ws.z !== 0 ? s / ws.z : s;
+        annotation.label.scale.set(annotation.mirrored ? -ix : ix, iy, iz);
+    } else {
+        annotation.label.scale.set(annotation.mirrored ? -s : s, s, s);
+    }
 }
 
 function _applyColors(annotation) {

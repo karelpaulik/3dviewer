@@ -246,7 +246,18 @@ function _applyOrientation3d(labelObj, camera, orientationMode, rotationAngle) {
 function _applyScale3d(meas) {
     if (!meas.label) return;
     const s = LABEL_SCALE * (meas.labelScale || LABEL_SCALE_DEFAULT);
-    meas.label.scale.set(meas.mirrored ? -s : s, s, s);
+    const owner = meas.ownerObject;
+    if (owner) {
+        owner.updateWorldMatrix(true, false);
+        const ws = new THREE.Vector3();
+        owner.matrixWorld.decompose(new THREE.Vector3(), new THREE.Quaternion(), ws);
+        const ix = ws.x !== 0 ? s / ws.x : s;
+        const iy = ws.y !== 0 ? s / ws.y : s;
+        const iz = ws.z !== 0 ? s / ws.z : s;
+        meas.label.scale.set(meas.mirrored ? -ix : ix, iy, iz);
+    } else {
+        meas.label.scale.set(meas.mirrored ? -s : s, s, s);
+    }
 }
 
 function _applyColors3d(meas) {
@@ -507,10 +518,11 @@ export function rebuildCadDim3dVisuals(meas, p1World, p2World, offsetPoint, isDr
         if (meas.label.element) meas.label.element.remove();
         const tempMeas = Object.assign({}, meas, { value, foot1: f1, foot2: f2 });
         const labelText = _cadDimGetLabelText3d(tempMeas);
-        const newLabel = _makeLabel3d(labelText, newMid, LABEL_SCALE_DEFAULT);
+        const newLabel = _makeLabel3d(labelText, newMid, meas.labelScale);
         owner.add(newLabel);
         meas.label = newLabel;
         if (_currentCamera) _applyOrientation3d(newLabel, _currentCamera, meas.orientationMode);
+        _applyScale3d(meas);
     }
 
     const markerFoot1 = _makeMarker3d(f1, CAD_DIM3D_COLOR, false);
@@ -833,6 +845,7 @@ export function placeCadDim3d(renderFn) {
         bgColor:   _cadDim3dDefaults.bgColor,
     };
     _cadDim3dMeasurements.push(meas);
+    _applyScale3d(meas);
 
     // Persist in userData for GLB export
     if (!owner.userData.measurements3d) owner.userData.measurements3d = [];
@@ -1030,8 +1043,6 @@ function _reconstructCadDim3dFromRec(owner, rec) {
     const lblScale = rec.labelScale != null ? rec.labelScale : LABEL_SCALE_DEFAULT;
     const isMirror = rec.mirrored || false;
     if (_currentCamera) _applyOrientation3d(label, _currentCamera, rec.orientationMode || 'camera', rotAngle);
-    const sInit = LABEL_SCALE * lblScale;
-    label.scale.set(isMirror ? -sInit : sInit, sInit, sInit);
 
     const dragMode = rec.dragMode || 0;
     const meas = {
@@ -1056,6 +1067,7 @@ function _reconstructCadDim3dFromRec(owner, rec) {
         _updateCadDim3dLeaderLine(meas, labelPos);
     }
     _cadDim3dMeasurements.push(meas);
+    _applyScale3d(meas);
 }
 
 /**
