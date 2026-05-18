@@ -1067,7 +1067,6 @@ function _rebuildCadDimVisuals(meas, p1World, p2World, offsetPoint) {
     const f1 = offsetLocal.clone().addScaledVector(_axisHat, p1Local.clone().sub(offsetLocal).dot(_axisHat));
     const f2 = offsetLocal.clone().addScaledVector(_axisHat, p2Local.clone().sub(offsetLocal).dot(_axisHat));
     const value = f1.distanceTo(f2);
-    const axisLabel = axis.toUpperCase();
 
     // Dispose and remove old objects (all except markerP1 and markerP2)
     for (const obj of [meas.markerFoot1, meas.markerFoot2, meas.extLine1, meas.extLine2, meas.dimLine]) {
@@ -1694,7 +1693,6 @@ function _cadBuildPhase2Preview(offsetPoint) {
     const foot1 = _cadGetFoot(_cadDimP1World, _cadDimAxis, offsetPoint);
     const foot2 = _cadGetFoot(_cadDimP2World, _cadDimAxis, offsetPoint);
     const value = _cadGetValue(_cadDimP1World, _cadDimP2World, _cadDimAxis);
-    const axisLabel = _cadDimAxis.toUpperCase();
 
     // Extension lines (dashed)
     _cadP2Ext1 = _cadMakeLine(_cadDimP1World, foot1, CAD_DIM_EXT_COLOR, true);
@@ -1713,7 +1711,7 @@ function _cadBuildPhase2Preview(offsetPoint) {
 
     // Label at midpoint of dimension line
     const labelPos = new THREE.Vector3().addVectors(foot1, foot2).multiplyScalar(0.5);
-    const labelText = axisLabel + ': ' + value.toFixed(2)
+    const labelText = value.toFixed(2)
         + '<br><span style="font-size:9px;opacity:0.7;">RMB: cycle axis · LMB: place</span>';
     _cadP2Label = _cadMakeLabel(labelText, labelPos);
 
@@ -1732,10 +1730,9 @@ function _cadBuildPhase2Preview(offsetPoint) {
  * labelMode 1 = full (like point-to-point, shows total + Δx/Δy/Δz/ΔXY/ΔXZ/ΔYZ)
  */
 function _cadDimGetLabelText(meas, labelMode) {
-    const axisLabel = (meas.axis || 'x').toUpperCase();
     const value = meas.value;
     if (!labelMode) {
-        return axisLabel + ': ' + value.toFixed(2);
+        return value.toFixed(2);
     }
     // Full mode: compute 3D distance and all deltas in world space
     const owner = meas.ownerObject || _scene;
@@ -1749,8 +1746,8 @@ function _cadDimGetLabelText(meas, labelMode) {
     const dXY = Math.sqrt(dx * dx + dy * dy);
     const dXZ = Math.sqrt(dx * dx + dz * dz);
     const dYZ = Math.sqrt(dy * dy + dz * dz);
-    return axisLabel + ': ' + value.toFixed(2)
-        + '<br>' + dist.toFixed(2)
+    return value.toFixed(2)
+        + '<br>3D ' + dist.toFixed(2)
         + '<br><span style="font-size:10px;opacity:0.85;">\u0394x ' + dx.toFixed(2) + ' &nbsp;\u0394YZ ' + dYZ.toFixed(2)
         + '<br>\u0394y ' + dy.toFixed(2) + ' &nbsp;\u0394XZ ' + dXZ.toFixed(2)
         + '<br>\u0394z ' + dz.toFixed(2) + ' &nbsp;\u0394XY ' + dXY.toFixed(2) + '</span>';
@@ -1968,7 +1965,6 @@ export function placeCadDim(renderFn) {
     const foot1World = _cadGetFoot(_cadDimP1World, _cadDimAxis, offsetPoint);
     const foot2World = _cadGetFoot(_cadDimP2World, _cadDimAxis, offsetPoint);
     const value = _cadGetValue(_cadDimP1World, _cadDimP2World, _cadDimAxis);
-    const axisLabel = _cadDimAxis.toUpperCase();
     const owner = _cadDimOwner || _scene;
 
     // Convert all points to owner local space

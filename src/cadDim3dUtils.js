@@ -131,7 +131,7 @@ function _makeLabel3d(text, position, scaleMultiplier, textColor, bgColor) {
 }
 
 function _getLabelText3d(axis, value) {
-    return axis.toUpperCase() + ': ' + value.toFixed(2);
+    return value.toFixed(2);
 }
 
 /**
@@ -139,10 +139,9 @@ function _getLabelText3d(axis, value) {
  * labelMode 0 = simple (axis: value), 1 = full (total + Δx/Δy/Δz)
  */
 function _cadDimGetLabelText3d(meas) {
-    const axisLabel = (meas.axis || 'x').toUpperCase();
     const value = meas.value;
     if (!meas.labelMode) {
-        return axisLabel + ': ' + value.toFixed(2);
+        return value.toFixed(2);
     }
     // Full mode
     const owner = meas.ownerObject || _scene;
@@ -156,8 +155,8 @@ function _cadDimGetLabelText3d(meas) {
     const dXY = Math.sqrt(dx * dx + dy * dy);
     const dXZ = Math.sqrt(dx * dx + dz * dz);
     const dYZ = Math.sqrt(dy * dy + dz * dz);
-    return axisLabel + ': ' + value.toFixed(2)
-        + '<br>' + dist.toFixed(2)
+    return value.toFixed(2)
+        + '<br>3D ' + dist.toFixed(2)
         + '<br><span style="font-size:10px;opacity:0.85;">&Delta;x ' + dx.toFixed(2) + ' &nbsp;&Delta;YZ ' + dYZ.toFixed(2)
         + '<br>&Delta;y ' + dy.toFixed(2) + ' &nbsp;&Delta;XZ ' + dXZ.toFixed(2)
         + '<br>&Delta;z ' + dz.toFixed(2) + ' &nbsp;&Delta;XY ' + dXY.toFixed(2) + '</span>';
@@ -324,7 +323,6 @@ function _buildPhase2Preview3d(offsetPoint) {
     const foot1 = _cadGetFoot3d(_cadDim3dP1World, _cadDim3dAxis, offsetPoint);
     const foot2 = _cadGetFoot3d(_cadDim3dP2World, _cadDim3dAxis, offsetPoint);
     const value = _cadGetValue3d(_cadDim3dP1World, _cadDim3dP2World, _cadDim3dAxis);
-    const axisLabel = _cadDim3dAxis.toUpperCase();
 
     // Extension lines (dashed, always on top during preview)
     _cadP2Ext1_3d = _makeLine3d(_cadDim3dP1World, foot1, CAD_DIM3D_EXT_COLOR, true);
@@ -343,7 +341,7 @@ function _buildPhase2Preview3d(offsetPoint) {
 
     // CSS3D label at dim-line midpoint
     const labelPos = new THREE.Vector3().addVectors(foot1, foot2).multiplyScalar(0.5);
-    const labelText = axisLabel + ': ' + value.toFixed(2)
+    const labelText = value.toFixed(2)
         + '<br><span style="font-size:9px;opacity:0.7;">RMB: cycle axis · LMB: place</span>';
     _cadP2Label3d = _makeLabel3d(labelText, labelPos, _cadDim3dDefaults.labelScale, _cadDim3dDefaults.textColor, _cadDim3dDefaults.bgColor);
 
