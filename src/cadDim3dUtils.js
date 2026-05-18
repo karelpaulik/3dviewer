@@ -441,12 +441,23 @@ export function rebuildCadDim3dVisuals(meas, p1World, p2World, offsetPoint, isDr
     const owner = meas.ownerObject || _scene;
     owner.updateWorldMatrix(true, false);
 
-    const axis = meas.axis;
-    const foot1World = _cadGetFoot3d(p1World, axis, offsetPoint);
-    const foot2World = _cadGetFoot3d(p2World, axis, offsetPoint);
-    const f1    = owner.worldToLocal(foot1World.clone());
-    const f2    = owner.worldToLocal(foot2World.clone());
-    const value = _cadGetValue3d(p1World, p2World, axis);
+    // Work in owner local space so rotation at creation time is handled correctly
+    const p1Local     = owner.worldToLocal(p1World.clone());
+    const p2Local     = owner.worldToLocal(p2World.clone());
+    const offsetLocal = owner.worldToLocal(offsetPoint.clone());
+    // Derive axis direction from stored feet — normalize(foot2-foot1) encodes the
+    // creation-time world axis rotated into local space (R⁻¹·axisWorld), so this
+    // works correctly regardless of object rotation at the time the dim was created.
+    const _axisDirLocal = new THREE.Vector3().subVectors(meas.foot2, meas.foot1);
+    if (_axisDirLocal.length() < 1e-10) {
+        if (meas.axis === 'x') _axisDirLocal.set(1, 0, 0);
+        else if (meas.axis === 'y') _axisDirLocal.set(0, 1, 0);
+        else _axisDirLocal.set(0, 0, 1);
+    }
+    const _axisHat = _axisDirLocal.normalize();
+    const f1 = offsetLocal.clone().addScaledVector(_axisHat, p1Local.clone().sub(offsetLocal).dot(_axisHat));
+    const f2 = offsetLocal.clone().addScaledVector(_axisHat, p2Local.clone().sub(offsetLocal).dot(_axisHat));
+    const value = f1.distanceTo(f2);
     const newMid = new THREE.Vector3().addVectors(f1, f2).multiplyScalar(0.5);
 
     // Dispose and remove geometry objects (NOT markerP1/markerP2 anchor points)
