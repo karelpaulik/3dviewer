@@ -462,7 +462,7 @@ const extent = {
     pStep: 0.1,
     rn: -3.1416,
     rp: 3.1416,
-    rStep: 0.035,
+    rStep: Math.PI / 6,
     sn: 0,
     sp: 10,
     sStep: 0.1
