@@ -20,19 +20,27 @@ let _currentCamera = null;               // Updated each frame via updateAnnotat
 let _convertTo2dFn = null;               // set from main.js to avoid circular dep
 
 const MARKER_RADIUS = 1;
-const MARKER_COLOR = 0x4499cc;
 const MARKER_PREVIEW_COLOR = 0x88ccee;
-const LINE_COLOR = 0x4499cc;
-const MARKER_SCREEN_SIZE = 5;
 const LABEL_SCALE = 0.2;  // CSS pixels → scene world units
 
-let _dimMarkerFixedSize    = true;
-let _dimMarkerFixedScreenPx = MARKER_SCREEN_SIZE;
-let _dimMarkerWorldSize    = MARKER_RADIUS;
+let _dimMarkerFixedSize    = false;
+let _dimMarkerFixedScreenPx = 3;
+let _dimMarkerWorldSize    = 5;
+let _ann3dMarkerColor      = '#4499cc';
 
 export function setAnn3dMarkerFixedSize(v)     { _dimMarkerFixedSize = v; }
 export function setAnn3dMarkerFixedScreenPx(v) { _dimMarkerFixedScreenPx = v; }
 export function setAnn3dMarkerWorldSize(v)     { _dimMarkerWorldSize = v; }
+export function setAnn3dMarkerColor(v)         { _ann3dMarkerColor = v; _applyAnn3dMarkerColor(); }
+
+function _applyAnn3dMarkerColor() {
+    for (const a of _annotations3d) {
+        for (const ll of a.leaderLines) {
+            if (ll.marker) ll.marker.material.color.set(_ann3dMarkerColor);
+            if (ll.line)   ll.line.material.color.set(_ann3dMarkerColor);
+        }
+    }
+}
 
 const ORIENT_MODES = [
     { key: 'camera', label: 'Face camera' },
@@ -98,7 +106,7 @@ export function applyDefaultsToAllAnnotations3d(renderFn) {
 
 function _createMarker(position) {
     const geo = new THREE.SphereGeometry(MARKER_RADIUS, 12, 12);
-    const mat = new THREE.MeshBasicMaterial({ color: MARKER_COLOR, depthTest: _depthTestEnabled });
+    const mat = new THREE.MeshBasicMaterial({ color: _ann3dMarkerColor, depthTest: _depthTestEnabled });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.renderOrder = _depthTestEnabled ? 0 : 999;
     mesh.position.copy(position);
@@ -124,7 +132,7 @@ function _createLabel3d(text, position) {
 function _createLeaderLine(p1, p2) {
     const geo = new THREE.BufferGeometry().setFromPoints([p1, p2]);
     const mat = new THREE.LineDashedMaterial({
-        color: LINE_COLOR, dashSize: 3, gapSize: 2,
+        color: _ann3dMarkerColor, dashSize: 3, gapSize: 2,
         depthTest: _depthTestEnabled, transparent: true, opacity: 0.6,
     });
     const line = new THREE.Line(geo, mat);
@@ -671,7 +679,7 @@ export function updateAnnotation3dPreview(point) {
             _previewLine.material.dispose();
         }
         const geo = new THREE.BufferGeometry().setFromPoints([lineFrom, point]);
-        const mat = new THREE.LineDashedMaterial({ color: LINE_COLOR, dashSize: 4, gapSize: 3, depthTest: false });
+        const mat = new THREE.LineDashedMaterial({ color: _ann3dMarkerColor, dashSize: 4, gapSize: 3, depthTest: false });
         _previewLine = new THREE.Line(geo, mat);
         _previewLine.computeLineDistances();
         _previewLine.renderOrder = 999;

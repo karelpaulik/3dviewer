@@ -19,8 +19,8 @@ import { exportToHTML, exportToHTMLDraco, exportToHTMLObfuscated, exportToHTMLOb
 import { initOutliner, toggleOutliner, rebuildTree, highlightObject as outlinerHighlight, updateVisibilityIcon, updateObjectLabel, isOutlinerOpen, navigateOutliner, highlightGroupObjects, clearGroupHighlights, setNavigationPosition } from './sceneOutliner.js';
 import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements, isSelectDimActive, setSelectDimActive, deleteSelectedDimension, initSelectDimension, updateSelectDimensionCamera, reconstructMeasurements, stripMeasurementVisuals, setMeasurementsVisible, setMeasurementDepthTest, removeMeasurementsForOwner, isCadDimActive, setCadDimActive, getCadDimStep, getCadDimAxis, addCadDimPoint, updateCadDimPreview, updateCadDimHoverPreview, cycleCadDimAxis, placeCadDim, clearCadDimMeasurements, removeCadDimMeasurementsForOwner, getSelectedCadDim, setCadDimLabelMode, setCadDimDragMode, selectDimTouchStart, selectDimTouchMove, selectDimTouchEnd, registerLabelForSelection, getSelectedCadDim3d, getCadDimMeasurements, deleteCadDimByRef, convertCadDim3dTo2d, getFlatDimDefaults, applyDefaultsToAllFlatDim, setDimMarkerFixedSize, setDimMarkerFixedScreenPx, setDimMarkerWorldSize, setDimMarkerColor, getDimMarkerSettings } from './measurementUtils.js';
 import { detectCircleCenterFromHit } from './circleDetectionUtils.js';
-import { initAnnotations, isAnnotationActive, setAnnotationActive, addAnnotationPoint, getAnnotationPendingPoint, updateAnnotationPreview, updateAnnotationMarkerScales, setAnnotationsVisible, clearAnnotations, stripAnnotationVisuals, reconstructAnnotations, setAnnotationDepthTest, removeAnnotationsForOwner, getAnnotations, isAddLeaderLineActive, cancelAddLeaderLine, commitAddLeaderLine, deleteAnnotationByRef, setConvertTo3dFn, reconstructAnnotationFromRec, getFlatAnnDefaults, applyDefaultsToAllFlatAnnotations } from './annotationUtils.js';
-import { initAnnotations3d, isAnnotation3dActive, setAnnotation3dActive, addAnnotation3dPoint, getAnnotation3dPendingPoint, updateAnnotation3dPreview, updateAnnotation3dMarkerScales, updateAnnotation3dOrientations, setAnnotations3dVisible, clearAnnotations3d, stripAnnotation3dVisuals, reconstructAnnotations3d, setAnnotation3dDepthTest, removeAnnotations3dForOwner, isAddLeaderLine3dActive, cancelAddLeaderLine3d, commitAddLeaderLine3d, getAnnotation3dDefaults, deleteAnnotation3dByRef, setConvertTo2dFn, reconstructAnnotation3dFromRec, applyDefaultsToAllAnnotations3d } from './annotation3dUtils.js';
+import { initAnnotations, isAnnotationActive, setAnnotationActive, addAnnotationPoint, getAnnotationPendingPoint, updateAnnotationPreview, updateAnnotationMarkerScales, setAnnotationsVisible, clearAnnotations, stripAnnotationVisuals, reconstructAnnotations, setAnnotationDepthTest, removeAnnotationsForOwner, getAnnotations, isAddLeaderLineActive, cancelAddLeaderLine, commitAddLeaderLine, deleteAnnotationByRef, setConvertTo3dFn, reconstructAnnotationFromRec, getFlatAnnDefaults, applyDefaultsToAllFlatAnnotations, setAnnMarkerFixedSize, setAnnMarkerFixedScreenPx, setAnnMarkerWorldSize, setAnnMarkerColor, getAnnMarkerSettings } from './annotationUtils.js';
+import { initAnnotations3d, isAnnotation3dActive, setAnnotation3dActive, addAnnotation3dPoint, getAnnotation3dPendingPoint, updateAnnotation3dPreview, updateAnnotation3dMarkerScales, updateAnnotation3dOrientations, setAnnotations3dVisible, clearAnnotations3d, stripAnnotation3dVisuals, reconstructAnnotations3d, setAnnotation3dDepthTest, removeAnnotations3dForOwner, isAddLeaderLine3dActive, cancelAddLeaderLine3d, commitAddLeaderLine3d, getAnnotation3dDefaults, deleteAnnotation3dByRef, setConvertTo2dFn, reconstructAnnotation3dFromRec, applyDefaultsToAllAnnotations3d, setAnn3dMarkerFixedSize, setAnn3dMarkerFixedScreenPx, setAnn3dMarkerWorldSize, setAnn3dMarkerColor } from './annotation3dUtils.js';
 import { initCadDim3d, isCadDim3dActive, getCadDim3dStep, getCadDim3dAxis, setCadDim3dActive, addCadDim3dPoint, updateCadDim3dPreview, updateCadDim3dHoverPreview, cycleCadDim3dAxis, placeCadDim3d, clearCadDim3dMeasurements, removeCadDim3dMeasurementsForOwner, setCadDim3dVisible, setCadDim3dDepthTest, updateCadDim3dOrientations, updateCadDim3dMarkerScales, reconstructCadDim3d, stripCadDim3dVisuals, setCadDim3dLabelMode, setCadDim3dDragMode, setCadDim3dOrientationMode, setCadDim3dRotate, setCadDim3dLabelScaleDialog, setCadDim3dMirrored, setCadDim3dTextColor, setCadDim3dBgColor, getCadDim3dDefaults, convertCadDimTo3d, applyDefaultsToAllCadDim3d, setCadDimMarkerFixedSize, setCadDimMarkerFixedScreenPx, setCadDimMarkerWorldSize, setCadDimMarkerColor } from './cadDim3dUtils.js';
 import { computeSolidSection, clearSolidSection } from './solidSectionUtils.js';
 import { initDocumentsGui, importDocumentsFromGltfScene, getDocumentsStore, flushDocumentEdits, isDocOverlayBlockingInput, setDocLabelOptions } from './documentsUtils.js';
@@ -1430,6 +1430,29 @@ function addMainGui() {
                     render();
                 }).listen();
                 dimMarkersFolder.close();
+            const annMarkersFolder = preferencesFolder.addFolder('Annotation markers');
+                const _annMarkerOpts = getAnnMarkerSettings();
+                annMarkersFolder.add(_annMarkerOpts, 'fixedSize').name('Fixed size').onChange(v => {
+                    setAnnMarkerFixedSize(v);
+                    setAnn3dMarkerFixedSize(v);
+                    render();
+                }).listen();
+                annMarkersFolder.add(_annMarkerOpts, 'fixedScreenPx', 1, 30, 0.5).name('Size \u2013 fixed (px)').onChange(v => {
+                    setAnnMarkerFixedScreenPx(v);
+                    setAnn3dMarkerFixedScreenPx(v);
+                    render();
+                }).listen();
+                annMarkersFolder.add(_annMarkerOpts, 'worldSize', 0.01, 100, 0.01).name('Size \u2013 free (world)').onChange(v => {
+                    setAnnMarkerWorldSize(v);
+                    setAnn3dMarkerWorldSize(v);
+                    render();
+                }).listen();
+                annMarkersFolder.addColor(_annMarkerOpts, 'markerColor').name('Color').onChange(v => {
+                    setAnnMarkerColor(v);
+                    setAnn3dMarkerColor(v);
+                    render();
+                }).listen();
+                annMarkersFolder.close();
             const flatAnnDefaultsFolder = preferencesFolder.addFolder('Annotation (Flat) defaults');
                 const _flatAnnDef = getFlatAnnDefaults();
                 flatAnnDefaultsFolder.add(_flatAnnDef, 'fontSize', 8, 24, 1).name('Size').listen();
@@ -5077,6 +5100,7 @@ function importSettingsFromGltfScene(gltfScene) {
     let ann3dDef = null;
     let sectionSett = null;
     let dimMarkerSett = null;
+    let annMarkerSett = null;
 
     gltfScene.traverse(node => {
         if (!cadDim3dDef && node.userData.cadDim3dDefaults) {
@@ -5095,6 +5119,10 @@ function importSettingsFromGltfScene(gltfScene) {
             dimMarkerSett = node.userData.dimMarkerSettings;
             delete node.userData.dimMarkerSettings;
         }
+        if (!annMarkerSett && node.userData.annMarkerSettings) {
+            annMarkerSett = node.userData.annMarkerSettings;
+            delete node.userData.annMarkerSettings;
+        }
     });
 
     if (cadDim3dDef) {
@@ -5111,6 +5139,14 @@ function importSettingsFromGltfScene(gltfScene) {
         if (s.fixedScreenPx !== undefined){ setDimMarkerFixedScreenPx(s.fixedScreenPx);  setCadDimMarkerFixedScreenPx(s.fixedScreenPx); }
         if (s.worldSize    !== undefined) { setDimMarkerWorldSize(s.worldSize);           setCadDimMarkerWorldSize(s.worldSize); }
         if (s.markerColor  !== undefined) { setDimMarkerColor(s.markerColor);             setCadDimMarkerColor(s.markerColor); }
+    }
+
+    if (annMarkerSett) {
+        const s = annMarkerSett;
+        if (s.fixedSize    !== undefined) { setAnnMarkerFixedSize(s.fixedSize);          setAnn3dMarkerFixedSize(s.fixedSize); }
+        if (s.fixedScreenPx !== undefined){ setAnnMarkerFixedScreenPx(s.fixedScreenPx);  setAnn3dMarkerFixedScreenPx(s.fixedScreenPx); }
+        if (s.worldSize    !== undefined) { setAnnMarkerWorldSize(s.worldSize);           setAnn3dMarkerWorldSize(s.worldSize); }
+        if (s.markerColor  !== undefined) { setAnnMarkerColor(s.markerColor);             setAnn3dMarkerColor(s.markerColor); }
     }
 
     if (sectionSett) {
@@ -5319,6 +5355,7 @@ function exportAllModels() {
     group.userData.cadDim3dDefaults = { ...getCadDim3dDefaults() };
     group.userData.annotation3dDefaults = { ...getAnnotation3dDefaults() };
     group.userData.dimMarkerSettings = { ...getDimMarkerSettings() };
+    group.userData.annMarkerSettings = { ...getAnnMarkerSettings() };
     group.userData.sectionSettings = {
         section:           viewProp.section,
         px:                viewProp.px,
@@ -5395,6 +5432,7 @@ async function exportAllModelsDraco() {
     group.userData.cadDim3dDefaults = { ...getCadDim3dDefaults() };
     group.userData.annotation3dDefaults = { ...getAnnotation3dDefaults() };
     group.userData.dimMarkerSettings = { ...getDimMarkerSettings() };
+    group.userData.annMarkerSettings = { ...getAnnMarkerSettings() };
     group.userData.sectionSettings = {
         section:           viewProp.section,
         px:                viewProp.px,

@@ -18,10 +18,31 @@ let _pendingAddLeaderAnnotation = null; // Annotation waiting for a new leader-l
 let _convertTo3dFn = null;  // set from main.js to avoid circular dep
 
 const MARKER_RADIUS = 1;
-const MARKER_COLOR = 0x44aa44;
 const MARKER_PREVIEW_COLOR = 0x88cc88;
-const LINE_COLOR = 0x44aa44;
-const MARKER_SCREEN_SIZE = 5;
+
+// Persistent settings object – same reference returned by getAnnMarkerSettings so lil-gui .listen() stays in sync
+const _annMarkerSettings = {
+    fixedSize:    false,
+    fixedScreenPx: 3,
+    worldSize:    5,
+    markerColor:  '#44aa44',
+};
+let _annMarkerColor = _annMarkerSettings.markerColor; // shortcut for creation callsites
+
+export function setAnnMarkerFixedSize(v)     { _annMarkerSettings.fixedSize = v; }
+export function setAnnMarkerFixedScreenPx(v) { _annMarkerSettings.fixedScreenPx = v; }
+export function setAnnMarkerWorldSize(v)     { _annMarkerSettings.worldSize = v; }
+export function setAnnMarkerColor(v)         { _annMarkerSettings.markerColor = v; _annMarkerColor = v; _applyAnnMarkerColor(); }
+export function getAnnMarkerSettings()       { return _annMarkerSettings; }
+
+function _applyAnnMarkerColor() {
+    for (const a of _annotations) {
+        for (const ll of a.leaderLines) {
+            if (ll.marker) ll.marker.material.color.set(_annMarkerColor);
+            if (ll.line)   ll.line.material.color.set(_annMarkerColor);
+        }
+    }
+}
 
 // --- Flat annotation defaults ---
 const _flatAnnDefaults = {
@@ -48,7 +69,7 @@ export function applyDefaultsToAllFlatAnnotations(renderFn) {
 
 function _createMarker(position) {
     const geo = new THREE.SphereGeometry(MARKER_RADIUS, 12, 12);
-    const mat = new THREE.MeshBasicMaterial({ color: MARKER_COLOR, depthTest: _depthTestEnabled });
+    const mat = new THREE.MeshBasicMaterial({ color: _annMarkerColor, depthTest: _depthTestEnabled });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.renderOrder = _depthTestEnabled ? 0 : 999;
     mesh.position.copy(position);
@@ -69,7 +90,7 @@ function _createLabel(text, position) {
 
 function _createLeaderLine(p1, p2) {
     const geo = new THREE.BufferGeometry().setFromPoints([p1, p2]);
-    const mat = new THREE.LineDashedMaterial({ color: LINE_COLOR, dashSize: 3, gapSize: 2, depthTest: _depthTestEnabled, transparent: true, opacity: 0.6 });
+    const mat = new THREE.LineDashedMaterial({ color: _annMarkerColor, dashSize: 3, gapSize: 2, depthTest: _depthTestEnabled, transparent: true, opacity: 0.6 });
     const line = new THREE.Line(geo, mat);
     line.computeLineDistances();
     line.renderOrder = _depthTestEnabled ? 0 : 998;
@@ -591,7 +612,7 @@ export function updateAnnotationPreview(point) {
             _previewLine.material.dispose();
         }
         const geo = new THREE.BufferGeometry().setFromPoints([lineFrom, point]);
-        const mat = new THREE.LineDashedMaterial({ color: LINE_COLOR, dashSize: 4, gapSize: 3, depthTest: false });
+        const mat = new THREE.LineDashedMaterial({ color: _annMarkerColor, dashSize: 4, gapSize: 3, depthTest: false });
         _previewLine = new THREE.Line(geo, mat);
         _previewLine.computeLineDistances();
         _previewLine.renderOrder = 999;
@@ -617,18 +638,28 @@ export function updateAnnotationMarkerScales(camera) {
     if (markers.length === 0) return;
 
     const worldPos = new THREE.Vector3();
+    const parentWorldScale = new THREE.Vector3();
     for (const marker of markers) {
-        marker.getWorldPosition(worldPos);
-        const dist = camera.position.distanceTo(worldPos);
         let scale;
-        if (camera.isPerspectiveCamera) {
-            const vFov = THREE.MathUtils.degToRad(camera.fov);
-            scale = (dist * Math.tan(vFov * 0.5) * 2) / window.innerHeight * MARKER_SCREEN_SIZE;
+        if (_annMarkerSettings.fixedSize) {
+            marker.getWorldPosition(worldPos);
+            const dist = camera.position.distanceTo(worldPos);
+            if (camera.isPerspectiveCamera) {
+                const vFov = THREE.MathUtils.degToRad(camera.fov);
+                scale = (dist * Math.tan(vFov * 0.5) * 2) / window.innerHeight * _annMarkerSettings.fixedScreenPx;
+            } else {
+                const viewHeight = (camera.top - camera.bottom) / camera.zoom;
+                scale = viewHeight / window.innerHeight * _annMarkerSettings.fixedScreenPx;
+            }
         } else {
-            const viewHeight = (camera.top - camera.bottom) / camera.zoom;
-            scale = viewHeight / window.innerHeight * MARKER_SCREEN_SIZE;
+            scale = _annMarkerSettings.worldSize;
         }
-        marker.scale.setScalar(scale);
+        if (marker.parent) {
+            marker.parent.getWorldScale(parentWorldScale);
+            marker.scale.set(scale / parentWorldScale.x, scale / parentWorldScale.y, scale / parentWorldScale.z);
+        } else {
+            marker.scale.setScalar(scale);
+        }
     }
 }
 
