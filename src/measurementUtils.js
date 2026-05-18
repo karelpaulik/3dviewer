@@ -49,6 +49,32 @@ const LINE_COLOR = 0xff4444;
 const PREVIEW_COLOR = 0xff8888;
 const MARKER_SCREEN_SIZE = 5; // desired pixel-size (approximate)
 
+// --- Dimension marker size settings (shared with cadDim3dUtils via setters in main.js) ---
+// Persistent settings object – same reference returned by getDimMarkerSettings so lil-gui .listen() stays in sync
+const _dimMarkerSettings = {
+    fixedSize:    false,
+    fixedScreenPx: 3,
+    worldSize:    5,
+    markerColor:  '#22aacc',
+};
+let _dimMarkerColor = _dimMarkerSettings.markerColor; // shortcut kept in sync for creation callsites
+
+export function setDimMarkerFixedSize(v)     { _dimMarkerSettings.fixedSize = v; }
+export function setDimMarkerFixedScreenPx(v) { _dimMarkerSettings.fixedScreenPx = v; }
+export function setDimMarkerWorldSize(v)     { _dimMarkerSettings.worldSize = v; }
+export function setDimMarkerColor(v)         { _dimMarkerSettings.markerColor = v; _dimMarkerColor = v; _applyDimMarkerColor(); }
+export function getDimMarkerSettings()       { return _dimMarkerSettings; }
+function _applyDimMarkerColor() {
+    for (const m of _cadDimMeasurements) {
+        for (const mk of [m.markerP1, m.markerP2, m.markerFoot1, m.markerFoot2]) {
+            if (mk) mk.material.color.set(_dimMarkerColor);
+        }
+        for (const ln of [m.extLine1, m.extLine2, m.dimLine]) {
+            if (ln) ln.material.color.set(_dimMarkerColor);
+        }
+    }
+}
+
 // --- Flat dimension defaults ---
 const _flatDimDefaults = {
     textColor: '#ffffff',
@@ -502,15 +528,19 @@ export function updateMarkerScales(camera) {
     const worldPos = new THREE.Vector3();
     const parentWorldScale = new THREE.Vector3();
     for (const marker of markers) {
-        marker.getWorldPosition(worldPos);
-        const dist = camera.position.distanceTo(worldPos);
         let scale;
-        if (camera.isPerspectiveCamera) {
-            const vFov = THREE.MathUtils.degToRad(camera.fov);
-            scale = (dist * Math.tan(vFov * 0.5) * 2) / window.innerHeight * MARKER_SCREEN_SIZE;
+        if (_dimMarkerSettings.fixedSize) {
+            marker.getWorldPosition(worldPos);
+            const dist = camera.position.distanceTo(worldPos);
+            if (camera.isPerspectiveCamera) {
+                const vFov = THREE.MathUtils.degToRad(camera.fov);
+                scale = (dist * Math.tan(vFov * 0.5) * 2) / window.innerHeight * _dimMarkerSettings.fixedScreenPx;
+            } else {
+                const viewHeight = (camera.top - camera.bottom) / camera.zoom;
+                scale = viewHeight / window.innerHeight * _dimMarkerSettings.fixedScreenPx;
+            }
         } else {
-            const viewHeight = (camera.top - camera.bottom) / camera.zoom;
-            scale = viewHeight / window.innerHeight * MARKER_SCREEN_SIZE;
+            scale = _dimMarkerSettings.worldSize;
         }
         if (marker.parent) {
             marker.parent.getWorldScale(parentWorldScale);
@@ -1103,11 +1133,11 @@ function _rebuildCadDimVisuals(meas, p1World, p2World, offsetPoint) {
     }
 
     // Rebuild
-    const markerFoot1 = _cadMakeMarker(f1, CAD_DIM_COLOR, false);
-    const markerFoot2 = _cadMakeMarker(f2, CAD_DIM_COLOR, false);
-    const extLine1    = _cadMakeLine(meas.p1, f1, CAD_DIM_EXT_COLOR, false);
-    const extLine2    = _cadMakeLine(meas.p2, f2, CAD_DIM_EXT_COLOR, false);
-    const dimLine     = _cadMakeLine(f1, f2, CAD_DIM_COLOR, false);
+    const markerFoot1 = _cadMakeMarker(f1, _dimMarkerColor, false);
+    const markerFoot2 = _cadMakeMarker(f2, _dimMarkerColor, false);
+    const extLine1    = _cadMakeLine(meas.p1, f1, _dimMarkerColor, false);
+    const extLine2    = _cadMakeLine(meas.p2, f2, _dimMarkerColor, false);
+    const dimLine     = _cadMakeLine(f1, f2, _dimMarkerColor, false);
     // Preserve label offset relative to new feet midpoint
     const newMid  = new THREE.Vector3().addVectors(f1, f2).multiplyScalar(0.5);
     const labelPos = newMid.clone().add(labelOffset);
@@ -1716,12 +1746,12 @@ function _cadBuildPhase2Preview(offsetPoint) {
     const value = _cadGetValue(_cadDimP1World, _cadDimP2World, _cadDimAxis);
 
     // Extension lines (dashed)
-    _cadP2Ext1 = _cadMakeLine(_cadDimP1World, foot1, CAD_DIM_EXT_COLOR, true);
-    _cadP2Ext2 = _cadMakeLine(_cadDimP2World, foot2, CAD_DIM_EXT_COLOR, true);
+    _cadP2Ext1 = _cadMakeLine(_cadDimP1World, foot1, _dimMarkerColor, true);
+    _cadP2Ext2 = _cadMakeLine(_cadDimP2World, foot2, _dimMarkerColor, true);
 
     // Dimension line (solid, always on top during preview)
     const dimGeo = new THREE.BufferGeometry().setFromPoints([foot1, foot2]);
-    const dimMat = new THREE.LineBasicMaterial({ color: CAD_DIM_COLOR, depthTest: false });
+    const dimMat = new THREE.LineBasicMaterial({ color: _dimMarkerColor, depthTest: false });
     _cadP2DimLine = new THREE.Line(dimGeo, dimMat);
     _cadP2DimLine.renderOrder = 999;
     _cadP2DimLine.userData._isMeasurement = true;
@@ -1877,7 +1907,7 @@ export function addCadDimPoint(point, ownerObject, renderFn) {
         _cadDimP1World = point.clone();
         _cadDimOwner.updateWorldMatrix(true, false);
         const localP = _cadDimOwner.worldToLocal(point.clone());
-        _cadPendingMarker = _cadMakeMarker(localP, CAD_DIM_COLOR, false);
+        _cadPendingMarker = _cadMakeMarker(localP, _dimMarkerColor, false);
         _cadDimOwner.add(_cadPendingMarker);
         _cadHidePhase01Preview();
         _cadDimStep = 1;
@@ -1948,7 +1978,7 @@ export function updateCadDimHoverPreview(surfacePoint) {
             _cadPreviewLine.material.dispose();
         }
         const geo = new THREE.BufferGeometry().setFromPoints([_cadDimP1World, surfacePoint]);
-        const mat = new THREE.LineDashedMaterial({ color: CAD_DIM_COLOR, dashSize: 4, gapSize: 3, depthTest: false });
+        const mat = new THREE.LineDashedMaterial({ color: _dimMarkerColor, dashSize: 4, gapSize: 3, depthTest: false });
         _cadPreviewLine = new THREE.Line(geo, mat);
         _cadPreviewLine.computeLineDistances();
         _cadPreviewLine.renderOrder = 999;
@@ -2001,13 +2031,13 @@ export function placeCadDim(renderFn) {
     const markerP1 = _cadPendingMarker;
     _cadPendingMarker = null;
 
-    const markerP2 = _cadMakeMarker(p2, CAD_DIM_COLOR, false);
-    const markerFoot1 = _cadMakeMarker(f1, CAD_DIM_COLOR, false);
-    const markerFoot2 = _cadMakeMarker(f2, CAD_DIM_COLOR, false);
+    const markerP2 = _cadMakeMarker(p2, _dimMarkerColor, false);
+    const markerFoot1 = _cadMakeMarker(f1, _dimMarkerColor, false);
+    const markerFoot2 = _cadMakeMarker(f2, _dimMarkerColor, false);
 
-    const extLine1 = _cadMakeLine(p1, f1, CAD_DIM_EXT_COLOR, false);
-    const extLine2 = _cadMakeLine(p2, f2, CAD_DIM_EXT_COLOR, false);
-    const dimLine  = _cadMakeLine(f1, f2, CAD_DIM_COLOR, false);
+    const extLine1 = _cadMakeLine(p1, f1, _dimMarkerColor, false);
+    const extLine2 = _cadMakeLine(p2, f2, _dimMarkerColor, false);
+    const dimLine  = _cadMakeLine(f1, f2, _dimMarkerColor, false);
 
     const labelPos  = new THREE.Vector3().addVectors(f1, f2).multiplyScalar(0.5);
     const meas = {
@@ -2106,13 +2136,13 @@ function _reconstructCadDim(owner, rec) {
     const axisLabel = (rec.axis || 'x').toUpperCase();
     const value = rec.value != null ? rec.value : f1.distanceTo(f2);
 
-    const markerP1    = _cadMakeMarker(p1, CAD_DIM_COLOR, false);
-    const markerP2    = _cadMakeMarker(p2, CAD_DIM_COLOR, false);
-    const markerFoot1 = _cadMakeMarker(f1, CAD_DIM_COLOR, false);
-    const markerFoot2 = _cadMakeMarker(f2, CAD_DIM_COLOR, false);
-    const extLine1    = _cadMakeLine(p1, f1, CAD_DIM_EXT_COLOR, false);
-    const extLine2    = _cadMakeLine(p2, f2, CAD_DIM_EXT_COLOR, false);
-    const dimLine     = _cadMakeLine(f1, f2, CAD_DIM_COLOR, false);
+    const markerP1    = _cadMakeMarker(p1, _dimMarkerColor, false);
+    const markerP2    = _cadMakeMarker(p2, _dimMarkerColor, false);
+    const markerFoot1 = _cadMakeMarker(f1, _dimMarkerColor, false);
+    const markerFoot2 = _cadMakeMarker(f2, _dimMarkerColor, false);
+    const extLine1    = _cadMakeLine(p1, f1, _dimMarkerColor, false);
+    const extLine2    = _cadMakeLine(p2, f2, _dimMarkerColor, false);
+    const dimLine     = _cadMakeLine(f1, f2, _dimMarkerColor, false);
     const labelPos    = rec.labelPos
         ? new THREE.Vector3(rec.labelPos.x, rec.labelPos.y, rec.labelPos.z)
         : new THREE.Vector3().addVectors(f1, f2).multiplyScalar(0.5);

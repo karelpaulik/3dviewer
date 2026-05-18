@@ -26,6 +26,14 @@ const LINE_COLOR = 0x4499cc;
 const MARKER_SCREEN_SIZE = 5;
 const LABEL_SCALE = 0.2;  // CSS pixels → scene world units
 
+let _dimMarkerFixedSize    = true;
+let _dimMarkerFixedScreenPx = MARKER_SCREEN_SIZE;
+let _dimMarkerWorldSize    = MARKER_RADIUS;
+
+export function setAnn3dMarkerFixedSize(v)     { _dimMarkerFixedSize = v; }
+export function setAnn3dMarkerFixedScreenPx(v) { _dimMarkerFixedScreenPx = v; }
+export function setAnn3dMarkerWorldSize(v)     { _dimMarkerWorldSize = v; }
+
 const ORIENT_MODES = [
     { key: 'camera', label: 'Face camera' },
     { key: 'XY',     label: 'XY plane'    },
@@ -691,15 +699,19 @@ export function updateAnnotation3dMarkerScales(camera) {
     const worldPos = new THREE.Vector3();
     const parentWorldScale = new THREE.Vector3();
     for (const marker of markers) {
-        marker.getWorldPosition(worldPos);
-        const dist = camera.position.distanceTo(worldPos);
         let scale;
-        if (camera.isPerspectiveCamera) {
-            const vFov = THREE.MathUtils.degToRad(camera.fov);
-            scale = (dist * Math.tan(vFov * 0.5) * 2) / window.innerHeight * MARKER_SCREEN_SIZE;
+        if (_dimMarkerFixedSize) {
+            marker.getWorldPosition(worldPos);
+            const dist = camera.position.distanceTo(worldPos);
+            if (camera.isPerspectiveCamera) {
+                const vFov = THREE.MathUtils.degToRad(camera.fov);
+                scale = (dist * Math.tan(vFov * 0.5) * 2) / window.innerHeight * _dimMarkerFixedScreenPx;
+            } else {
+                const viewHeight = (camera.top - camera.bottom) / camera.zoom;
+                scale = viewHeight / window.innerHeight * _dimMarkerFixedScreenPx;
+            }
         } else {
-            const viewHeight = (camera.top - camera.bottom) / camera.zoom;
-            scale = viewHeight / window.innerHeight * MARKER_SCREEN_SIZE;
+            scale = _dimMarkerWorldSize;
         }
         if (marker.parent) {
             marker.parent.getWorldScale(parentWorldScale);

@@ -17,11 +17,11 @@ import ZipLoader from 'zip-loader';
 import { updateCrossSectionLines as updateCrossSectionLinesCore, updateSectionCrossLines as updateSectionCrossLinesCore } from './crossSectionUtils.js';
 import { exportToHTML, exportToHTMLDraco, exportToHTMLObfuscated, exportToHTMLObfuscatedDraco } from './htmlExport.js';
 import { initOutliner, toggleOutliner, rebuildTree, highlightObject as outlinerHighlight, updateVisibilityIcon, updateObjectLabel, isOutlinerOpen, navigateOutliner, highlightGroupObjects, clearGroupHighlights, setNavigationPosition } from './sceneOutliner.js';
-import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements, isSelectDimActive, setSelectDimActive, deleteSelectedDimension, initSelectDimension, updateSelectDimensionCamera, reconstructMeasurements, stripMeasurementVisuals, setMeasurementsVisible, setMeasurementDepthTest, removeMeasurementsForOwner, isCadDimActive, setCadDimActive, getCadDimStep, getCadDimAxis, addCadDimPoint, updateCadDimPreview, updateCadDimHoverPreview, cycleCadDimAxis, placeCadDim, clearCadDimMeasurements, removeCadDimMeasurementsForOwner, getSelectedCadDim, setCadDimLabelMode, setCadDimDragMode, selectDimTouchStart, selectDimTouchMove, selectDimTouchEnd, registerLabelForSelection, getSelectedCadDim3d, getCadDimMeasurements, deleteCadDimByRef, convertCadDim3dTo2d, getFlatDimDefaults, applyDefaultsToAllFlatDim } from './measurementUtils.js';
+import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements, isSelectDimActive, setSelectDimActive, deleteSelectedDimension, initSelectDimension, updateSelectDimensionCamera, reconstructMeasurements, stripMeasurementVisuals, setMeasurementsVisible, setMeasurementDepthTest, removeMeasurementsForOwner, isCadDimActive, setCadDimActive, getCadDimStep, getCadDimAxis, addCadDimPoint, updateCadDimPreview, updateCadDimHoverPreview, cycleCadDimAxis, placeCadDim, clearCadDimMeasurements, removeCadDimMeasurementsForOwner, getSelectedCadDim, setCadDimLabelMode, setCadDimDragMode, selectDimTouchStart, selectDimTouchMove, selectDimTouchEnd, registerLabelForSelection, getSelectedCadDim3d, getCadDimMeasurements, deleteCadDimByRef, convertCadDim3dTo2d, getFlatDimDefaults, applyDefaultsToAllFlatDim, setDimMarkerFixedSize, setDimMarkerFixedScreenPx, setDimMarkerWorldSize, setDimMarkerColor, getDimMarkerSettings } from './measurementUtils.js';
 import { detectCircleCenterFromHit } from './circleDetectionUtils.js';
 import { initAnnotations, isAnnotationActive, setAnnotationActive, addAnnotationPoint, getAnnotationPendingPoint, updateAnnotationPreview, updateAnnotationMarkerScales, setAnnotationsVisible, clearAnnotations, stripAnnotationVisuals, reconstructAnnotations, setAnnotationDepthTest, removeAnnotationsForOwner, getAnnotations, isAddLeaderLineActive, cancelAddLeaderLine, commitAddLeaderLine, deleteAnnotationByRef, setConvertTo3dFn, reconstructAnnotationFromRec, getFlatAnnDefaults, applyDefaultsToAllFlatAnnotations } from './annotationUtils.js';
 import { initAnnotations3d, isAnnotation3dActive, setAnnotation3dActive, addAnnotation3dPoint, getAnnotation3dPendingPoint, updateAnnotation3dPreview, updateAnnotation3dMarkerScales, updateAnnotation3dOrientations, setAnnotations3dVisible, clearAnnotations3d, stripAnnotation3dVisuals, reconstructAnnotations3d, setAnnotation3dDepthTest, removeAnnotations3dForOwner, isAddLeaderLine3dActive, cancelAddLeaderLine3d, commitAddLeaderLine3d, getAnnotation3dDefaults, deleteAnnotation3dByRef, setConvertTo2dFn, reconstructAnnotation3dFromRec, applyDefaultsToAllAnnotations3d } from './annotation3dUtils.js';
-import { initCadDim3d, isCadDim3dActive, getCadDim3dStep, getCadDim3dAxis, setCadDim3dActive, addCadDim3dPoint, updateCadDim3dPreview, updateCadDim3dHoverPreview, cycleCadDim3dAxis, placeCadDim3d, clearCadDim3dMeasurements, removeCadDim3dMeasurementsForOwner, setCadDim3dVisible, setCadDim3dDepthTest, updateCadDim3dOrientations, updateCadDim3dMarkerScales, reconstructCadDim3d, stripCadDim3dVisuals, setCadDim3dLabelMode, setCadDim3dDragMode, setCadDim3dOrientationMode, setCadDim3dRotate, setCadDim3dLabelScaleDialog, setCadDim3dMirrored, setCadDim3dTextColor, setCadDim3dBgColor, getCadDim3dDefaults, convertCadDimTo3d, applyDefaultsToAllCadDim3d } from './cadDim3dUtils.js';
+import { initCadDim3d, isCadDim3dActive, getCadDim3dStep, getCadDim3dAxis, setCadDim3dActive, addCadDim3dPoint, updateCadDim3dPreview, updateCadDim3dHoverPreview, cycleCadDim3dAxis, placeCadDim3d, clearCadDim3dMeasurements, removeCadDim3dMeasurementsForOwner, setCadDim3dVisible, setCadDim3dDepthTest, updateCadDim3dOrientations, updateCadDim3dMarkerScales, reconstructCadDim3d, stripCadDim3dVisuals, setCadDim3dLabelMode, setCadDim3dDragMode, setCadDim3dOrientationMode, setCadDim3dRotate, setCadDim3dLabelScaleDialog, setCadDim3dMirrored, setCadDim3dTextColor, setCadDim3dBgColor, getCadDim3dDefaults, convertCadDimTo3d, applyDefaultsToAllCadDim3d, setCadDimMarkerFixedSize, setCadDimMarkerFixedScreenPx, setCadDimMarkerWorldSize, setCadDimMarkerColor } from './cadDim3dUtils.js';
 import { computeSolidSection, clearSolidSection } from './solidSectionUtils.js';
 import { initDocumentsGui, importDocumentsFromGltfScene, getDocumentsStore, flushDocumentEdits, isDocOverlayBlockingInput, setDocLabelOptions } from './documentsUtils.js';
 import { initAttachmentsGui, importAttachmentsFromGltfScene, getAttachmentsStore } from './attachmentsUtils.js';
@@ -1407,6 +1407,29 @@ function addMainGui() {
                 cadDim3dDefaultsFolder.addColor(_cadDim3dDef, 'bgColor').name('Background').listen();
                 cadDim3dDefaultsFolder.add({ fn() { applyDefaultsToAllCadDim3d(render); } }, 'fn').name('Apply to all existing');
                 cadDim3dDefaultsFolder.close();
+            const dimMarkersFolder = preferencesFolder.addFolder('Dimension markers');
+                const _dimMarkerOpts = getDimMarkerSettings();
+                dimMarkersFolder.add(_dimMarkerOpts, 'fixedSize').name('Fixed size').onChange(v => {
+                    setDimMarkerFixedSize(v);
+                    setCadDimMarkerFixedSize(v);
+                    render();
+                }).listen();
+                dimMarkersFolder.add(_dimMarkerOpts, 'fixedScreenPx', 1, 30, 0.5).name('Size – fixed (px)').onChange(v => {
+                    setDimMarkerFixedScreenPx(v);
+                    setCadDimMarkerFixedScreenPx(v);
+                    render();
+                }).listen();
+                dimMarkersFolder.add(_dimMarkerOpts, 'worldSize', 0.01, 100, 0.01).name('Size – free (world)').onChange(v => {
+                    setDimMarkerWorldSize(v);
+                    setCadDimMarkerWorldSize(v);
+                    render();
+                }).listen();
+                dimMarkersFolder.addColor(_dimMarkerOpts, 'markerColor').name('Color').onChange(v => {
+                    setDimMarkerColor(v);
+                    setCadDimMarkerColor(v);
+                    render();
+                }).listen();
+                dimMarkersFolder.close();
             const flatAnnDefaultsFolder = preferencesFolder.addFolder('Annotation (Flat) defaults');
                 const _flatAnnDef = getFlatAnnDefaults();
                 flatAnnDefaultsFolder.add(_flatAnnDef, 'fontSize', 8, 24, 1).name('Size').listen();
@@ -5053,6 +5076,7 @@ function importSettingsFromGltfScene(gltfScene) {
     let cadDim3dDef = null;
     let ann3dDef = null;
     let sectionSett = null;
+    let dimMarkerSett = null;
 
     gltfScene.traverse(node => {
         if (!cadDim3dDef && node.userData.cadDim3dDefaults) {
@@ -5067,6 +5091,10 @@ function importSettingsFromGltfScene(gltfScene) {
             sectionSett = node.userData.sectionSettings;
             delete node.userData.sectionSettings;
         }
+        if (!dimMarkerSett && node.userData.dimMarkerSettings) {
+            dimMarkerSett = node.userData.dimMarkerSettings;
+            delete node.userData.dimMarkerSettings;
+        }
     });
 
     if (cadDim3dDef) {
@@ -5075,6 +5103,14 @@ function importSettingsFromGltfScene(gltfScene) {
 
     if (ann3dDef) {
         Object.assign(getAnnotation3dDefaults(), ann3dDef);
+    }
+
+    if (dimMarkerSett) {
+        const s = dimMarkerSett;
+        if (s.fixedSize    !== undefined) { setDimMarkerFixedSize(s.fixedSize);          setCadDimMarkerFixedSize(s.fixedSize); }
+        if (s.fixedScreenPx !== undefined){ setDimMarkerFixedScreenPx(s.fixedScreenPx);  setCadDimMarkerFixedScreenPx(s.fixedScreenPx); }
+        if (s.worldSize    !== undefined) { setDimMarkerWorldSize(s.worldSize);           setCadDimMarkerWorldSize(s.worldSize); }
+        if (s.markerColor  !== undefined) { setDimMarkerColor(s.markerColor);             setCadDimMarkerColor(s.markerColor); }
     }
 
     if (sectionSett) {
@@ -5282,6 +5318,7 @@ function exportAllModels() {
     // Embed 3D dimension defaults, 3D annotation defaults, section settings
     group.userData.cadDim3dDefaults = { ...getCadDim3dDefaults() };
     group.userData.annotation3dDefaults = { ...getAnnotation3dDefaults() };
+    group.userData.dimMarkerSettings = { ...getDimMarkerSettings() };
     group.userData.sectionSettings = {
         section:           viewProp.section,
         px:                viewProp.px,
@@ -5357,6 +5394,7 @@ async function exportAllModelsDraco() {
     // Embed 3D dimension defaults, 3D annotation defaults, section settings
     group.userData.cadDim3dDefaults = { ...getCadDim3dDefaults() };
     group.userData.annotation3dDefaults = { ...getAnnotation3dDefaults() };
+    group.userData.dimMarkerSettings = { ...getDimMarkerSettings() };
     group.userData.sectionSettings = {
         section:           viewProp.section,
         px:                viewProp.px,
