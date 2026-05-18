@@ -649,6 +649,7 @@ export function updateAnnotation3dMarkerScales(camera) {
     if (markers.length === 0) return;
 
     const worldPos = new THREE.Vector3();
+    const parentWorldScale = new THREE.Vector3();
     for (const marker of markers) {
         marker.getWorldPosition(worldPos);
         const dist = camera.position.distanceTo(worldPos);
@@ -660,7 +661,12 @@ export function updateAnnotation3dMarkerScales(camera) {
             const viewHeight = (camera.top - camera.bottom) / camera.zoom;
             scale = viewHeight / window.innerHeight * MARKER_SCREEN_SIZE;
         }
-        marker.scale.setScalar(scale);
+        if (marker.parent) {
+            marker.parent.getWorldScale(parentWorldScale);
+            marker.scale.set(scale / parentWorldScale.x, scale / parentWorldScale.y, scale / parentWorldScale.z);
+        } else {
+            marker.scale.setScalar(scale);
+        }
     }
 }
 
