@@ -23,6 +23,27 @@ const MARKER_PREVIEW_COLOR = 0x88cc88;
 const LINE_COLOR = 0x44aa44;
 const MARKER_SCREEN_SIZE = 5;
 
+// --- Flat annotation defaults ---
+const _flatAnnDefaults = {
+    textColor: '#ffffff',
+    bgColor:   '#288c28',
+    fontSize:  11,
+};
+
+export function getFlatAnnDefaults() { return _flatAnnDefaults; }
+
+export function applyDefaultsToAllFlatAnnotations(renderFn) {
+    for (const ann of _annotations) {
+        const el = ann.label && ann.label.element;
+        if (el) {
+            el.style.color = _flatAnnDefaults.textColor;
+            el.style.background = _flatAnnDefaults.bgColor;
+            el.style.fontSize = _flatAnnDefaults.fontSize + 'px';
+        }
+    }
+    if (renderFn) renderFn();
+}
+
 // --- Helpers ---
 
 function _createMarker(position) {
@@ -39,7 +60,7 @@ function _createLabel(text, position) {
     const div = document.createElement('div');
     div.className = 'annotation-label';
     div.innerHTML = text;
-    div.style.cssText = 'color:#fff;background:rgba(40,140,40,0.88);padding:3px 8px;border-radius:4px;font-size:11px;line-height:1.4;pointer-events:none;cursor:default;user-select:none;white-space:nowrap;';
+    div.style.cssText = `color:${_flatAnnDefaults.textColor};background:${_flatAnnDefaults.bgColor};padding:3px 8px;border-radius:4px;font-size:${_flatAnnDefaults.fontSize}px;line-height:1.4;pointer-events:none;cursor:default;user-select:none;white-space:nowrap;`;
     const label = new CSS2DObject(div);
     label.position.copy(position);
     label.userData._isAnnotation = true;

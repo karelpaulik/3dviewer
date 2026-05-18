@@ -49,6 +49,27 @@ const LINE_COLOR = 0xff4444;
 const PREVIEW_COLOR = 0xff8888;
 const MARKER_SCREEN_SIZE = 5; // desired pixel-size (approximate)
 
+// --- Flat dimension defaults ---
+const _flatDimDefaults = {
+    textColor: '#ffffff',
+    bgColor:   '#143c78',
+    fontSize:  11,
+};
+
+export function getFlatDimDefaults() { return _flatDimDefaults; }
+
+export function applyDefaultsToAllFlatDim(renderFn) {
+    for (const meas of _cadDimMeasurements) {
+        const el = meas.label && meas.label.element;
+        if (el) {
+            el.style.color = _flatDimDefaults.textColor;
+            el.style.background = _flatDimDefaults.bgColor;
+            el.style.fontSize = _flatDimDefaults.fontSize + 'px';
+        }
+    }
+    if (renderFn) renderFn();
+}
+
 // --- Helpers ---
 
 function _createMarker(position) {
@@ -1628,7 +1649,7 @@ function _cadMakeLabel(text, position) {
     const div = document.createElement('div');
     div.className = 'measurement-label';
     div.innerHTML = text;
-    div.style.cssText = 'color:#fff;background:' + CAD_DIM_LABEL_BG + ';padding:2px 6px;border-radius:3px;font-size:11px;pointer-events:none;white-space:nowrap;line-height:1.4;';
+    div.style.cssText = `color:${_flatDimDefaults.textColor};background:${_flatDimDefaults.bgColor};padding:2px 6px;border-radius:3px;font-size:${_flatDimDefaults.fontSize}px;pointer-events:none;white-space:nowrap;line-height:1.4;`;
     const label = new CSS2DObject(div);
     label.position.copy(position);
     label.userData._isMeasurement = true;
