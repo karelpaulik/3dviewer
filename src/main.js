@@ -1720,6 +1720,7 @@ function refreshSelectedObjGui(obj) {
             .onChange(function(value){obj.scale.x=value; obj.scale.y=value; obj.scale.z=value; render(); })
             .onFinishChange(_onGuiLocationFinish)
             .listen();
+        folder2.add({ fn: bakeSelectedObjectLocation }, 'fn').name('Bake location');
         folder2.close();
     
     // if (obj.children[0]) {   
@@ -2435,6 +2436,106 @@ function resetWholeModel() {
         updateCrossSectionLines();
     }
     
+    render();
+}
+
+function bakeSelectedObjectLocation() {
+    const obj = lastSelectedObject;
+    if (!obj) return;
+
+    // Helper: apply a Matrix4 in-place to a plain {x,y,z} record
+    function _xyzApply(xyz, mat) {
+        if (!xyz) return;
+        const v = new THREE.Vector3(xyz.x, xyz.y, xyz.z).applyMatrix4(mat);
+        xyz.x = v.x; xyz.y = v.y; xyz.z = v.z;
+    }
+
+    // 1. Update all world matrices BEFORE any change
+    obj.updateMatrixWorld(true);
+
+    // 2. Store old world matrices for EVERY node (including non-mesh owners of measurements)
+    const oldWorldMatrices = new Map();
+    obj.traverse(function(node) {
+        node.updateWorldMatrix(true, false);
+        oldWorldMatrices.set(node, node.matrixWorld.clone());
+    });
+
+    // 3. Zero the object's local position, rotation and scale, then recompute world matrices
+    obj.position.set(0, 0, 0);
+    obj.rotation.set(0, 0, 0);
+    obj.scale.set(1, 1, 1);
+    obj.updateMatrix();
+    obj.updateMatrixWorld(true);
+
+    // 4. For each real mesh (skip measurement/annotation markers): bake full transform into geometry.
+    //    geomTransform = newMeshWorld⁻¹ * oldMeshWorld keeps world positions unchanged.
+    obj.traverse(function(node) {
+        if (!node.isMesh || !node.geometry) return;
+        if (node.userData._isMeasurement || node.userData._isAnnotation || node.userData._isCadDim3d) return;
+        const oldMeshWorld = oldWorldMatrices.get(node);
+        if (!oldMeshWorld) return;
+        node.updateWorldMatrix(true, false);
+        const newMeshWorld = node.matrixWorld.clone();
+
+        const geomTransform = new THREE.Matrix4().multiplyMatrices(
+            newMeshWorld.clone().invert(),
+            oldMeshWorld
+        );
+
+        node.geometry = node.geometry.clone();
+        node.geometry.applyMatrix4(geomTransform);
+        node.geometry.computeBoundingSphere();
+        node.geometry.computeBoundingBox();
+    });
+
+    // 5. Transform stored userData positions so measurements/annotations stay at the same world positions.
+    //    nodeTransform = newNodeWorld⁻¹ * oldNodeWorld (same formula as geomTransform, per owner node).
+    obj.traverse(function(node) {
+        const oldNW = oldWorldMatrices.get(node);
+        if (!oldNW) return;
+        node.updateWorldMatrix(true, false);
+        const nodeT = new THREE.Matrix4().multiplyMatrices(node.matrixWorld.clone().invert(), oldNW);
+
+        if (Array.isArray(node.userData.measurements)) {
+            for (const rec of node.userData.measurements) {
+                _xyzApply(rec.p1, nodeT); _xyzApply(rec.p2, nodeT); _xyzApply(rec.labelPos, nodeT);
+                if (Array.isArray(rec.points)) rec.points.forEach(p => _xyzApply(p, nodeT));
+            }
+        }
+        if (Array.isArray(node.userData.measurements3d)) {
+            for (const rec of node.userData.measurements3d) {
+                _xyzApply(rec.p1, nodeT); _xyzApply(rec.p2, nodeT);
+                _xyzApply(rec.foot1, nodeT); _xyzApply(rec.foot2, nodeT);
+                _xyzApply(rec.labelPos, nodeT);
+            }
+        }
+        if (Array.isArray(node.userData.annotations)) {
+            for (const rec of node.userData.annotations) {
+                _xyzApply(rec.labelPos, nodeT);
+                if (rec.anchor) _xyzApply(rec.anchor, nodeT);
+                if (Array.isArray(rec.anchors)) rec.anchors.forEach(a => _xyzApply(a, nodeT));
+            }
+        }
+        if (Array.isArray(node.userData.annotations3d)) {
+            for (const rec of node.userData.annotations3d) {
+                _xyzApply(rec.labelPos, nodeT);
+                if (Array.isArray(rec.anchors)) rec.anchors.forEach(a => _xyzApply(a, nodeT));
+            }
+        }
+    });
+
+    // 6. Remove old measurement/annotation visuals from the scene graph and internal records,
+    //    then reconstruct them from the freshly-updated userData.
+    stripMeasurementVisuals(obj);    removeMeasurementsForOwner(obj);
+    stripAnnotationVisuals(obj);     removeAnnotationsForOwner(obj);
+    stripAnnotation3dVisuals(obj);   removeAnnotations3dForOwner(obj);
+    stripCadDim3dVisuals(obj);       removeCadDim3dMeasurementsForOwner(obj);
+
+    reconstructMeasurements(obj, render);
+    reconstructAnnotations(obj, render);
+    reconstructAnnotations3d(obj, render);
+    reconstructCadDim3d(obj);
+
     render();
 }
 
