@@ -1409,6 +1409,11 @@ function addMainGui() {
                 cadDim3dDefaultsFolder.close();
             const dimMarkersFolder = preferencesFolder.addFolder('Dimension markers');
                 const _dimMarkerOpts = getDimMarkerSettings();
+                // Sync cadDim3d to current settings (avoid mismatch between modules on first use)
+                setCadDimMarkerFixedSize(_dimMarkerOpts.fixedSize);
+                setCadDimMarkerFixedScreenPx(_dimMarkerOpts.fixedScreenPx);
+                setCadDimMarkerWorldSize(_dimMarkerOpts.worldSize);
+                setCadDimMarkerColor(_dimMarkerOpts.markerColor);
                 dimMarkersFolder.add(_dimMarkerOpts, 'fixedSize').name('Fixed size').onChange(v => {
                     setDimMarkerFixedSize(v);
                     setCadDimMarkerFixedSize(v);
@@ -1432,6 +1437,11 @@ function addMainGui() {
                 dimMarkersFolder.close();
             const annMarkersFolder = preferencesFolder.addFolder('Annotation markers');
                 const _annMarkerOpts = getAnnMarkerSettings();
+                // Sync annotation3d to current settings (avoid mismatch between modules on first use)
+                setAnn3dMarkerFixedSize(_annMarkerOpts.fixedSize);
+                setAnn3dMarkerFixedScreenPx(_annMarkerOpts.fixedScreenPx);
+                setAnn3dMarkerWorldSize(_annMarkerOpts.worldSize);
+                setAnn3dMarkerColor(_annMarkerOpts.markerColor);
                 annMarkersFolder.add(_annMarkerOpts, 'fixedSize').name('Fixed size').onChange(v => {
                     setAnnMarkerFixedSize(v);
                     setAnn3dMarkerFixedSize(v);
