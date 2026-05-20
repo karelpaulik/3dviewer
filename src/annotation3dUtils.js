@@ -58,7 +58,7 @@ const _defaults3d = {
     rotationYZ:      0,
     orientationMode: 'camera',
     textColor:       '#ffffff',
-    bgColor:         '#2d7a3a',
+    bgColor:         '#388e3c',
 };
 
 function _defaultRotation() {

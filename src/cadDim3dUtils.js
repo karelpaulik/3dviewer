@@ -38,8 +38,8 @@ const _cadTempRaycaster3d = new THREE.Raycaster();
 // --- Constants ---
 const CAD_DIM3D_COLOR          = 0xcc7700;
 const CAD_DIM3D_EXT_COLOR      = 0xcc7700;
-const CAD_DIM3D_LABEL_BG       = 'rgba(110,50,0,0.9)';
-const CAD_DIM3D_LABEL_BG_HEX   = '#6e3200'; // hex approximation for color picker default
+const CAD_DIM3D_LABEL_BG       = 'rgba(25,118,210,0.92)';
+const CAD_DIM3D_LABEL_BG_HEX   = '#1976d2'; // hex approximation for color picker default
 const CAD_DIM3D_LABEL_TEXT_HEX = '#ffffff';
 const MARKER_RADIUS       = 1;
 const MARKER_SCREEN_SIZE  = 5;

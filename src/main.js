@@ -1388,100 +1388,132 @@ function addMainGui() {
                 toolbarPrefFolder.close();
             const _rotOpts = { '0°': 0, '90°': Math.PI / 2, '180°': Math.PI, '270°': 3 * Math.PI / 2 };
             const _orientOpts = { 'Face camera': 'camera', 'XY plane': 'XY', 'XZ plane': 'XZ', 'YZ plane': 'YZ' };
-            const flatDimDefaultsFolder = preferencesFolder.addFolder('Dimension (Flat) defaults');
-                const _flatDimDef = getFlatDimDefaults();
-                flatDimDefaultsFolder.add(_flatDimDef, 'fontSize', 8, 24, 1).name('Size').listen();
-                flatDimDefaultsFolder.addColor(_flatDimDef, 'textColor').name('Text color').listen();
-                flatDimDefaultsFolder.addColor(_flatDimDef, 'bgColor').name('Background').listen();
-                flatDimDefaultsFolder.add({ fn() { applyDefaultsToAllFlatDim(render); } }, 'fn').name('Apply to all existing');
-                flatDimDefaultsFolder.close();
-            const cadDim3dDefaultsFolder = preferencesFolder.addFolder('Dimension (3D) defaults');
-                const _cadDim3dDef = getCadDim3dDefaults();
-                cadDim3dDefaultsFolder.add(_cadDim3dDef, 'labelScale', 0.01, 100, 0.01).name('Size').listen();
-                cadDim3dDefaultsFolder.add(_cadDim3dDef, 'rotationCamera', _rotOpts).name('Rotation (Face camera)').listen();
-                cadDim3dDefaultsFolder.add(_cadDim3dDef, 'rotationXY',     _rotOpts).name('Rotation (XY plane)').listen();
-                cadDim3dDefaultsFolder.add(_cadDim3dDef, 'rotationXZ',     _rotOpts).name('Rotation (XZ plane)').listen();
-                cadDim3dDefaultsFolder.add(_cadDim3dDef, 'rotationYZ',     _rotOpts).name('Rotation (YZ plane)').listen();
-                cadDim3dDefaultsFolder.add(_cadDim3dDef, 'orientationMode', _orientOpts).name('Orientation').listen();
-                cadDim3dDefaultsFolder.addColor(_cadDim3dDef, 'textColor').name('Text color').listen();
-                cadDim3dDefaultsFolder.addColor(_cadDim3dDef, 'bgColor').name('Background').listen();
-                cadDim3dDefaultsFolder.add({ fn() { applyDefaultsToAllCadDim3d(render); } }, 'fn').name('Apply to all existing');
-                cadDim3dDefaultsFolder.close();
-            const dimMarkersFolder = preferencesFolder.addFolder('Dimension markers');
-                const _dimMarkerOpts = getDimMarkerSettings();
-                // Sync cadDim3d to current settings (avoid mismatch between modules on first use)
-                setCadDimMarkerFixedSize(_dimMarkerOpts.fixedSize);
-                setCadDimMarkerFixedScreenPx(_dimMarkerOpts.fixedScreenPx);
-                setCadDimMarkerWorldSize(_dimMarkerOpts.worldSize);
-                setCadDimMarkerColor(_dimMarkerOpts.markerColor);
-                dimMarkersFolder.add(_dimMarkerOpts, 'fixedSize').name('Fixed size').onChange(v => {
-                    setDimMarkerFixedSize(v);
-                    setCadDimMarkerFixedSize(v);
+            const dimensionFolder = preferencesFolder.addFolder('Dimension');
+                const flatDimDefaultsFolder = dimensionFolder.addFolder('Dimension (Flat) defaults');
+                    const _flatDimDef = getFlatDimDefaults();
+                    flatDimDefaultsFolder.add(_flatDimDef, 'fontSize', 8, 24, 1).name('Size').listen();
+                    flatDimDefaultsFolder.addColor(_flatDimDef, 'textColor').name('Text color').listen();
+                    flatDimDefaultsFolder.addColor(_flatDimDef, 'bgColor').name('Background').listen();
+                    flatDimDefaultsFolder.add({ fn() { applyDefaultsToAllFlatDim(render); } }, 'fn').name('Apply to all existing');
+                    flatDimDefaultsFolder.close();
+                const cadDim3dDefaultsFolder = dimensionFolder.addFolder('Dimension (3D) defaults');
+                    const _cadDim3dDef = getCadDim3dDefaults();
+                    cadDim3dDefaultsFolder.add(_cadDim3dDef, 'labelScale', 0.01, 100, 0.01).name('Size').listen();
+                    cadDim3dDefaultsFolder.add(_cadDim3dDef, 'rotationCamera', _rotOpts).name('Rotation (Face camera)').listen();
+                    cadDim3dDefaultsFolder.add(_cadDim3dDef, 'rotationXY',     _rotOpts).name('Rotation (XY plane)').listen();
+                    cadDim3dDefaultsFolder.add(_cadDim3dDef, 'rotationXZ',     _rotOpts).name('Rotation (XZ plane)').listen();
+                    cadDim3dDefaultsFolder.add(_cadDim3dDef, 'rotationYZ',     _rotOpts).name('Rotation (YZ plane)').listen();
+                    cadDim3dDefaultsFolder.add(_cadDim3dDef, 'orientationMode', _orientOpts).name('Orientation').listen();
+                    cadDim3dDefaultsFolder.addColor(_cadDim3dDef, 'textColor').name('Text color').listen();
+                    cadDim3dDefaultsFolder.addColor(_cadDim3dDef, 'bgColor').name('Background').listen();
+                    cadDim3dDefaultsFolder.add({ fn() { applyDefaultsToAllCadDim3d(render); } }, 'fn').name('Apply to all existing');
+                    cadDim3dDefaultsFolder.close();
+                const dimMarkersFolder = dimensionFolder.addFolder('Dimension markers defaults');
+                    const _dimMarkerOpts = getDimMarkerSettings();
+                    // Sync cadDim3d to current settings (avoid mismatch between modules on first use)
+                    setCadDimMarkerFixedSize(_dimMarkerOpts.fixedSize);
+                    setCadDimMarkerFixedScreenPx(_dimMarkerOpts.fixedScreenPx);
+                    setCadDimMarkerWorldSize(_dimMarkerOpts.worldSize);
+                    setCadDimMarkerColor(_dimMarkerOpts.markerColor);
+                    dimMarkersFolder.add(_dimMarkerOpts, 'fixedSize').name('Fixed size').onChange(v => {
+                        setDimMarkerFixedSize(v);
+                        setCadDimMarkerFixedSize(v);
+                        render();
+                    }).listen();
+                    dimMarkersFolder.add(_dimMarkerOpts, 'fixedScreenPx', 1, 30, 0.5).name('Size – fixed (px)').onChange(v => {
+                        setDimMarkerFixedScreenPx(v);
+                        setCadDimMarkerFixedScreenPx(v);
+                        render();
+                    }).listen();
+                    dimMarkersFolder.add(_dimMarkerOpts, 'worldSize', 0.01, 100, 0.01).name('Size – free (world)').onChange(v => {
+                        setDimMarkerWorldSize(v);
+                        setCadDimMarkerWorldSize(v);
+                        render();
+                    }).listen();
+                    dimMarkersFolder.addColor(_dimMarkerOpts, 'markerColor').name('Color').onChange(v => {
+                        setDimMarkerColor(v);
+                        setCadDimMarkerColor(v);
+                        render();
+                    }).listen();
+                    dimMarkersFolder.close();
+                dimensionFolder.add({ fn() {
+                    Object.assign(_flatDimDef, { textColor: '#ffffff', bgColor: '#1976d2', fontSize: 11 });
+                    Object.assign(_cadDim3dDef, { labelScale: 5, rotationCamera: 0, rotationXY: 0, rotationXZ: 0, rotationYZ: 0, orientationMode: 'camera', textColor: '#ffffff', bgColor: '#1976d2' });
+                    Object.assign(_dimMarkerOpts, { fixedSize: false, fixedScreenPx: 3, worldSize: 5, markerColor: '#22aacc' });
+                    setDimMarkerFixedSize(_dimMarkerOpts.fixedSize);     setCadDimMarkerFixedSize(_dimMarkerOpts.fixedSize);
+                    setDimMarkerFixedScreenPx(_dimMarkerOpts.fixedScreenPx); setCadDimMarkerFixedScreenPx(_dimMarkerOpts.fixedScreenPx);
+                    setDimMarkerWorldSize(_dimMarkerOpts.worldSize);     setCadDimMarkerWorldSize(_dimMarkerOpts.worldSize);
+                    setDimMarkerColor(_dimMarkerOpts.markerColor);       setCadDimMarkerColor(_dimMarkerOpts.markerColor);
                     render();
-                }).listen();
-                dimMarkersFolder.add(_dimMarkerOpts, 'fixedScreenPx', 1, 30, 0.5).name('Size – fixed (px)').onChange(v => {
-                    setDimMarkerFixedScreenPx(v);
-                    setCadDimMarkerFixedScreenPx(v);
+                } }, 'fn').name('Set to default');
+                dimensionFolder.add({ fn() {
+                    applyDefaultsToAllFlatDim(render);
+                    applyDefaultsToAllCadDim3d(render);
+                } }, 'fn').name('Apply to existing');
+                dimensionFolder.close();
+            const annotationFolder = preferencesFolder.addFolder('Annotation');
+                const flatAnnDefaultsFolder = annotationFolder.addFolder('Annotation (Flat) defaults');
+                    const _flatAnnDef = getFlatAnnDefaults();
+                    flatAnnDefaultsFolder.add(_flatAnnDef, 'fontSize', 8, 24, 1).name('Size').listen();
+                    flatAnnDefaultsFolder.addColor(_flatAnnDef, 'textColor').name('Text color').listen();
+                    flatAnnDefaultsFolder.addColor(_flatAnnDef, 'bgColor').name('Background').listen();
+                    flatAnnDefaultsFolder.add({ fn() { applyDefaultsToAllFlatAnnotations(render); } }, 'fn').name('Apply to all existing');
+                    flatAnnDefaultsFolder.close();
+                const ann3dDefaultsFolder = annotationFolder.addFolder('Annotation (3D) defaults');
+                    const _ann3dDef = getAnnotation3dDefaults();
+                    ann3dDefaultsFolder.add(_ann3dDef, 'labelScale', 0.01, 100, 0.01).name('Size').listen();
+                    ann3dDefaultsFolder.add(_ann3dDef, 'rotationCamera', _rotOpts).name('Rotation (Face camera)').listen();
+                    ann3dDefaultsFolder.add(_ann3dDef, 'rotationXY',     _rotOpts).name('Rotation (XY plane)').listen();
+                    ann3dDefaultsFolder.add(_ann3dDef, 'rotationXZ',     _rotOpts).name('Rotation (XZ plane)').listen();
+                    ann3dDefaultsFolder.add(_ann3dDef, 'rotationYZ',     _rotOpts).name('Rotation (YZ plane)').listen();
+                    ann3dDefaultsFolder.add(_ann3dDef, 'orientationMode', _orientOpts).name('Orientation').listen();
+                    ann3dDefaultsFolder.addColor(_ann3dDef, 'textColor').name('Text color').listen();
+                    ann3dDefaultsFolder.addColor(_ann3dDef, 'bgColor').name('Background').listen();
+                    ann3dDefaultsFolder.add({ fn() { applyDefaultsToAllAnnotations3d(render); } }, 'fn').name('Apply to all existing');
+                    ann3dDefaultsFolder.close();
+                const annMarkersFolder = annotationFolder.addFolder('Annotation markers defaults');
+                    const _annMarkerOpts = getAnnMarkerSettings();
+                    // Sync annotation3d to current settings (avoid mismatch between modules on first use)
+                    setAnn3dMarkerFixedSize(_annMarkerOpts.fixedSize);
+                    setAnn3dMarkerFixedScreenPx(_annMarkerOpts.fixedScreenPx);
+                    setAnn3dMarkerWorldSize(_annMarkerOpts.worldSize);
+                    setAnn3dMarkerColor(_annMarkerOpts.markerColor);
+                    annMarkersFolder.add(_annMarkerOpts, 'fixedSize').name('Fixed size').onChange(v => {
+                        setAnnMarkerFixedSize(v);
+                        setAnn3dMarkerFixedSize(v);
+                        render();
+                    }).listen();
+                    annMarkersFolder.add(_annMarkerOpts, 'fixedScreenPx', 1, 30, 0.5).name('Size \u2013 fixed (px)').onChange(v => {
+                        setAnnMarkerFixedScreenPx(v);
+                        setAnn3dMarkerFixedScreenPx(v);
+                        render();
+                    }).listen();
+                    annMarkersFolder.add(_annMarkerOpts, 'worldSize', 0.01, 100, 0.01).name('Size \u2013 free (world)').onChange(v => {
+                        setAnnMarkerWorldSize(v);
+                        setAnn3dMarkerWorldSize(v);
+                        render();
+                    }).listen();
+                    annMarkersFolder.addColor(_annMarkerOpts, 'markerColor').name('Color').onChange(v => {
+                        setAnnMarkerColor(v);
+                        setAnn3dMarkerColor(v);
+                        render();
+                    }).listen();
+                    annMarkersFolder.close();
+                annotationFolder.add({ fn() {
+                    Object.assign(_flatAnnDef, { textColor: '#ffffff', bgColor: '#388e3c', fontSize: 11 });
+                    Object.assign(_ann3dDef, { labelScale: 5, rotationCamera: 0, rotationXY: 0, rotationXZ: 0, rotationYZ: 0, orientationMode: 'camera', textColor: '#ffffff', bgColor: '#388e3c' });
+                    Object.assign(_annMarkerOpts, { fixedSize: false, fixedScreenPx: 3, worldSize: 5, markerColor: '#44aa44' });
+                    setAnnMarkerFixedSize(_annMarkerOpts.fixedSize);     setAnn3dMarkerFixedSize(_annMarkerOpts.fixedSize);
+                    setAnnMarkerFixedScreenPx(_annMarkerOpts.fixedScreenPx); setAnn3dMarkerFixedScreenPx(_annMarkerOpts.fixedScreenPx);
+                    setAnnMarkerWorldSize(_annMarkerOpts.worldSize);     setAnn3dMarkerWorldSize(_annMarkerOpts.worldSize);
+                    setAnnMarkerColor(_annMarkerOpts.markerColor);       setAnn3dMarkerColor(_annMarkerOpts.markerColor);
                     render();
-                }).listen();
-                dimMarkersFolder.add(_dimMarkerOpts, 'worldSize', 0.01, 100, 0.01).name('Size – free (world)').onChange(v => {
-                    setDimMarkerWorldSize(v);
-                    setCadDimMarkerWorldSize(v);
-                    render();
-                }).listen();
-                dimMarkersFolder.addColor(_dimMarkerOpts, 'markerColor').name('Color').onChange(v => {
-                    setDimMarkerColor(v);
-                    setCadDimMarkerColor(v);
-                    render();
-                }).listen();
-                dimMarkersFolder.close();
-            const annMarkersFolder = preferencesFolder.addFolder('Annotation markers');
-                const _annMarkerOpts = getAnnMarkerSettings();
-                // Sync annotation3d to current settings (avoid mismatch between modules on first use)
-                setAnn3dMarkerFixedSize(_annMarkerOpts.fixedSize);
-                setAnn3dMarkerFixedScreenPx(_annMarkerOpts.fixedScreenPx);
-                setAnn3dMarkerWorldSize(_annMarkerOpts.worldSize);
-                setAnn3dMarkerColor(_annMarkerOpts.markerColor);
-                annMarkersFolder.add(_annMarkerOpts, 'fixedSize').name('Fixed size').onChange(v => {
-                    setAnnMarkerFixedSize(v);
-                    setAnn3dMarkerFixedSize(v);
-                    render();
-                }).listen();
-                annMarkersFolder.add(_annMarkerOpts, 'fixedScreenPx', 1, 30, 0.5).name('Size \u2013 fixed (px)').onChange(v => {
-                    setAnnMarkerFixedScreenPx(v);
-                    setAnn3dMarkerFixedScreenPx(v);
-                    render();
-                }).listen();
-                annMarkersFolder.add(_annMarkerOpts, 'worldSize', 0.01, 100, 0.01).name('Size \u2013 free (world)').onChange(v => {
-                    setAnnMarkerWorldSize(v);
-                    setAnn3dMarkerWorldSize(v);
-                    render();
-                }).listen();
-                annMarkersFolder.addColor(_annMarkerOpts, 'markerColor').name('Color').onChange(v => {
-                    setAnnMarkerColor(v);
-                    setAnn3dMarkerColor(v);
-                    render();
-                }).listen();
-                annMarkersFolder.close();
-            const flatAnnDefaultsFolder = preferencesFolder.addFolder('Annotation (Flat) defaults');
-                const _flatAnnDef = getFlatAnnDefaults();
-                flatAnnDefaultsFolder.add(_flatAnnDef, 'fontSize', 8, 24, 1).name('Size').listen();
-                flatAnnDefaultsFolder.addColor(_flatAnnDef, 'textColor').name('Text color').listen();
-                flatAnnDefaultsFolder.addColor(_flatAnnDef, 'bgColor').name('Background').listen();
-                flatAnnDefaultsFolder.add({ fn() { applyDefaultsToAllFlatAnnotations(render); } }, 'fn').name('Apply to all existing');
-                flatAnnDefaultsFolder.close();
-            const ann3dDefaultsFolder = preferencesFolder.addFolder('Annotation (3D) defaults');
-                const _ann3dDef = getAnnotation3dDefaults();
-                ann3dDefaultsFolder.add(_ann3dDef, 'labelScale', 0.01, 100, 0.01).name('Size').listen();
-                ann3dDefaultsFolder.add(_ann3dDef, 'rotationCamera', _rotOpts).name('Rotation (Face camera)').listen();
-                ann3dDefaultsFolder.add(_ann3dDef, 'rotationXY',     _rotOpts).name('Rotation (XY plane)').listen();
-                ann3dDefaultsFolder.add(_ann3dDef, 'rotationXZ',     _rotOpts).name('Rotation (XZ plane)').listen();
-                ann3dDefaultsFolder.add(_ann3dDef, 'rotationYZ',     _rotOpts).name('Rotation (YZ plane)').listen();
-                ann3dDefaultsFolder.add(_ann3dDef, 'orientationMode', _orientOpts).name('Orientation').listen();
-                ann3dDefaultsFolder.addColor(_ann3dDef, 'textColor').name('Text color').listen();
-                ann3dDefaultsFolder.addColor(_ann3dDef, 'bgColor').name('Background').listen();
-                ann3dDefaultsFolder.add({ fn() { applyDefaultsToAllAnnotations3d(render); } }, 'fn').name('Apply to all existing');
-                ann3dDefaultsFolder.close();
+                } }, 'fn').name('Set to default');
+                annotationFolder.add({ fn() {
+                    applyDefaultsToAllFlatAnnotations(render);
+                    applyDefaultsToAllAnnotations3d(render);
+                } }, 'fn').name('Apply to existing');
+                annotationFolder.close();
             const docNameFolder = preferencesFolder.addFolder('Document name');
                 const _docLabelOpts = { showLastEditDate: true, showImportDate: false };
                 docNameFolder.add(_docLabelOpts, 'showLastEditDate').name('Show last edit date').onChange(v => setDocLabelOptions({ showLastEditDate: v }));

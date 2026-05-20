@@ -78,7 +78,7 @@ function _applyDimMarkerColor() {
 // --- Flat dimension defaults ---
 const _flatDimDefaults = {
     textColor: '#ffffff',
-    bgColor:   '#143c78',
+    bgColor:   '#1976d2',
     fontSize:  11,
 };
 

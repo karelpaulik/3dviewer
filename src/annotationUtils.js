@@ -47,7 +47,7 @@ function _applyAnnMarkerColor() {
 // --- Flat annotation defaults ---
 const _flatAnnDefaults = {
     textColor: '#ffffff',
-    bgColor:   '#288c28',
+    bgColor:   '#388e3c',
     fontSize:  11,
 };
 
