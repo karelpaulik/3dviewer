@@ -3410,6 +3410,7 @@ function toggleObjectInMultiSelect(obj) {
         originalParent.attach(obj);                  // vrátit do původního rodiče
         selectedObjects.splice(idx, 1);
         multiOriginalParents.splice(idx, 1);
+        obj.traverse(child => { if (child.isMesh) { applyEmissive(child, 0x000000); clearXray(child); } });
         scene.remove(multiSelectionHelpers[idx]);
         multiSelectionHelpers.splice(idx, 1);
         console.log(`Multi-selection: removed "${obj.name}", remaining: ${selectedObjects.length}`);
@@ -3448,6 +3449,7 @@ function toggleObjectInMultiSelect(obj) {
         multiOriginalParents.push(obj.parent);   // uložit před attach
         setNavigationPosition(obj);              // před attach – parent chain ještě odpovídá DOM
         pivotObject.attach(obj);
+        obj.traverse(child => { if (child.isMesh) { applyEmissive(child, 0xff0000); applyXray(child); } });
         const h = new PaddedBoxHelper(obj, 0x00ccff, viewProp.multiSelectBoxPadding);
         scene.add(h);
         multiSelectionHelpers.push(h);
@@ -3513,6 +3515,8 @@ function deactivateMultiSelect() {
     // Vyčistíme emissivní zvýraznění (z group-mode kliku)
     lastSelectedMeshes.forEach(child => { applyEmissive(child, 0x000000); clearXray(child); });
     lastSelectedMeshes.length = 0;
+    // Vyčistíme emissivní zvýraznění group objektů
+    selectedObjects.forEach(obj => obj.traverse(child => { if (child.isMesh) { applyEmissive(child, 0x000000); clearXray(child); } }));
 
     clearGroupHighlights();
 
@@ -3653,6 +3657,7 @@ function restoreGroupFromHistory() {
         const h = new PaddedBoxHelper(obj, 0x00ccff, viewProp.multiSelectBoxPadding);
         scene.add(h);
         multiSelectionHelpers.push(h);
+        obj.traverse(child => { if (child.isMesh) { applyEmissive(child, 0xff0000); applyXray(child); } });
     });
 
     console.log(`Group History: group "${snapshot.name}" restored (${selectedObjects.length} objects).`);
