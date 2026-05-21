@@ -374,6 +374,7 @@ const selectedObjects = [];       // objekty přidané do multi-výběru (refere
 const multiOriginalParents = [];  // původní rodiče (paralelní pole k selectedObjects)
 const multiSelectionHelpers = []; // azurové BoxHelpery pro vizualizaci multi-výběru
 let pivotObject = null;           // pivot pro skupinovou transformaci
+let singleSelectBboxOffset = null; // offset od world origin objektu ke středu jeho bboxu (pro vizuální posun gizma)
 
 // --- Group History ---
 const groupHistory = [];          // pole snapshotů: { name, objects[] }
@@ -4285,6 +4286,24 @@ function selectObject(object) {
     if (object) {        
         lastSelectedObject = object;// Nastavíme nové reference             
         transformControls.attach(object);// Připojíme TransformControls
+
+        // Posuneme gizmo vizuálně na střed bboxu objektu (offset od lokálního originu)
+        object.updateWorldMatrix(true, false);
+        const _bbox = new THREE.Box3().setFromObject(object);
+        const _bboxCenter = new THREE.Vector3();
+        _bbox.getCenter(_bboxCenter);
+        const _objWorldPos = new THREE.Vector3().setFromMatrixPosition(object.matrixWorld);
+        singleSelectBboxOffset = new THREE.Vector3().subVectors(_bboxCenter, _objWorldPos);
+        const _origRootUMW = transformControls._root.updateMatrixWorld.bind(transformControls._root);
+        transformControls._root.updateMatrixWorld = function (force) {
+            _origRootUMW(force);
+            if (singleSelectBboxOffset) {
+                transformControls.worldPosition.add(singleSelectBboxOffset);
+                transformControls._gizmo.updateMatrixWorld(true);
+                transformControls._plane.updateMatrixWorld(true);
+            }
+        };
+
         outlinerHighlight(object);// Zvýraznění uzlu v scene outlineru   
              
         selectionHistory.push(object); // Přidáme do historie vybraných objektů
@@ -4317,7 +4336,9 @@ function deselectObject() {
 
     // Vypneme vizuální prvky pro hlavní vybraný objekt
     clearHighlight();
-    // Odpojíme transformační prvky od objektu
+    // Odpojíme transformační prvky od objektu; uklidíme patch gizma na bbox střed
+    delete transformControls._root.updateMatrixWorld;
+    singleSelectBboxOffset = null;
     if (transformControls.object) {
         transformControls.detach();
     }                
