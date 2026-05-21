@@ -292,6 +292,7 @@ let lastSelectedObject = null;
 const lastSelectedMeshes = [];
 const selectionHistory = [];
 let selectedFolder = null;
+const xrayBackup = new Map(); // mesh → { renderOrder, depthTests: boolean[] }
 
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2( 1, 1 ); //udání hodnoty 1,1 je kvůli inicializaci. Jinak může vybrat objekt i když není na vybrání.
@@ -3425,7 +3426,7 @@ function toggleObjectInMultiSelect(obj) {
 function addCurrentToMultiSelect() {
     if (!lastSelectedObject) return;
     // Vyčistíme emissivní zvýraznění před přidáním do skupiny
-    lastSelectedMeshes.forEach(child => applyEmissive(child, 0x000000));
+    lastSelectedMeshes.forEach(child => { applyEmissive(child, 0x000000); clearXray(child); });
     lastSelectedMeshes.length = 0;
     toggleObjectInMultiSelect(lastSelectedObject);
 }
@@ -3475,7 +3476,7 @@ function deactivateMultiSelect() {
     if (!viewProp.isGroupTransformActive) return;
 
     // Vyčistíme emissivní zvýraznění (z group-mode kliku)
-    lastSelectedMeshes.forEach(child => applyEmissive(child, 0x000000));
+    lastSelectedMeshes.forEach(child => { applyEmissive(child, 0x000000); clearXray(child); });
     lastSelectedMeshes.length = 0;
 
     clearGroupHighlights();
@@ -4213,6 +4214,27 @@ function applyEmissive(object, color = 0xff0000) {
     }
 }
 
+function applyXray(mesh) {
+    if (!mesh || !mesh.material) return;
+    const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    xrayBackup.set(mesh, {
+        renderOrder: mesh.renderOrder,
+        depthTests: mats.map(m => m.depthTest)
+    });
+    mesh.renderOrder = 999;
+    mats.forEach(m => { m.depthTest = false; m.needsUpdate = true; });
+}
+
+function clearXray(mesh) {
+    if (!mesh || !mesh.material) return;
+    const backup = xrayBackup.get(mesh);
+    if (!backup) return;
+    const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    mesh.renderOrder = backup.renderOrder;
+    mats.forEach((m, i) => { m.depthTest = backup.depthTests[i] ?? true; m.needsUpdate = true; });
+    xrayBackup.delete(mesh);
+}
+
 function highlightObject(object) {
     if (!object) return;
 
@@ -4282,6 +4304,7 @@ function selectObject(object) {
                 //child.material.emissive.setHex(0xff0000);
                 applyEmissive(child, 0xff0000);
             }
+            applyXray(child);
         });
         console.log("selected object: ", lastSelectedObject);
 
@@ -4307,7 +4330,7 @@ function deselectObject() {
         guiPanels['Selected'].btn.style.display = 'none';
     }                
     // Volitelné: vynulování pomocných proměnných
-    lastSelectedMeshes.forEach(child => applyEmissive(child, 0x000000));
+    lastSelectedMeshes.forEach(child => { applyEmissive(child, 0x000000); clearXray(child); });
 
     lastSelectedMeshes.length = 0; // empty the array
 
@@ -4911,17 +4934,17 @@ function onClick( event ) {
     if (viewProp.isGroupTransformActive) {
         if (clickTarget) {
             // Vyčistíme předchozí emissivní zvýraznění
-            lastSelectedMeshes.forEach(child => applyEmissive(child, 0x000000));
+            lastSelectedMeshes.forEach(child => { applyEmissive(child, 0x000000); clearXray(child); });
             lastSelectedMeshes.length = 0;
             lastSelectedObject = resolveCADSelection(clickTarget);
             // Aplikujeme emissivní zvýraznění na nový objekt
             lastSelectedObject.traverse(child => { if (child.isMesh) lastSelectedMeshes.push(child); });
-            lastSelectedMeshes.forEach(child => applyEmissive(child, 0xff0000));
+            lastSelectedMeshes.forEach(child => { applyEmissive(child, 0xff0000); applyXray(child); });
             outlinerHighlight(lastSelectedObject);
             render();
         } else {
             // Prázdné místo – zruš vybraný objekt, group ponech
-            lastSelectedMeshes.forEach(child => applyEmissive(child, 0x000000));
+            lastSelectedMeshes.forEach(child => { applyEmissive(child, 0x000000); clearXray(child); });
             lastSelectedMeshes.length = 0;
             lastSelectedObject = null;
             outlinerHighlight(null);
