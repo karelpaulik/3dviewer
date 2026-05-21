@@ -374,6 +374,9 @@ const selectedObjects = [];       // objekty přidané do multi-výběru (refere
 const multiOriginalParents = [];  // původní rodiče (paralelní pole k selectedObjects)
 const multiSelectionHelpers = []; // azurové BoxHelpery pro vizualizaci multi-výběru
 let pivotObject = null;           // pivot pro skupinovou transformaci
+let singleSelectPivot = null;           // pivot pro single-select (gizmo na středu bboxu)
+let singleSelectPivotInitMatrix = null; // world matice pivotu na začátku dragu
+let singleSelectObjectInitMatrix = null; // world matice objektu na začátku dragu
 
 // --- Group History ---
 const groupHistory = [];          // pole snapshotů: { name, objects[] }
@@ -771,6 +774,29 @@ function init() {
         if (isTransformDragging && viewProp.sectionCrossLines) {
             updateSectionCrossLines();
         }
+        // Delta-sync: pohyb pivotu přeneseme na skutečný objekt (objekt zůstává u původního rodiče).
+        // Funguje pro translate, rotate i scale – matice přesně zachovává world-space transformaci.
+        if (isTransformDragging && singleSelectPivot && lastSelectedObject
+                && singleSelectPivotInitMatrix && singleSelectObjectInitMatrix) {
+            singleSelectPivot.updateWorldMatrix(true, false);
+            const _deltaM = new THREE.Matrix4()
+                .copy(singleSelectPivot.matrixWorld)
+                .multiply(new THREE.Matrix4().copy(singleSelectPivotInitMatrix).invert());
+            const _newObjWorld = new THREE.Matrix4()
+                .copy(_deltaM)
+                .multiply(singleSelectObjectInitMatrix);
+            if (lastSelectedObject.parent) {
+                lastSelectedObject.parent.updateWorldMatrix(true, false);
+                _newObjWorld.premultiply(
+                    new THREE.Matrix4().copy(lastSelectedObject.parent.matrixWorld).invert()
+                );
+            }
+            _newObjWorld.decompose(
+                lastSelectedObject.position,
+                lastSelectedObject.quaternion,
+                lastSelectedObject.scale
+            );
+        }
         render();
     } );
     transformControls.addEventListener( 'dragging-changed', function ( event ) {
@@ -790,6 +816,13 @@ function init() {
             }
             isTransformDragging = true;
             orbitControls.enabled = false;
+            // Uložíme počáteční world matice pro delta-sync single-select pivotu
+            if (singleSelectPivot && lastSelectedObject && !viewProp.isGroupTransformActive) {
+                singleSelectPivot.updateWorldMatrix(true, false);
+                lastSelectedObject.updateWorldMatrix(true, false);
+                singleSelectPivotInitMatrix = singleSelectPivot.matrixWorld.clone();
+                singleSelectObjectInitMatrix = lastSelectedObject.matrixWorld.clone();
+            }
             // Uložíme předchozí stav před změnou
             if (transformControls.object && !viewProp.isGroupTransformActive) {
                 savePreviousTransformState();
@@ -2726,7 +2759,9 @@ function roundNearZero(value, epsilon = 1e-10) {
 }
 
 function savePreviousTransformState() {
-    const obj = transformControls.object;
+    // Pokud je aktivní single-select pivot, ukládáme stav skutečného objektu (ne pivotu).
+    // Pivot je jen gizmo helper – GUI sliders a undo musí pracovat s originálem.
+    const obj = (singleSelectPivot && lastSelectedObject) ? lastSelectedObject : transformControls.object;
     if (!obj) return;
     previousTransformState = {
         object: obj,
@@ -4283,8 +4318,26 @@ function selectObject(object) {
     }
 
     if (object) {        
-        lastSelectedObject = object;// Nastavíme nové reference             
-        transformControls.attach(object);// Připojíme TransformControls
+        lastSelectedObject = object;// Nastavíme nové reference
+
+        // V assembly edit modu připojíme TC přímo na objekt (assembly tracking potřebuje
+        // obj.position v local space, pivot by způsobil chybné záznamy).
+        // Jinak vytvoříme pivot na středu bboxu, aby gizmo bylo vždy ve středu objektu.
+        if (assemblyState.editMode) {
+            transformControls.attach(object);// Připojíme TransformControls
+        } else {
+            object.updateWorldMatrix(true, true);
+            const bbox = new THREE.Box3().setFromObject(object);
+            const bboxCenter = new THREE.Vector3();
+            bbox.getCenter(bboxCenter);
+            singleSelectPivot = new THREE.Object3D();
+            singleSelectPivot.name = '__singleSelectPivot__';
+            singleSelectPivot.position.copy(bboxCenter);
+            scene.add(singleSelectPivot);
+            // Objekt NENÍ reparentován – zůstává u původního rodiče.
+            // Pohyb pivotu se v change eventu aplikuje jako delta matice na objekt.
+            transformControls.attach(singleSelectPivot);// Připojíme TransformControls na pivot
+        }
         outlinerHighlight(object);// Zvýraznění uzlu v scene outlineru   
              
         selectionHistory.push(object); // Přidáme do historie vybraných objektů
@@ -4320,6 +4373,13 @@ function deselectObject() {
     // Odpojíme transformační prvky od objektu
     if (transformControls.object) {
         transformControls.detach();
+    }
+    // Zničíme pivot pro single-select (objekt zůstal u původního rodiče po celou dobu)
+    if (singleSelectPivot) {
+        scene.remove(singleSelectPivot);
+        singleSelectPivot = null;
+        singleSelectPivotInitMatrix = null;
+        singleSelectObjectInitMatrix = null;
     }                
     // Zničíme složku v lil-gui, pokud existuje
     if (selectedFolder) {
