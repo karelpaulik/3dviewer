@@ -1613,6 +1613,7 @@ function addMainGui() {
 
     // --- Edit panel ---
     const editGui = new GUI({ container: guiContainer, title: 'Edit' });
+    editGui.add({ fn: clearSceneKeepDocs }, 'fn').name('Clear scene. Keep docs + files');
     editGui.add({ fn: resetWholeModel }, 'fn').name('Reset whole model');
     editGui.add({ fn: cleanupModel }, 'fn').name('Cleanup (flatten unnamed nodes)');
     editGui.add({ fn() {
@@ -2575,6 +2576,7 @@ function setDefPosRotScale(obj) {
 }
 
 function resetWholeModel() {
+    if (!confirm('Reset whole model to initial positions?')) return;
     scene.traverse(function(child) {
         if (child.userData.initPosition && child.userData.initRotation && child.userData.initScale) {
             child.position.copy(child.userData.initPosition);
@@ -4011,6 +4013,51 @@ function flattenHierarchy(obj) {
 
     rebuildTree(loadedModels);
     render();
+}
+
+function clearSceneKeepDocs() {
+    if (!confirm('Clear scene? Documents and files will be kept.')) return;
+    try {
+        deselectObject();
+        clearHistoryPreviewHelpers();
+
+        // Remove per-model overlays (measurements, annotations, etc.)
+        const modelsCopy = loadedModels.slice();
+        modelsCopy.forEach(part => {
+            removeMeasurementsForOwner(part);
+            removeAnnotationsForOwner(part);
+            removeAnnotations3dForOwner(part);
+            removeCadDim3dMeasurementsForOwner(part);
+        });
+
+        // Clear all mesh / hidden tracking arrays
+        meshObjects.length = 0;
+        hiddenObjects.length = 0;
+        temporarilyShownObjects = [];
+
+        // Reset assembly data
+        assemblyData.steps.length = 0;
+        assemblyAnchors.clear();
+        assemblyState.currentStepIndex = -1;
+
+        // Remove all root models from the scene
+        modelsCopy.forEach(part => {
+            if (part.parent) part.parent.remove(part);
+            else scene.remove(part);
+        });
+        loadedModels.length = 0;
+
+        // Update dependent GUI / scene state
+        if (_assemblyFolderRef) updateAssemblyGuiInfo();
+        if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) updateCrossSectionLines();
+        if (viewProp.sectionCrossLines) updateSectionCrossLines();
+        if (viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render);
+
+        rebuildTree(loadedModels);
+        render();
+    } catch(err) {
+        console.log('Error: clearSceneKeepDocs ' + err.message);
+    }
 }
 
 function removeModel(part) {
