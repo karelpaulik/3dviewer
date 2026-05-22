@@ -367,7 +367,7 @@ let isTransformDragging = false;
 let orthoHalfSize = 500; // Polovelikost frustumu ortografické kamery v world units (dynamicky přepočítána po načtení modelu)
 let previousTransformState = null; // Uložení předchozího stavu pro undo
 let previousGroupTransformStates = []; // World positions of group objects before drag (for assembly recording)
-let isShiftHeld = false; // Pro manuální translation snap ve world space
+
 
 // --- Multi-výběr ---
 const selectedObjects = [];       // objekty přidané do multi-výběru (reference, ještě nejsou reparentovány)
@@ -405,7 +405,6 @@ const viewProp = {
     solidSection: true, // Solid (capped) section cut
     capColor: '#00ffff', // Color of the solid section cap faces
     transformSpace: true,  // true = world, false = local
-    snapEnabled: true,     // true = snap vždy aktivní, false = snap jen při Shift
     snapTranslation: 10,   // krok translace
     snapRotationDeg: 30,   // krok rotace ve stupních
     snapScale: 0.25,       // krok měřítka
@@ -750,7 +749,7 @@ function init() {
         // World-space manual snap: built-in setTranslationSnap works only in 'local' space.
         // In 'world' space we must snap the world-space coordinates and convert back to local.
         // isTransformDragging check: aby snap neběžel při attach() (výběru objektu), ale jen při skutečném táhnutí.
-        if (isTransformDragging && (viewProp.snapEnabled || isShiftHeld) && transformControls.object && transformControls.getMode() === 'translate' && transformControls.space === 'world') {
+        if (isTransformDragging && transformControls.object && transformControls.getMode() === 'translate' && transformControls.space === 'world') {
             const snap = viewProp.snapTranslation;
             const obj = transformControls.object;
             // Force-update the full parent chain so matrixWorld is current
@@ -996,10 +995,7 @@ function init() {
                 viewProp.transformSpace = transformControls.space === 'world';
                 break;
 
-            case 'Shift':
-                isShiftHeld = true;
-                applySnapSettings();
-                break;
+
 
             case 'r':
             case 'R':
@@ -1149,10 +1145,6 @@ function init() {
         const tag = event.target.tagName;
         if (tag === 'TEXTAREA' || tag === 'INPUT' || event.target.isContentEditable) return;
         switch ( event.key ) {
-            case 'Shift':
-                isShiftHeld = false;
-                applySnapSettings();
-                break;
         }
     } );
 
@@ -1299,15 +1291,9 @@ function applyToolbarPreferences() {
 }
 
 function applySnapSettings() {
-    if (viewProp.snapEnabled || isShiftHeld) {
-        transformControls.setTranslationSnap( viewProp.snapTranslation );
-        transformControls.setRotationSnap( THREE.MathUtils.degToRad( viewProp.snapRotationDeg ) );
-        transformControls.setScaleSnap( viewProp.snapScale );
-    } else {
-        transformControls.setTranslationSnap( null );
-        transformControls.setRotationSnap( null );
-        transformControls.setScaleSnap( null );
-    }
+    transformControls.setTranslationSnap( viewProp.snapTranslation );
+    transformControls.setRotationSnap( THREE.MathUtils.degToRad( viewProp.snapRotationDeg ) );
+    transformControls.setScaleSnap( viewProp.snapScale );
 }
 
 function toggleWireframeAll(value) {
@@ -1640,7 +1626,6 @@ function addMainGui() {
             rotationFolder.close();
         const snapFolder = editGui.addFolder("Snap");
             snapFolder.add(viewProp, 'transformMode', ['translate', 'rotate', 'scale']).name('Mode').onChange(function(value) { transformControls.setMode(value); }).listen();
-            snapFolder.add(viewProp, 'snapEnabled').name('Snap enabled').onChange(function() { applySnapSettings(); }).listen();
             snapFolder.add(viewProp, 'snapTranslation', 1, 1000, 1).name('Translation').onChange(function() { applySnapSettings(); }).listen();
             snapFolder.add(viewProp, 'snapRotationDeg', 1, 90, 1).name('Rotation (°)').onChange(function() { applySnapSettings(); }).listen();
             snapFolder.add(viewProp, 'snapScale', 0.01, 2, 0.01).name('Scale').onChange(function() { applySnapSettings(); }).listen();
@@ -4396,11 +4381,10 @@ function selectObject(object) {
             const bbox = new THREE.Box3().setFromObject(object);
             const bboxCenter = new THREE.Vector3();
             bbox.getCenter(bboxCenter);
-            // Pokud je snap aktivní, zarovnáme pivot na grid.
-            // Snap handler v change eventu snapuje pivot.position – pokud pivot
-            // startuje na gridovém bodě, delta bude vždy násobek snap kroku
-            // a sousední osy se při tahu nepohnou (snap(grid_y) == grid_y).
-            if (viewProp.snapEnabled) {
+            // Zarovnáme pivot na snap grid – snap handler v change eventu snapuje
+            // pivot.position, takže pokud pivot startuje na gridovém bodě,
+            // delta bude vždy násobek snap kroku a sousední osy se nepohnou.
+            {
                 const snap = viewProp.snapTranslation;
                 bboxCenter.x = Math.round(bboxCenter.x / snap) * snap;
                 bboxCenter.y = Math.round(bboxCenter.y / snap) * snap;
