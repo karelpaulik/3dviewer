@@ -377,7 +377,6 @@ let pivotObject = null;           // pivot pro skupinovou transformaci
 let singleSelectPivot = null;           // pivot pro single-select (gizmo na středu bboxu)
 let singleSelectPivotInitMatrix = null; // world matice pivotu na začátku dragu
 let singleSelectObjectInitMatrix = null; // world matice objektu na začátku dragu
-let singleSelectObjectInitLocalPos = null; // local position objektu na začátku dragu (pro translate)
 
 // --- Group History ---
 const groupHistory = [];          // pole snapshotů: { name, objects[] }
@@ -751,19 +750,17 @@ function init() {
         // World-space manual snap: built-in setTranslationSnap works only in 'local' space.
         // In 'world' space we must snap the world-space coordinates and convert back to local.
         // isTransformDragging check: aby snap neběžel při attach() (výběru objektu), ale jen při skutečném táhnutí.
-        // Snap pro translate bez pivotu (assembly edit mode): snapujeme přímo objekt.
-        // Když je aktivní singleSelectPivot, snap je integrovaný do delta-sync níže,
-        // protože pivot leží na středu bboxu (≠ origin objektu) a snapovat pivot
-        // by dalo nesprávný posun objektu.
-        if (isTransformDragging && !singleSelectPivot && (viewProp.snapEnabled || isShiftHeld) && transformControls.object && transformControls.getMode() === 'translate' && transformControls.space === 'world') {
+        if (isTransformDragging && (viewProp.snapEnabled || isShiftHeld) && transformControls.object && transformControls.getMode() === 'translate' && transformControls.space === 'world') {
             const snap = viewProp.snapTranslation;
             const obj = transformControls.object;
+            // Force-update the full parent chain so matrixWorld is current
             obj.updateWorldMatrix(true, false);
+            // Read snapped world position directly from matrixWorld (avoids a second updateWorldMatrix call)
             const worldPos = new THREE.Vector3().setFromMatrixPosition(obj.matrixWorld);
-            const _snapAxis = transformControls.axis || '';
-            if (_snapAxis.includes('X')) worldPos.x = Math.round(worldPos.x / snap) * snap;
-            if (_snapAxis.includes('Y')) worldPos.y = Math.round(worldPos.y / snap) * snap;
-            if (_snapAxis.includes('Z')) worldPos.z = Math.round(worldPos.z / snap) * snap;
+            worldPos.x = Math.round(worldPos.x / snap) * snap;
+            worldPos.y = Math.round(worldPos.y / snap) * snap;
+            worldPos.z = Math.round(worldPos.z / snap) * snap;
+            // Convert snapped world position back to parent local space
             if (obj.parent) {
                 obj.parent.updateWorldMatrix(true, false);
                 const invParent = new THREE.Matrix4().copy(obj.parent.matrixWorld).invert();
@@ -782,52 +779,23 @@ function init() {
         if (isTransformDragging && singleSelectPivot && lastSelectedObject
                 && singleSelectPivotInitMatrix && singleSelectObjectInitMatrix) {
             singleSelectPivot.updateWorldMatrix(true, false);
-            if (transformControls.getMode() === 'translate') {
-                // Displacement pivotu ve world space → base posun objektu.
-                const _pivotCurPos = new THREE.Vector3().setFromMatrixPosition(singleSelectPivot.matrixWorld);
-                const _pivotInitPos = new THREE.Vector3().setFromMatrixPosition(singleSelectPivotInitMatrix);
-                let _dispWorld = new THREE.Vector3().subVectors(_pivotCurPos, _pivotInitPos);
-                if (singleSelectObjectInitLocalPos) {
-                    // Snap: zaokrouhlujeme WORLD pozici OBJEKTU (ne pivotu).
-                    // Pivot leží na středu bboxu – snapovat pivot by dalo offset od skutečné
-                    // pozice objektu a výsledek by neskočil na gridové hodnoty objektu.
-                    if ((viewProp.snapEnabled || isShiftHeld) && transformControls.space === 'world') {
-                        const _snap = viewProp.snapTranslation;
-                        const _snapAxis = transformControls.axis || '';
-                        const _objInitWorldPos = new THREE.Vector3().setFromMatrixPosition(singleSelectObjectInitMatrix);
-                        const _objTargetPos = _objInitWorldPos.clone().add(_dispWorld);
-                        if (_snapAxis.includes('X')) _objTargetPos.x = Math.round(_objTargetPos.x / _snap) * _snap;
-                        if (_snapAxis.includes('Y')) _objTargetPos.y = Math.round(_objTargetPos.y / _snap) * _snap;
-                        if (_snapAxis.includes('Z')) _objTargetPos.z = Math.round(_objTargetPos.z / _snap) * _snap;
-                        _dispWorld.subVectors(_objTargetPos, _objInitWorldPos);
-                    }
-                    if (lastSelectedObject.parent) {
-                        lastSelectedObject.parent.updateWorldMatrix(true, false);
-                        const _m3 = new THREE.Matrix3().setFromMatrix4(lastSelectedObject.parent.matrixWorld).invert();
-                        _dispWorld.applyMatrix3(_m3);
-                    }
-                    lastSelectedObject.position.copy(singleSelectObjectInitLocalPos).add(_dispWorld);
-                }
-            } else {
-                // Pro rotate/scale: plná delta-matice je nutná (zachovává rotaci/škálování).
-                const _deltaM = new THREE.Matrix4()
-                    .copy(singleSelectPivot.matrixWorld)
-                    .multiply(new THREE.Matrix4().copy(singleSelectPivotInitMatrix).invert());
-                const _newObjWorld = new THREE.Matrix4()
-                    .copy(_deltaM)
-                    .multiply(singleSelectObjectInitMatrix);
-                if (lastSelectedObject.parent) {
-                    lastSelectedObject.parent.updateWorldMatrix(true, false);
-                    _newObjWorld.premultiply(
-                        new THREE.Matrix4().copy(lastSelectedObject.parent.matrixWorld).invert()
-                    );
-                }
-                _newObjWorld.decompose(
-                    lastSelectedObject.position,
-                    lastSelectedObject.quaternion,
-                    lastSelectedObject.scale
+            const _deltaM = new THREE.Matrix4()
+                .copy(singleSelectPivot.matrixWorld)
+                .multiply(new THREE.Matrix4().copy(singleSelectPivotInitMatrix).invert());
+            const _newObjWorld = new THREE.Matrix4()
+                .copy(_deltaM)
+                .multiply(singleSelectObjectInitMatrix);
+            if (lastSelectedObject.parent) {
+                lastSelectedObject.parent.updateWorldMatrix(true, false);
+                _newObjWorld.premultiply(
+                    new THREE.Matrix4().copy(lastSelectedObject.parent.matrixWorld).invert()
                 );
             }
+            _newObjWorld.decompose(
+                lastSelectedObject.position,
+                lastSelectedObject.quaternion,
+                lastSelectedObject.scale
+            );
         }
         render();
     } );
@@ -854,7 +822,6 @@ function init() {
                 lastSelectedObject.updateWorldMatrix(true, false);
                 singleSelectPivotInitMatrix = singleSelectPivot.matrixWorld.clone();
                 singleSelectObjectInitMatrix = lastSelectedObject.matrixWorld.clone();
-                singleSelectObjectInitLocalPos = lastSelectedObject.position.clone();
             }
             // Uložíme předchozí stav před změnou
             if (transformControls.object && !viewProp.isGroupTransformActive) {
@@ -4479,7 +4446,6 @@ function deselectObject() {
         singleSelectPivot = null;
         singleSelectPivotInitMatrix = null;
         singleSelectObjectInitMatrix = null;
-        singleSelectObjectInitLocalPos = null;
     }                
     // Zničíme složku v lil-gui, pokud existuje
     if (selectedFolder) {
