@@ -1580,10 +1580,12 @@ function addMainGui() {
     // --- File panel (Export / Import) ---
     const fileGui = new GUI({ container: guiContainer, title: 'File' });
     fileGui.add({ fn: importGlbFile }, 'fn').name('Import GLB…');
-    fileGui.add({ fn: exportAllModels }, 'fn').name('Export all to GLB');
     fileGui.add({ fn: exportAllModelsDraco }, 'fn').name('Export all to GLB (Compression)');
-    fileGui.add({ fn: exportSelectedObject }, 'fn').name('Export selected to GLB');
     fileGui.add({ fn: exportSelectedObjectDraco }, 'fn').name('Export selected to GLB (Compression)');
+    const exportNoCompFolder = fileGui.addFolder('Export without compression');
+    exportNoCompFolder.add({ fn: exportAllModels }, 'fn').name('Export all to GLB');
+    exportNoCompFolder.add({ fn: exportSelectedObject }, 'fn').name('Export selected to GLB');
+    exportNoCompFolder.close();
     const demoFolder = fileGui.addFolder('Demo');
     demoFolder.close();
     demoFolder.add({ fn() {
