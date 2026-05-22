@@ -1579,16 +1579,28 @@ function addMainGui() {
 
     // --- File panel (Export / Import) ---
     const fileGui = new GUI({ container: guiContainer, title: 'File' });
-    fileGui.add({ fn() {
-        loadGlbModel('./models/demo.glb', 'demo.glb', 0.001, true).then(() => {
-            fitView();
-        });
-    } }, 'fn').name('Import demo GLB');
     fileGui.add({ fn: importGlbFile }, 'fn').name('Import GLB…');
     fileGui.add({ fn: exportAllModels }, 'fn').name('Export all to GLB');
     fileGui.add({ fn: exportAllModelsDraco }, 'fn').name('Export all to GLB (Compression)');
     fileGui.add({ fn: exportSelectedObject }, 'fn').name('Export selected to GLB');
     fileGui.add({ fn: exportSelectedObjectDraco }, 'fn').name('Export selected to GLB (Compression)');
+    const demoFolder = fileGui.addFolder('Demo');
+    demoFolder.close();
+    demoFolder.add({ fn() {
+        loadGlbModel('./models/demo.glb', 'demo.glb', 0.001, true).then(() => {
+            fitView();
+        });
+    } }, 'fn').name('Import demo GLB');
+    demoFolder.add({ fn() {
+        loadGlbModel('./models/forklift.glb', 'forklift.glb', 0.001, true).then(() => {
+            fitView();
+        });
+    } }, 'fn').name('Import Forklift');
+    demoFolder.add({ fn() {
+        loadGlbModel('./models/cnc.glb', 'cnc.glb', 0.001, true).then(() => {
+            fitView();
+        });
+    } }, 'fn').name('Import CNC');
     const exportHtmlFolder = fileGui.addFolder('Export self-contained HTML');
     exportHtmlFolder.close();
     exportHtmlFolder.add({ fn() { exportToHTML(loadedModels, assemblyGui, viewProp, assemblyWriteToUserData, assemblyClearUserData); } }, 'fn').name('Export to HTML');
