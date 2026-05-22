@@ -1586,23 +1586,23 @@ function addMainGui() {
     exportNoCompFolder.add({ fn: exportAllModels }, 'fn').name('Export all to GLB');
     exportNoCompFolder.add({ fn: exportSelectedObject }, 'fn').name('Export selected to GLB');
     exportNoCompFolder.close();
-    const demoFolder = fileGui.addFolder('Demo');
+    const demoFolder = fileGui.addFolder('Import demo');
     demoFolder.close();
     demoFolder.add({ fn() {
-        loadGlbModel('./models/demo.glb', 'demo.glb', 0.001, true).then(() => {
+        loadGlbModel('./models/motor.glb', 'motor.glb', 0.001, true).then(() => {
             fitView();
         });
-    } }, 'fn').name('Import demo GLB');
+    } }, 'fn').name('Motor');
     demoFolder.add({ fn() {
         loadGlbModel('./models/forklift.glb', 'forklift.glb', 0.001, true).then(() => {
             fitView();
         });
-    } }, 'fn').name('Import Forklift');
+    } }, 'fn').name('Forklift');
     demoFolder.add({ fn() {
         loadGlbModel('./models/cnc.glb', 'cnc.glb', 0.001, true).then(() => {
             fitView();
         });
-    } }, 'fn').name('Import CNC');
+    } }, 'fn').name('CNC');
     const exportHtmlFolder = fileGui.addFolder('Export self-contained HTML');
     exportHtmlFolder.close();
     exportHtmlFolder.add({ fn() { exportToHTML(loadedModels, assemblyGui, viewProp, assemblyWriteToUserData, assemblyClearUserData); } }, 'fn').name('Export to HTML');
