@@ -5663,10 +5663,10 @@ function exportSelectedObject() {
         console.warn('Žádný objekt není vybrán.');
         return;
     }
-    const defaultName = `export_${lastSelectedObject.name || 'selected'}.glb`;
-    const filename = window.prompt('Název souboru pro export:', defaultName);
-    if (filename === null) return; // uživatel stiskl Cancel
-    const finalName = filename.trim() || defaultName;
+    const defaultName = `${lastSelectedObject.name || 'selected'}.glb`;
+    const input = window.prompt('File name (.glb will be added):', defaultName.replace(/\.glb$/i, ''));
+    if (input === null) return; // uživatel stiskl Cancel
+    const finalName = (input.trim() || defaultName.replace(/\.glb$/i, '')).replace(/\.glb$/i, '') + '.glb';
     // Vypneme emissive (zvýraznění výběru) před exportem
     lastSelectedObject.traverse((child) => {
         if (child.isMesh && child.material) {
@@ -5717,7 +5717,12 @@ function exportSelectedObject() {
     clone.quaternion.copy(worldQuat);
     clone.scale.copy(worldScale);
 
-    exporter.parse(clone, function(result) {
+    const group = new THREE.Group();
+    group.userData._appExportRoot = true;
+    clone.userData.fileName = finalName;
+    group.add(clone);
+
+    exporter.parse(group, function(result) {
         saveArrayBuffer(result, finalName);
         console.log(`Export selected: hotovo.`);
     }, function(error) {
@@ -5730,7 +5735,7 @@ async function exportSelectedObjectDraco() {
         console.warn('Žádný objekt není vybrán.');
         return;
     }
-    const defaultName = `export_${lastSelectedObject.name || 'selected'}_draco.glb`;
+    const defaultName = `${lastSelectedObject.name || 'selected'}.glb`;
     const input = window.prompt('File name (.glb will be added):', defaultName.replace(/\.glb$/i, ''));
     if (input === null) return;
     const finalName = (input.trim() || defaultName.replace(/\.glb$/i, '')).replace(/\.glb$/i, '') + '.glb';
@@ -5790,7 +5795,12 @@ async function exportSelectedObjectDraco() {
     clone.quaternion.copy(worldQuat);
     clone.scale.copy(worldScale);
 
-    exporter.parse(clone, function(result) {
+    const groupDraco = new THREE.Group();
+    groupDraco.userData._appExportRoot = true;
+    clone.userData.fileName = finalName;
+    groupDraco.add(clone);
+
+    exporter.parse(groupDraco, function(result) {
         setTimeout(async () => {
             try {
                 const { WebIO } = await import('@gltf-transform/core');
