@@ -4396,6 +4396,16 @@ function selectObject(object) {
             const bbox = new THREE.Box3().setFromObject(object);
             const bboxCenter = new THREE.Vector3();
             bbox.getCenter(bboxCenter);
+            // Pokud je snap aktivní, zarovnáme pivot na grid.
+            // Snap handler v change eventu snapuje pivot.position – pokud pivot
+            // startuje na gridovém bodě, delta bude vždy násobek snap kroku
+            // a sousední osy se při tahu nepohnou (snap(grid_y) == grid_y).
+            if (viewProp.snapEnabled) {
+                const snap = viewProp.snapTranslation;
+                bboxCenter.x = Math.round(bboxCenter.x / snap) * snap;
+                bboxCenter.y = Math.round(bboxCenter.y / snap) * snap;
+                bboxCenter.z = Math.round(bboxCenter.z / snap) * snap;
+            }
             singleSelectPivot = new THREE.Object3D();
             singleSelectPivot.name = '__singleSelectPivot__';
             singleSelectPivot.position.copy(bboxCenter);
