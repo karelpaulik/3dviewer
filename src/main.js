@@ -529,10 +529,13 @@ class PaddedBoxHelper extends THREE.LineSegments {
         const max = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
         const v = new THREE.Vector3();
 
+        const isAnnotOrDim = (ch) => ch.userData._isMeasurement || ch.userData._isAnnotation || ch.userData._isAnnotation3d || ch.userData._isCadDim3d;
+
         if (viewProp.orientedSelectionBox === 'local') {
             // Compute bounding box from vertices in the object's local space (OBB)
             const invMatrix = new THREE.Matrix4().copy(this.object.matrixWorld).invert();
             this.object.traverse(child => {
+                if (isAnnotOrDim(child)) return;
                 if (child.geometry && child.geometry.attributes.position) {
                     const pos = child.geometry.attributes.position;
                     const toLocal = new THREE.Matrix4().multiplyMatrices(invMatrix, child.matrixWorld);
@@ -543,9 +546,18 @@ class PaddedBoxHelper extends THREE.LineSegments {
                 }
             });
         } else {
-            // World-space AABB
-            const box = new THREE.Box3().setFromObject(this.object);
-            min.copy(box.min); max.copy(box.max);
+            // World-space AABB – manual traversal to skip annotations/dimensions
+            const v2 = new THREE.Vector3();
+            this.object.traverse(child => {
+                if (isAnnotOrDim(child)) return;
+                if (child.geometry && child.geometry.attributes.position) {
+                    const pos = child.geometry.attributes.position;
+                    for (let i = 0; i < pos.count; i++) {
+                        v2.fromBufferAttribute(pos, i).applyMatrix4(child.matrixWorld);
+                        min.min(v2); max.max(v2);
+                    }
+                }
+            });
         }
 
         if (min.x === Infinity) return;
@@ -1754,9 +1766,11 @@ function refreshSelectedObjGui(obj) {
             const bMin = new THREE.Vector3(Infinity, Infinity, Infinity);
             const bMax = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
             const bv = new THREE.Vector3();
+            const isAnnotOrDim2 = (ch) => ch.userData._isMeasurement || ch.userData._isAnnotation || ch.userData._isAnnotation3d || ch.userData._isCadDim3d;
             if (viewProp.orientedSelectionBox === 'local') {
                 const inv = new THREE.Matrix4().copy(lastSelectedObject.matrixWorld).invert();
                 lastSelectedObject.traverse(ch => {
+                    if (isAnnotOrDim2(ch)) return;
                     if (ch.geometry && ch.geometry.attributes.position) {
                         const pos = ch.geometry.attributes.position;
                         const toL = new THREE.Matrix4().multiplyMatrices(inv, ch.matrixWorld);
@@ -1764,8 +1778,14 @@ function refreshSelectedObjGui(obj) {
                     }
                 });
             } else {
-                const box = new THREE.Box3().setFromObject(lastSelectedObject);
-                bMin.copy(box.min); bMax.copy(box.max);
+                const bv2 = new THREE.Vector3();
+                lastSelectedObject.traverse(ch => {
+                    if (isAnnotOrDim2(ch)) return;
+                    if (ch.geometry && ch.geometry.attributes.position) {
+                        const pos = ch.geometry.attributes.position;
+                        for (let i = 0; i < pos.count; i++) { bv2.fromBufferAttribute(pos, i).applyMatrix4(ch.matrixWorld); bMin.min(bv2); bMax.max(bv2); }
+                    }
+                });
             }
             const bSize = new THREE.Vector3().subVectors(bMax, bMin);
             const axLen = Math.max(bSize.x, bSize.y, bSize.z) * 0.5;
