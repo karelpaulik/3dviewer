@@ -26,6 +26,7 @@ import { computeSolidSection, clearSolidSection } from './solidSectionUtils.js';
 import { initDocumentsGui, importDocumentsFromGltfScene, getDocumentsStore, flushDocumentEdits, isDocOverlayBlockingInput, setDocLabelOptions } from './documentsUtils.js';
 import { initAttachmentsGui, importAttachmentsFromGltfScene, getAttachmentsStore } from './attachmentsUtils.js';
 import { openHelp } from './helpUtils.js';
+import { openBomDialog } from './bomUtils.js';
 
 // Proměnné globálního rozsahu----------------------------------------------------------------------------------------
 let container, stats;
@@ -1798,6 +1799,7 @@ function refreshSelectedObjGui(obj) {
     selectedFolder.add({ fn() { if (lastSelectedObject) hideObject(lastSelectedObject); } }, 'fn').name('Hide Object');
     selectedFolder.add({ fn() { if (lastSelectedObject) { lastSelectedMeshes.forEach(child => applyEmissive(child, 0x000000)); render(); toggleCadStyle(lastSelectedObject, false); } } }, 'fn').name('CAD Style (original colors)');
     selectedFolder.add({ fn() { if (lastSelectedObject) { lastSelectedMeshes.forEach(child => applyEmissive(child, 0x000000)); render(); toggleCadStyle(lastSelectedObject, true); } } }, 'fn').name('CAD Style (random colors)');
+    selectedFolder.add({ fn() { openBomDialog(lastSelectedObject); } }, 'fn').name('BOM…');
 
     // Material inspector – only for Mesh objects
     if (obj.isMesh && obj.material) {
