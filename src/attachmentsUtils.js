@@ -50,6 +50,8 @@ export function refreshAttachmentsGui() {
 
     // "Add files" button
     _guiRef.add({ fn: _addAttachments }, 'fn').name('+ Add files…');
+    // "Paste image from clipboard" button
+    _guiRef.add({ fn: _pasteImageFromClipboard }, 'fn').name('📋 Paste image…');
 
     // "Download all as ZIP" button — only shown when there is at least one attachment
     if (attachmentsStore.length > 0) {
@@ -344,6 +346,61 @@ function _fileToBase64(file) {
         };
         reader.onerror = reject;
         reader.readAsDataURL(file);
+    });
+}
+
+async function _pasteImageFromClipboard() {
+    let items;
+    try {
+        items = await navigator.clipboard.read();
+    } catch (err) {
+        alert('Cannot access clipboard. Make sure the browser has clipboard-read permission.');
+        return;
+    }
+
+    let found = false;
+    for (const item of items) {
+        const imageType = item.types.find(t => t.startsWith('image/'));
+        if (!imageType) continue;
+        found = true;
+        const blob = await item.getType(imageType);
+        const ext = imageType.split('/')[1] || 'png';
+        const ts = new Date().toISOString().slice(0, 19).replace('T', '_').replace(/:/g, '-');
+        const name = `clipboard-${ts}.${ext}`;
+
+        if (attachmentsStore.find(a => a.name === name)) {
+            if (!window.confirm(`Attachment "${name}" already exists. Replace it?`)) continue;
+            attachmentsStore = attachmentsStore.filter(a => a.name !== name);
+        }
+
+        const data = await _blobToBase64(blob);
+        attachmentsStore.push({
+            id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+            name,
+            mimeType: imageType,
+            data,
+            size: blob.size,
+            addedAt: new Date().toISOString(),
+        });
+    }
+
+    if (!found) {
+        alert('No image found in clipboard.');
+        return;
+    }
+    refreshAttachmentsGui();
+}
+
+function _blobToBase64(blob) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+            const result = reader.result;
+            const comma = result.indexOf(',');
+            resolve(comma >= 0 ? result.slice(comma + 1) : result);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
     });
 }
 
