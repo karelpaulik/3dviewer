@@ -6073,8 +6073,10 @@ function addHelpGui() {
     aboutDialog.innerHTML = `
         <h2>BEDOBE</h2>
         <p>CAD Explorer</p>
+        <p><strong>Created by International CAD developers community</strong></p>
         <p>BEDOBE is a web-based CAD Explorer, assembly workflow editor, and document editor built with Three.js. It allows you to load GLB models, explore their structure, create documentation, create step-by-step assembly instructions with smooth animations and much much more.</p>
         <p><a href="mailto:info@bedobe.eu">info@bedobe.eu</a></p>
+        <p>The goal of the project is to provide a publicly available <strong>CAD explorer</strong> for everyone.</p>
         <form method="dialog"><button>OK</button></form>
     `;
     aboutDialog.addEventListener('click', e => { if (e.target === aboutDialog) aboutDialog.close(); });
