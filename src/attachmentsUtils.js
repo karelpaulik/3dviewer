@@ -149,7 +149,10 @@ function _buildModal() {
                 <button id="att-modal-prev" style="background:none;border:none;color:#eee;font-size:18px;cursor:pointer;line-height:1;padding:0 4px;">‹</button>
                 <span id="att-modal-counter" style="color:#aaa;font-size:12px;font-family:sans-serif;white-space:nowrap;"></span>
                 <button id="att-modal-next" style="background:none;border:none;color:#eee;font-size:18px;cursor:pointer;line-height:1;padding:0 4px;">›</button>
-                <span id="att-modal-title" style="color:#eee;font-size:13px;font-family:sans-serif;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;margin-left:4px;"></span>
+                <span id="att-modal-title" style="display:flex;align-items:center;flex:1;min-width:0;margin-left:4px;overflow:hidden;">
+                    <input id="att-modal-name-input" title="Click to rename (extension is read-only)" style="background:transparent;border:none;border-bottom:1px solid transparent;color:#eee;font-size:13px;font-family:sans-serif;outline:none;flex:1;min-width:0;padding:0;cursor:text;" />
+                    <span id="att-modal-name-ext" style="color:#888;font-size:13px;font-family:sans-serif;white-space:nowrap;flex-shrink:0;"></span>
+                </span>
                 <button id="att-modal-comment-btn" title="Comment" style="background:none;border:1px solid #555;color:#aaa;font-size:12px;cursor:pointer;line-height:1;padding:2px 8px;border-radius:3px;flex-shrink:0;">💬</button>
                 <button id="att-modal-close" style="background:none;border:none;color:#eee;font-size:20px;cursor:pointer;line-height:1;padding:0 4px;margin-left:4px;flex-shrink:0;">✕</button>
             </div>
@@ -164,6 +167,21 @@ function _buildModal() {
     _modalEl.querySelector('#att-modal-next').addEventListener('click', () => _carouselStep(+1));
     _modalEl.querySelector('#att-modal-comment-btn').addEventListener('click', () => _toggleCommentPanel(_carouselList[_carouselIndex]));
 
+    const nameInput = _modalEl.querySelector('#att-modal-name-input');
+    nameInput.addEventListener('focus', () => { nameInput.style.borderBottomColor = '#888'; });
+    nameInput.addEventListener('blur', () => { nameInput.style.borderBottomColor = 'transparent'; _saveCurrentName(); });
+    nameInput.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); nameInput.blur(); }
+        if (e.key === 'Escape') {
+            const att = _carouselList[_carouselIndex];
+            if (att) {
+                const lastDot = att.name.lastIndexOf('.');
+                nameInput.value = lastDot >= 0 ? att.name.slice(0, lastDot) : att.name;
+            }
+            nameInput.blur();
+        }
+    });
+
     // Keyboard navigation
     document.addEventListener('keydown', e => {
         if (!_modalEl || _modalEl.style.display === 'none') return;
@@ -177,12 +195,14 @@ function _carouselStep(dir) {
     const next = _carouselIndex + dir;
     if (next < 0 || next >= _carouselList.length) return;
     _saveCurrentComment(); // save before index changes
+    _saveCurrentName();
     _carouselIndex = next;
     _renderModal(_carouselList[_carouselIndex]);
 }
 
 function _closeModal() {
     _saveCurrentComment();
+    _saveCurrentName();
     if (_modalEl) _modalEl.style.display = 'none';
     refreshAttachmentsGui();
 }
@@ -193,6 +213,23 @@ function _saveCurrentComment() {
     if (!att) return;
     const html = _commentEditorContent.innerHTML;
     att.comment = (html && html !== '<br>') ? html : '';
+}
+
+function _saveCurrentName() {
+    if (!_modalEl) return;
+    const att = _carouselList[_carouselIndex];
+    if (!att) return;
+    const input = _modalEl.querySelector('#att-modal-name-input');
+    const extSpan = _modalEl.querySelector('#att-modal-name-ext');
+    if (!input || !extSpan) return;
+    const newBase = input.value.trim();
+    if (!newBase) {
+        // restore if left empty
+        const lastDot = att.name.lastIndexOf('.');
+        input.value = lastDot >= 0 ? att.name.slice(0, lastDot) : att.name;
+        return;
+    }
+    att.name = newBase + extSpan.textContent;
 }
 
 function _buildCommentEditor(att) {
@@ -251,7 +288,11 @@ function _renderModal(att) {
     _activeBlobUrl = URL.createObjectURL(blob);
 
     // Update title and counter
-    _modalEl.querySelector('#att-modal-title').textContent = att.name;
+    const lastDot = att.name.lastIndexOf('.');
+    const _nameBase = lastDot >= 0 ? att.name.slice(0, lastDot) : att.name;
+    const _nameExt  = lastDot >= 0 ? att.name.slice(lastDot) : '';
+    _modalEl.querySelector('#att-modal-name-input').value = _nameBase;
+    _modalEl.querySelector('#att-modal-name-ext').textContent = _nameExt;
     const total = _carouselList.length;
     _modalEl.querySelector('#att-modal-counter').textContent = total > 1 ? `${_carouselIndex + 1} / ${total}` : '';
 
