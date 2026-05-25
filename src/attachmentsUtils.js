@@ -4,6 +4,7 @@
 // Attachments can be downloaded to disk on demand.
 
 import JSZip from 'jszip';
+import { buildWysiwygEditor } from './annotationUtils.js';
 
 let attachmentsStore = []; // [{ id, name, mimeType, data (base64 string), size, addedAt }]
 let _guiRef = null;
@@ -58,7 +59,8 @@ export function refreshAttachmentsGui() {
     // One folder per attachment with download + delete buttons inside
     attachmentsStore.forEach(att => {
         const sizeStr = _formatSize(att.size);
-        const folder = _guiRef.addFolder(`${att.name}  (${sizeStr})`);
+        const prefix = att.comment ? '💬 ' : '';
+        const folder = _guiRef.addFolder(`${prefix}${att.name}  (${sizeStr})`);
         if (_canOpenInBrowser(att.mimeType)) {
             folder.add({ fn: () => _openAttachment(att) }, 'fn').name('↗  Open');
         }
@@ -131,6 +133,8 @@ let _modalEl = null;
 let _activeBlobUrl = null;
 let _carouselList = []; // filtered list of openable attachments
 let _carouselIndex = 0;
+let _commentPanelOpen = false;
+let _commentEditorContent = null; // the contenteditable div inside the comment editor
 
 function _buildModal() {
     if (_modalEl) return;
@@ -144,15 +148,19 @@ function _buildModal() {
                 <span id="att-modal-counter" style="color:#aaa;font-size:12px;font-family:sans-serif;white-space:nowrap;"></span>
                 <button id="att-modal-next" style="background:none;border:none;color:#eee;font-size:18px;cursor:pointer;line-height:1;padding:0 4px;">›</button>
                 <span id="att-modal-title" style="color:#eee;font-size:13px;font-family:sans-serif;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;margin-left:4px;"></span>
-                <button id="att-modal-close" style="background:none;border:none;color:#eee;font-size:20px;cursor:pointer;line-height:1;padding:0 4px;margin-left:auto;flex-shrink:0;">✕</button>
+                <button id="att-modal-comment-btn" title="Comment" style="background:none;border:1px solid #555;color:#aaa;font-size:12px;cursor:pointer;line-height:1;padding:2px 8px;border-radius:3px;flex-shrink:0;">💬</button>
+                <button id="att-modal-close" style="background:none;border:none;color:#eee;font-size:20px;cursor:pointer;line-height:1;padding:0 4px;margin-left:4px;flex-shrink:0;">✕</button>
             </div>
-            <div id="att-modal-content" style="flex:1;overflow:hidden;"></div>
+            <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:0;">
+                <div id="att-modal-preview" style="flex:1;overflow:hidden;min-height:0;"></div>
+                <div id="att-modal-comment-panel" style="display:none;flex-shrink:0;border-top:1px solid #333;background:#1e1e1e;padding:8px;max-height:200px;box-sizing:border-box;"></div>
+            </div>
         </div>`;
     document.body.appendChild(_modalEl);
-    _modalEl.addEventListener('click', e => { if (e.target === _modalEl) _closeModal(); });
     _modalEl.querySelector('#att-modal-close').addEventListener('click', _closeModal);
     _modalEl.querySelector('#att-modal-prev').addEventListener('click', () => _carouselStep(-1));
     _modalEl.querySelector('#att-modal-next').addEventListener('click', () => _carouselStep(+1));
+    _modalEl.querySelector('#att-modal-comment-btn').addEventListener('click', () => _toggleCommentPanel(_carouselList[_carouselIndex]));
 
     // Keyboard navigation
     document.addEventListener('keydown', e => {
@@ -166,12 +174,60 @@ function _buildModal() {
 function _carouselStep(dir) {
     const next = _carouselIndex + dir;
     if (next < 0 || next >= _carouselList.length) return;
+    _saveCurrentComment(); // save before index changes
     _carouselIndex = next;
     _renderModal(_carouselList[_carouselIndex]);
 }
 
 function _closeModal() {
+    _saveCurrentComment();
     if (_modalEl) _modalEl.style.display = 'none';
+    refreshAttachmentsGui();
+}
+
+function _saveCurrentComment() {
+    if (!_commentEditorContent) return;
+    const att = _carouselList[_carouselIndex];
+    if (!att) return;
+    const html = _commentEditorContent.innerHTML;
+    att.comment = (html && html !== '<br>') ? html : '';
+}
+
+function _buildCommentEditor(att) {
+    const panel = _modalEl.querySelector('#att-modal-comment-panel');
+    panel.innerHTML = '';
+    _commentEditorContent = null;
+    const { wrap, content } = buildWysiwygEditor(att.comment || '');
+    wrap.style.cssText += ';height:100%;box-sizing:border-box;';
+    panel.appendChild(wrap);
+    _commentEditorContent = content;
+    // Auto-save on input
+    content.addEventListener('input', () => {
+        const html = content.innerHTML;
+        att.comment = (html && html !== '<br>') ? html : '';
+    });
+}
+
+function _toggleCommentPanel(att) {
+    _commentPanelOpen = !_commentPanelOpen;
+    const panel = _modalEl.querySelector('#att-modal-comment-panel');
+    if (_commentPanelOpen) {
+        panel.style.display = 'block';
+        _buildCommentEditor(att);
+    } else {
+        _saveCurrentComment();
+        panel.style.display = 'none';
+        _commentEditorContent = null;
+    }
+    _updateCommentBtn();
+}
+
+function _updateCommentBtn() {
+    const btn = _modalEl && _modalEl.querySelector('#att-modal-comment-btn');
+    if (!btn) return;
+    btn.style.background = _commentPanelOpen ? '#3a5a3a' : 'none';
+    btn.style.borderColor = _commentPanelOpen ? '#6a6' : '#555';
+    btn.style.color = _commentPanelOpen ? '#fff' : '#aaa';
 }
 
 function _openAttachment(att) {
@@ -211,8 +267,8 @@ function _renderModal(att) {
     nextBtn.style.opacity = nextBtn.disabled ? '0.25' : '1';
     nextBtn.style.cursor  = nextBtn.disabled ? 'default' : 'pointer';
 
-    // Render content
-    const content = _modalEl.querySelector('#att-modal-content');
+    // Render file preview
+    const content = _modalEl.querySelector('#att-modal-preview');
     content.innerHTML = '';
     const mime = att.mimeType || '';
 
@@ -248,6 +304,10 @@ function _renderModal(att) {
         iframe.style.cssText = 'width:100%;height:100%;border:none;display:block;';
         content.appendChild(iframe);
     }
+
+    // Rebuild comment editor if panel is open
+    if (_commentPanelOpen) _buildCommentEditor(att);
+    _updateCommentBtn();
 }
 
 function _downloadAttachment(att) {

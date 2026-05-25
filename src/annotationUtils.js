@@ -112,7 +112,7 @@ function _isHtmlEmpty(html) {
  * "called recursively" browser warning.
  * Returns { wrap, content } where `content` is the editable div.
  */
-function _buildWysiwygEditor(defaultHtml) {
+export function buildWysiwygEditor(defaultHtml) {
     const wrap = document.createElement('div');
     wrap.style.cssText = 'border:1px solid #555;border-radius:4px;overflow:hidden;';
 
@@ -235,7 +235,7 @@ function _showTextDialog(defaultText) {
         title.textContent = defaultText ? 'Edit note' : 'New note';
         title.style.cssText = 'font-size:14px;font-weight:bold;margin-bottom:10px;';
 
-        const { wrap: editorWrap, content: editorContent } = _buildWysiwygEditor(defaultText || '');
+        const { wrap: editorWrap, content: editorContent } = buildWysiwygEditor(defaultText || '');
 
         const btnRow = document.createElement('div');
         btnRow.style.cssText = 'display:flex;justify-content:flex-end;gap:8px;margin-top:12px;';
