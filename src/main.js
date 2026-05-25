@@ -403,6 +403,7 @@ const viewProp = {
     sectionSnapTranslation: 1, // Snap step for section gizmo translation
     autoUpdateSectionLines: false, // Automaticky aktualizovat průřezové čáry při změnách scény
     sectionCrossLines: true, // Průřezové čáry vázané na section view clip planes
+    crossSectionOnHidden: false, // Aplikovat průřezové čáry i na skryté objekty
     solidSection: true, // Solid (capped) section cut
     capColor: '#00ffff', // Color of the solid section cap faces
     transformSpace: true,  // true = world, false = local
@@ -1340,6 +1341,7 @@ function addMainGui() {
             sectionCtrl = sectionFolder.add(viewProp, 'section').name('Section').onChange(function(value){renderer.localClippingEnabled = value; viewProp.sectionGizmo = value; activateSectionGizmo(value); updateSectionCrossLines(); render(); sectionBtn.classList.toggle('active', value); }).listen();
             sectionFolder.add(viewProp, 'sectionCrossLines').name('Cross Section Lines').onChange(function(value){updateSectionCrossLines(); render(); });
             sectionFolder.addColor(viewProp, 'crossSectionColor').name('Cross Lines Color').onChange(function(value){ if(viewProp.sectionCrossLines) { updateSectionCrossLines(); render(); } });
+            sectionFolder.add(viewProp, 'crossSectionOnHidden').name('Apply to hidden').onChange(function(value){ if(viewProp.sectionCrossLines) updateSectionCrossLines(); if(viewProp.showCrossSection) updateCrossSectionLines(); render(); });
             sectionFolder.add(viewProp, 'solidSection').name('Solid Section').onChange(function(value) {
                 if (value) {
                     renderer.localClippingEnabled = true;
@@ -1362,6 +1364,7 @@ function addMainGui() {
 
             const crossSectionFolder = sectionFolder.addFolder("Cross Section Lines");
             crossSectionFolder.add(viewProp, 'showCrossSection').name('Show Lines').onChange(function(value){updateCrossSectionLines(); render(); });
+            crossSectionFolder.add(viewProp, 'crossSectionOnHidden').name('Apply to hidden').onChange(function(value){ if(viewProp.showCrossSection) { updateCrossSectionLines(); render(); } }).listen();
             crossSectionFolder.add(viewProp, 'autoUpdateSectionLines').name('Update Section Lines');
             crossSectionFolder.add(viewProp, 'crossSectionPlane', ['XY', 'XZ', 'YZ']).name('Plane').onChange(function(value){if(viewProp.showCrossSection){updateCrossSectionLines(); render();}});
             crossSectionFolder.add(viewProp, 'crossSectionPos', extent.pn, extent.pp, extent.pStep).name('Position').onChange(function(value){if(viewProp.showCrossSection){updateCrossSectionLines(); render();}}).listen();

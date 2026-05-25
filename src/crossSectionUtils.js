@@ -1,6 +1,16 @@
 // crossSectionUtils.js
 import * as THREE from 'three';
 
+// Zjistí, zda je objekt skutečně viditelný ve scéně (včetně rodičů)
+function isWorldVisible(object) {
+    let obj = object;
+    while (obj) {
+        if (!obj.visible) return false;
+        obj = obj.parent;
+    }
+    return true;
+}
+
 // Funkce pro kontrolu průsečíku hrany s rovinou
 function checkEdge(v1, v2, plane, intersectionPoints) {
     const epsilon = 1e-6; // Tolerance pro floating-point čísla
@@ -147,7 +157,7 @@ export function updateCrossSectionLines(scene, currentCrossSectionLines, viewPro
     
     meshObjects.forEach(obj => {
         obj.traverse((child) => {
-            if (child.isMesh && child.visible) {
+            if (child.isMesh && (viewProp.crossSectionOnHidden || isWorldVisible(child))) {
                 const lines = createCrossSectionLines(child, plane, viewProp.crossSectionColor);
                 if (lines && lines.geometry.attributes.position.count > 0) {
                     allLines.push(lines);
@@ -207,7 +217,7 @@ export function updateSectionCrossLines(scene, currentLines, viewProp, meshObjec
 
         meshObjects.forEach(obj => {
             obj.traverse((child) => {
-                if (child.isMesh && child.visible) {
+                if (child.isMesh && (viewProp.crossSectionOnHidden || isWorldVisible(child))) {
                     const lines = createCrossSectionLines(child, plane, viewProp.crossSectionColor);
                     if (lines && lines.geometry.attributes.position.count > 0) {
                         allLines.push(lines);
