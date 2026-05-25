@@ -1605,6 +1605,16 @@ function addMainGui() {
             fitView();
         });
     } }, 'fn').name('CNC');
+    demoFolder.add({ fn() {
+        loadGlbModel('./models/drilling_machine.glb', 'drilling_machine.glb', 0.001, true).then(() => {
+            fitView();
+        });
+    } }, 'fn').name('drilling machine');
+    demoFolder.add({ fn() {
+        loadGlbModel('./models/DJI_drone.glb', 'DJI_drone.glb', 0.001, true).then(() => {
+            fitView();
+        });
+    } }, 'fn').name('DJI_drone');
     const exportHtmlFolder = fileGui.addFolder('Export self-contained HTML');
     exportHtmlFolder.close();
     exportHtmlFolder.add({ fn() { exportToHTML(loadedModels, assemblyGui, viewProp, assemblyWriteToUserData, assemblyClearUserData); } }, 'fn').name('Export to HTML');
