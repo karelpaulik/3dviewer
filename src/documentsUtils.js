@@ -1,6 +1,7 @@
 ﻿// documentsUtils.js
 import { Editor, Extension, Mark } from '@tiptap/core';
 import imageCompression from 'browser-image-compression';
+import { getAttachmentsStore } from './attachmentsUtils.js';
 import StarterKit from '@tiptap/starter-kit';
 import ImageResize from 'tiptap-extension-resize-image';
 import TextAlign from '@tiptap/extension-text-align';
@@ -813,6 +814,7 @@ function _handleToolbarClick(action) {
         case 'undo':        _editor.chain().focus().undo().run(); break;
         case 'redo':        _editor.chain().focus().redo().run(); break;
         case 'image':           _insertImageFromFile(); break;
+        case 'imageFromFiles':  _insertImageFromFiles(); break;
         case 'link':            _insertLinkDialog(); break;
         case 'tableInsert':     _insertTableDialog(); break;
         case 'tableAddRowAfter':  _editor.chain().focus().addRowAfter().run(); break;
@@ -904,6 +906,77 @@ function _insertImageFromFile() {
         _showImageInsertDialog(file);
     };
     input.click();
+}
+
+function _insertImageFromFiles() {
+    const images = getAttachmentsStore().filter(a => a.mimeType && a.mimeType.startsWith('image/'));
+    if (!images.length) {
+        alert('No images in Files. Add images in the Files panel first.');
+        return;
+    }
+
+    // ── Picker backdrop ──
+    const backdrop = document.createElement('div');
+    backdrop.className = 'img-dialog-backdrop';
+
+    const dialog = document.createElement('div');
+    dialog.className = 'img-dialog';
+    dialog.style.maxWidth = '640px';
+
+    const title = document.createElement('div');
+    title.className = 'img-dialog-title';
+    title.textContent = 'Insert image from Files';
+    dialog.appendChild(title);
+
+    const grid = document.createElement('div');
+    grid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;max-height:400px;overflow-y:auto;margin:10px 0;';
+
+    images.forEach(att => {
+        const src = `data:${att.mimeType};base64,${att.data}`;
+
+        const cell = document.createElement('div');
+        cell.style.cssText = 'cursor:pointer;border:2px solid transparent;border-radius:4px;padding:4px;display:flex;flex-direction:column;align-items:center;gap:4px;transition:border-color 0.15s;';
+        cell.title = att.name;
+
+        const thumb = document.createElement('img');
+        thumb.src = src;
+        thumb.style.cssText = 'width:100%;height:90px;object-fit:contain;border-radius:2px;background:#111;';
+
+        const label = document.createElement('span');
+        label.style.cssText = 'font-size:10px;color:#bbb;word-break:break-all;text-align:center;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;width:100%;';
+        label.textContent = att.name;
+
+        cell.appendChild(thumb);
+        cell.appendChild(label);
+
+        cell.addEventListener('mouseenter', () => { cell.style.borderColor = '#4a9eff'; });
+        cell.addEventListener('mouseleave', () => { cell.style.borderColor = 'transparent'; });
+
+        cell.addEventListener('click', () => {
+            document.body.removeChild(backdrop);
+            // Convert base64 → File so the standard compression dialog can be reused
+            const binary = atob(att.data);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+            const blob = new Blob([bytes], { type: att.mimeType });
+            const file = new File([blob], att.name, { type: att.mimeType });
+            _showImageInsertDialog(file);
+        });
+
+        grid.appendChild(cell);
+    });
+
+    dialog.appendChild(grid);
+
+    const btnCancel = document.createElement('button');
+    btnCancel.className = 'img-dialog-btn';
+    btnCancel.textContent = 'Cancel';
+    btnCancel.addEventListener('click', () => document.body.removeChild(backdrop));
+    dialog.appendChild(btnCancel);
+
+    backdrop.appendChild(dialog);
+    backdrop.addEventListener('click', e => { if (e.target === backdrop) document.body.removeChild(backdrop); });
+    document.body.appendChild(backdrop);
 }
 
 function _showImageInsertDialog(file) {
@@ -1390,7 +1463,8 @@ function _buildEditorOverlay() {
         { action: 'alignCenter',  label: '▭⬛▭', title: 'Align center' },
         { action: 'alignRight',   label: '▭▭⬛', title: 'Align right' },
         { sep: true },
-        { action: 'image',          label: '🖼️',  title: 'Insert image' },
+        { action: 'image',          label: '🖼️',  title: 'Insert image from disk' },
+        { action: 'imageFromFiles',  label: '📎🖼', title: 'Insert image from Files' },
         { action: 'link',           label: '🔗',  title: 'Insert / edit link' },
         { sep: true },
         { action: 'tableInsert',      label: '⊞',   title: 'Insert table (e.g. 3x4)' },
