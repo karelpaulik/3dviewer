@@ -1,6 +1,7 @@
 ﻿//main.js
 import * as THREE from 'three';
 import gsap from 'gsap';
+import occtimportjs from 'occt-import-js';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
@@ -1582,6 +1583,7 @@ function addMainGui() {
     // --- File panel (Export / Import) ---
     const fileGui = new GUI({ container: guiContainer, title: 'File' });
     fileGui.add({ fn: importGlbFile }, 'fn').name('Import GLB…');
+    fileGui.add({ fn: importStpFile }, 'fn').name('Import STP/STEP…');
     fileGui.add({ fn: exportAllModelsDraco }, 'fn').name('Export all to GLB (Compression)');
     fileGui.add({ fn: exportSelectedObjectDraco }, 'fn').name('Export selected to GLB (Compression)');
     const exportNoCompFolder = fileGui.addFolder('Export without compression');
@@ -5318,6 +5320,72 @@ function importGlbFile() {
             URL.revokeObjectURL(url);
             console.error(`[Import] Failed to load "${file.name}":`, err);
         });
+    });
+    input.click();
+}
+
+function importStpFile() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.stp,.step,.STP,.STEP';
+    input.addEventListener('change', async function() {
+        const file = input.files[0];
+        if (!file) return;
+        try {
+            const occt = await occtimportjs({
+                locateFile: () => './occt/occt-import-js.wasm'
+            });
+            const buffer = await file.arrayBuffer();
+            const result = occt.ReadStepFile(new Uint8Array(buffer), null);
+            if (!result.success) {
+                console.error(`[Import] STP parsing failed for "${file.name}"`);
+                return;
+            }
+            const root = new THREE.Group();
+            root.name = file.name.replace(/\.[^.]+$/, '');
+            root.userData.fileName = file.name;
+            for (const mesh of result.meshes) {
+                const geometry = new THREE.BufferGeometry();
+                geometry.setAttribute('position', new THREE.Float32BufferAttribute(mesh.attributes.position.array, 3));
+                if (mesh.attributes.normal) {
+                    geometry.setAttribute('normal', new THREE.Float32BufferAttribute(mesh.attributes.normal.array, 3));
+                } else {
+                    geometry.computeVertexNormals();
+                }
+                if (mesh.index) {
+                    geometry.setIndex(new THREE.BufferAttribute(new Uint32Array(mesh.index.array), 1));
+                }
+                const color = (mesh.color != null)
+                    ? new THREE.Color(mesh.color[0], mesh.color[1], mesh.color[2])
+                    : new THREE.Color(0x888888);
+                const material = new THREE.MeshPhongMaterial({
+                    color,
+                    side: THREE.DoubleSide,
+                    clippingPlanes: clipPlanes,
+                    clipIntersection: true,
+                    polygonOffset: true,
+                    polygonOffsetFactor: 1,
+                });
+                const meshObj = new THREE.Mesh(geometry, material);
+                meshObj.name = mesh.name || `mesh_${root.children.length}`;
+                root.add(meshObj);
+            }
+            root.traverse(child => {
+                child.userData.initPosition = child.position.clone();
+                child.userData.initRotation = child.rotation.clone();
+                child.userData.initScale = child.scale.clone();
+                if (child.isMesh) meshObjects.push(child);
+            });
+            scene.add(root);
+            loadedModels.push(root);
+            rebuildTree(loadedModels);
+            if (!fileNameInput.value) fileNameInput.value = root.name;
+            fitView();
+            render();
+            console.log(`[Import] STP "${file.name}" loaded successfully (${result.meshes.length} meshes).`);
+        } catch (err) {
+            console.error(`[Import] Failed to load STP "${file.name}":`, err);
+        }
     });
     input.click();
 }
