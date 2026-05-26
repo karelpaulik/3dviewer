@@ -2,7 +2,6 @@
 //asdf
 import * as THREE from 'three';
 import gsap from 'gsap';
-import occtimportjs from 'occt-import-js';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
@@ -5347,8 +5346,17 @@ function importStpFile() {
 
         try {
             showToast('Initializing OCCT…');
-            const occt = await occtimportjs({
-                locateFile: () => './occt/occt-import-js.wasm'
+            if (!window.occtimportjs) {
+                await new Promise((resolve, reject) => {
+                    const s = document.createElement('script');
+                    s.src = 'https://cdn.jsdelivr.net/npm/occt-import-js@0.0.23/dist/occt-import-js.js';
+                    s.onload = resolve;
+                    s.onerror = () => reject(new Error('Failed to load occt-import-js from CDN'));
+                    document.head.appendChild(s);
+                });
+            }
+            const occt = await window.occtimportjs({
+                locateFile: () => 'https://cdn.jsdelivr.net/npm/occt-import-js@0.0.23/dist/occt-import-js.wasm'
             });
             showToast(`Parsing "${file.name}"…`);
             const buffer = await file.arrayBuffer();
