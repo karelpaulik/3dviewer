@@ -1400,10 +1400,20 @@ a, button, input, select {
     cursor: col-resize;
 }
 
+/* Hide the library's built-in alignment popup (left/center/right icons).
+   Alignment is handled by the toolbar instead. Resize handles are unaffected. */
+.doc-editor-content .ProseMirror div[style*="z-index: 999"] {
+    display: none !important;
+}
+
 /* Image resize handles */
 .doc-editor-content .ProseMirror .image-resizer {
     position: relative;
     display: inline-block;
+}
+/* Override flex wrapper to block so text-align works for image alignment */
+.doc-editor-content .ProseMirror div:has(> .image-resizer) {
+    display: block !important;
 }
 .doc-editor-content .ProseMirror .image-resizer .resize-trigger {
     position: absolute;

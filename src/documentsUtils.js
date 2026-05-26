@@ -9,6 +9,56 @@ import { TextStyle } from '@tiptap/extension-text-style';
 import Color from '@tiptap/extension-color';
 import { Table, TableRow, TableCell, TableHeader } from '@tiptap/extension-table';
 
+// ── ImageResize with persistent alignment ─────────────────────────────────────
+// Adds an `imageAlign` attribute ('left'|'center'|'right') that survives
+// save/reload. In read-only mode the nodeview wraps the container in a flex
+// div so justify-content handles centering (same mechanism as edit mode's
+// display:flex wrapper), which is more reliable than margin:auto on a block.
+const ImageResizeWithAlign = ImageResize.extend({
+    addAttributes() {
+        return {
+            ...this.parent?.(),
+            imageAlign: {
+                default: 'left',
+                parseHTML: (element) => {
+                    // Prefer the explicit attribute saved by renderHTML
+                    const da = element.getAttribute('data-image-align');
+                    if (da) return da;
+                    // Backward-compat: detect from containerstyle margin
+                    const cs = element.getAttribute('containerstyle') || '';
+                    if (cs.includes('margin: 0 auto')) return 'center';
+                    if (cs.includes('margin-left: auto')) return 'right';
+                    return 'left';
+                },
+                renderHTML: (attrs) => {
+                    if (!attrs.imageAlign || attrs.imageAlign === 'left') return {};
+                    return { 'data-image-align': attrs.imageAlign };
+                },
+            },
+        };
+    },
+    addNodeView() {
+        const parentFactory = this.parent?.();
+        return (props) => {
+            const nv = parentFactory(props);
+            // In read-only mode there is no flex wrapper from the library,
+            // so we add our own to center/right-align the container via
+            // justify-content (the same flex trick the library uses in edit mode).
+            if (!props.editor.options.editable) {
+                const align = props.node.attrs.imageAlign;
+                if (align === 'center' || align === 'right') {
+                    const alignWrapper = document.createElement('div');
+                    alignWrapper.style.display = 'flex';
+                    alignWrapper.style.justifyContent = align === 'center' ? 'center' : 'flex-end';
+                    alignWrapper.appendChild(nv.dom);
+                    return { dom: alignWrapper };
+                }
+            }
+            return nv;
+        };
+    },
+});
+
 // ── TextIndent extension (per-paragraph first-line indent) ────────────────────
 const TextIndent = Extension.create({
     name: 'textIndent',
@@ -316,21 +366,27 @@ function _showOverlay(doc, editMode) {
     _overlayEl.style.display = 'flex';
 }
 
-// In read-only mode the ImageResize nodeview returns the bare container div (no wrapper),
-// so images that were never interacted with in edit mode have style="" and no float.
-// Pre-process the HTML to add containerstyle with float:left to such images so that
-// TipTap's parseHTML picks it up and the read-only layout matches the edit-mode layout.
+// In read-only mode the ImageResize nodeview returns the bare container div (no wrapper).
+// Strip legacy float layout; alignment is stored as margin in containerstyle.
 function _prepareReadOnlyContent(html) {
     if (!html) return html;
     const div = document.createElement('div');
     div.innerHTML = html;
     div.querySelectorAll('img').forEach(img => {
-        const cs = img.getAttribute('containerstyle') || '';
-        if (!cs.includes('float')) {
+        let cs = img.getAttribute('containerstyle') || '';
+        // Strip legacy float-based layout
+        cs = cs.replace(/float\s*:[^;]+;?\s*/g, '')
+               .replace(/padding-right\s*:[^;]+;?\s*/g, '')
+               .replace(/display\s*:\s*inline-block\s*;?/g, 'display: block;')
+               .trim();
+        if (!cs) {
             const width = img.getAttribute('width');
             const widthPart = width ? `width: ${width}px; height: auto; cursor: pointer; ` : '';
-            img.setAttribute('containerstyle', `${widthPart}display: inline-block; float: left; padding-right: 8px;`);
+            cs = `${widthPart}display: block;`;
+        } else if (!cs.includes('display')) {
+            cs += ' display: block;';
         }
+        img.setAttribute('containerstyle', cs.replace(/\s+/g, ' ').trim());
     });
     return div.innerHTML;
 }
@@ -343,7 +399,7 @@ function _createEditor(el, content, readOnly) {
             TextStyle,
             Color,
             FontSize,
-            ImageResize.configure({ inline: true, allowBase64: true }),
+            ImageResizeWithAlign.configure({ inline: false, allowBase64: true }),
             TextAlign.configure({ types: ['heading', 'paragraph'] }),
             TextIndent,
             Table.configure({ resizable: true }),
@@ -535,6 +591,8 @@ function _printDocument() {
     color: #555;
   }
   img { max-width: 100%; height: auto; display: inline-block; vertical-align: top; margin: 0.4em 4px; }
+  img[data-image-align="center"] { display: block !important; margin: 0 auto; }
+  img[data-image-align="right"]  { display: block !important; margin-left: auto; margin-right: 0; }
   table { border-collapse: collapse; width: 100%; margin: 1em 0; table-layout: fixed; }
   td, th { border: 1px solid #ccc; padding: 6px 10px; vertical-align: top; box-sizing: border-box; }
   th { background: #f0f0f0; font-weight: 600; text-align: left; }
@@ -767,9 +825,20 @@ function _updateToolbarState() {
         else if (action === 'orderedList') active = _editor.isActive('orderedList');
         else if (action === 'blockquote') active = _editor.isActive('blockquote');
         else if (action === 'code') active = _editor.isActive('code');
-        else if (action === 'alignLeft') active = _editor.isActive({ textAlign: 'left' });
-        else if (action === 'alignCenter') active = _editor.isActive({ textAlign: 'center' });
-        else if (action === 'alignRight') active = _editor.isActive({ textAlign: 'right' });
+        else if (action === 'alignLeft') {
+            if (_editor.isActive('imageResize')) {
+                const align = _editor.getAttributes('imageResize').imageAlign || 'left';
+                active = align === 'left';
+            } else active = _editor.isActive({ textAlign: 'left' });
+        } else if (action === 'alignCenter') {
+            if (_editor.isActive('imageResize'))
+                active = (_editor.getAttributes('imageResize').imageAlign || 'left') === 'center';
+            else active = _editor.isActive({ textAlign: 'center' });
+        } else if (action === 'alignRight') {
+            if (_editor.isActive('imageResize'))
+                active = (_editor.getAttributes('imageResize').imageAlign || 'left') === 'right';
+            else active = _editor.isActive({ textAlign: 'right' });
+        }
         else if (action === 'link') active = _editor.isActive('link');
         btn.classList.toggle('active', active);
     });
@@ -791,6 +860,24 @@ function _updateToolbarState() {
     }
 }
 
+// ── Image alignment helper ────────────────────────────────────────────────────
+// Stores alignment as margin in containerStyle (the attribute the nodeview actually applies).
+function _setImageAlign(align) {
+    if (!_editor || !_editor.isActive('imageResize')) return false;
+    const attrs = _editor.getAttributes('imageResize');
+    // Strip existing display/margin from containerStyle, then re-add
+    let cs = (attrs.containerStyle || '')
+        .replace(/display\s*:[^;]*;\s*/g, '')
+        .replace(/margin[^;]*;\s*/g, '')
+        .trim();
+    let extra = 'display: block;';
+    if (align === 'center') extra += ' margin: 0 auto;';
+    else if (align === 'right') extra += ' margin-left: auto;';
+    const newCs = (cs ? cs + ' ' : '') + extra;
+    _editor.chain().focus().updateAttributes('imageResize', { containerStyle: newCs, imageAlign: align }).run();
+    return true;
+}
+
 // ── Toolbar click handler ─────────────────────────────────────────────────────
 
 function _handleToolbarClick(action) {
@@ -808,9 +895,9 @@ function _handleToolbarClick(action) {
         case 'blockquote':  _editor.chain().focus().toggleBlockquote().run(); break;
         case 'code':        _editor.chain().focus().toggleCode().run(); break;
         case 'hr':          _editor.chain().focus().setHorizontalRule().run(); break;
-        case 'alignLeft':   _editor.chain().focus().setTextAlign('left').run(); break;
-        case 'alignCenter': _editor.chain().focus().setTextAlign('center').run(); break;
-        case 'alignRight':  _editor.chain().focus().setTextAlign('right').run(); break;
+        case 'alignLeft':   if (!_setImageAlign('left'))   _editor.chain().focus().setTextAlign('left').run(); break;
+        case 'alignCenter': if (!_setImageAlign('center')) _editor.chain().focus().setTextAlign('center').run(); break;
+        case 'alignRight':  if (!_setImageAlign('right'))  _editor.chain().focus().setTextAlign('right').run(); break;
         case 'undo':        _editor.chain().focus().undo().run(); break;
         case 'redo':        _editor.chain().focus().redo().run(); break;
         case 'image':           _insertImageFromFile(); break;
