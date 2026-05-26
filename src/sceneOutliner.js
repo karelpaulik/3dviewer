@@ -596,9 +596,12 @@ function openRenameDialog() {
     btnRegex.className = 'outliner-rename-regex-btn';
     btnRegex.textContent = 'regexp';
     btnRegex.title = 'Regular expression';
+    const matchCountEl = document.createElement('span');
+    matchCountEl.className = 'outliner-rename-match-count';
     rowFind.appendChild(lblFind);
     rowFind.appendChild(inputFind);
     rowFind.appendChild(btnRegex);
+    rowFind.appendChild(matchCountEl);
     const rowReplace = document.createElement('div');
     rowReplace.className = 'outliner-rename-row';
     const lblReplace = document.createElement('label');
@@ -760,6 +763,13 @@ function openRenameDialog() {
         inputFind.classList.toggle('outliner-rename-input-error', !valid);
         btnConfirm.disabled = !valid;
         btnConfirm.style.opacity = valid ? '' : '0.4';
+        if (mode === 'fr' && inputFind.value && valid) {
+            const hits = objects.filter((o, i) => computeNewName(o, i) !== getDisplayName(o)).length;
+            matchCountEl.textContent = `${hits} match${hits === 1 ? '' : 'es'}`;
+            matchCountEl.style.display = 'inline';
+        } else {
+            matchCountEl.style.display = 'none';
+        }
         previewEl.innerHTML = '';
         for (let i = 0; i < objects.length; i++) {
             const row = document.createElement('div');

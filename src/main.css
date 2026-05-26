@@ -976,6 +976,13 @@ a, button, input, select {
     color: #666;
     padding-left: 80px;
 }
+.outliner-rename-match-count {
+    font-size: 10px;
+    color: #7a9;
+    white-space: nowrap;
+    padding-left: 4px;
+    display: none;
+}
 .outliner-rename-preview {
     background: #151515;
     border: 1px solid #333;
