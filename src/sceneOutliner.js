@@ -592,8 +592,14 @@ function openRenameDialog() {
     inputFind.type = 'text';
     inputFind.className = 'outliner-rename-input';
     inputFind.placeholder = 'p\u016fvodn\u00ed text';
+    const btnRegex = document.createElement('button');
+    btnRegex.type = 'button';
+    btnRegex.className = 'outliner-rename-regex-btn';
+    btnRegex.textContent = 'regexp';
+    btnRegex.title = 'Regul\u00e1rn\u00ed v\u00fdraz';
     rowFind.appendChild(lblFind);
     rowFind.appendChild(inputFind);
+    rowFind.appendChild(btnRegex);
     const rowReplace = document.createElement('div');
     rowReplace.className = 'outliner-rename-row';
     const lblReplace = document.createElement('label');
@@ -604,8 +610,13 @@ function openRenameDialog() {
     inputReplace.placeholder = 'nov\u00fd text';
     rowReplace.appendChild(lblReplace);
     rowReplace.appendChild(inputReplace);
+    const hintFR = document.createElement('div');
+    hintFR.className = 'outliner-rename-hint';
+    hintFR.textContent = 'Zachycen\u00e9 skupiny v n\u00e1hrad\u011b: $1, $2, \u2026';
+    hintFR.style.display = 'none';
     panelFR.appendChild(rowFind);
     panelFR.appendChild(rowReplace);
+    panelFR.appendChild(hintFR);
 
     // Panel 2 — Full rename
     const panelFull = document.createElement('div');
@@ -650,6 +661,13 @@ function openRenameDialog() {
     document.body.appendChild(overlay);
 
     let mode = 'fr';
+    let useRegex = false;
+    btnRegex.addEventListener('click', () => {
+        useRegex = !useRegex;
+        btnRegex.classList.toggle('outliner-rename-regex-btn-active', useRegex);
+        hintFR.style.display = useRegex ? '' : 'none';
+        updatePreview();
+    });
     tabFR.addEventListener('click', () => {
         mode = 'fr';
         tabFR.classList.add('outliner-rename-tab-active');
@@ -673,8 +691,12 @@ function openRenameDialog() {
         if (mode === 'fr') {
             const find = inputFind.value;
             if (!find) return orig;
-            const escaped = find.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            return orig.replace(new RegExp(escaped, 'gi'), inputReplace.value);
+            try {
+                const regex = useRegex
+                    ? new RegExp(find, 'gi')
+                    : new RegExp(find.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+                return orig.replace(regex, inputReplace.value);
+            } catch { return orig; }
         } else {
             const pat = inputFull.value;
             if (!pat) return orig;
@@ -682,7 +704,17 @@ function openRenameDialog() {
         }
     }
 
+    function isRegexValid() {
+        if (!useRegex || !inputFind.value) return true;
+        try { new RegExp(inputFind.value); return true; }
+        catch { return false; }
+    }
+
     function updatePreview() {
+        const valid = isRegexValid();
+        inputFind.classList.toggle('outliner-rename-input-error', !valid);
+        btnConfirm.disabled = !valid;
+        btnConfirm.style.opacity = valid ? '' : '0.4';
         previewEl.innerHTML = '';
         for (let i = 0; i < objects.length; i++) {
             const row = document.createElement('div');

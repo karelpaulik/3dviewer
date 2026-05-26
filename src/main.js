@@ -1629,6 +1629,18 @@ function addMainGui() {
     editGui.add({ fn: resetWholeModel }, 'fn').name('Reset whole model');
     editGui.add({ fn: cleanupModel }, 'fn').name('Cleanup (flatten unnamed nodes)');
     editGui.add({ fn() {
+        const toRename = [];
+        loadedModels.forEach(root => root.traverse(obj => {
+            if (obj.name && /_\d+$/.test(obj.name)) toRename.push(obj);
+        }));
+        if (toRename.length === 0) { alert('Žádné objekty s číselnou příponou nenalezeny.'); return; }
+        if (!confirm(`Odstranit číselnou příponu (_číslo) z ${toRename.length} objektů?`)) return;
+        toRename.forEach(obj => {
+            obj.name = obj.name.replace(/_\d+$/, '');
+            updateObjectLabel(obj);
+        });
+    } }, 'fn').name('Remove numeric suffix (_1, _2…)');
+    editGui.add({ fn() {
         if (!confirm('Clear all measurements/dimensions?')) return;
         clearMeasurements(render);
         clearCadDim3dMeasurements(render);

@@ -930,6 +930,31 @@ a, button, input, select {
     border-color: #666;
     color: #fff;
 }
+.outliner-rename-input-error {
+    border-color: #a04040 !important;
+    background: #2a1a1a;
+}
+.outliner-rename-regex-btn {
+    flex: 0 0 auto;
+    background: #2a2a2a;
+    border: 1px solid #444;
+    border-radius: 3px;
+    color: #888;
+    font-size: 11px;
+    font-family: monospace;
+    padding: 3px 6px;
+    cursor: pointer;
+    line-height: 1;
+}
+.outliner-rename-regex-btn:hover {
+    border-color: #666;
+    color: #ddd;
+}
+.outliner-rename-regex-btn-active {
+    background: #3a3a5a;
+    border-color: #5a5a9a;
+    color: #aaf;
+}
 .outliner-rename-hint {
     font-size: 10px;
     color: #666;
