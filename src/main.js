@@ -5370,19 +5370,21 @@ function importStpFile() {
             const root = new THREE.Group();
             root.name = file.name.replace(/\.[^.]+$/, '');
             root.userData.fileName = file.name;
-            for (const mesh of result.meshes) {
+
+            // Build a Three.js mesh from a flat result.meshes entry
+            function buildThreeMesh(meshData, fallbackName) {
                 const geometry = new THREE.BufferGeometry();
-                geometry.setAttribute('position', new THREE.Float32BufferAttribute(mesh.attributes.position.array, 3));
-                if (mesh.attributes.normal) {
-                    geometry.setAttribute('normal', new THREE.Float32BufferAttribute(mesh.attributes.normal.array, 3));
+                geometry.setAttribute('position', new THREE.Float32BufferAttribute(meshData.attributes.position.array, 3));
+                if (meshData.attributes.normal) {
+                    geometry.setAttribute('normal', new THREE.Float32BufferAttribute(meshData.attributes.normal.array, 3));
                 } else {
                     geometry.computeVertexNormals();
                 }
-                if (mesh.index) {
-                    geometry.setIndex(new THREE.BufferAttribute(new Uint32Array(mesh.index.array), 1));
+                if (meshData.index) {
+                    geometry.setIndex(new THREE.BufferAttribute(new Uint32Array(meshData.index.array), 1));
                 }
-                const color = (mesh.color != null)
-                    ? new THREE.Color(mesh.color[0], mesh.color[1], mesh.color[2])
+                const color = (meshData.color != null)
+                    ? new THREE.Color(meshData.color[0], meshData.color[1], meshData.color[2])
                     : new THREE.Color(0x888888);
                 const material = new THREE.MeshPhongMaterial({
                     color,
@@ -5392,10 +5394,49 @@ function importStpFile() {
                     polygonOffset: true,
                     polygonOffsetFactor: 1,
                 });
-                const meshObj = new THREE.Mesh(geometry, material);
-                meshObj.name = mesh.name || `mesh_${root.children.length}`;
-                root.add(meshObj);
+                const m = new THREE.Mesh(geometry, material);
+                m.name = meshData.name || fallbackName || 'mesh';
+                return m;
             }
+
+            // Recursively build Three.js hierarchy from occt result.root tree
+            function buildNode(node, parent) {
+                // If this node has meshes, wrap them in a Group named after the node
+                // (or add directly if only one mesh and no children)
+                const hasMeshes = node.meshes && node.meshes.length > 0;
+                const hasChildren = node.children && node.children.length > 0;
+
+                let container;
+                if (hasMeshes && !hasChildren && node.meshes.length === 1) {
+                    // Single mesh, no children → create Mesh directly under parent
+                    const m = buildThreeMesh(result.meshes[node.meshes[0]], node.name);
+                    if (node.name) m.name = node.name;
+                    parent.add(m);
+                    return;
+                }
+
+                if (hasMeshes || hasChildren) {
+                    container = new THREE.Group();
+                    container.name = node.name || '';
+                    parent.add(container);
+                } else {
+                    container = parent;
+                }
+
+                if (hasMeshes) {
+                    for (const meshIdx of node.meshes) {
+                        const m = buildThreeMesh(result.meshes[meshIdx], node.name);
+                        container.add(m);
+                    }
+                }
+                if (hasChildren) {
+                    for (const child of node.children) {
+                        buildNode(child, container);
+                    }
+                }
+            }
+
+            buildNode(result.root, root);
             root.traverse(child => {
                 child.userData.initPosition = child.position.clone();
                 child.userData.initRotation = child.rotation.clone();
