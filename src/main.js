@@ -5331,16 +5331,33 @@ function importStpFile() {
     input.addEventListener('change', async function() {
         const file = input.files[0];
         if (!file) return;
+
+        // Loading toast
+        let toast = document.getElementById('stp-loading');
+        if (!toast) {
+            toast = document.createElement('div');
+            toast.id = 'stp-loading';
+            toast.innerHTML = '<div class="stp-spinner"></div><span id="stp-loading-msg">Loading STP…</span>';
+            document.body.appendChild(toast);
+        }
+        const msg = toast.querySelector('#stp-loading-msg');
+        const showToast = (text) => { msg.textContent = text; toast.classList.add('visible'); };
+        const hideToast = () => toast.classList.remove('visible');
+
         try {
+            showToast('Initializing OCCT…');
             const occt = await occtimportjs({
                 locateFile: () => './occt/occt-import-js.wasm'
             });
+            showToast(`Parsing "${file.name}"…`);
             const buffer = await file.arrayBuffer();
             const result = occt.ReadStepFile(new Uint8Array(buffer), null);
             if (!result.success) {
+                hideToast();
                 console.error(`[Import] STP parsing failed for "${file.name}"`);
                 return;
             }
+            showToast(`Building scene (${result.meshes.length} meshes)…`);
             const root = new THREE.Group();
             root.name = file.name.replace(/\.[^.]+$/, '');
             root.userData.fileName = file.name;
@@ -5382,8 +5399,10 @@ function importStpFile() {
             if (!fileNameInput.value) fileNameInput.value = root.name;
             fitView();
             render();
+            hideToast();
             console.log(`[Import] STP "${file.name}" loaded successfully (${result.meshes.length} meshes).`);
         } catch (err) {
+            hideToast();
             console.error(`[Import] Failed to load STP "${file.name}":`, err);
         }
     });

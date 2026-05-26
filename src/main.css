@@ -3,6 +3,40 @@ html {
 	overflow: hidden;
 }
 
+/* ===== STP loading toast ===== */
+#stp-loading {
+    display: none;
+    position: fixed;
+    bottom: 60px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 3000;
+    background: rgba(30,30,30,0.92);
+    color: #fff;
+    padding: 10px 20px;
+    border-radius: 6px;
+    font-size: 13px;
+    align-items: center;
+    gap: 10px;
+    white-space: nowrap;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+}
+#stp-loading.visible {
+    display: flex;
+}
+#stp-loading .stp-spinner {
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: stp-spin 0.8s linear infinite;
+    flex-shrink: 0;
+}
+@keyframes stp-spin {
+    to { transform: rotate(360deg); }
+}
+
 /* CSS3DRenderer internal wrapper divs must not intercept pointer events.
    Label elements can override this via inline style when Edit Labels mode is active. */
 #css3d-root * {
