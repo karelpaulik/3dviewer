@@ -23,6 +23,12 @@ let activeTreeNode = null;
 // Set of <li> nodes highlighted as group members
 const groupHighlightNodes = new Set();
 
+// Last loaded models (needed to rebuild after filter is cleared)
+let lastLoadedModels = [];
+// Search input elements
+let searchInputEl = null;
+let clearBtnEl = null;
+
 // -------------------------------------------------------------------
 // Public API
 // -------------------------------------------------------------------
@@ -47,6 +53,31 @@ export function initOutliner({ onSelect, onToggleVisibility: onVis, onGroupAdd: 
     header.className = 'outliner-header';
     header.textContent = 'Scene';
     panelEl.appendChild(header);
+
+    // Search bar
+    const searchBar = document.createElement('div');
+    searchBar.className = 'outliner-search';
+    searchInputEl = document.createElement('input');
+    searchInputEl.type = 'text';
+    searchInputEl.placeholder = 'Hledat… (podľéka*)';
+    searchInputEl.className = 'outliner-search-input';
+    searchInputEl.addEventListener('input', () => {
+        filterTree(searchInputEl.value);
+        clearBtnEl.style.display = searchInputEl.value ? 'flex' : 'none';
+    });
+    clearBtnEl = document.createElement('button');
+    clearBtnEl.className = 'outliner-search-clear';
+    clearBtnEl.textContent = '×';
+    clearBtnEl.style.display = 'none';
+    clearBtnEl.title = 'Vymazat filtr';
+    clearBtnEl.addEventListener('click', () => {
+        searchInputEl.value = '';
+        filterTree('');
+        clearBtnEl.style.display = 'none';
+    });
+    searchBar.appendChild(searchInputEl);
+    searchBar.appendChild(clearBtnEl);
+    panelEl.appendChild(searchBar);
 
     // Scrollable tree area
     treeEl = document.createElement('ul');
@@ -83,7 +114,13 @@ export function isOutlinerOpen() {
  * @param {Array<import('three').Object3D>} loadedModels
  */
 export function rebuildTree(loadedModels) {
+    lastLoadedModels = loadedModels;
     if (!treeEl) return;
+    // Reset search input when rebuilding from outside (new model loaded)
+    if (searchInputEl && searchInputEl.value) {
+        searchInputEl.value = '';
+        if (clearBtnEl) clearBtnEl.style.display = 'none';
+    }
     treeEl.innerHTML = '';
     objectToDom.clear = clearWeakMapViaTree; // WeakMap has no clear — we just rebuild
     activeTreeNode = null;
@@ -207,6 +244,7 @@ export function navigateOutliner(direction) {
  * @returns {boolean}
  */
 function isNodeVisible(li) {
+    if (li.style && li.style.display === 'none') return false;
     let el = li.parentElement;
     while (el && el !== treeEl) {
         if (el.style && el.style.display === 'none') return false;
@@ -394,6 +432,94 @@ export function highlightGroupObjects(objects) {
 export function clearGroupHighlights() {
     groupHighlightNodes.forEach(li => li.classList.remove('outliner-group-member'));
     groupHighlightNodes.clear();
+}
+
+// -------------------------------------------------------------------
+// Search / filter helpers
+// -------------------------------------------------------------------
+
+/**
+ * Convert a wildcard pattern to a RegExp.
+ * Without wildcards (* ?): substring match.
+ * With wildcards: anchored full-name match.
+ */
+function wildcardToRegex(pattern) {
+    const trimmed = pattern.trim();
+    const hasWildcard = trimmed.includes('*') || trimmed.includes('?');
+    const escaped = trimmed.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+    if (hasWildcard) {
+        const regexStr = escaped.replace(/\*/g, '.*').replace(/\?/g, '.');
+        return new RegExp('^' + regexStr + '$', 'i');
+    }
+    return new RegExp(escaped, 'i');
+}
+
+/**
+ * Recursively determine which objects should be visible.
+ * An object is visible if its own name matches OR any descendant matches.
+ * Returns true if obj itself or any descendant is in the visible set.
+ */
+function computeVisibleSet(obj, regex, visibleSet) {
+    const selfMatch = regex.test(getDisplayName(obj));
+    let anyChildMatch = false;
+    for (const child of obj.children) {
+        if (computeVisibleSet(child, regex, visibleSet)) anyChildMatch = true;
+    }
+    const visible = selfMatch || anyChildMatch;
+    if (visible) visibleSet.add(obj);
+    return visible;
+}
+
+/**
+ * Apply DOM visibility based on visibleSet.
+ * Lazily populates children of visible nodes so deep matches are reachable.
+ */
+function applyFilterVisibility(obj, visibleSet, depth) {
+    const li = objectToDom.get(obj);
+    if (!li) return;
+    if (!visibleSet.has(obj)) {
+        li.style.display = 'none';
+        return;
+    }
+    li.style.display = '';
+    if (obj.children.length > 0) {
+        const childList = li.querySelector(':scope > .outliner-children');
+        if (childList) {
+            if (childList.children.length === 0) {
+                for (const child of obj.children) {
+                    childList.appendChild(createTreeNode(child, depth + 1));
+                }
+            }
+            childList.style.display = '';
+            const arrow = li.querySelector(':scope > .outliner-row > .outliner-arrow');
+            if (arrow) arrow.textContent = '\u25bc';
+            for (const child of obj.children) {
+                applyFilterVisibility(child, visibleSet, depth + 1);
+            }
+        }
+    }
+}
+
+/**
+ * Filter the outliner tree by a wildcard pattern.
+ * Empty pattern clears the filter and rebuilds the tree to its original state.
+ */
+function filterTree(pattern) {
+    if (!treeEl || lastLoadedModels.length === 0) return;
+    if (!pattern || !pattern.trim()) {
+        const selectedObj = activeTreeNode ? domToObject.get(activeTreeNode) : null;
+        rebuildTree(lastLoadedModels);
+        if (selectedObj) highlightObject(selectedObj);
+        return;
+    }
+    const regex = wildcardToRegex(pattern);
+    const visibleSet = new Set();
+    for (const root of lastLoadedModels) {
+        computeVisibleSet(root, regex, visibleSet);
+    }
+    for (const root of lastLoadedModels) {
+        applyFilterVisibility(root, visibleSet, 0);
+    }
 }
 
 // -------------------------------------------------------------------
