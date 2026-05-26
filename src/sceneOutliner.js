@@ -81,7 +81,7 @@ export function initOutliner({ onSelect, onToggleVisibility: onVis, onGroupAdd: 
     renameBtnEl.className = 'outliner-search-rename';
     renameBtnEl.textContent = '\u270f';
     renameBtnEl.style.display = 'none';
-    renameBtnEl.title = 'Hromadn\u00e9 p\u0159ejmenov\u00e1n\u00ed';
+    renameBtnEl.title = 'Bulk rename';
     renameBtnEl.addEventListener('click', openRenameDialog);
     searchBar.appendChild(searchInputEl);
     searchBar.appendChild(clearBtnEl);
@@ -562,21 +562,20 @@ function openRenameDialog() {
     const modal = document.createElement('div');
     modal.className = 'outliner-rename-modal';
     modal.addEventListener('click', e => e.stopPropagation());
-    overlay.addEventListener('click', close);
 
     const titleEl = document.createElement('div');
     titleEl.className = 'outliner-rename-title';
-    titleEl.textContent = `Hromadn\u00e9 p\u0159ejmenov\u00e1n\u00ed (${objects.length})`;
+    titleEl.textContent = `Bulk Rename (${objects.length})`;
     modal.appendChild(titleEl);
 
     const tabs = document.createElement('div');
     tabs.className = 'outliner-rename-tabs';
     const tabFR = document.createElement('button');
     tabFR.className = 'outliner-rename-tab outliner-rename-tab-active';
-    tabFR.textContent = 'Najdi a nahrad\u0165';
+    tabFR.textContent = 'Find & Replace';
     const tabFull = document.createElement('button');
     tabFull.className = 'outliner-rename-tab';
-    tabFull.textContent = 'Cel\u00fd n\u00e1zev';
+    tabFull.textContent = 'Full Rename';
     tabs.appendChild(tabFR);
     tabs.appendChild(tabFull);
     modal.appendChild(tabs);
@@ -587,36 +586,82 @@ function openRenameDialog() {
     const rowFind = document.createElement('div');
     rowFind.className = 'outliner-rename-row';
     const lblFind = document.createElement('label');
-    lblFind.textContent = 'Naj\u00edt:';
+    lblFind.textContent = 'Find:';
     const inputFind = document.createElement('input');
     inputFind.type = 'text';
     inputFind.className = 'outliner-rename-input';
-    inputFind.placeholder = 'p\u016fvodn\u00ed text';
+    inputFind.placeholder = 'search text';
     const btnRegex = document.createElement('button');
     btnRegex.type = 'button';
     btnRegex.className = 'outliner-rename-regex-btn';
     btnRegex.textContent = 'regexp';
-    btnRegex.title = 'Regul\u00e1rn\u00ed v\u00fdraz';
+    btnRegex.title = 'Regular expression';
     rowFind.appendChild(lblFind);
     rowFind.appendChild(inputFind);
     rowFind.appendChild(btnRegex);
     const rowReplace = document.createElement('div');
     rowReplace.className = 'outliner-rename-row';
     const lblReplace = document.createElement('label');
-    lblReplace.textContent = 'Nahradit:';
+    lblReplace.textContent = 'Replace:';
     const inputReplace = document.createElement('input');
     inputReplace.type = 'text';
     inputReplace.className = 'outliner-rename-input';
-    inputReplace.placeholder = 'nov\u00fd text';
+    inputReplace.placeholder = 'replacement';
     rowReplace.appendChild(lblReplace);
     rowReplace.appendChild(inputReplace);
     const hintFR = document.createElement('div');
     hintFR.className = 'outliner-rename-hint';
-    hintFR.textContent = 'Zachycen\u00e9 skupiny v n\u00e1hrad\u011b: $1, $2, \u2026';
+    hintFR.textContent = 'Capture groups in replacement: $1, $2, \u2026';
     hintFR.style.display = 'none';
+    const presetDefs = [
+        { label: 'remove _N',        find: '_\\d+$',          replace: '',  regex: true },
+        { label: 'remove N_',        find: '^\\d+_',          replace: '',  regex: true },
+        { label: 'remove (\u2026)',  find: '\\s*\\(.*?\\)', replace: '',  regex: true },
+        { label: '_ \u2192 space',   find: '_',               replace: ' ', regex: false },
+        { label: 'space \u2192 _',   find: ' ',               replace: '_', regex: false },
+        { label: 'dup. spaces',      find: '\\s{2,}',         replace: ' ', regex: true },
+        { label: 'trim',             find: '^\\s+|\\s+$',    replace: '',  regex: true },
+    ];
+    const rowPresets = document.createElement('div');
+    rowPresets.className = 'outliner-rename-row';
+    const lblPresets = document.createElement('label');
+    lblPresets.textContent = 'Presets:';
+    const selectPresets = document.createElement('select');
+    selectPresets.className = 'outliner-rename-select';
+    const optDefault = document.createElement('option');
+    optDefault.value = '';
+    optDefault.textContent = '\u2014 select preset \u2014';
+    selectPresets.appendChild(optDefault);
+    for (const preset of presetDefs) {
+        const opt = document.createElement('option');
+        opt.value = JSON.stringify(preset);
+        opt.textContent = `${preset.label}\u2003\u2003${preset.find}`;
+        selectPresets.appendChild(opt);
+    }
+    selectPresets.addEventListener('change', () => {
+        if (!selectPresets.value) return;
+        const preset = JSON.parse(selectPresets.value);
+        inputFind.value = preset.find;
+        inputReplace.value = preset.replace;
+        if (preset.regex && !useRegex) {
+            useRegex = true;
+            btnRegex.classList.add('outliner-rename-regex-btn-active');
+            hintFR.style.display = '';
+        } else if (!preset.regex && useRegex) {
+            useRegex = false;
+            btnRegex.classList.remove('outliner-rename-regex-btn-active');
+            hintFR.style.display = 'none';
+        }
+        selectPresets.value = '';
+        updatePreview();
+        inputReplace.focus();
+    });
+    rowPresets.appendChild(lblPresets);
+    rowPresets.appendChild(selectPresets);
     panelFR.appendChild(rowFind);
     panelFR.appendChild(rowReplace);
     panelFR.appendChild(hintFR);
+    panelFR.appendChild(rowPresets);
 
     // Panel 2 — Full rename
     const panelFull = document.createElement('div');
@@ -625,16 +670,16 @@ function openRenameDialog() {
     const rowFull = document.createElement('div');
     rowFull.className = 'outliner-rename-row';
     const lblFull = document.createElement('label');
-    lblFull.textContent = 'Nov\u00fd n\u00e1zev:';
+    lblFull.textContent = 'New name:';
     const inputFull = document.createElement('input');
     inputFull.type = 'text';
     inputFull.className = 'outliner-rename-input';
-    inputFull.placeholder = 'n\u00e1zev nebo n\u00e1zev_{n}';
+    inputFull.placeholder = 'name or name_{n}';
     rowFull.appendChild(lblFull);
     rowFull.appendChild(inputFull);
     const hint = document.createElement('div');
     hint.className = 'outliner-rename-hint';
-    hint.textContent = 'Pou\u017eij {n} pro \u010d\u00edslovan\u00ed (1, 2, \u2026)';
+    hint.textContent = 'Use {n} for numbering (1, 2, \u2026)';
     panelFull.appendChild(rowFull);
     panelFull.appendChild(hint);
 
@@ -649,10 +694,10 @@ function openRenameDialog() {
     btns.className = 'outliner-rename-btns';
     const btnCancel = document.createElement('button');
     btnCancel.className = 'outliner-rename-btn';
-    btnCancel.textContent = 'Zru\u0161it';
+    btnCancel.textContent = 'Cancel';
     const btnConfirm = document.createElement('button');
     btnConfirm.className = 'outliner-rename-btn outliner-rename-btn-primary';
-    btnConfirm.textContent = 'P\u0159ejmenovat';
+    btnConfirm.textContent = 'Rename';
     btns.appendChild(btnCancel);
     btns.appendChild(btnConfirm);
     modal.appendChild(btns);

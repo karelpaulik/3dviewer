@@ -955,6 +955,22 @@ a, button, input, select {
     border-color: #5a5a9a;
     color: #aaf;
 }
+.outliner-rename-select {
+    flex: 1 1 auto;
+    min-width: 0;
+    background: #2a2a2a;
+    border: 1px solid #444;
+    border-radius: 3px;
+    color: #ccc;
+    font-size: 11px;
+    padding: 3px 6px;
+    outline: none;
+    font-family: inherit;
+    cursor: pointer;
+}
+.outliner-rename-select:focus {
+    border-color: #666;
+}
 .outliner-rename-hint {
     font-size: 10px;
     color: #666;
