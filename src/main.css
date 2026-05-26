@@ -830,6 +830,179 @@ a, button, input, select {
 .outliner-search-clear:hover {
     color: #ddd;
 }
+.outliner-search-rename {
+    flex: 0 0 auto;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    color: #888;
+    cursor: pointer;
+    font-size: 13px;
+    line-height: 1;
+    padding: 0 2px;
+}
+.outliner-search-rename:hover {
+    color: #ddd;
+}
+
+/* ===== Bulk Rename Modal ===== */
+.outliner-rename-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.outliner-rename-modal {
+    background: #1e1e1e;
+    border: 1px solid #444;
+    border-radius: 6px;
+    padding: 16px;
+    min-width: 360px;
+    max-width: 480px;
+    width: 90vw;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.7);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    font-size: 12px;
+    color: #ccc;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.outliner-rename-title {
+    font-weight: 600;
+    font-size: 13px;
+    color: #eee;
+}
+.outliner-rename-tabs {
+    display: flex;
+    gap: 4px;
+}
+.outliner-rename-tab {
+    flex: 1;
+    background: #2a2a2a;
+    border: 1px solid #444;
+    border-radius: 3px;
+    color: #888;
+    font-size: 11px;
+    padding: 5px 8px;
+    cursor: pointer;
+    font-family: inherit;
+}
+.outliner-rename-tab-active {
+    background: #3a3a5a;
+    border-color: #5a5a9a;
+    color: #ddd;
+}
+.outliner-rename-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.outliner-rename-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.outliner-rename-row label {
+    flex: 0 0 72px;
+    color: #aaa;
+    font-size: 11px;
+    text-align: right;
+}
+.outliner-rename-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    background: #2a2a2a;
+    border: 1px solid #444;
+    border-radius: 3px;
+    color: #ccc;
+    font-size: 12px;
+    padding: 4px 7px;
+    outline: none;
+    font-family: inherit;
+}
+.outliner-rename-input:focus {
+    border-color: #666;
+    color: #fff;
+}
+.outliner-rename-hint {
+    font-size: 10px;
+    color: #666;
+    padding-left: 80px;
+}
+.outliner-rename-preview {
+    background: #151515;
+    border: 1px solid #333;
+    border-radius: 3px;
+    padding: 6px 8px;
+    min-height: 28px;
+    max-height: 120px;
+    overflow-y: auto;
+    font-size: 11px;
+}
+.outliner-rename-preview-row {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 1px 0;
+    overflow: hidden;
+}
+.outliner-rename-preview-old {
+    color: #999;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 44%;
+}
+.outliner-rename-preview-arrow {
+    color: #555;
+    flex-shrink: 0;
+}
+.outliner-rename-preview-new {
+    color: #7ec87e;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 44%;
+}
+.outliner-rename-preview-more {
+    color: #555;
+    font-size: 11px;
+    margin-top: 3px;
+}
+.outliner-rename-btns {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+}
+.outliner-rename-btn {
+    background: #2a2a2a;
+    border: 1px solid #444;
+    border-radius: 3px;
+    color: #ccc;
+    font-size: 12px;
+    padding: 5px 14px;
+    cursor: pointer;
+    font-family: inherit;
+}
+.outliner-rename-btn:hover {
+    border-color: #666;
+    color: #fff;
+}
+.outliner-rename-btn-primary {
+    background: #2a4a7a;
+    border-color: #4a6aaa;
+    color: #ddf;
+}
+.outliner-rename-btn-primary:hover {
+    background: #3a5a9a;
+    border-color: #6a8aca;
+}
 
 .outliner-tree {
     flex: 1 1 auto;

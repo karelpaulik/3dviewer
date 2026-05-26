@@ -28,6 +28,8 @@ let lastLoadedModels = [];
 // Search input elements
 let searchInputEl = null;
 let clearBtnEl = null;
+let renameBtnEl = null;
+let currentMatchSet = new Set();
 
 // -------------------------------------------------------------------
 // Public API
@@ -75,8 +77,15 @@ export function initOutliner({ onSelect, onToggleVisibility: onVis, onGroupAdd: 
         filterTree('');
         clearBtnEl.style.display = 'none';
     });
+    renameBtnEl = document.createElement('button');
+    renameBtnEl.className = 'outliner-search-rename';
+    renameBtnEl.textContent = '\u270f';
+    renameBtnEl.style.display = 'none';
+    renameBtnEl.title = 'Hromadn\u00e9 p\u0159ejmenov\u00e1n\u00ed';
+    renameBtnEl.addEventListener('click', openRenameDialog);
     searchBar.appendChild(searchInputEl);
     searchBar.appendChild(clearBtnEl);
+    searchBar.appendChild(renameBtnEl);
     panelEl.appendChild(searchBar);
 
     // Scrollable tree area
@@ -459,11 +468,12 @@ function wildcardToRegex(pattern) {
  * An object is visible if its own name matches OR any descendant matches.
  * Returns true if obj itself or any descendant is in the visible set.
  */
-function computeVisibleSet(obj, regex, visibleSet) {
+function computeVisibleSet(obj, regex, visibleSet, matchSet) {
     const selfMatch = regex.test(getDisplayName(obj));
+    if (selfMatch && matchSet) matchSet.add(obj);
     let anyChildMatch = false;
     for (const child of obj.children) {
-        if (computeVisibleSet(child, regex, visibleSet)) anyChildMatch = true;
+        if (computeVisibleSet(child, regex, visibleSet, matchSet)) anyChildMatch = true;
     }
     const visible = selfMatch || anyChildMatch;
     if (visible) visibleSet.add(obj);
@@ -507,19 +517,219 @@ function applyFilterVisibility(obj, visibleSet, depth) {
 function filterTree(pattern) {
     if (!treeEl || lastLoadedModels.length === 0) return;
     if (!pattern || !pattern.trim()) {
+        currentMatchSet = new Set();
         const selectedObj = activeTreeNode ? domToObject.get(activeTreeNode) : null;
         rebuildTree(lastLoadedModels);
         if (selectedObj) highlightObject(selectedObj);
+        if (renameBtnEl) renameBtnEl.style.display = 'none';
         return;
     }
     const regex = wildcardToRegex(pattern);
     const visibleSet = new Set();
+    currentMatchSet = new Set();
     for (const root of lastLoadedModels) {
-        computeVisibleSet(root, regex, visibleSet);
+        computeVisibleSet(root, regex, visibleSet, currentMatchSet);
     }
     for (const root of lastLoadedModels) {
         applyFilterVisibility(root, visibleSet, 0);
     }
+    if (renameBtnEl) renameBtnEl.style.display = currentMatchSet.size > 0 ? 'flex' : 'none';
+}
+
+// -------------------------------------------------------------------
+// Bulk rename dialog
+// -------------------------------------------------------------------
+
+/** Returns matched objects in DFS tree order. */
+function getMatchedObjectsInOrder() {
+    const result = [];
+    function walk(obj) {
+        if (currentMatchSet.has(obj)) result.push(obj);
+        for (const child of obj.children) walk(child);
+    }
+    for (const root of lastLoadedModels) walk(root);
+    return result;
+}
+
+/** Open the bulk-rename modal for all currently filtered objects. */
+function openRenameDialog() {
+    const objects = getMatchedObjectsInOrder();
+    if (objects.length === 0) return;
+    if (document.querySelector('.outliner-rename-overlay')) return;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'outliner-rename-overlay';
+    const modal = document.createElement('div');
+    modal.className = 'outliner-rename-modal';
+    modal.addEventListener('click', e => e.stopPropagation());
+    overlay.addEventListener('click', close);
+
+    const titleEl = document.createElement('div');
+    titleEl.className = 'outliner-rename-title';
+    titleEl.textContent = `Hromadn\u00e9 p\u0159ejmenov\u00e1n\u00ed (${objects.length})`;
+    modal.appendChild(titleEl);
+
+    const tabs = document.createElement('div');
+    tabs.className = 'outliner-rename-tabs';
+    const tabFR = document.createElement('button');
+    tabFR.className = 'outliner-rename-tab outliner-rename-tab-active';
+    tabFR.textContent = 'Najdi a nahrad\u0165';
+    const tabFull = document.createElement('button');
+    tabFull.className = 'outliner-rename-tab';
+    tabFull.textContent = 'Cel\u00fd n\u00e1zev';
+    tabs.appendChild(tabFR);
+    tabs.appendChild(tabFull);
+    modal.appendChild(tabs);
+
+    // Panel 1 — Find & Replace
+    const panelFR = document.createElement('div');
+    panelFR.className = 'outliner-rename-panel';
+    const rowFind = document.createElement('div');
+    rowFind.className = 'outliner-rename-row';
+    const lblFind = document.createElement('label');
+    lblFind.textContent = 'Naj\u00edt:';
+    const inputFind = document.createElement('input');
+    inputFind.type = 'text';
+    inputFind.className = 'outliner-rename-input';
+    inputFind.placeholder = 'p\u016fvodn\u00ed text';
+    rowFind.appendChild(lblFind);
+    rowFind.appendChild(inputFind);
+    const rowReplace = document.createElement('div');
+    rowReplace.className = 'outliner-rename-row';
+    const lblReplace = document.createElement('label');
+    lblReplace.textContent = 'Nahradit:';
+    const inputReplace = document.createElement('input');
+    inputReplace.type = 'text';
+    inputReplace.className = 'outliner-rename-input';
+    inputReplace.placeholder = 'nov\u00fd text';
+    rowReplace.appendChild(lblReplace);
+    rowReplace.appendChild(inputReplace);
+    panelFR.appendChild(rowFind);
+    panelFR.appendChild(rowReplace);
+
+    // Panel 2 — Full rename
+    const panelFull = document.createElement('div');
+    panelFull.className = 'outliner-rename-panel';
+    panelFull.style.display = 'none';
+    const rowFull = document.createElement('div');
+    rowFull.className = 'outliner-rename-row';
+    const lblFull = document.createElement('label');
+    lblFull.textContent = 'Nov\u00fd n\u00e1zev:';
+    const inputFull = document.createElement('input');
+    inputFull.type = 'text';
+    inputFull.className = 'outliner-rename-input';
+    inputFull.placeholder = 'n\u00e1zev nebo n\u00e1zev_{n}';
+    rowFull.appendChild(lblFull);
+    rowFull.appendChild(inputFull);
+    const hint = document.createElement('div');
+    hint.className = 'outliner-rename-hint';
+    hint.textContent = 'Pou\u017eij {n} pro \u010d\u00edslovan\u00ed (1, 2, \u2026)';
+    panelFull.appendChild(rowFull);
+    panelFull.appendChild(hint);
+
+    modal.appendChild(panelFR);
+    modal.appendChild(panelFull);
+
+    const previewEl = document.createElement('div');
+    previewEl.className = 'outliner-rename-preview';
+    modal.appendChild(previewEl);
+
+    const btns = document.createElement('div');
+    btns.className = 'outliner-rename-btns';
+    const btnCancel = document.createElement('button');
+    btnCancel.className = 'outliner-rename-btn';
+    btnCancel.textContent = 'Zru\u0161it';
+    const btnConfirm = document.createElement('button');
+    btnConfirm.className = 'outliner-rename-btn outliner-rename-btn-primary';
+    btnConfirm.textContent = 'P\u0159ejmenovat';
+    btns.appendChild(btnCancel);
+    btns.appendChild(btnConfirm);
+    modal.appendChild(btns);
+
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    let mode = 'fr';
+    tabFR.addEventListener('click', () => {
+        mode = 'fr';
+        tabFR.classList.add('outliner-rename-tab-active');
+        tabFull.classList.remove('outliner-rename-tab-active');
+        panelFR.style.display = '';
+        panelFull.style.display = 'none';
+        updatePreview();
+    });
+    tabFull.addEventListener('click', () => {
+        mode = 'full';
+        tabFull.classList.add('outliner-rename-tab-active');
+        tabFR.classList.remove('outliner-rename-tab-active');
+        panelFull.style.display = '';
+        panelFR.style.display = 'none';
+        updatePreview();
+        inputFull.focus();
+    });
+
+    function computeNewName(obj, idx) {
+        const orig = getDisplayName(obj);
+        if (mode === 'fr') {
+            const find = inputFind.value;
+            if (!find) return orig;
+            const escaped = find.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            return orig.replace(new RegExp(escaped, 'gi'), inputReplace.value);
+        } else {
+            const pat = inputFull.value;
+            if (!pat) return orig;
+            return pat.replace(/\{n\}/g, String(idx + 1));
+        }
+    }
+
+    function updatePreview() {
+        previewEl.innerHTML = '';
+        for (let i = 0; i < objects.length; i++) {
+            const row = document.createElement('div');
+            row.className = 'outliner-rename-preview-row';
+            const oldSpan = document.createElement('span');
+            oldSpan.className = 'outliner-rename-preview-old';
+            oldSpan.textContent = getDisplayName(objects[i]);
+            const arrow = document.createElement('span');
+            arrow.className = 'outliner-rename-preview-arrow';
+            arrow.textContent = '\u2192';
+            const newSpan = document.createElement('span');
+            newSpan.className = 'outliner-rename-preview-new';
+            newSpan.textContent = computeNewName(objects[i], i);
+            row.appendChild(oldSpan);
+            row.appendChild(arrow);
+            row.appendChild(newSpan);
+            previewEl.appendChild(row);
+        }
+    }
+
+    inputFind.addEventListener('input', updatePreview);
+    inputReplace.addEventListener('input', updatePreview);
+    inputFull.addEventListener('input', updatePreview);
+    updatePreview();
+
+    function close() {
+        document.removeEventListener('keydown', handleKey);
+        overlay.remove();
+    }
+    function handleKey(e) {
+        if (e.key === 'Escape') close();
+        if (e.key === 'Enter' && !e.shiftKey) btnConfirm.click();
+    }
+    document.addEventListener('keydown', handleKey);
+
+    btnCancel.addEventListener('click', close);
+    btnConfirm.addEventListener('click', () => {
+        objects.forEach((obj, idx) => {
+            const newName = computeNewName(obj, idx);
+            if (newName !== getDisplayName(obj)) {
+                obj.name = newName;
+                updateObjectLabel(obj);
+            }
+        });
+        close();
+    });
+    inputFind.focus();
 }
 
 // -------------------------------------------------------------------
