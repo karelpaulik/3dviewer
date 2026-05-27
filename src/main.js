@@ -1637,6 +1637,14 @@ function addMainGui() {
     editGui.add({ fn: resetWholeModel }, 'fn').name('Reset whole model');
     editGui.add({ fn: cleanupModel }, 'fn').name('Cleanup (flatten unnamed nodes)');
     editGui.add({ fn() {
+        const mesh = lastSelectedObject;
+        if (!mesh || !mesh.geometry) { alert('No mesh selected.'); return; }
+        const groups = mesh.geometry.groups;
+        if (!groups || groups.length < 2) { alert('Selected mesh has no multiple groups – nothing to separate.'); return; }
+        if (!confirm(`Separate "${mesh.name || 'mesh'}" into ${groups.length} parts?`)) return;
+        separateMesh(mesh);
+    } }, 'fn').name('Separate Mesh (split groups)');
+    editGui.add({ fn() {
         const toRename = [];
         loadedModels.forEach(root => root.traverse(obj => {
             if (obj.name && /_\d+$/.test(obj.name)) toRename.push(obj);
@@ -6184,37 +6192,68 @@ async function exportSelectedObjectDraco() {
 function separateMesh(meshToSeparate) {
     if (!meshToSeparate || !meshToSeparate.geometry) return;
 
-    // 1. Získání nových geometrií pomocí vaší existující logiky - goemetries je array.
+    // 1. Získání nových geometrií
     const geometries = separateGroups(meshToSeparate.geometry);
-    
-    // 2. Odstranění původního modelu
-    removeModel(meshToSeparate);
+    if (geometries.length === 0) return;
 
-    // 3. Vytvoření nových meshů
+    // Uložení potřebných dat před odstraněním meshe
+    const origName     = meshToSeparate.name || 'sep';
+    const origMaterial = meshToSeparate.material;
+    const origPosition = meshToSeparate.position.clone();
+    const origRotation = meshToSeparate.rotation.clone();
+    const origScale    = meshToSeparate.scale.clone();
+
+    // 2. Odstranění původního meshe bez vlastního confirm dialogu removeModel()
+    deselectObject();
+    removeMeasurementsForOwner(meshToSeparate);
+    removeAnnotationsForOwner(meshToSeparate);
+    removeAnnotations3dForOwner(meshToSeparate);
+    removeCadDim3dMeasurementsForOwner(meshToSeparate);
+
+    meshToSeparate.traverse(obj => {
+        const mi = meshObjects.indexOf(obj);
+        if (mi !== -1) meshObjects.splice(mi, 1);
+        const hi = hiddenObjects.indexOf(obj);
+        if (hi !== -1) hiddenObjects.splice(hi, 1);
+    });
+
+    if (meshToSeparate.parent) {
+        meshToSeparate.parent.remove(meshToSeparate);
+    } else {
+        scene.remove(meshToSeparate);
+    }
+
+    const lmIdx = loadedModels.indexOf(meshToSeparate);
+    if (lmIdx !== -1) loadedModels.splice(lmIdx, 1);
+
+    // 3. Vytvoření skupiny se stejným názvem jako původní mesh — nahradí ho v hierarchii
+    const group = new THREE.Group();
+    group.name = origName;
+    group.position.copy(origPosition);
+    group.rotation.copy(origRotation);
+    group.scale.copy(origScale);
+    group.userData.initPosition = origPosition.clone();
+    group.userData.initRotation = origRotation.clone();
+    group.userData.initScale    = origScale.clone();
+
+    scene.add(group);
+
+    // Nové díly jako potomci skupiny — v lokálních souřadnicích skupiny (origin = 0)
     geometries.forEach((geom, i) => {
-        const materials = [];
-        materials.push(meshToSeparate.material[i]);
-        const newMesh = new THREE.Mesh(geom, materials);
-
-        // Separated parts - v initial pozici, rotaci a měřítku
-        // newMesh.initPosition = { ...meshToSeparate.initPosition };
-        // newMesh.initRotation = { ...meshToSeparate.initRotation };
-        // newMesh.initScale = { ...meshToSeparate.initScale };
-        
-        // Separated parts - ve své aktuální pozici, rotaci a měřítku
-        newMesh.initPosition = meshToSeparate.position.clone();
-        newMesh.initRotation = meshToSeparate.rotation.clone();
-        newMesh.initScale = meshToSeparate.scale.clone();
-
-        setDefPosRotScale(newMesh);
-        newMesh.name = `Part_${i}_${meshToSeparate.name || 'sep'}`;
-        //newMesh.name = fileNameWithoutExtension("sep dil");
-        
-        scene.add(newMesh);
-        
+        const mat = Array.isArray(origMaterial) ? origMaterial[i] : origMaterial.clone();
+        const newMesh = new THREE.Mesh(geom, mat);
+        newMesh.name = `Part_${i}_${origName}`;
+        newMesh.userData.initPosition = new THREE.Vector3(0, 0, 0);
+        newMesh.userData.initRotation = new THREE.Euler(0, 0, 0);
+        newMesh.userData.initScale    = new THREE.Vector3(1, 1, 1);
+        group.add(newMesh);
         meshObjects.push(newMesh);
     });
 
+    loadedModels.push(group);
+
+    rebuildTree(loadedModels);
+    if (_assemblyFolderRef) updateAssemblyGuiInfo();
     render();
 }
 
