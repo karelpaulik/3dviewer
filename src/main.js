@@ -5364,6 +5364,46 @@ function exportAllModelsStl() {
 }
 
 function exportSelectedObjectStl() {
+    // --- Multi-select group case ---
+    if (!lastSelectedObject && selectedObjects.length > 0) {
+        const defaultName = selectedObjects[0].name || 'group';
+        const input = window.prompt('File name (.stl will be added):', defaultName);
+        if (input === null) return;
+        const finalName = (input.trim() || defaultName).replace(/\.stl$/i, '') + '.stl';
+        const fmt = window.prompt('Export format:\n  b = binary\n  a = ASCII', 'b');
+        if (fmt === null) return;
+        const binary = fmt.trim().toLowerCase() !== 'a';
+
+        const exporter = new STLExporter();
+        const group = new THREE.Group();
+        selectedObjects.forEach(obj => {
+            const clone = obj.clone(true);
+            obj.updateWorldMatrix(true, false);
+            const worldPos = new THREE.Vector3();
+            const worldQuat = new THREE.Quaternion();
+            const worldScale = new THREE.Vector3();
+            obj.matrixWorld.decompose(worldPos, worldQuat, worldScale);
+            clone.position.copy(worldPos);
+            clone.quaternion.copy(worldQuat);
+            clone.scale.copy(worldScale);
+            group.add(clone);
+        });
+
+        const result = exporter.parse(group, { binary });
+        if (binary) {
+            saveArrayBuffer(result, finalName);
+        } else {
+            const blob = new Blob([result], { type: 'text/plain' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = finalName;
+            link.click();
+            URL.revokeObjectURL(link.href);
+        }
+        console.log(`[STL Export] "${finalName}" (${binary ? 'binary' : 'ASCII'}) group hotovo.`);
+        return;
+    }
+
     if (!lastSelectedObject) {
         console.warn('Žádný objekt není vybrán.');
         return;
@@ -5998,6 +6038,69 @@ async function exportAllModelsDraco() {
 }
 
 function exportSelectedObject() {
+    // --- Multi-select group case ---
+    if (!lastSelectedObject && selectedObjects.length > 0) {
+        const defaultName = `${selectedObjects[0].name || 'group'}.glb`;
+        const input = window.prompt('File name (.glb will be added):', defaultName.replace(/\.glb$/i, ''));
+        if (input === null) return;
+        const finalName = (input.trim() || defaultName.replace(/\.glb$/i, '')).replace(/\.glb$/i, '') + '.glb';
+
+        selectedObjects.forEach(obj => obj.traverse(child => {
+            if (child.isMesh && child.material) {
+                const mats = Array.isArray(child.material) ? child.material : [child.material];
+                mats.forEach(mat => { if (mat.emissive) mat.emissive.setHex(0x000000); });
+            }
+        }));
+
+        assemblyWriteToUserData();
+
+        const exporter = new GLTFExporter();
+        const group = new THREE.Group();
+        group.userData._appExportRoot = true;
+        group.userData.cadDim3dDefaults = { ...getCadDim3dDefaults() };
+        group.userData.annotation3dDefaults = { ...getAnnotation3dDefaults() };
+        group.userData.sectionSettings = {
+            section:           viewProp.section,
+            px:                viewProp.px,
+            py:                viewProp.py,
+            pz:                viewProp.pz,
+            sectionCrossLines: viewProp.sectionCrossLines,
+            crossSectionColor: viewProp.crossSectionColor,
+            solidSection:      viewProp.solidSection,
+            capColor:          viewProp.capColor,
+            showSectionMesh:   viewProp.showSectionMesh,
+        };
+
+        selectedObjects.forEach(obj => {
+            const clone = obj.clone(true);
+            obj.updateWorldMatrix(true, false);
+            const worldPos = new THREE.Vector3();
+            const worldQuat = new THREE.Quaternion();
+            const worldScale = new THREE.Vector3();
+            obj.matrixWorld.decompose(worldPos, worldQuat, worldScale);
+            clone.position.copy(worldPos);
+            clone.quaternion.copy(worldQuat);
+            clone.scale.copy(worldScale);
+            clone.userData.fileName = finalName;
+            group.add(clone);
+        });
+
+        assemblyClearUserData();
+
+        stripMeasurementVisuals(group);
+        stripAnnotationVisuals(group);
+        stripAnnotation3dVisuals(group);
+        stripCadDim3dVisuals(group);
+
+        exporter.parse(group, function(result) {
+            saveArrayBuffer(result, finalName);
+            console.log('Export selected (group): hotovo.');
+        }, function(error) {
+            console.error('Chyba při exportu:', error);
+        }, { binary: true, onlyVisible: false });
+        return;
+    }
+
     if (!lastSelectedObject) {
         console.warn('Žádný objekt není vybrán.');
         return;
@@ -6070,6 +6173,122 @@ function exportSelectedObject() {
 }
 
 async function exportSelectedObjectDraco() {
+    // --- Multi-select group case ---
+    if (!lastSelectedObject && selectedObjects.length > 0) {
+        const defaultName = `${selectedObjects[0].name || 'group'}.glb`;
+        const input = window.prompt('File name (.glb will be added):', defaultName.replace(/\.glb$/i, ''));
+        if (input === null) return;
+        const finalName = (input.trim() || defaultName.replace(/\.glb$/i, '')).replace(/\.glb$/i, '') + '.glb';
+
+        let overlay = document.getElementById('dracoOverlay');
+        if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.id = 'dracoOverlay';
+            overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:99999;color:#fff;font-size:22px;font-family:sans-serif;';
+            overlay.textContent = 'Draco compressing… please wait';
+            document.body.appendChild(overlay);
+        }
+        overlay.style.display = 'flex';
+
+        selectedObjects.forEach(obj => obj.traverse(child => {
+            if (child.isMesh && child.material) {
+                const mats = Array.isArray(child.material) ? child.material : [child.material];
+                mats.forEach(mat => { if (mat.emissive) mat.emissive.setHex(0x000000); });
+            }
+        }));
+
+        assemblyWriteToUserData();
+        flushDocumentEdits();
+
+        const exporter = new GLTFExporter();
+        const groupDraco = new THREE.Group();
+        groupDraco.userData._appExportRoot = true;
+        groupDraco.userData.cadDim3dDefaults = { ...getCadDim3dDefaults() };
+        groupDraco.userData.annotation3dDefaults = { ...getAnnotation3dDefaults() };
+        groupDraco.userData.sectionSettings = {
+            section:           viewProp.section,
+            px:                viewProp.px,
+            py:                viewProp.py,
+            pz:                viewProp.pz,
+            sectionCrossLines: viewProp.sectionCrossLines,
+            crossSectionColor: viewProp.crossSectionColor,
+            solidSection:      viewProp.solidSection,
+            capColor:          viewProp.capColor,
+            showSectionMesh:   viewProp.showSectionMesh,
+        };
+
+        selectedObjects.forEach(obj => {
+            const clone = obj.clone(true);
+            obj.updateWorldMatrix(true, false);
+            const worldPos = new THREE.Vector3();
+            const worldQuat = new THREE.Quaternion();
+            const worldScale = new THREE.Vector3();
+            obj.matrixWorld.decompose(worldPos, worldQuat, worldScale);
+            clone.position.copy(worldPos);
+            clone.quaternion.copy(worldQuat);
+            clone.scale.copy(worldScale);
+            clone.userData.fileName = finalName;
+            groupDraco.add(clone);
+        });
+
+        assemblyClearUserData();
+
+        stripMeasurementVisuals(groupDraco);
+        stripAnnotationVisuals(groupDraco);
+        stripAnnotation3dVisuals(groupDraco);
+        stripCadDim3dVisuals(groupDraco);
+
+        exporter.parse(groupDraco, function(result) {
+            setTimeout(async () => {
+                try {
+                    const { WebIO } = await import('@gltf-transform/core');
+                    const { KHRDracoMeshCompression } = await import('@gltf-transform/extensions');
+                    const { draco } = await import('@gltf-transform/functions');
+
+                    const loadDracoScript = (url) => new Promise((resolve, reject) => {
+                        const id = url.includes('encoder') ? 'DracoEncoderModule' : 'DracoDecoderModule';
+                        if (window[id]) { resolve(); return; }
+                        const s = document.createElement('script');
+                        s.src = url;
+                        s.onload = resolve;
+                        s.onerror = () => reject(new Error('Failed to load ' + url));
+                        document.head.appendChild(s);
+                    });
+
+                    await loadDracoScript('./draco/draco_encoder_wasm.js');
+                    await loadDracoScript('./draco/draco_decoder_wasm.js');
+
+                    const encoder = await window.DracoEncoderModule();
+                    const decoder = await window.DracoDecoderModule();
+
+                    const io = new WebIO()
+                        .registerExtensions([KHRDracoMeshCompression])
+                        .registerDependencies({
+                            'draco3d.decoder': decoder,
+                            'draco3d.encoder': encoder,
+                        });
+
+                    const gltfDoc = await io.readBinary(new Uint8Array(result));
+                    await gltfDoc.transform(dracoDefaults.useCustomSettings ? draco({ ...dracoDefaults }) : draco());
+                    const compressedGlb = await io.writeBinary(gltfDoc);
+
+                    saveArrayBuffer(compressedGlb, finalName);
+                    console.log('Export selected group (Draco): hotovo.');
+                } catch (err) {
+                    console.error('Chyba při Draco kompresi:', err);
+                    saveArrayBuffer(result, finalName);
+                    console.warn('Uloženo bez Draco komprese (fallback).');
+                } finally {
+                    overlay.style.display = 'none';
+                }
+            }, 50);
+        }, function(error) {
+            overlay.style.display = 'none';
+            console.error('Chyba při exportu:', error);
+        }, { binary: true, onlyVisible: false });
+        return;
+    }
+
     if (!lastSelectedObject) {
         console.warn('Žádný objekt není vybrán.');
         return;
