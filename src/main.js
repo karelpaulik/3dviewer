@@ -8,6 +8,7 @@ import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+import { STLExporter } from 'three/addons/exporters/STLExporter.js';
 import { CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer.js';
 import { CSS3DRenderer } from 'three/addons/renderers/CSS3DRenderer.js';
 import { ViewHelper } from 'three/addons/helpers/ViewHelper.js';
@@ -1587,10 +1588,14 @@ function addMainGui() {
     fileGui.add({ fn: importStpFile }, 'fn').name('Import STP/STEP…');
     fileGui.add({ fn: exportAllModelsDraco }, 'fn').name('Export all to GLB (Compression)');
     fileGui.add({ fn: exportSelectedObjectDraco }, 'fn').name('Export selected to GLB (Compression)');
-    const exportNoCompFolder = fileGui.addFolder('Export without compression');
+    const exportNoCompFolder = fileGui.addFolder('Export to GLB without compression');
     exportNoCompFolder.add({ fn: exportAllModels }, 'fn').name('Export all to GLB');
     exportNoCompFolder.add({ fn: exportSelectedObject }, 'fn').name('Export selected to GLB');
     exportNoCompFolder.close();
+    const exportStlFolder = fileGui.addFolder('Export to STL');
+    exportStlFolder.add({ fn: exportAllModelsStl }, 'fn').name('Export all to STL…');
+    exportStlFolder.add({ fn: exportSelectedObjectStl }, 'fn').name('Export selected to STL…');
+    exportStlFolder.close();
     const demoFolder = fileGui.addFolder('Import demo');
     demoFolder.close();
     demoFolder.add({ fn() {
@@ -5317,6 +5322,67 @@ function saveArrayBuffer(buffer, filename) {
     link.download = filename;
     link.click();
     URL.revokeObjectURL(link.href);
+}
+
+function exportAllModelsStl() {
+    if (loadedModels.length === 0) {
+        console.warn('Žádné modely k exportu.');
+        return;
+    }
+    const baseName = fileNameInput.value.trim() || (loadedModels[0]?.userData?.fileName?.replace(/\.[^.]+$/, '') ?? 'export_all');
+    const input = window.prompt('File name (.stl will be added):', baseName);
+    if (input === null) return;
+    const finalName = (input.trim() || baseName).replace(/\.stl$/i, '') + '.stl';
+    const fmt = window.prompt('Export format:\n  b = binary\n  a = ASCII', 'b');
+    if (fmt === null) return;
+    const binary = fmt.trim().toLowerCase() !== 'a';
+
+    const exporter = new STLExporter();
+    const group = new THREE.Group();
+    loadedModels.forEach(model => group.add(model.clone(true)));
+
+    const result = exporter.parse(group, { binary });
+    if (binary) {
+        saveArrayBuffer(result, finalName);
+    } else {
+        const blob = new Blob([result], { type: 'text/plain' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = finalName;
+        link.click();
+        URL.revokeObjectURL(link.href);
+    }
+    console.log(`[STL Export] "${finalName}" (${binary ? 'binary' : 'ASCII'}) hotovo.`);
+}
+
+function exportSelectedObjectStl() {
+    if (!lastSelectedObject) {
+        console.warn('Žádný objekt není vybrán.');
+        return;
+    }
+    const defaultName = lastSelectedObject.name || 'selected';
+    const input = window.prompt('File name (.stl will be added):', defaultName);
+    if (input === null) return;
+    const finalName = (input.trim() || defaultName).replace(/\.stl$/i, '') + '.stl';
+    const fmt = window.prompt('Export format:\n  b = binary\n  a = ASCII', 'b');
+    if (fmt === null) return;
+    const binary = fmt.trim().toLowerCase() !== 'a';
+
+    const exporter = new STLExporter();
+    const clone = lastSelectedObject.clone(true);
+
+    const result = exporter.parse(clone, { binary });
+    if (binary) {
+        saveArrayBuffer(result, finalName);
+    } else {
+        const blob = new Blob([result], { type: 'text/plain' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = finalName;
+        link.click();
+        URL.revokeObjectURL(link.href);
+    }
+    console.log(`[STL Export] "${finalName}" (${binary ? 'binary' : 'ASCII'}) hotovo.`);
 }
 
 // Open a file-picker dialog and load the chosen GLB file.
