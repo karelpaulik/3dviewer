@@ -1583,6 +1583,7 @@ function addMainGui() {
     // --- File panel (Export / Import) ---
     const fileGui = new GUI({ container: guiContainer, title: 'File' });
     fileGui.add({ fn: importGlbFile }, 'fn').name('Import GLB…');
+    fileGui.add({ fn: importStlFile }, 'fn').name('Import STL…');
     fileGui.add({ fn: importStpFile }, 'fn').name('Import STP/STEP…');
     fileGui.add({ fn: exportAllModelsDraco }, 'fn').name('Export all to GLB (Compression)');
     fileGui.add({ fn: exportSelectedObjectDraco }, 'fn').name('Export selected to GLB (Compression)');
@@ -2400,7 +2401,7 @@ function initLoad() {
 
         switch ( fileExtension ) {
             case 'zip':      
-                loadModel(fileUrl, fileName, 0.001, true).then( (result) => {
+                loadStlModel(fileUrl, fileName, 0.001, true).then( (result) => {
                     fitView();
                     console.log(`Model ${fileName} loaded successfully.`);
                 }).catch((error) => {
@@ -2423,7 +2424,7 @@ function initLoad() {
 
     } else {
         //console.error("Chyba: Nebyl nalezen žádný model k načtení.");
-        //loadModel('./models/1011364_c.zip','1011364_c.zip', 0.001, true).then( (result)=>{} );	
+        //loadStlModel('./models/1011364_c.zip','1011364_c.zip', 0.001, true).then( (result)=>{} );	
         
         //loadGlbModel('/models/1012053_l.glb','1012053_l.glb', 0.001, true).then( (result)=>{meshObjects.push( result )} );
         loadGlbModel('./models/1012053_l.glb','1012053_l.glb', 0.001, true).then( (result)=>{
@@ -3753,48 +3754,64 @@ function updateHistoryInfo() {
 
 //https://www.reddit.com/r/learnjavascript/comments/9jovpn/how_can_i_load_a_3d_model_asynchronously_in/	
 //https://javascript.info/promise-basics
-function loadModel(model, name, scale, colored) {
-    return new Promise( (resolve, reject) => {	
+function loadStlModel(model, name, scale, colored) {
+    return new Promise( (resolve, reject) => {
 
-        const zipLoader = new ZipLoader( model ); 
-        zipLoader.load().then( function() {
-            const url = zipLoader.extractAsBlobUrl( fileNameWithoutExtension(name) + '.txt');					
-        
+        function loadFromStlUrl(url) {
             const loader = new STLLoader();
             loader.load( url, function ( geometry ) {												
 
-                const materials = [];
                 const nGeometryGroups = geometry.groups.length;
                 console.log("nGeometryGroups: ", nGeometryGroups);
-                
-                for (let i = 0; i < nGeometryGroups; i++) {
-                    const material = new THREE.MeshPhongMaterial({
-                        side: THREE.DoubleSide,
-                        clippingPlanes: clipPlanes,
-                        clipIntersection: true,								
-                        color: Math.random() * 0xffffff,
-                        wireframe: false,
-                        polygonOffset: true,
-                        polygonOffsetFactor: 1
-                    });
-                materials.push(material);
+
+                const makeMaterial = () => new THREE.MeshPhongMaterial({
+                    side: THREE.DoubleSide,
+                    clippingPlanes: clipPlanes,
+                    clipIntersection: true,
+                    color: Math.random() * 0xffffff,
+                    wireframe: false,
+                    polygonOffset: true,
+                    polygonOffsetFactor: 1
+                });
+
+                let meshMaterial;
+                if (nGeometryGroups > 0) {
+                    meshMaterial = [];
+                    for (let i = 0; i < nGeometryGroups; i++) {
+                        meshMaterial.push(makeMaterial());
+                    }
+                } else {
+                    meshMaterial = makeMaterial();
                 }
-                const mesh = new THREE.Mesh(geometry, materials);					
+                const mesh = new THREE.Mesh(geometry, meshMaterial);					
                 
                 // Definice výchozích hodnot v userData (Three.js best practice)
                 mesh.userData.initPosition = { x: 0, y: 0, z: 0 };
                 mesh.userData.initRotation = { x: -Math.PI/2, y: 0, z: 0 };
                 mesh.userData.initScale = { x: 1, y: 1, z: 1 };
-                mesh.name = fileNameWithoutExtension(model);
+                mesh.name = fileNameWithoutExtension(name || model);
+                mesh.userData.fileName = name || fileNameWithoutExtension(model);
                 scene.add( mesh );	
                 console.log(mesh);
                 meshObjects.push(mesh);
+                loadedModels.push(mesh);
+                rebuildTree(loadedModels);
                 render();
                 resolve(mesh);	
 
                 lastSelectedObject=mesh;  
             } );
-        } );					
+        }
+
+        if (name.toLowerCase().endsWith('.zip')) {
+            const zipLoader = new ZipLoader( model );
+            zipLoader.load().then( function() {
+                const url = zipLoader.extractAsBlobUrl( fileNameWithoutExtension(name) + '.txt');
+                loadFromStlUrl(url);
+            });
+        } else {
+            loadFromStlUrl(model);
+        }
     });
 }
 
@@ -5303,6 +5320,27 @@ function saveArrayBuffer(buffer, filename) {
 }
 
 // Open a file-picker dialog and load the chosen GLB file.
+function importStlFile() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.stl,.STL';
+    input.addEventListener('change', function() {
+        const file = input.files[0];
+        if (!file) return;
+        const url = URL.createObjectURL(file);
+        loadStlModel(url, file.name, 0.001, true).then(() => {
+            URL.revokeObjectURL(url);
+            if (!fileNameInput.value) fileNameInput.value = file.name.replace(/\.[^.]+$/, '');
+            fitView();
+            console.log(`[Import] STL "${file.name}" loaded successfully.`);
+        }).catch(err => {
+            URL.revokeObjectURL(url);
+            console.error(`[Import] Failed to load "${file.name}":`, err);
+        });
+    });
+    input.click();
+}
+
 function importGlbFile() {
     const input = document.createElement('input');
     input.type = 'file';
