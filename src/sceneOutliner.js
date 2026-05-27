@@ -61,7 +61,7 @@ export function initOutliner({ onSelect, onToggleVisibility: onVis, onGroupAdd: 
     searchBar.className = 'outliner-search';
     searchInputEl = document.createElement('input');
     searchInputEl.type = 'text';
-    searchInputEl.placeholder = 'Hledat… (podľéka*)';
+    searchInputEl.placeholder = 'Search… (wildcard*)';
     searchInputEl.className = 'outliner-search-input';
     searchInputEl.addEventListener('input', () => {
         filterTree(searchInputEl.value);
@@ -71,7 +71,7 @@ export function initOutliner({ onSelect, onToggleVisibility: onVis, onGroupAdd: 
     clearBtnEl.className = 'outliner-search-clear';
     clearBtnEl.textContent = '×';
     clearBtnEl.style.display = 'none';
-    clearBtnEl.title = 'Vymazat filtr';
+    clearBtnEl.title = 'Clear filter';
     clearBtnEl.addEventListener('click', () => {
         searchInputEl.value = '';
         filterTree('');
@@ -79,8 +79,7 @@ export function initOutliner({ onSelect, onToggleVisibility: onVis, onGroupAdd: 
     });
     renameBtnEl = document.createElement('button');
     renameBtnEl.className = 'outliner-search-rename';
-    renameBtnEl.textContent = '\u270f';
-    renameBtnEl.style.display = 'none';
+    renameBtnEl.textContent = '\u270E';
     renameBtnEl.title = 'Bulk rename';
     renameBtnEl.addEventListener('click', openRenameDialog);
     searchBar.appendChild(searchInputEl);
@@ -521,7 +520,6 @@ function filterTree(pattern) {
         const selectedObj = activeTreeNode ? domToObject.get(activeTreeNode) : null;
         rebuildTree(lastLoadedModels);
         if (selectedObj) highlightObject(selectedObj);
-        if (renameBtnEl) renameBtnEl.style.display = 'none';
         return;
     }
     const regex = wildcardToRegex(pattern);
@@ -533,7 +531,7 @@ function filterTree(pattern) {
     for (const root of lastLoadedModels) {
         applyFilterVisibility(root, visibleSet, 0);
     }
-    if (renameBtnEl) renameBtnEl.style.display = currentMatchSet.size > 0 ? 'flex' : 'none';
+
 }
 
 // -------------------------------------------------------------------
@@ -553,6 +551,15 @@ function getMatchedObjectsInOrder() {
 
 /** Open the bulk-rename modal for all currently filtered objects. */
 function openRenameDialog() {
+    // If no filter is active, treat all objects as matched (temporarily)
+    const wasEmpty = currentMatchSet.size === 0;
+    if (wasEmpty && lastLoadedModels.length > 0) {
+        function walkAll(obj) {
+            currentMatchSet.add(obj);
+            for (const child of obj.children) walkAll(child);
+        }
+        for (const root of lastLoadedModels) walkAll(root);
+    }
     const objects = getMatchedObjectsInOrder();
     if (objects.length === 0) return;
     if (document.querySelector('.outliner-rename-overlay')) return;
@@ -797,6 +804,7 @@ function openRenameDialog() {
 
     function close() {
         document.removeEventListener('keydown', handleKey);
+        if (wasEmpty) currentMatchSet = new Set();
         overlay.remove();
     }
     function handleKey(e) {

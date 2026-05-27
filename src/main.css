@@ -866,7 +866,7 @@ a, button, input, select {
 }
 .outliner-search-rename {
     flex: 0 0 auto;
-    display: none;
+    display: flex;
     align-items: center;
     justify-content: center;
     background: none;
