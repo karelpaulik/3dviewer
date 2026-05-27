@@ -1586,6 +1586,7 @@ function addMainGui() {
     fileGui.add({ fn: importGlbFile }, 'fn').name('Import GLB…');
     fileGui.add({ fn: importStlFile }, 'fn').name('Import STL…');
     fileGui.add({ fn: importStpFile }, 'fn').name('Import STP/STEP…');
+    fileGui.add({ fn: importIgesFile }, 'fn').name('Import IGS/IGES…');
     fileGui.add({ fn: exportAllModelsDraco }, 'fn').name('Export all to GLB (Compression)');
     fileGui.add({ fn: exportSelectedObjectDraco }, 'fn').name('Export selected to GLB (Compression)');
     const exportNoCompFolder = fileGui.addFolder('Export to GLB without compression');
@@ -5606,6 +5607,135 @@ function importStpFile() {
         } catch (err) {
             hideToast();
             console.error(`[Import] Failed to load STP "${file.name}":`, err);
+        }
+    });
+    input.click();
+}
+
+function importIgesFile() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.igs,.iges,.IGS,.IGES';
+    input.addEventListener('change', async function() {
+        const file = input.files[0];
+        if (!file) return;
+
+        let toast = document.getElementById('stp-loading');
+        if (!toast) {
+            toast = document.createElement('div');
+            toast.id = 'stp-loading';
+            toast.innerHTML = '<div class="stp-spinner"></div><span id="stp-loading-msg">Loading IGES…</span>';
+            document.body.appendChild(toast);
+        }
+        const msg = toast.querySelector('#stp-loading-msg');
+        const showToast = (text) => { msg.textContent = text; toast.classList.add('visible'); };
+        const hideToast = () => toast.classList.remove('visible');
+
+        try {
+            showToast('Initializing OCCT…');
+            if (!window.occtimportjs) {
+                await new Promise((resolve, reject) => {
+                    const s = document.createElement('script');
+                    s.src = 'https://cdn.jsdelivr.net/npm/occt-import-js@0.0.23/dist/occt-import-js.js';
+                    s.onload = resolve;
+                    s.onerror = () => reject(new Error('Failed to load occt-import-js from CDN'));
+                    document.head.appendChild(s);
+                });
+            }
+            const occt = await window.occtimportjs({
+                locateFile: () => 'https://cdn.jsdelivr.net/npm/occt-import-js@0.0.23/dist/occt-import-js.wasm'
+            });
+            showToast(`Parsing "${file.name}"…`);
+            const buffer = await file.arrayBuffer();
+            const result = occt.ReadIgesFile(new Uint8Array(buffer), null);
+            if (!result.success) {
+                hideToast();
+                console.error(`[Import] IGES parsing failed for "${file.name}"`);
+                return;
+            }
+            showToast(`Building scene (${result.meshes.length} meshes)…`);
+            const root = new THREE.Group();
+            root.name = file.name.replace(/\.[^.]+$/, '');
+            root.userData.fileName = file.name;
+
+            function buildThreeMesh(meshData, fallbackName) {
+                const geometry = new THREE.BufferGeometry();
+                geometry.setAttribute('position', new THREE.Float32BufferAttribute(meshData.attributes.position.array, 3));
+                if (meshData.attributes.normal) {
+                    geometry.setAttribute('normal', new THREE.Float32BufferAttribute(meshData.attributes.normal.array, 3));
+                } else {
+                    geometry.computeVertexNormals();
+                }
+                if (meshData.index) {
+                    geometry.setIndex(new THREE.BufferAttribute(new Uint32Array(meshData.index.array), 1));
+                }
+                const color = (meshData.color != null)
+                    ? new THREE.Color(meshData.color[0], meshData.color[1], meshData.color[2])
+                    : new THREE.Color(0x888888);
+                const material = new THREE.MeshPhongMaterial({
+                    color,
+                    side: THREE.DoubleSide,
+                    clippingPlanes: clipPlanes,
+                    clipIntersection: true,
+                    polygonOffset: true,
+                    polygonOffsetFactor: 1,
+                });
+                const m = new THREE.Mesh(geometry, material);
+                m.name = meshData.name || fallbackName || 'mesh';
+                return m;
+            }
+
+            function buildNode(node, parent) {
+                const hasMeshes = node.meshes && node.meshes.length > 0;
+                const hasChildren = node.children && node.children.length > 0;
+
+                let container;
+                if (hasMeshes && !hasChildren && node.meshes.length === 1) {
+                    const m = buildThreeMesh(result.meshes[node.meshes[0]], node.name);
+                    if (node.name) m.name = node.name;
+                    parent.add(m);
+                    return;
+                }
+
+                if (hasMeshes || hasChildren) {
+                    container = new THREE.Group();
+                    container.name = node.name || '';
+                    parent.add(container);
+                } else {
+                    container = parent;
+                }
+
+                if (hasMeshes) {
+                    for (const meshIdx of node.meshes) {
+                        const m = buildThreeMesh(result.meshes[meshIdx], node.name);
+                        container.add(m);
+                    }
+                }
+                if (hasChildren) {
+                    for (const child of node.children) {
+                        buildNode(child, container);
+                    }
+                }
+            }
+
+            buildNode(result.root, root);
+            root.traverse(child => {
+                child.userData.initPosition = child.position.clone();
+                child.userData.initRotation = child.rotation.clone();
+                child.userData.initScale = child.scale.clone();
+                if (child.isMesh) meshObjects.push(child);
+            });
+            scene.add(root);
+            loadedModels.push(root);
+            rebuildTree(loadedModels);
+            if (!fileNameInput.value) fileNameInput.value = root.name;
+            fitView();
+            render();
+            hideToast();
+            console.log(`[Import] IGES "${file.name}" loaded successfully (${result.meshes.length} meshes).`);
+        } catch (err) {
+            hideToast();
+            console.error(`[Import] Failed to load IGES "${file.name}":`, err);
         }
     });
     input.click();
