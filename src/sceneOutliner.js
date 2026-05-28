@@ -11,6 +11,13 @@ let isOpen = false;
 let onSelectObject = null;
 let onToggleVisibility = null;
 let onGroupAdd = null;
+let onReparent = null;
+
+// Drag & Drop state
+let _draggedObj = null;
+let _dragOverLi = null;
+let _dragOverPos = null; // 'before' | 'into' | 'after'
+let _lastDragEndTime = 0; // Timestamp of last dragend – blocks spurious post-drag clicks
 
 // WeakMap: DOM <li> → Object3D
 const domToObject = new WeakMap();
@@ -40,10 +47,11 @@ let currentMatchSet = new Set();
  * @param {{ onSelect: Function, onToggleVisibility: Function }} callbacks
  * @returns {HTMLDivElement} the panel element (for guiWrapper hit-testing)
  */
-export function initOutliner({ onSelect, onToggleVisibility: onVis, onGroupAdd: onGroupAddCb }) {
+export function initOutliner({ onSelect, onToggleVisibility: onVis, onGroupAdd: onGroupAddCb, onReparent: onReparentCb }) {
     onSelectObject = onSelect;
     onToggleVisibility = onVis;
     onGroupAdd = onGroupAddCb || null;
+    onReparent = onReparentCb || null;
 
     // --- Panel container ---
     panelEl = document.createElement('div');
@@ -92,6 +100,15 @@ export function initOutliner({ onSelect, onToggleVisibility: onVis, onGroupAdd: 
     treeEl.className = 'outliner-tree';
     panelEl.appendChild(treeEl);
 
+    // Clear drop indicators when drag leaves the tree panel entirely
+    treeEl.addEventListener('dragleave', (e) => {
+        if (!treeEl.contains(e.relatedTarget)) {
+            clearDropIndicators();
+            _dragOverLi = null;
+            _dragOverPos = null;
+        }
+    });
+
     // --- Resize handle (right edge) ---
     const resizeHandle = document.createElement('div');
     resizeHandle.className = 'outliner-resize';
@@ -107,6 +124,8 @@ export function initOutliner({ onSelect, onToggleVisibility: onVis, onGroupAdd: 
  * @returns {boolean} new open state
  */
 export function toggleOutliner() {
+    // Ignore calls fired within 300 ms of a drag end (spurious post-drag click)
+    if (Date.now() - _lastDragEndTime < 300) return isOpen;
     isOpen = !isOpen;
     panelEl.classList.toggle('outliner-closed', !isOpen);
     return isOpen;
@@ -121,11 +140,13 @@ export function isOutlinerOpen() {
  * Rebuild the entire tree from loadedModels array.
  * @param {Array<import('three').Object3D>} loadedModels
  */
-export function rebuildTree(loadedModels) {
+export function rebuildTree(loadedModels, preserveExpanded = false) {
     lastLoadedModels = loadedModels;
     if (!treeEl) return;
+    // Optionally save expanded state before destroying DOM
+    const expandedUUIDs = preserveExpanded ? collectExpandedUUIDs() : null;
     // Reset search input when rebuilding from outside (new model loaded)
-    if (searchInputEl && searchInputEl.value) {
+    if (!preserveExpanded && searchInputEl && searchInputEl.value) {
         searchInputEl.value = '';
         if (clearBtnEl) clearBtnEl.style.display = 'none';
     }
@@ -136,6 +157,10 @@ export function rebuildTree(loadedModels) {
     for (const root of loadedModels) {
         const li = createTreeNode(root, 0);
         treeEl.appendChild(li);
+    }
+
+    if (expandedUUIDs && expandedUUIDs.size > 0) {
+        restoreExpandedUUIDs(expandedUUIDs);
     }
 }
 
@@ -280,6 +305,48 @@ function clearWeakMapViaTree() {
     // No-op: WeakMap entries are GC'd automatically when DOM nodes are removed
 }
 
+function collectExpandedUUIDs() {
+    const uuids = new Set();
+    if (!treeEl) return uuids;
+    treeEl.querySelectorAll('.outliner-node.outliner-expanded').forEach(li => {
+        const obj = domToObject.get(li);
+        if (obj) uuids.add(obj.uuid);
+    });
+    return uuids;
+}
+
+function restoreExpandedUUIDs(uuids) {
+    function walk(ul, depth) {
+        for (const li of Array.from(ul.children)) {
+            if (!li.classList.contains('outliner-node')) continue;
+            const obj = domToObject.get(li);
+            if (!obj) continue;
+            if (uuids.has(obj.uuid)) {
+                const childList = li.querySelector(':scope > .outliner-children');
+                const arrow = li.querySelector(':scope > .outliner-row > .outliner-arrow');
+                if (childList) {
+                    if (childList.children.length === 0 && obj.children.length > 0) {
+                        for (const child of obj.children) {
+                            childList.appendChild(createTreeNode(child, depth + 1));
+                        }
+                    }
+                    childList.style.display = '';
+                    if (arrow) arrow.textContent = '▼';
+                    li.classList.add('outliner-expanded');
+                    walk(childList, depth + 1);
+                }
+            }
+        }
+    }
+    walk(treeEl, 0);
+}
+
+function clearDropIndicators() {
+    if (_dragOverLi) {
+        _dragOverLi.classList.remove('outliner-drop-before', 'outliner-drop-into', 'outliner-drop-after');
+    }
+}
+
 /**
  * Create a single <li> tree node for an Object3D.
  * Children are created lazily on first expand.
@@ -296,6 +363,7 @@ function createTreeNode(obj, depth) {
     const row = document.createElement('div');
     row.className = 'outliner-row';
     row.style.paddingLeft = (depth * 16 + 4) + 'px';
+    row.draggable = true;
 
     // 1) Expand/collapse arrow
     const arrow = document.createElement('span');
@@ -340,6 +408,54 @@ function createTreeNode(obj, depth) {
     row.appendChild(eye);
 
     li.appendChild(row);
+
+    // --- Drag & Drop ---
+    row.addEventListener('dragstart', (e) => {
+        _draggedObj = obj;
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', ''); // required for Firefox
+        li.classList.add('outliner-drag-source');
+    });
+
+    row.addEventListener('dragend', () => {
+        _lastDragEndTime = Date.now();
+        li.classList.remove('outliner-drag-source');
+        clearDropIndicators();
+        _draggedObj = null;
+        _dragOverLi = null;
+        _dragOverPos = null;
+    });
+
+    row.addEventListener('dragover', (e) => {
+        if (!_draggedObj || _draggedObj === obj) return;
+        // Prevent dropping onto own descendant
+        let cur = obj;
+        while (cur) { if (cur === _draggedObj) return; cur = cur.parent; }
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        const rect = row.getBoundingClientRect();
+        const y = e.clientY - rect.top;
+        const h = rect.height;
+        const pos = y < h * 0.25 ? 'before' : y > h * 0.75 ? 'after' : 'into';
+        if (_dragOverLi !== li || _dragOverPos !== pos) {
+            clearDropIndicators();
+            _dragOverLi = li;
+            _dragOverPos = pos;
+            li.classList.add('outliner-drop-' + pos);
+        }
+    });
+
+    row.addEventListener('drop', (e) => {
+        e.preventDefault();
+        const source = _draggedObj;
+        const target = _dragOverLi ? domToObject.get(_dragOverLi) : null;
+        const pos = _dragOverPos;
+        clearDropIndicators();
+        _dragOverLi = null;
+        _dragOverPos = null;
+        if (!source || !target || source === target) return;
+        if (onReparent) onReparent(source, target, pos);
+    });
 
     // Children container (lazy — not populated yet)
     if (hasChildren) {

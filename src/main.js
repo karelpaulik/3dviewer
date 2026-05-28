@@ -611,6 +611,46 @@ render();
 outlinerPanelEl = initOutliner({
     onSelect: (obj) => selectObject(obj),
     onGroupAdd: (obj) => toggleObjectInMultiSelect(obj),
+    onReparent: (draggedObj, targetObj, position) => {
+        // Guard: prevent circular hierarchy (dropping onto own descendant)
+        let cur = targetObj;
+        while (cur) { if (cur === draggedObj) return; cur = cur.parent; }
+
+        deselectObject();
+        clearMultiSelect();
+
+        const wasRoot = loadedModels.includes(draggedObj);
+        const newParent = position === 'into' ? targetObj : targetObj.parent;
+        if (!newParent) return;
+
+        // Reparent while preserving world-space transform
+        newParent.attach(draggedObj);
+
+        // For before/after: splice to correct sibling position
+        if (position === 'before' || position === 'after') {
+            const children = newParent.children;
+            const dragIdx = children.indexOf(draggedObj);
+            children.splice(dragIdx, 1);
+            const targetIdx = children.indexOf(targetObj);
+            children.splice(position === 'before' ? targetIdx : targetIdx + 1, 0, draggedObj);
+        }
+
+        // Sync loadedModels (root = direct child of scene)
+        const isNowRoot = draggedObj.parent === scene;
+        if (wasRoot && !isNowRoot) {
+            const idx = loadedModels.indexOf(draggedObj);
+            if (idx !== -1) loadedModels.splice(idx, 1);
+        } else if (!wasRoot && isNowRoot) {
+            if (!loadedModels.includes(draggedObj)) loadedModels.push(draggedObj);
+        }
+        if (isNowRoot) {
+            // Keep loadedModels order in sync with scene.children order
+            loadedModels.sort((a, b) => scene.children.indexOf(a) - scene.children.indexOf(b));
+        }
+
+        rebuildTree(loadedModels, true);
+        render();
+    },
     onToggleVisibility: (obj) => {
         if (obj.visible) {
             hideObject(obj);

@@ -1161,6 +1161,22 @@ a, button, input, select {
     opacity: 1;
 }
 
+/* Drag & Drop */
+.outliner-drag-source > .outliner-row {
+    opacity: 0.35;
+}
+.outliner-node.outliner-drop-before > .outliner-row {
+    box-shadow: inset 0 2px 0 0 #4a9adf;
+}
+.outliner-node.outliner-drop-after > .outliner-row {
+    box-shadow: inset 0 -2px 0 0 #4a9adf;
+}
+.outliner-node.outliner-drop-into > .outliner-row {
+    background: #1a4a6a;
+    outline: 1px solid #4a9adf;
+    outline-offset: -1px;
+}
+
 .outliner-resize {
     position: absolute;
     top: 0;
