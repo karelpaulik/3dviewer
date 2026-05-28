@@ -14,6 +14,8 @@ let onGroupAdd = null;
 let onReparent = null;
 let onRemove = null;
 let onGroupRemove = null;
+let onHideOthers = null;
+let onShowAll = null;
 
 // -------------------------------------------------------------------
 // Context menu
@@ -61,6 +63,41 @@ function showCtxMenu(x, y, obj, li) {
     const sep = document.createElement('div');
     sep.className = 'outliner-ctx-sep';
     menu.appendChild(sep);
+
+    // --- Hide / Show ---
+    const hideShowItem = document.createElement('div');
+    hideShowItem.className = 'outliner-ctx-item';
+    hideShowItem.textContent = obj.visible ? 'Hide' : 'Show';
+    hideShowItem.addEventListener('click', () => {
+        hideCtxMenu();
+        if (onToggleVisibility) onToggleVisibility(obj);
+    });
+    menu.appendChild(hideShowItem);
+
+    // --- Hide others ---
+    const hideOthersItem = document.createElement('div');
+    hideOthersItem.className = 'outliner-ctx-item';
+    hideOthersItem.textContent = 'Hide others';
+    hideOthersItem.addEventListener('click', () => {
+        hideCtxMenu();
+        if (onHideOthers) onHideOthers(obj);
+    });
+    menu.appendChild(hideOthersItem);
+
+    // --- Show all ---
+    const showAllItem = document.createElement('div');
+    showAllItem.className = 'outliner-ctx-item';
+    showAllItem.textContent = 'Show all';
+    showAllItem.addEventListener('click', () => {
+        hideCtxMenu();
+        if (onShowAll) onShowAll();
+    });
+    menu.appendChild(showAllItem);
+
+    // Separator
+    const sepVis = document.createElement('div');
+    sepVis.className = 'outliner-ctx-sep';
+    menu.appendChild(sepVis);
 
     // --- Expand all ---
     const expandItem = document.createElement('div');
@@ -216,11 +253,13 @@ let currentMatchSet = new Set();
  * @param {{ onSelect: Function, onToggleVisibility: Function }} callbacks
  * @returns {HTMLDivElement} the panel element (for guiWrapper hit-testing)
  */
-export function initOutliner({ onSelect, onToggleVisibility: onVis, onGroupAdd: onGroupAddCb, onGroupRemove: onGroupRemoveCb, onReparent: onReparentCb, onRemove: onRemoveCb }) {
+export function initOutliner({ onSelect, onToggleVisibility: onVis, onGroupAdd: onGroupAddCb, onGroupRemove: onGroupRemoveCb, onHideOthers: onHideOthersCb, onShowAll: onShowAllCb, onReparent: onReparentCb, onRemove: onRemoveCb }) {
     onSelectObject = onSelect;
     onToggleVisibility = onVis;
     onGroupAdd = onGroupAddCb || null;
     onGroupRemove = onGroupRemoveCb || null;
+    onHideOthers = onHideOthersCb || null;
+    onShowAll = onShowAllCb || null;
     onReparent = onReparentCb || null;
     onRemove = onRemoveCb || null;
 

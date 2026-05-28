@@ -612,6 +612,26 @@ outlinerPanelEl = initOutliner({
     onSelect: (obj) => selectObject(obj),
     onGroupAdd: (obj) => toggleObjectInMultiSelect(obj),
     onGroupRemove: (obj) => { const idx = selectedObjects.indexOf(obj); if (idx !== -1) toggleObjectInMultiSelect(obj); },
+    onHideOthers: (obj) => {
+        // Hide all siblings; for root loadedModels hide all other roots
+        const siblings = (obj.parent && obj.parent.isScene)
+            ? loadedModels
+            : (obj.parent ? obj.parent.children : []);
+        siblings.forEach(s => {
+            if (s !== obj && s.visible) { hideObject(s); updateVisibilityIcon(s); }
+        });
+        // Ensure the object itself is visible
+        if (!obj.visible) {
+            obj.visible = true;
+            const hi = hiddenObjects.indexOf(obj);
+            if (hi !== -1) hiddenObjects.splice(hi, 1);
+            updateVisibilityIcon(obj);
+        }
+        render();
+    },
+    onShowAll: () => {
+        showHiddenObjects();
+    },
     onRemove: (obj) => removeModel(obj),
     onReparent: (draggedObj, targetObj, position) => {
         // Guard: prevent circular hierarchy (dropping onto own descendant)
