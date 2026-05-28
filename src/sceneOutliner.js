@@ -16,6 +16,7 @@ let onRemove = null;
 let onGroupRemove = null;
 let onHideOthers = null;
 let onShowAll = null;
+let onSortChildren = null;
 
 // -------------------------------------------------------------------
 // Context menu
@@ -162,6 +163,52 @@ function showCtxMenu(x, y, obj, li) {
     sep3.className = 'outliner-ctx-sep';
     menu.appendChild(sep3);
 
+    // --- Sort children (first level) ---
+    if (obj.children && obj.children.length > 1) {
+        const sortItem = document.createElement('div');
+        sortItem.className = 'outliner-ctx-item';
+        sortItem.textContent = 'Sort children A→Z';
+        sortItem.addEventListener('click', () => {
+            hideCtxMenu();
+            if (onSortChildren) onSortChildren(obj, false, false);
+        });
+        menu.appendChild(sortItem);
+
+        // --- Sort all children (recursive) ---
+        const sortAllItem = document.createElement('div');
+        sortAllItem.className = 'outliner-ctx-item';
+        sortAllItem.textContent = 'Sort all children A→Z';
+        sortAllItem.addEventListener('click', () => {
+            hideCtxMenu();
+            if (onSortChildren) onSortChildren(obj, true, false);
+        });
+        menu.appendChild(sortAllItem);
+
+        // --- Sort children (Z→A) ---
+        const sortDescItem = document.createElement('div');
+        sortDescItem.className = 'outliner-ctx-item';
+        sortDescItem.textContent = 'Sort children Z→A';
+        sortDescItem.addEventListener('click', () => {
+            hideCtxMenu();
+            if (onSortChildren) onSortChildren(obj, false, true);
+        });
+        menu.appendChild(sortDescItem);
+
+        // --- Sort all children Z→A (recursive) ---
+        const sortAllDescItem = document.createElement('div');
+        sortAllDescItem.className = 'outliner-ctx-item';
+        sortAllDescItem.textContent = 'Sort all children Z→A';
+        sortAllDescItem.addEventListener('click', () => {
+            hideCtxMenu();
+            if (onSortChildren) onSortChildren(obj, true, true);
+        });
+        menu.appendChild(sortAllDescItem);
+
+        const sep3b = document.createElement('div');
+        sep3b.className = 'outliner-ctx-sep';
+        menu.appendChild(sep3b);
+    }
+
     // --- Remove ---
     const removeItem = document.createElement('div');
     removeItem.className = 'outliner-ctx-item outliner-ctx-danger';
@@ -253,7 +300,7 @@ let currentMatchSet = new Set();
  * @param {{ onSelect: Function, onToggleVisibility: Function }} callbacks
  * @returns {HTMLDivElement} the panel element (for guiWrapper hit-testing)
  */
-export function initOutliner({ onSelect, onToggleVisibility: onVis, onGroupAdd: onGroupAddCb, onGroupRemove: onGroupRemoveCb, onHideOthers: onHideOthersCb, onShowAll: onShowAllCb, onReparent: onReparentCb, onRemove: onRemoveCb }) {
+export function initOutliner({ onSelect, onToggleVisibility: onVis, onGroupAdd: onGroupAddCb, onGroupRemove: onGroupRemoveCb, onHideOthers: onHideOthersCb, onShowAll: onShowAllCb, onReparent: onReparentCb, onRemove: onRemoveCb, onSortChildren: onSortChildrenCb }) {
     onSelectObject = onSelect;
     onToggleVisibility = onVis;
     onGroupAdd = onGroupAddCb || null;
@@ -262,6 +309,7 @@ export function initOutliner({ onSelect, onToggleVisibility: onVis, onGroupAdd: 
     onShowAll = onShowAllCb || null;
     onReparent = onReparentCb || null;
     onRemove = onRemoveCb || null;
+    onSortChildren = onSortChildrenCb || null;
 
     // --- Panel container ---
     panelEl = document.createElement('div');

@@ -673,6 +673,21 @@ outlinerPanelEl = initOutliner({
         rebuildTree(loadedModels, true);
         render();
     },
+    onSortChildren: (obj, recursive, descending) => {
+        function sortNode(node) {
+            node.children.sort((a, b) => descending
+                ? b.name.localeCompare(a.name)
+                : a.name.localeCompare(b.name));
+            if (recursive) node.children.forEach(sortNode);
+        }
+        sortNode(obj);
+        // If the sorted object is the scene root keep loadedModels in sync
+        if (obj === scene) {
+            loadedModels.sort((a, b) => scene.children.indexOf(a) - scene.children.indexOf(b));
+        }
+        rebuildTree(loadedModels, true);
+        render();
+    },
     onToggleVisibility: (obj) => {
         if (obj.visible) {
             hideObject(obj);
