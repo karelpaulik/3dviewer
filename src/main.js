@@ -707,6 +707,15 @@ outlinerPanelEl = initOutliner({
                 meshObjects.push(child);
             }
         });
+        // Rebuild annotations/dimensions on the clone from copied userData
+        stripAnnotationVisuals(clone);
+        stripAnnotation3dVisuals(clone);
+        stripMeasurementVisuals(clone);
+        stripCadDim3dVisuals(clone);
+        reconstructAnnotations(clone, render);
+        reconstructAnnotations3d(clone, render);
+        reconstructMeasurements(clone, render);
+        reconstructCadDim3d(clone);
         // Sync loadedModels if cloned at root level
         if (obj.parent === scene) {
             if (!loadedModels.includes(clone)) {
