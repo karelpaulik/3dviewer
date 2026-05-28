@@ -12,6 +12,111 @@ let onSelectObject = null;
 let onToggleVisibility = null;
 let onGroupAdd = null;
 let onReparent = null;
+let onRemove = null;
+
+// -------------------------------------------------------------------
+// Context menu
+// -------------------------------------------------------------------
+
+/** Singleton context menu element (created once, reused). */
+let ctxMenuEl = null;
+
+function getOrCreateCtxMenu() {
+    if (ctxMenuEl) return ctxMenuEl;
+    ctxMenuEl = document.createElement('div');
+    ctxMenuEl.className = 'outliner-ctx-menu';
+    ctxMenuEl.style.display = 'none';
+    document.body.appendChild(ctxMenuEl);
+
+    // Close on any outside click / Escape
+    document.addEventListener('mousedown', (e) => {
+        if (!ctxMenuEl.contains(e.target)) hideCtxMenu();
+    }, true);
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') hideCtxMenu();
+    });
+    return ctxMenuEl;
+}
+
+function hideCtxMenu() {
+    if (ctxMenuEl) ctxMenuEl.style.display = 'none';
+}
+
+function showCtxMenu(x, y, obj, li) {
+    const menu = getOrCreateCtxMenu();
+    menu.innerHTML = '';
+
+    // --- Rename ---
+    const renameItem = document.createElement('div');
+    renameItem.className = 'outliner-ctx-item';
+    renameItem.textContent = 'Rename';
+    renameItem.addEventListener('click', () => {
+        hideCtxMenu();
+        startInlineRename(li, obj);
+    });
+    menu.appendChild(renameItem);
+
+    // Separator
+    const sep = document.createElement('div');
+    sep.className = 'outliner-ctx-sep';
+    menu.appendChild(sep);
+
+    // --- Remove ---
+    const removeItem = document.createElement('div');
+    removeItem.className = 'outliner-ctx-item outliner-ctx-danger';
+    removeItem.textContent = 'Remove';
+    removeItem.addEventListener('click', () => {
+        hideCtxMenu();
+        if (onRemove) onRemove(obj);
+    });
+    menu.appendChild(removeItem);
+
+    // Position (keep within viewport)
+    menu.style.display = 'block';
+    const mw = menu.offsetWidth;
+    const mh = menu.offsetHeight;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    menu.style.left = (x + mw > vw ? vw - mw - 4 : x) + 'px';
+    menu.style.top  = (y + mh > vh ? vh - mh - 4 : y) + 'px';
+}
+
+// -------------------------------------------------------------------
+// Inline rename
+// -------------------------------------------------------------------
+
+function startInlineRename(li, obj) {
+    const labelEl = li.querySelector(':scope > .outliner-row > .outliner-label');
+    if (!labelEl) return;
+
+    const original = obj.name || '';
+    const input = document.createElement('input');
+    input.className = 'outliner-inline-rename';
+    input.value = original;
+    input.style.width = Math.max(labelEl.offsetWidth, 80) + 'px';
+
+    // Replace label with input
+    labelEl.replaceWith(input);
+    input.focus();
+    input.select();
+
+    function commit() {
+        const newName = input.value.trim();
+        obj.name = newName || original;
+        input.replaceWith(labelEl);
+        labelEl.textContent = getDisplayName(obj);
+    }
+
+    function cancel() {
+        input.replaceWith(labelEl);
+    }
+
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter')  { e.stopPropagation(); commit(); }
+        if (e.key === 'Escape') { e.stopPropagation(); cancel(); }
+    });
+    input.addEventListener('blur', commit);
+}
 
 // Drag & Drop state
 let _draggedObj = null;
@@ -47,11 +152,12 @@ let currentMatchSet = new Set();
  * @param {{ onSelect: Function, onToggleVisibility: Function }} callbacks
  * @returns {HTMLDivElement} the panel element (for guiWrapper hit-testing)
  */
-export function initOutliner({ onSelect, onToggleVisibility: onVis, onGroupAdd: onGroupAddCb, onReparent: onReparentCb }) {
+export function initOutliner({ onSelect, onToggleVisibility: onVis, onGroupAdd: onGroupAddCb, onReparent: onReparentCb, onRemove: onRemoveCb }) {
     onSelectObject = onSelect;
     onToggleVisibility = onVis;
     onGroupAdd = onGroupAddCb || null;
     onReparent = onReparentCb || null;
+    onRemove = onRemoveCb || null;
 
     // --- Panel container ---
     panelEl = document.createElement('div');
@@ -455,6 +561,13 @@ function createTreeNode(obj, depth) {
         _dragOverPos = null;
         if (!source || !target || source === target) return;
         if (onReparent) onReparent(source, target, pos);
+    });
+
+    // --- Context menu (right-click) ---
+    row.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        showCtxMenu(e.clientX, e.clientY, obj, li);
     });
 
     // Children container (lazy — not populated yet)
