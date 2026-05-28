@@ -61,6 +61,31 @@ function showCtxMenu(x, y, obj, li) {
     sep.className = 'outliner-ctx-sep';
     menu.appendChild(sep);
 
+    // --- Expand all ---
+    const expandItem = document.createElement('div');
+    expandItem.className = 'outliner-ctx-item';
+    expandItem.textContent = 'Expand all';
+    expandItem.addEventListener('click', () => {
+        hideCtxMenu();
+        expandSubtree(li, obj, getDepth(li));
+    });
+    menu.appendChild(expandItem);
+
+    // --- Collapse all ---
+    const collapseItem = document.createElement('div');
+    collapseItem.className = 'outliner-ctx-item';
+    collapseItem.textContent = 'Collapse all';
+    collapseItem.addEventListener('click', () => {
+        hideCtxMenu();
+        collapseSubtree(li);
+    });
+    menu.appendChild(collapseItem);
+
+    // Separator
+    const sep2 = document.createElement('div');
+    sep2.className = 'outliner-ctx-sep';
+    menu.appendChild(sep2);
+
     // --- Remove ---
     const removeItem = document.createElement('div');
     removeItem.className = 'outliner-ctx-item outliner-ctx-danger';
@@ -579,6 +604,45 @@ function createTreeNode(obj, depth) {
     }
 
     return li;
+}
+
+/** Recursively expand all nodes in the subtree rooted at li/obj. */
+function expandSubtree(li, obj, depth) {
+    const childList = li.querySelector(':scope > .outliner-children');
+    const arrow = li.querySelector(':scope > .outliner-row > .outliner-arrow');
+    if (!childList) return;
+    // Lazy-populate if needed
+    if (childList.children.length === 0 && obj.children.length > 0) {
+        for (const child of obj.children) {
+            childList.appendChild(createTreeNode(child, depth + 1));
+        }
+    }
+    childList.style.display = '';
+    if (arrow) arrow.textContent = '▼';
+    li.classList.add('outliner-expanded');
+    // Recurse into children
+    for (const child of obj.children) {
+        const childLi = objectToDom.get(child);
+        if (childLi) expandSubtree(childLi, child, depth + 1);
+    }
+}
+
+/** Recursively collapse all nodes in the subtree rooted at li. */
+function collapseSubtree(li) {
+    const childList = li.querySelector(':scope > .outliner-children');
+    const arrow = li.querySelector(':scope > .outliner-row > .outliner-arrow');
+    if (!childList) return;
+    // Collapse children first (post-order)
+    for (const childLi of Array.from(childList.querySelectorAll('.outliner-node'))) {
+        const childChildList = childLi.querySelector(':scope > .outliner-children');
+        const childArrow = childLi.querySelector(':scope > .outliner-row > .outliner-arrow');
+        if (childChildList) childChildList.style.display = 'none';
+        if (childArrow) childArrow.textContent = '▶';
+        childLi.classList.remove('outliner-expanded');
+    }
+    childList.style.display = 'none';
+    if (arrow) arrow.textContent = '▶';
+    li.classList.remove('outliner-expanded');
 }
 
 function toggleExpand(li, obj, depth) {
