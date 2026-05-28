@@ -13,6 +13,7 @@ let onToggleVisibility = null;
 let onGroupAdd = null;
 let onReparent = null;
 let onRemove = null;
+let onGroupRemove = null;
 
 // -------------------------------------------------------------------
 // Context menu
@@ -85,6 +86,44 @@ function showCtxMenu(x, y, obj, li) {
     const sep2 = document.createElement('div');
     sep2.className = 'outliner-ctx-sep';
     menu.appendChild(sep2);
+
+    // --- Add to selection ---
+    const addSelItem = document.createElement('div');
+    addSelItem.className = 'outliner-ctx-item';
+    addSelItem.textContent = 'Add to selection';
+    addSelItem.addEventListener('click', () => {
+        hideCtxMenu();
+        if (onGroupAdd) onGroupAdd(obj);
+    });
+    menu.appendChild(addSelItem);
+
+    // --- Remove from selection ---
+    const remSelItem = document.createElement('div');
+    remSelItem.className = 'outliner-ctx-item';
+    remSelItem.textContent = 'Remove from selection';
+    remSelItem.addEventListener('click', () => {
+        hideCtxMenu();
+        if (onGroupRemove) onGroupRemove(obj);
+    });
+    menu.appendChild(remSelItem);
+
+    // --- Select all children ---
+    const selChildrenItem = document.createElement('div');
+    selChildrenItem.className = 'outliner-ctx-item';
+    selChildrenItem.textContent = 'Select children';
+    selChildrenItem.addEventListener('click', () => {
+        hideCtxMenu();
+        if (onGroupAdd) {
+            // Snapshot first — attach() reparents each child (mutates live children array)
+            [...obj.children].forEach(child => onGroupAdd(child));
+        }
+    });
+    menu.appendChild(selChildrenItem);
+
+    // Separator
+    const sep3 = document.createElement('div');
+    sep3.className = 'outliner-ctx-sep';
+    menu.appendChild(sep3);
 
     // --- Remove ---
     const removeItem = document.createElement('div');
@@ -177,10 +216,11 @@ let currentMatchSet = new Set();
  * @param {{ onSelect: Function, onToggleVisibility: Function }} callbacks
  * @returns {HTMLDivElement} the panel element (for guiWrapper hit-testing)
  */
-export function initOutliner({ onSelect, onToggleVisibility: onVis, onGroupAdd: onGroupAddCb, onReparent: onReparentCb, onRemove: onRemoveCb }) {
+export function initOutliner({ onSelect, onToggleVisibility: onVis, onGroupAdd: onGroupAddCb, onGroupRemove: onGroupRemoveCb, onReparent: onReparentCb, onRemove: onRemoveCb }) {
     onSelectObject = onSelect;
     onToggleVisibility = onVis;
     onGroupAdd = onGroupAddCb || null;
+    onGroupRemove = onGroupRemoveCb || null;
     onReparent = onReparentCb || null;
     onRemove = onRemoveCb || null;
 

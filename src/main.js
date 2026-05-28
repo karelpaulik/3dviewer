@@ -611,6 +611,7 @@ render();
 outlinerPanelEl = initOutliner({
     onSelect: (obj) => selectObject(obj),
     onGroupAdd: (obj) => toggleObjectInMultiSelect(obj),
+    onGroupRemove: (obj) => { const idx = selectedObjects.indexOf(obj); if (idx !== -1) toggleObjectInMultiSelect(obj); },
     onRemove: (obj) => removeModel(obj),
     onReparent: (draggedObj, targetObj, position) => {
         // Guard: prevent circular hierarchy (dropping onto own descendant)
