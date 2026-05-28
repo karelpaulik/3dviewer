@@ -732,12 +732,29 @@ function createTreeNode(obj, depth) {
         if (onReparent) onReparent(source, target, pos);
     });
 
-    // --- Context menu (right-click) ---
+    // --- Context menu (right-click + touch long-press) ---
     row.addEventListener('contextmenu', (e) => {
         e.preventDefault();
         e.stopPropagation();
         showCtxMenu(e.clientX, e.clientY, obj, li);
     });
+
+    // Long-press on touch devices (500 ms threshold)
+    let _longPressTimer = null;
+    row.addEventListener('touchstart', (e) => {
+        if (e.touches.length !== 1) return;
+        const touch = e.touches[0];
+        _longPressTimer = setTimeout(() => {
+            _longPressTimer = null;
+            showCtxMenu(touch.clientX, touch.clientY, obj, li);
+        }, 500);
+    }, { passive: true });
+    const _cancelLongPress = () => {
+        if (_longPressTimer) { clearTimeout(_longPressTimer); _longPressTimer = null; }
+    };
+    row.addEventListener('touchend',    _cancelLongPress, { passive: true });
+    row.addEventListener('touchcancel', _cancelLongPress, { passive: true });
+    row.addEventListener('touchmove',   _cancelLongPress, { passive: true });
 
     // Children container (lazy — not populated yet)
     if (hasChildren) {
