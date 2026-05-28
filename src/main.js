@@ -673,6 +673,50 @@ outlinerPanelEl = initOutliner({
         rebuildTree(loadedModels, true);
         render();
     },
+    onCloneObject: (obj) => {
+        if (!obj.parent) return;
+        const clone = obj.clone();
+        clone.name = obj.name + ' (copy)';
+        obj.parent.add(clone);
+        // Place clone immediately after original
+        const children = obj.parent.children;
+        const cloneIdx = children.indexOf(clone);
+        children.splice(cloneIdx, 1);
+        const origIdx = children.indexOf(obj);
+        children.splice(origIdx + 1, 0, clone);
+        // Register all meshes of the clone for raycasting
+        // Also clone materials so emissive highlight is independent from original.
+        // Reset xray/emissive state that may have been baked in from a selected original.
+        clone.traverse(child => {
+            if (child.isMesh) {
+                if (Array.isArray(child.material)) {
+                    child.material = child.material.map(m => {
+                        const mc = m.clone();
+                        if (mc.emissive) mc.emissive.setHex(0x000000);
+                        mc.depthTest = true;
+                        mc.needsUpdate = true;
+                        return mc;
+                    });
+                } else {
+                    child.material = child.material.clone();
+                    if (child.material.emissive) child.material.emissive.setHex(0x000000);
+                    child.material.depthTest = true;
+                    child.material.needsUpdate = true;
+                }
+                child.renderOrder = 0;
+                meshObjects.push(child);
+            }
+        });
+        // Sync loadedModels if cloned at root level
+        if (obj.parent === scene) {
+            if (!loadedModels.includes(clone)) {
+                const lmIdx = loadedModels.indexOf(obj);
+                loadedModels.splice(lmIdx + 1, 0, clone);
+            }
+        }
+        rebuildTree(loadedModels, true);
+        render();
+    },
     onSortChildren: (obj, recursive, descending) => {
         function sortNode(node) {
             node.children.sort((a, b) => descending

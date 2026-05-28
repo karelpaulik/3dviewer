@@ -17,6 +17,7 @@ let onGroupRemove = null;
 let onHideOthers = null;
 let onShowAll = null;
 let onSortChildren = null;
+let onCloneObject = null;
 
 // -------------------------------------------------------------------
 // Context menu
@@ -209,6 +210,21 @@ function showCtxMenu(x, y, obj, li) {
         menu.appendChild(sep3b);
     }
 
+    // --- Clone ---
+    const cloneItem = document.createElement('div');
+    cloneItem.className = 'outliner-ctx-item';
+    cloneItem.textContent = 'Clone';
+    cloneItem.addEventListener('click', () => {
+        hideCtxMenu();
+        if (onCloneObject) onCloneObject(obj);
+    });
+    menu.appendChild(cloneItem);
+
+    // Separator
+    const sepClone = document.createElement('div');
+    sepClone.className = 'outliner-ctx-sep';
+    menu.appendChild(sepClone);
+
     // --- Remove ---
     const removeItem = document.createElement('div');
     removeItem.className = 'outliner-ctx-item outliner-ctx-danger';
@@ -300,7 +316,7 @@ let currentMatchSet = new Set();
  * @param {{ onSelect: Function, onToggleVisibility: Function }} callbacks
  * @returns {HTMLDivElement} the panel element (for guiWrapper hit-testing)
  */
-export function initOutliner({ onSelect, onToggleVisibility: onVis, onGroupAdd: onGroupAddCb, onGroupRemove: onGroupRemoveCb, onHideOthers: onHideOthersCb, onShowAll: onShowAllCb, onReparent: onReparentCb, onRemove: onRemoveCb, onSortChildren: onSortChildrenCb }) {
+export function initOutliner({ onSelect, onToggleVisibility: onVis, onGroupAdd: onGroupAddCb, onGroupRemove: onGroupRemoveCb, onHideOthers: onHideOthersCb, onShowAll: onShowAllCb, onReparent: onReparentCb, onRemove: onRemoveCb, onSortChildren: onSortChildrenCb, onCloneObject: onCloneObjectCb }) {
     onSelectObject = onSelect;
     onToggleVisibility = onVis;
     onGroupAdd = onGroupAddCb || null;
@@ -310,6 +326,7 @@ export function initOutliner({ onSelect, onToggleVisibility: onVis, onGroupAdd: 
     onReparent = onReparentCb || null;
     onRemove = onRemoveCb || null;
     onSortChildren = onSortChildrenCb || null;
+    onCloneObject = onCloneObjectCb || null;
 
     // --- Panel container ---
     panelEl = document.createElement('div');
