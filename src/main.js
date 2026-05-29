@@ -7,6 +7,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
+import { ThreeMFLoader } from 'three/addons/loaders/3MFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
@@ -1718,6 +1719,7 @@ function addMainGui() {
     fileGui.add({ fn: importGlbFile }, 'fn').name('Import GLB…');
     fileGui.add({ fn: importGltfFile }, 'fn').name('Import GLTF (folder)…');
     fileGui.add({ fn: importObjFile }, 'fn').name('Import OBJ (folder)…');
+    fileGui.add({ fn: import3mfFile }, 'fn').name('Import 3MF…');
     fileGui.add({ fn: importStlFile }, 'fn').name('Import STL…');
     fileGui.add({ fn: importStpFile }, 'fn').name('Import STP/STEP…');
     fileGui.add({ fn: importIgesFile }, 'fn').name('Import IGS/IGES…');
@@ -5787,6 +5789,57 @@ function importObjFile() {
             console.error('[Import] Failed to load OBJ:', err);
             alert(`Failed to load OBJ: ${err.message}`);
         }
+    });
+    input.click();
+}
+
+function import3mfFile() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.3mf';
+    input.addEventListener('change', function() {
+        const file = input.files[0];
+        if (!file) return;
+        const url = URL.createObjectURL(file);
+        const loader = new ThreeMFLoader();
+        loader.load(url, function(object) {
+            URL.revokeObjectURL(url);
+
+            object.name = file.name.replace(/\.[^.]+$/, '');
+            object.userData.fileName = file.name;
+            object.traverse(child => {
+                child.userData.initPosition = child.position.clone();
+                child.userData.initRotation = child.rotation.clone();
+                child.userData.initScale    = child.scale.clone();
+                if (child.isMesh) {
+                    const mats = Array.isArray(child.material)
+                        ? child.material.map(m => m.clone())
+                        : child.material.clone();
+                    child.material = mats;
+                    const matsArr = Array.isArray(mats) ? mats : [mats];
+                    matsArr.forEach(mat => {
+                        mat.clippingPlanes      = clipPlanes;
+                        mat.clipIntersection    = true;
+                        mat.side                = THREE.DoubleSide;
+                        mat.polygonOffset       = true;
+                        mat.polygonOffsetFactor = 1;
+                    });
+                    meshObjects.push(child);
+                }
+            });
+
+            scene.add(object);
+            loadedModels.push(object);
+            rebuildTree(loadedModels);
+            if (!fileNameInput.value) fileNameInput.value = object.name;
+            fitView();
+            render();
+            console.log(`[Import] 3MF "${file.name}" loaded successfully.`);
+        }, undefined, function(err) {
+            URL.revokeObjectURL(url);
+            console.error('[Import] Failed to load 3MF:', err);
+            alert(`Failed to load 3MF: ${err.message}`);
+        });
     });
     input.click();
 }
