@@ -1714,6 +1714,7 @@ function addMainGui() {
     // --- File panel (Export / Import) ---
     const fileGui = new GUI({ container: guiContainer, title: 'File' });
     fileGui.add({ fn: importGlbFile }, 'fn').name('Import GLB…');
+    fileGui.add({ fn: importGltfFile }, 'fn').name('Import GLTF (folder)…');
     fileGui.add({ fn: importStlFile }, 'fn').name('Import STL…');
     fileGui.add({ fn: importStpFile }, 'fn').name('Import STP/STEP…');
     fileGui.add({ fn: importIgesFile }, 'fn').name('Import IGS/IGES…');
@@ -5602,6 +5603,73 @@ function importGlbFile() {
         }).catch(err => {
             URL.revokeObjectURL(url);
             console.error(`[Import] Failed to load "${file.name}":`, err);
+        });
+    });
+    input.click();
+}
+
+function importGltfFile() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.webkitdirectory = true;
+    input.addEventListener('change', async function() {
+        const files = Array.from(input.files);
+        if (!files.length) return;
+
+        // Find the .gltf file in the selected folder
+        const gltfFile = files.find(f => f.name.toLowerCase().endsWith('.gltf'));
+        if (!gltfFile) {
+            console.error('[Import] No .gltf file found in the selected folder.');
+            alert('No .gltf file found in the selected folder.');
+            return;
+        }
+
+        // Build map: webkitRelativePath → blob URL (for all dependency files)
+        const filePathMap = new Map(); // webkitRelativePath → blobURL
+        const createdUrls = [];
+        for (const file of files) {
+            if (file === gltfFile) continue;
+            const url = URL.createObjectURL(file);
+            filePathMap.set(file.webkitRelativePath, url);
+            createdUrls.push(url);
+        }
+
+        // Base directory of .gltf file (e.g. "model/" for "model/scene.gltf")
+        const gltfRelPath = gltfFile.webkitRelativePath;
+        const gltfBaseDir = gltfRelPath.substring(0, gltfRelPath.lastIndexOf('/') + 1);
+
+        // Read and patch the .gltf JSON: replace URI references with blob URLs
+        let gltfJson;
+        try {
+            gltfJson = JSON.parse(await gltfFile.text());
+        } catch (e) {
+            console.error('[Import] Failed to parse .gltf JSON:', e);
+            createdUrls.forEach(u => URL.revokeObjectURL(u));
+            return;
+        }
+
+        const replaceUri = (uri) => {
+            if (!uri || uri.startsWith('data:') || uri.startsWith('blob:') || uri.startsWith('http')) return uri;
+            const fullPath = gltfBaseDir + uri;
+            return filePathMap.get(fullPath) || uri;
+        };
+
+        if (gltfJson.buffers) gltfJson.buffers.forEach(b => { if (b.uri) b.uri = replaceUri(b.uri); });
+        if (gltfJson.images) gltfJson.images.forEach(img => { if (img.uri) img.uri = replaceUri(img.uri); });
+
+        // Create patched .gltf as blob URL and load it via the existing loader
+        const patchedBlob = new Blob([JSON.stringify(gltfJson)], { type: 'model/gltf+json' });
+        const gltfBlobUrl = URL.createObjectURL(patchedBlob);
+        createdUrls.push(gltfBlobUrl);
+
+        loadGlbModel(gltfBlobUrl, gltfFile.name, 0.001, true).then(() => {
+            createdUrls.forEach(u => URL.revokeObjectURL(u));
+            if (!fileNameInput.value) fileNameInput.value = gltfFile.name.replace(/\.[^.]+$/, '');
+            fitView();
+            console.log(`[Import] GLTF "${gltfFile.name}" loaded successfully.`);
+        }).catch(err => {
+            createdUrls.forEach(u => URL.revokeObjectURL(u));
+            console.error(`[Import] Failed to load "${gltfFile.name}":`, err);
         });
     });
     input.click();
