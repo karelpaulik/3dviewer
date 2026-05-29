@@ -247,6 +247,9 @@ sectionBtn.addEventListener('click', () => {
     viewProp.sectionGizmo = viewProp.section;
     activateSectionGizmo(viewProp.section);
     updateSectionCrossLines();
+    viewProp.solidSection = viewProp.section;
+    if (viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render);
+    else clearSolidSection(scene, render);
     render();
     sectionBtn.classList.toggle('active', viewProp.section);
     if (sectionCtrl) sectionCtrl.updateDisplay();
@@ -410,7 +413,7 @@ const viewProp = {
     autoUpdateSectionLines: false, // Automaticky aktualizovat průřezové čáry při změnách scény
     sectionCrossLines: true, // Průřezové čáry vázané na section view clip planes
     crossSectionOnHidden: false, // Aplikovat průřezové čáry i na skryté objekty
-    solidSection: true, // Solid (capped) section cut
+    solidSection: false, // Solid (capped) section cut
     capColor: '#00ffff', // Color of the solid section cap faces
     transformSpace: true,  // true = world, false = local
     snapTranslation: 10,   // krok translace
@@ -1486,7 +1489,7 @@ function addMainGui() {
             render();
         });
         const sectionFolder = folderProp.addFolder("Section view");   
-            sectionCtrl = sectionFolder.add(viewProp, 'section').name('Section').onChange(function(value){renderer.localClippingEnabled = value; viewProp.sectionGizmo = value; activateSectionGizmo(value); updateSectionCrossLines(); render(); sectionBtn.classList.toggle('active', value); }).listen();
+            sectionCtrl = sectionFolder.add(viewProp, 'section').name('Section').onChange(function(value){renderer.localClippingEnabled = value; viewProp.sectionGizmo = value; activateSectionGizmo(value); updateSectionCrossLines(); viewProp.solidSection = value; if (value) computeSolidSection(scene, meshObjects, viewProp, render); else clearSolidSection(scene, render); render(); sectionBtn.classList.toggle('active', value); }).listen();
             sectionFolder.add(viewProp, 'sectionCrossLines').name('Cross Section Lines').onChange(function(value){updateSectionCrossLines(); render(); });
             sectionFolder.addColor(viewProp, 'crossSectionColor').name('Cross Lines Color').onChange(function(value){ if(viewProp.sectionCrossLines) { updateSectionCrossLines(); render(); } });
             sectionFolder.add(viewProp, 'crossSectionOnHidden').name('Apply to hidden').onChange(function(value){ if(viewProp.sectionCrossLines) updateSectionCrossLines(); if(viewProp.showCrossSection) updateCrossSectionLines(); render(); });
