@@ -5,6 +5,8 @@ import gsap from 'gsap';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
@@ -1715,6 +1717,7 @@ function addMainGui() {
     const fileGui = new GUI({ container: guiContainer, title: 'File' });
     fileGui.add({ fn: importGlbFile }, 'fn').name('Import GLB…');
     fileGui.add({ fn: importGltfFile }, 'fn').name('Import GLTF (folder)…');
+    fileGui.add({ fn: importObjFile }, 'fn').name('Import OBJ (folder)…');
     fileGui.add({ fn: importStlFile }, 'fn').name('Import STL…');
     fileGui.add({ fn: importStpFile }, 'fn').name('Import STP/STEP…');
     fileGui.add({ fn: importIgesFile }, 'fn').name('Import IGS/IGES…');
@@ -5671,6 +5674,119 @@ function importGltfFile() {
             createdUrls.forEach(u => URL.revokeObjectURL(u));
             console.error(`[Import] Failed to load "${gltfFile.name}":`, err);
         });
+    });
+    input.click();
+}
+
+function importObjFile() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.webkitdirectory = true;
+    input.addEventListener('change', async function() {
+        const files = Array.from(input.files);
+        if (!files.length) return;
+
+        const objFile = files.find(f => f.name.toLowerCase().endsWith('.obj'));
+        if (!objFile) {
+            console.error('[Import] No .obj file found in the selected folder.');
+            alert('No .obj file found in the selected folder.');
+            return;
+        }
+
+        // Root folder name (first component of webkitRelativePath)
+        const rootFolder = objFile.webkitRelativePath.split('/')[0];
+
+        // Build maps: basename → blobURL, path-without-root → blobURL
+        const fileNameMap = new Map();  // "diffuse.jpg" → blobURL
+        const relPathMap  = new Map();  // "textures/diffuse.jpg" → blobURL
+        const createdUrls = [];
+        for (const file of files) {
+            const url = URL.createObjectURL(file);
+            fileNameMap.set(file.name.toLowerCase(), url);
+            const pathWithoutRoot = file.webkitRelativePath.substring(rootFolder.length + 1);
+            relPathMap.set(pathWithoutRoot, url);
+            createdUrls.push(url);
+        }
+
+        const cleanup = () => createdUrls.forEach(u => URL.revokeObjectURL(u));
+
+        // LoadingManager: redirect blob-resolved URLs back to our blob URLs
+        const manager = new THREE.LoadingManager();
+        manager.setURLModifier(url => {
+            // Blob URL → extract path component: "blob:http://host/textures/diffuse.jpg" → "textures/diffuse.jpg"
+            const blobPathMatch = url.match(/^blob:https?:\/\/[^/]+\/(.+)$/);
+            if (blobPathMatch) {
+                const pathPart = decodeURIComponent(blobPathMatch[1]);
+                if (relPathMap.has(pathPart)) return relPathMap.get(pathPart);
+            }
+            // Fallback: match by filename only
+            const basename = url.split('/').pop().split('?')[0].toLowerCase();
+            if (fileNameMap.has(basename)) return fileNameMap.get(basename);
+            return url;
+        });
+
+        try {
+            // Load MTL if present, then load textures
+            let materials = null;
+            const mtlFile = files.find(f => f.name.toLowerCase().endsWith('.mtl'));
+            if (mtlFile) {
+                const mtlLoader = new MTLLoader(manager);
+                const mtlBlobUrl = fileNameMap.get(mtlFile.name.toLowerCase());
+                materials = await new Promise((resolve, reject) => {
+                    mtlLoader.load(mtlBlobUrl, resolve, undefined, reject);
+                });
+                materials.preload();
+            }
+
+            // Load OBJ
+            const objLoader = new OBJLoader(manager);
+            if (materials) objLoader.setMaterials(materials);
+
+            const objBlobUrl = fileNameMap.get(objFile.name.toLowerCase());
+            const object = await new Promise((resolve, reject) => {
+                objLoader.load(objBlobUrl, resolve, undefined, reject);
+            });
+
+            // Integrate into scene
+            object.name = objFile.name.replace(/\.[^.]+$/, '');
+            object.userData.fileName = objFile.name;
+            object.traverse(child => {
+                child.userData.initPosition = child.position.clone();
+                child.userData.initRotation = child.rotation.clone();
+                child.userData.initScale    = child.scale.clone();
+                if (child.isMesh) {
+                    if (!child.material) {
+                        child.material = new THREE.MeshStandardMaterial({ color: 0xaaaaaa });
+                    }
+                    const mats = Array.isArray(child.material)
+                        ? child.material.map(m => m.clone())
+                        : child.material.clone();
+                    child.material = mats;
+                    const matsArr = Array.isArray(mats) ? mats : [mats];
+                    matsArr.forEach(mat => {
+                        mat.clippingPlanes    = clipPlanes;
+                        mat.clipIntersection  = true;
+                        mat.side              = THREE.DoubleSide;
+                        mat.polygonOffset     = true;
+                        mat.polygonOffsetFactor = 1;
+                    });
+                    meshObjects.push(child);
+                }
+            });
+
+            scene.add(object);
+            loadedModels.push(object);
+            rebuildTree(loadedModels);
+            if (!fileNameInput.value) fileNameInput.value = object.name;
+            fitView();
+            render();
+            cleanup();
+            console.log(`[Import] OBJ "${objFile.name}" loaded successfully.`);
+        } catch (err) {
+            cleanup();
+            console.error('[Import] Failed to load OBJ:', err);
+            alert(`Failed to load OBJ: ${err.message}`);
+        }
     });
     input.click();
 }
