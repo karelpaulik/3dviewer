@@ -1808,7 +1808,11 @@ function addMainGui() {
         clearAnnotations(render);
         clearAnnotations3d(render);
     } }, 'fn').name('Clear annotations');
-    editGui.add({ fn() {
+    editGui.add(viewProp, 'transformSpace').name('Transform: World space').onChange(function(value) {
+        transformControls.setSpace( value ? 'world' : 'local' );
+    }).listen();
+    const materialFolder = editGui.addFolder('Material operations');
+    materialFolder.add({ fn() {
         const { count, affected } = countLegacyMaterials(loadedModels, ['basic']);
         if (count === 0) {
             alert('Žádné materiály typu MeshBasicMaterial nenalezeny.');
@@ -1818,7 +1822,7 @@ function addMainGui() {
             applyLegacyMaterialConversion(affected);
         }
     } }, 'fn').name('Check/Convert MeshBasicMaterial');
-    editGui.add({ fn() {
+    materialFolder.add({ fn() {
         const { count, affected } = countLegacyMaterials(loadedModels, ['phong']);
         if (count === 0) {
             alert('Žádné materiály typu MeshPhongMaterial nenalezeny.');
@@ -1828,7 +1832,7 @@ function addMainGui() {
             applyLegacyMaterialConversion(affected);
         }
     } }, 'fn').name('Check/Convert MeshPhongMaterial');
-    editGui.add({ fn() {
+    materialFolder.add({ fn() {
         const { count, affected } = countLegacyMaterials(loadedModels, ['lambert']);
         if (count === 0) {
             alert('Žádné materiály typu MeshLambertMaterial nenalezeny.');
@@ -1838,7 +1842,7 @@ function addMainGui() {
             applyLegacyMaterialConversion(affected);
         }
     } }, 'fn').name('Check/Convert MeshLambertMaterial');
-    editGui.add({ fn() {
+    materialFolder.add({ fn() {
         if (loadedModels.length === 0) { alert('Žádné načtené modely.'); return; }
         const typeCounts = new Map();
         loadedModels.forEach(root => {
@@ -1857,9 +1861,48 @@ function addMainGui() {
             .map(([type, count]) => `  ${type}: ${count}x`);
         alert(`Nalezené typy materiálů (${[...typeCounts.values()].reduce((a, b) => a + b, 0)} celkem):\n\n${lines.join('\n')}`);
     } }, 'fn').name('List All Material Types');
-    editGui.add(viewProp, 'transformSpace').name('Transform: World space').onChange(function(value) {
-        transformControls.setSpace( value ? 'world' : 'local' );
-    }).listen();
+    materialFolder.add({ fn() {
+        if (loadedModels.length === 0) { alert('Žádné načtené modely.'); return; }
+        const textures = new Set();
+        const textureSlots = ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap',
+            'aoMap', 'alphaMap', 'bumpMap', 'displacementMap', 'lightMap',
+            'envMap', 'specularMap', 'gradientMap', 'clearcoatMap', 'clearcoatNormalMap',
+            'clearcoatRoughnessMap', 'transmissionMap', 'thicknessMap', 'sheenColorMap',
+            'sheenRoughnessMap', 'specularIntensityMap', 'specularColorMap', 'iridescenceMap',
+            'iridescenceThicknessMap', 'anisotropyMap'];
+        loadedModels.forEach(root => {
+            root.traverse(child => {
+                if (!child.isMesh) return;
+                const mats = Array.isArray(child.material) ? child.material : [child.material];
+                mats.forEach(mat => {
+                    textureSlots.forEach(slot => {
+                        if (mat[slot]) textures.add(mat[slot]);
+                    });
+                });
+            });
+        });
+        if (textures.size === 0) { alert('Žádné textury nenalezeny.'); return; }
+        if (!confirm(`Nalezeno ${textures.size} textur(a).\nOdstranit všechny textury ze všech materiálů?`)) return;
+        loadedModels.forEach(root => {
+            root.traverse(child => {
+                if (!child.isMesh) return;
+                const mats = Array.isArray(child.material) ? child.material : [child.material];
+                mats.forEach(mat => {
+                    textureSlots.forEach(slot => {
+                        if (mat[slot]) {
+                            mat[slot].dispose();
+                            mat[slot] = null;
+                        }
+                    });
+                    mat.needsUpdate = true;
+                });
+            });
+        });
+        textures.forEach(t => t.dispose());
+        render();
+        alert(`Odstraněno ${textures.size} textur(a).`);
+    } }, 'fn').name('Check/Remove textures');
+    materialFolder.close();
         const rotationFolder = editGui.addFolder("Whole Model Rotation");
             rotationFolder.add({ fn() { rotateAllModels('x', Math.PI / 2); } }, 'fn').name('Rotate X +90°');
             rotationFolder.add({ fn() { rotateAllModels('x', -Math.PI / 2); } }, 'fn').name('Rotate X -90°');
