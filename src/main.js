@@ -1808,6 +1808,55 @@ function addMainGui() {
         clearAnnotations(render);
         clearAnnotations3d(render);
     } }, 'fn').name('Clear annotations');
+    editGui.add({ fn() {
+        const { count, affected } = countLegacyMaterials(loadedModels, ['basic']);
+        if (count === 0) {
+            alert('Žádné materiály typu MeshBasicMaterial nenalezeny.');
+            return;
+        }
+        if (confirm(`Nalezeno ${count} materiál(ů) typu MeshBasicMaterial.\nPřevést na MeshStandardMaterial?`)) {
+            applyLegacyMaterialConversion(affected);
+        }
+    } }, 'fn').name('Check/Convert MeshBasicMaterial');
+    editGui.add({ fn() {
+        const { count, affected } = countLegacyMaterials(loadedModels, ['phong']);
+        if (count === 0) {
+            alert('Žádné materiály typu MeshPhongMaterial nenalezeny.');
+            return;
+        }
+        if (confirm(`Nalezeno ${count} materiál(ů) typu MeshPhongMaterial.\nPřevést na MeshStandardMaterial?`)) {
+            applyLegacyMaterialConversion(affected);
+        }
+    } }, 'fn').name('Check/Convert MeshPhongMaterial');
+    editGui.add({ fn() {
+        const { count, affected } = countLegacyMaterials(loadedModels, ['lambert']);
+        if (count === 0) {
+            alert('Žádné materiály typu MeshLambertMaterial nenalezeny.');
+            return;
+        }
+        if (confirm(`Nalezeno ${count} materiál(ů) typu MeshLambertMaterial.\nPřevést na MeshStandardMaterial?`)) {
+            applyLegacyMaterialConversion(affected);
+        }
+    } }, 'fn').name('Check/Convert MeshLambertMaterial');
+    editGui.add({ fn() {
+        if (loadedModels.length === 0) { alert('Žádné načtené modely.'); return; }
+        const typeCounts = new Map();
+        loadedModels.forEach(root => {
+            root.traverse(child => {
+                if (!child.isMesh) return;
+                const mats = Array.isArray(child.material) ? child.material : [child.material];
+                mats.forEach(mat => {
+                    const type = mat.type || 'Unknown';
+                    typeCounts.set(type, (typeCounts.get(type) || 0) + 1);
+                });
+            });
+        });
+        if (typeCounts.size === 0) { alert('Žádné materiály nenalezeny.'); return; }
+        const lines = [...typeCounts.entries()]
+            .sort((a, b) => b[1] - a[1])
+            .map(([type, count]) => `  ${type}: ${count}x`);
+        alert(`Nalezené typy materiálů (${[...typeCounts.values()].reduce((a, b) => a + b, 0)} celkem):\n\n${lines.join('\n')}`);
+    } }, 'fn').name('List All Material Types');
     editGui.add(viewProp, 'transformSpace').name('Transform: World space').onChange(function(value) {
         transformControls.setSpace( value ? 'world' : 'local' );
     }).listen();
@@ -5846,6 +5895,69 @@ function import3mfFile() {
     input.click();
 }
 
+// --- Legacy material helpers ---
+
+function convertToStandardMaterial(mat) {
+    const std = new THREE.MeshStandardMaterial({
+        color:              mat.color        ? mat.color.clone()     : new THREE.Color(0x888888),
+        map:                mat.map          || null,
+        emissive:           mat.emissive     ? mat.emissive.clone()  : new THREE.Color(0x000000),
+        emissiveMap:        mat.emissiveMap  || null,
+        normalMap:          mat.normalMap    || null,
+        alphaMap:           mat.alphaMap     || null,
+        aoMap:              mat.aoMap        || null,
+        opacity:            mat.opacity      ?? 1,
+        transparent:        mat.transparent  ?? false,
+        side:               mat.side,
+        wireframe:          mat.wireframe    ?? false,
+        vertexColors:       mat.vertexColors ?? false,
+        clippingPlanes:     mat.clippingPlanes,
+        clipIntersection:   mat.clipIntersection,
+        polygonOffset:      mat.polygonOffset,
+        polygonOffsetFactor:mat.polygonOffsetFactor,
+        depthTest:          mat.depthTest    ?? true,
+        depthWrite:         mat.depthWrite   ?? true,
+    });
+    mat.dispose();
+    return std;
+}
+
+function countLegacyMaterials(objects, typeFilter = ['basic', 'phong', 'lambert']) {
+    let count = 0;
+    const affected = [];
+    objects.forEach(root => {
+        root.traverse(child => {
+            if (!child.isMesh) return;
+            const mats = Array.isArray(child.material) ? child.material : [child.material];
+            const indices = [];
+            mats.forEach((mat, i) => {
+                const isBasic = typeFilter.includes('basic') && mat.isMeshBasicMaterial;
+                const isPhong = typeFilter.includes('phong') && mat.isMeshPhongMaterial;
+                const isLambert = typeFilter.includes('lambert') && mat.isMeshLambertMaterial;
+                if (isBasic || isPhong || isLambert) {
+                    count++;
+                    indices.push(i);
+                }
+            });
+            if (indices.length > 0) affected.push({ mesh: child, indices });
+        });
+    });
+    return { count, affected };
+}
+
+function applyLegacyMaterialConversion(affected) {
+    affected.forEach(({ mesh, indices }) => {
+        if (Array.isArray(mesh.material)) {
+            indices.forEach(i => {
+                mesh.material[i] = convertToStandardMaterial(mesh.material[i]);
+            });
+        } else {
+            mesh.material = convertToStandardMaterial(mesh.material);
+        }
+    });
+    render();
+}
+
 function importFbxFile() {
     const input = document.createElement('input');
     input.type = 'file';
@@ -5929,6 +6041,18 @@ function importFbxFile() {
             render();
             cleanup();
             console.log(`[Import] FBX "${fbxFile.name}" loaded successfully.`);
+
+            // Check for legacy materials after import
+            const { count, affected } = countLegacyMaterials([object]);
+            if (count > 0) {
+                if (confirm(
+                    `Loaded FBX contains ${count} material(s) of type MeshBasicMaterial, MeshPhongMaterial or MeshLambertMaterial.\n` +
+                    `Convert to MeshStandardMaterial now for better rendering and selection highlight?\n\n` +
+                    `(You can also convert later via Edit → Check/Convert MeshBasicMaterial / MeshPhongMaterial / MeshLambertMaterial.)`
+                )) {
+                    applyLegacyMaterialConversion(affected);
+                }
+            }
         } catch (err) {
             cleanup();
             console.error('[Import] Failed to load FBX:', err);
