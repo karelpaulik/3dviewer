@@ -8,6 +8,7 @@ import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
 import { ThreeMFLoader } from 'three/addons/loaders/3MFLoader.js';
+import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
@@ -1720,6 +1721,7 @@ function addMainGui() {
     fileGui.add({ fn: importGltfFile }, 'fn').name('Import GLTF (folder)…');
     fileGui.add({ fn: importObjFile }, 'fn').name('Import OBJ (folder)…');
     fileGui.add({ fn: import3mfFile }, 'fn').name('Import 3MF…');
+    fileGui.add({ fn: importFbxFile }, 'fn').name('Import FBX (folder)…');
     fileGui.add({ fn: importStlFile }, 'fn').name('Import STL…');
     fileGui.add({ fn: importStpFile }, 'fn').name('Import STP/STEP…');
     fileGui.add({ fn: importIgesFile }, 'fn').name('Import IGS/IGES…');
@@ -4629,10 +4631,7 @@ function selectObject(object) {
             }
         } );
         lastSelectedMeshes.forEach( child => {
-            if (child.material.emissive) {
-                //child.material.emissive.setHex(0xff0000);
-                applyEmissive(child, 0xff0000);
-            }
+            applyEmissive(child, 0xff0000);
             applyXray(child);
         });
         console.log("selected object: ", lastSelectedObject);
@@ -5840,6 +5839,98 @@ function import3mfFile() {
             console.error('[Import] Failed to load 3MF:', err);
             alert(`Failed to load 3MF: ${err.message}`);
         });
+    });
+    input.click();
+}
+
+function importFbxFile() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.webkitdirectory = true;
+    input.addEventListener('change', async function() {
+        const files = Array.from(input.files);
+        if (!files.length) return;
+
+        const fbxFile = files.find(f => f.name.toLowerCase().endsWith('.fbx'));
+        if (!fbxFile) {
+            console.error('[Import] No .fbx file found in the selected folder.');
+            alert('No .fbx file found in the selected folder.');
+            return;
+        }
+
+        // Root folder name (first component of webkitRelativePath)
+        const rootFolder = fbxFile.webkitRelativePath.split('/')[0];
+
+        // Build maps for external texture resolution
+        const fileNameMap = new Map();  // "diffuse.jpg" → blobURL
+        const relPathMap  = new Map();  // "textures/diffuse.jpg" → blobURL
+        const createdUrls = [];
+        for (const file of files) {
+            const url = URL.createObjectURL(file);
+            fileNameMap.set(file.name.toLowerCase(), url);
+            const pathWithoutRoot = file.webkitRelativePath.substring(rootFolder.length + 1);
+            relPathMap.set(pathWithoutRoot, url);
+            createdUrls.push(url);
+        }
+
+        const cleanup = () => createdUrls.forEach(u => URL.revokeObjectURL(u));
+
+        // LoadingManager: redirect external texture requests to blob URLs
+        const manager = new THREE.LoadingManager();
+        manager.setURLModifier(url => {
+            const blobPathMatch = url.match(/^blob:https?:\/\/[^/]+\/(.+)$/);
+            if (blobPathMatch) {
+                const pathPart = decodeURIComponent(blobPathMatch[1]);
+                if (relPathMap.has(pathPart)) return relPathMap.get(pathPart);
+            }
+            const basename = url.split('/').pop().split('?')[0].toLowerCase();
+            if (fileNameMap.has(basename)) return fileNameMap.get(basename);
+            return url;
+        });
+
+        try {
+            const fbxBlobUrl = fileNameMap.get(fbxFile.name.toLowerCase());
+            const loader = new FBXLoader(manager);
+            const object = await new Promise((resolve, reject) => {
+                loader.load(fbxBlobUrl, resolve, undefined, reject);
+            });
+
+            object.name = fbxFile.name.replace(/\.[^.]+$/, '');
+            object.userData.fileName = fbxFile.name;
+            object.traverse(child => {
+                child.userData.initPosition = child.position.clone();
+                child.userData.initRotation = child.rotation.clone();
+                child.userData.initScale    = child.scale.clone();
+                if (child.isMesh) {
+                    const mats = Array.isArray(child.material)
+                        ? child.material.map(m => m.clone())
+                        : child.material.clone();
+                    const matsArr = Array.isArray(mats) ? mats : [mats];
+                    child.material = mats;
+                    matsArr.forEach(mat => {
+                        mat.clippingPlanes      = clipPlanes;
+                        mat.clipIntersection    = true;
+                        mat.side                = THREE.DoubleSide;
+                        mat.polygonOffset       = true;
+                        mat.polygonOffsetFactor = 1;
+                    });
+                    meshObjects.push(child);
+                }
+            });
+
+            scene.add(object);
+            loadedModels.push(object);
+            rebuildTree(loadedModels);
+            if (!fileNameInput.value) fileNameInput.value = object.name;
+            fitView();
+            render();
+            cleanup();
+            console.log(`[Import] FBX "${fbxFile.name}" loaded successfully.`);
+        } catch (err) {
+            cleanup();
+            console.error('[Import] Failed to load FBX:', err);
+            alert(`Failed to load FBX: ${err.message}`);
+        }
     });
     input.click();
 }
