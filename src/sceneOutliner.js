@@ -304,6 +304,7 @@ let lastLoadedModels = [];
 // Search input elements
 let searchInputEl = null;
 let clearBtnEl = null;
+let selectBtnEl = null;
 let renameBtnEl = null;
 let currentMatchSet = new Set();
 
@@ -348,7 +349,9 @@ export function initOutliner({ onSelect, onToggleVisibility: onVis, onGroupAdd: 
     searchInputEl.className = 'outliner-search-input';
     searchInputEl.addEventListener('input', () => {
         filterTree(searchInputEl.value);
-        clearBtnEl.style.display = searchInputEl.value ? 'flex' : 'none';
+        const hasVal = !!searchInputEl.value;
+        clearBtnEl.style.display = hasVal ? 'flex' : 'none';
+        selectBtnEl.style.display = hasVal ? 'flex' : 'none';
     });
     clearBtnEl = document.createElement('button');
     clearBtnEl.className = 'outliner-search-clear';
@@ -359,6 +362,18 @@ export function initOutliner({ onSelect, onToggleVisibility: onVis, onGroupAdd: 
         searchInputEl.value = '';
         filterTree('');
         clearBtnEl.style.display = 'none';
+        selectBtnEl.style.display = 'none';
+    });
+    selectBtnEl = document.createElement('button');
+    selectBtnEl.className = 'outliner-search-select';
+    selectBtnEl.textContent = '\u2714';
+    selectBtnEl.style.display = 'none';
+    selectBtnEl.title = 'Select all matching objects';
+    selectBtnEl.addEventListener('click', () => {
+        if (!onGroupAdd || currentMatchSet.size === 0) return;
+        for (const obj of currentMatchSet) {
+            onGroupAdd(obj);
+        }
     });
     renameBtnEl = document.createElement('button');
     renameBtnEl.className = 'outliner-search-rename';
@@ -367,6 +382,7 @@ export function initOutliner({ onSelect, onToggleVisibility: onVis, onGroupAdd: 
     renameBtnEl.addEventListener('click', openRenameDialog);
     searchBar.appendChild(searchInputEl);
     searchBar.appendChild(clearBtnEl);
+    searchBar.appendChild(selectBtnEl);
     searchBar.appendChild(renameBtnEl);
     panelEl.appendChild(searchBar);
 
@@ -424,6 +440,7 @@ export function rebuildTree(loadedModels, preserveExpanded = false) {
     if (!preserveExpanded && searchInputEl && searchInputEl.value) {
         searchInputEl.value = '';
         if (clearBtnEl) clearBtnEl.style.display = 'none';
+        if (selectBtnEl) selectBtnEl.style.display = 'none';
     }
     treeEl.innerHTML = '';
     objectToDom.clear = clearWeakMapViaTree; // WeakMap has no clear — we just rebuild

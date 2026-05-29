@@ -880,6 +880,22 @@ a, button, input, select {
 .outliner-search-rename:hover {
     color: #ddd;
 }
+.outliner-search-select {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    color: #7aad7a;
+    cursor: pointer;
+    font-size: 13px;
+    line-height: 1;
+    padding: 0 2px;
+}
+.outliner-search-select:hover {
+    color: #aee8ae;
+}
 
 /* ===== Outliner Context Menu ===== */
 .outliner-ctx-menu {
