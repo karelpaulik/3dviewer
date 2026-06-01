@@ -7388,6 +7388,7 @@ function addHelpGui() {
     document.body.appendChild(aboutDialog);
 
     const helpGui = new GUI({ container: guiContainer, title: 'Help' });
+    helpGui.add({ fn() { openHelp('/help/guide-for-beginners.json'); } }, 'fn').name('📖 Guide for beginners');
     helpGui.add({ fn() { openHelp('/help/supported-file-formats.json'); } }, 'fn').name('📂 Supported File Formats');
     helpGui.add({ fn() { aboutDialog.showModal(); } }, 'fn').name('About');
     registerGuiPanel('Help', helpGui);
