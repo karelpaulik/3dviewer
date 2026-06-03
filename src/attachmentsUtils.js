@@ -53,6 +53,8 @@ export function refreshAttachmentsGui() {
     _guiRef.add({ fn: _addAttachments }, 'fn').name('+ Add files…');
     // "Paste image from clipboard" button
     _guiRef.add({ fn: _pasteImageFromClipboard }, 'fn').name('📋 Paste image…');
+    // "New blank image" button
+    _guiRef.add({ fn: _newImage }, 'fn').name('🖼 New image…');
 
     // "Download all as ZIP" button — only shown when there is at least one attachment
     if (attachmentsStore.length > 0) {
@@ -364,6 +366,63 @@ function _renderModal(att) {
     // Rebuild comment editor if panel is open
     if (_commentPanelOpen) _buildCommentEditor(att);
     _updateCommentBtn();
+}
+
+function _newImage() {
+    const input = window.prompt('New image size (width × height):', '800x600');
+    if (!input) return;
+    const match = input.match(/^(\d+)\s*[xX×,]\s*(\d+)$/);
+    if (!match) { alert('Invalid size. Use format: 800x600'); return; }
+    const w = Math.max(1, Math.min(8192, parseInt(match[1], 10)));
+    const h = Math.max(1, Math.min(8192, parseInt(match[2], 10)));
+
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, w, h);
+
+    const dataUrl = canvas.toDataURL('image/png');
+    const base64 = dataUrl.replace(/^data:image\/png;base64,/, '');
+    const size = Math.round(base64.length * 0.75);
+
+    const att = {
+        id: null,
+        name: 'new-image.png',
+        mimeType: 'image/png',
+        data: base64,
+        size,
+        addedAt: new Date().toISOString(),
+    };
+
+    openImageEditor(
+        att,
+        // onSaveOverwrite — image not yet in store, so add it
+        (newBase64, newSize, newMime) => {
+            attachmentsStore.push({
+                id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+                name: att.name,
+                mimeType: newMime,
+                data: newBase64,
+                size: newSize,
+                addedAt: att.addedAt,
+            });
+            refreshAttachmentsGui();
+        },
+        // onSaveNew
+        (newBase64, newSize, newName, newMime) => {
+            attachmentsStore.push({
+                id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+                name: newName,
+                mimeType: newMime,
+                data: newBase64,
+                size: newSize,
+                addedAt: new Date().toISOString(),
+            });
+            refreshAttachmentsGui();
+        }
+    );
 }
 
 function _editAttachment(att) {

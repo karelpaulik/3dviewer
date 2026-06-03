@@ -987,7 +987,6 @@ function _saveOverwrite() {
     // Approximate size from base64 length
     const size = Math.round(b64.length * 0.75);
     _onSaveOverwrite(b64, size, mime);
-    _close();
 }
 
 function _saveNew() {
@@ -999,7 +998,6 @@ function _saveNew() {
     const base    = lastDot >= 0 ? _att.name.slice(0, lastDot) : _att.name;
     const newName = `${base}_edited.${ext}`;
     _onSaveNew(b64, size, newName, mime);
-    _close();
 }
 
 function _download() {
