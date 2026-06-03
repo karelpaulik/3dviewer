@@ -113,6 +113,7 @@ function _buildUI() {
 
                 <button class="img-ed-btn" id="img-ed-undo" title="Undo (Ctrl+Z)">↩ Undo</button>
                 <button class="img-ed-btn" id="img-ed-redo" title="Redo (Ctrl+Y)">↪ Redo</button>
+                <button class="img-ed-btn" id="img-ed-goto-begin" title="Goto begin — zobrazit původní obrázek (undo/redo zůstává)">⏮ Orig</button>
                 <div class="img-ed-sep"></div>
 
                 <button class="img-ed-tool-btn" id="img-ed-tool-pan"  title="Pan / Move (Space+drag)">✋ Pan</button>
@@ -184,6 +185,7 @@ function _buildUI() {
     // ── Toolbar events ──
     _editorEl.querySelector('#img-ed-undo').addEventListener('click', _undo);
     _editorEl.querySelector('#img-ed-redo').addEventListener('click', _redo);
+    _editorEl.querySelector('#img-ed-goto-begin').addEventListener('click', _gotoBegin);
 
     ['pan', 'crop', 'pen', 'text', 'rect', 'ellipse', 'line', 'arrow', 'highlight', 'eraser', 'callout', 'blur'].forEach(tool => {
         _editorEl.querySelector(`#img-ed-tool-${tool}`).addEventListener('click', () => _setTool(tool));
@@ -348,6 +350,17 @@ function _redo() {
     _canvas.height = state.height;
     _ctx.putImageData(state, 0, 0);
     _updateSizeLabel();
+}
+
+function _gotoBegin() {
+    if (_undoStack.length < 1) return;
+    const original = _undoStack[0];
+    _canvas.width  = original.width;
+    _canvas.height = original.height;
+    _ctx.putImageData(original, 0, 0);
+    _fitToView();
+    _updateSizeLabel();
+    // undo/redo stacks are intentionally left untouched
 }
 
 // ── Zoom & Pan ────────────────────────────────────────────────────────────────
@@ -916,12 +929,10 @@ function _drawCallout(cx, cy) {
     const r = Math.max(_penSize * 5, 14);
     _ctx.beginPath();
     _ctx.arc(cx, cy, r, 0, Math.PI * 2);
-    _ctx.fillStyle = _penColor;
-    _ctx.fill();
-    _ctx.strokeStyle = 'rgba(255,255,255,0.8)';
-    _ctx.lineWidth   = Math.max(1, _penSize * 0.5);
+    _ctx.strokeStyle = _penColor;
+    _ctx.lineWidth   = Math.max(1.5, _penSize);
     _ctx.stroke();
-    _ctx.fillStyle    = '#fff';
+    _ctx.fillStyle    = _penColor;
     _ctx.font         = `bold ${Math.round(r * 1.3)}px sans-serif`;
     _ctx.textAlign    = 'center';
     _ctx.textBaseline = 'middle';
