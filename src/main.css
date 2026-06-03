@@ -1937,11 +1937,22 @@ a, button, input, select {
 .img-ed-title {
     font-family: sans-serif;
     font-size: 12px;
-    color: #aaa;
+    color: #ccc;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 200px;
+    max-width: 220px;
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid transparent;
+    outline: none;
+    padding: 0 2px;
+    cursor: text;
+    transition: border-color 0.15s;
+}
+.img-ed-title:hover, .img-ed-title:focus {
+    border-bottom-color: #666;
+    color: #eee;
 }
 .img-ed-sep {
     width: 1px;

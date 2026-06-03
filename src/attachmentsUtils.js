@@ -398,29 +398,39 @@ function _newImage() {
 
     openImageEditor(
         att,
-        // onSaveOverwrite — image not yet in store, so add it
-        (newBase64, newSize, newMime) => {
-            attachmentsStore.push({
-                id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-                name: att.name,
-                mimeType: newMime,
-                data: newBase64,
-                size: newSize,
-                addedAt: att.addedAt,
-            });
+        // onSaveOverwrite — image not yet in store, so add it (or update if already saved via save-as-new)
+        (newBase64, newSize, newMime, currentAtt) => {
+            const target = currentAtt || att;
+            const storeEntry = attachmentsStore.find(a => a.id === target.id);
+            if (storeEntry) {
+                storeEntry.data     = newBase64;
+                storeEntry.size     = newSize;
+                storeEntry.mimeType = newMime;
+            } else {
+                attachmentsStore.push({
+                    id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+                    name: target.name,
+                    mimeType: newMime,
+                    data: newBase64,
+                    size: newSize,
+                    addedAt: target.addedAt || new Date().toISOString(),
+                });
+            }
             refreshAttachmentsGui();
         },
         // onSaveNew
         (newBase64, newSize, newName, newMime) => {
-            attachmentsStore.push({
+            const newAtt = {
                 id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
                 name: newName,
                 mimeType: newMime,
                 data: newBase64,
                 size: newSize,
                 addedAt: new Date().toISOString(),
-            });
+            };
+            attachmentsStore.push(newAtt);
             refreshAttachmentsGui();
+            return newAtt;
         }
     );
 }
@@ -432,23 +442,26 @@ function _editAttachment(att) {
     openImageEditor(
         att,
         // onSaveOverwrite
-        (newBase64, newSize, newMime) => {
-            att.data     = newBase64;
-            att.size     = newSize;
-            att.mimeType = newMime;
+        (newBase64, newSize, newMime, currentAtt) => {
+            const target = attachmentsStore.find(a => a.id === (currentAtt || att).id) || att;
+            target.data     = newBase64;
+            target.size     = newSize;
+            target.mimeType = newMime;
             refreshAttachmentsGui();
         },
         // onSaveNew
         (newBase64, newSize, newName, newMime) => {
-            attachmentsStore.push({
+            const newAtt = {
                 id:      Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
                 name:    newName,
                 mimeType: newMime,
                 data:    newBase64,
                 size:    newSize,
                 addedAt: new Date().toISOString(),
-            });
+            };
+            attachmentsStore.push(newAtt);
             refreshAttachmentsGui();
+            return newAtt;
         }
     );
 }

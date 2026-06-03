@@ -112,7 +112,7 @@ function _buildUI() {
             <div id="img-editor-toolbar">
 
                 <div class="img-ed-row img-ed-row-top">
-                    <span class="img-ed-title" id="img-ed-filename"></span>
+                    <input class="img-ed-title" id="img-ed-filename" title="Click to rename" spellcheck="false">
                     <div class="img-ed-sep"></div>
                     <button class="img-ed-btn" id="img-ed-undo"       title="Undo (Ctrl+Z)">↩ Undo</button>
                     <button class="img-ed-btn" id="img-ed-redo"       title="Redo (Ctrl+Y)">↪ Redo</button>
@@ -192,7 +192,13 @@ function _buildUI() {
     const ovCanvas = _editorEl.querySelector('#img-editor-overlay-canvas');
     const ovCtx    = ovCanvas.getContext('2d');
 
-    _editorEl.querySelector('#img-ed-filename').textContent = _att.name;
+    _editorEl.querySelector('#img-ed-filename').value = _att.name;
+
+    _editorEl.querySelector('#img-ed-filename').addEventListener('change', e => {
+        const v = e.target.value.trim();
+        if (v) _att.name = v;
+        else e.target.value = _att.name;
+    });
 
     // ── Toolbar events ──
     _editorEl.querySelector('#img-ed-undo').addEventListener('click', _undo);
@@ -986,18 +992,23 @@ function _saveOverwrite() {
     const { mime } = _getOutputMimeAndExt();
     // Approximate size from base64 length
     const size = Math.round(b64.length * 0.75);
-    _onSaveOverwrite(b64, size, mime);
+    _onSaveOverwrite(b64, size, mime, _att);
 }
 
 function _saveNew() {
     const b64  = _canvasToBase64();
     const { mime, ext } = _getOutputMimeAndExt();
     const size = Math.round(b64.length * 0.75);
-    // Suggest name with _edited suffix
     const lastDot = _att.name.lastIndexOf('.');
     const base    = lastDot >= 0 ? _att.name.slice(0, lastDot) : _att.name;
-    const newName = `${base}_edited.${ext}`;
-    _onSaveNew(b64, size, newName, mime);
+    const suggested = `${base}_new.${ext}`;
+    const newName = window.prompt('Save as new — enter file name:', suggested);
+    if (!newName || !newName.trim()) return;
+    const newAtt = _onSaveNew(b64, size, newName.trim(), mime);
+    if (newAtt) {
+        _att = newAtt;
+        _editorEl.querySelector('#img-ed-filename').value = _att.name;
+    }
 }
 
 function _download() {
