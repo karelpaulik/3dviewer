@@ -55,6 +55,14 @@ let _cropRect    = null;   // { x, y, w, h } in image coordinates
 // Text placement
 let _pendingText = false;
 
+// Shape drawing state (rect, ellipse, line, arrow, callout, blur)
+let _shapeFill       = false;
+let _isShaping       = false;
+let _shapeStart      = null;
+let _shapeSnapshot   = null;
+let _calloutCount    = 1;
+let _blurPreviewRect = null;
+
 // Resize dialog (keep ref to close it)
 let _resizeDialogEl = null;
 
@@ -71,6 +79,9 @@ function _launch(att, onSaveOverwrite, onSaveNew) {
     _panY            = 0;
     _activeTool      = 'pan';
     _cropRect        = null;
+    _calloutCount    = 1;
+    _shapeFill       = false;
+    _blurPreviewRect = null;
 
     _buildUI();
 
@@ -106,8 +117,18 @@ function _buildUI() {
 
                 <button class="img-ed-tool-btn" id="img-ed-tool-pan"  title="Pan / Move (Space+drag)">✋ Pan</button>
                 <button class="img-ed-tool-btn" id="img-ed-tool-crop" title="Crop">✂ Crop</button>
-                <button class="img-ed-tool-btn" id="img-ed-tool-pen"  title="Freehand pen">✏ Pen</button>
-                <button class="img-ed-tool-btn" id="img-ed-tool-text" title="Place text">T Text</button>
+                <button class="img-ed-tool-btn" id="img-ed-tool-pen"       title="Freehand pen">✏ Pen</button>
+                <button class="img-ed-tool-btn" id="img-ed-tool-text"      title="Place text (double-click on image)">T Text</button>
+                <button class="img-ed-tool-btn" id="img-ed-tool-rect"      title="Obdélník">▭ Rect</button>
+                <button class="img-ed-tool-btn" id="img-ed-tool-ellipse"   title="Elipsa">⬭ Ellipse</button>
+                <button class="img-ed-tool-btn" id="img-ed-tool-line"      title="Přímá čára">╱ Line</button>
+                <button class="img-ed-tool-btn" id="img-ed-tool-arrow"     title="Šipka s hlavicí">→ Arrow</button>
+                <button class="img-ed-tool-btn" id="img-ed-tool-highlight" title="Zvýrazňovač (poloprůhledný)">🖌 Hl</button>
+                <button class="img-ed-tool-btn" id="img-ed-tool-eraser"    title="Guma — vymazat kresbu">⬜ Erase</button>
+                <button class="img-ed-tool-btn" id="img-ed-tool-callout"   title="Číslovaný callout (kroužek s číslem)">① Callout</button>
+                <button class="img-ed-tool-btn" id="img-ed-tool-blur"      title="Pixelate / Blur výběr (ochrana soukromí)">⊞ Blur</button>
+                <button class="img-ed-btn" id="img-ed-fill-toggle"         title="Přepnout Fill / Outline pro tvary (Rect, Ellipse)">◻ Outline</button>
+                <button class="img-ed-btn" id="img-ed-callout-reset"       title="Reset callout číslování na 1">↺①</button>
                 <div class="img-ed-sep"></div>
 
                 <label class="img-ed-label" title="Pen / Text colour">
@@ -164,9 +185,17 @@ function _buildUI() {
     _editorEl.querySelector('#img-ed-undo').addEventListener('click', _undo);
     _editorEl.querySelector('#img-ed-redo').addEventListener('click', _redo);
 
-    ['pan', 'crop', 'pen', 'text'].forEach(tool => {
+    ['pan', 'crop', 'pen', 'text', 'rect', 'ellipse', 'line', 'arrow', 'highlight', 'eraser', 'callout', 'blur'].forEach(tool => {
         _editorEl.querySelector(`#img-ed-tool-${tool}`).addEventListener('click', () => _setTool(tool));
     });
+
+    _editorEl.querySelector('#img-ed-fill-toggle').addEventListener('click', () => {
+        _shapeFill = !_shapeFill;
+        const btn = _editorEl.querySelector('#img-ed-fill-toggle');
+        btn.textContent = _shapeFill ? '■ Fill' : '◻ Outline';
+        btn.classList.toggle('active', _shapeFill);
+    });
+    _editorEl.querySelector('#img-ed-callout-reset').addEventListener('click', () => { _calloutCount = 1; });
 
     _editorEl.querySelector('#img-ed-color').addEventListener('input', e => {
         _penColor  = e.target.value;
@@ -197,7 +226,8 @@ function _buildUI() {
     vp.addEventListener('mousemove', e => { _onMouseMove(e, ovCanvas, ovCtx); });
     vp.addEventListener('mouseup',   e => { _onMouseUp(e, ovCanvas, ovCtx); });
     vp.addEventListener('mouseleave', _onMouseLeave);
-    vp.addEventListener('dblclick', e => { if (_activeTool === 'text') _placeText(e); });
+    vp.addEventListener('click',    e => { if (_activeTool === 'text') _placeText(e); });
+    vp.addEventListener('dblclick', e => { if (_activeTool === 'text') e.stopPropagation(); });
 
     // ── Keyboard shortcuts ──
     document.addEventListener('keydown', _onKeyDown);
@@ -220,7 +250,7 @@ function _buildUI() {
 
 function _setTool(tool) {
     _activeTool = tool;
-    ['pan', 'crop', 'pen', 'text'].forEach(t => {
+    ['pan', 'crop', 'pen', 'text', 'rect', 'ellipse', 'line', 'arrow', 'highlight', 'eraser', 'callout', 'blur'].forEach(t => {
         const btn = _editorEl.querySelector(`#img-ed-tool-${t}`);
         if (btn) btn.classList.toggle('active', t === tool);
     });
@@ -232,6 +262,11 @@ function _setTool(tool) {
     _editorEl.querySelector('#img-ed-crop-sep').style.display    = showCrop ? '' : 'none';
 
     if (tool !== 'crop') { _cropRect = null; _cropStart = null; }
+    if (tool !== 'blur') {
+        _blurPreviewRect = null;
+        const _ovEl = _editorEl && _editorEl.querySelector('#img-editor-overlay-canvas');
+        if (_ovEl) _redrawOverlay(_ovEl, _ovEl.getContext('2d'));
+    }
 
     _updateHint();
     _updateCursor();
@@ -239,10 +274,18 @@ function _setTool(tool) {
 
 function _updateHint() {
     const hints = {
-        pan:  'Drag to pan | Scroll to zoom | Fit: F',
-        crop: 'Drag to select crop region | Apply / Cancel',
-        pen:  'Drag to draw | Double-click for dot',
-        text: 'Double-click to place text',
+        pan:       'Drag to pan | Scroll to zoom | Fit: F',
+        crop:      'Drag to select crop region | Apply / Cancel',
+        pen:       'Drag to draw freehand | Size = stroke width',
+        text:      'Click on image to place text',
+        rect:      'Drag to draw rectangle | Fill/Outline: toolbar toggle',
+        ellipse:   'Drag to draw ellipse | Fill/Outline: toolbar toggle',
+        line:      'Drag to draw straight line',
+        arrow:     'Drag to draw arrow (start → tip)',
+        highlight: 'Drag to highlight | semi-transparent | Size = brush width',
+        eraser:    'Drag to erase to transparent | Size controls width',
+        callout:   'Click to place numbered callout | ↺① resets counter',
+        blur:      'Drag to select area to pixelate | Size = block size',
     };
     const el = _editorEl && _editorEl.querySelector('#img-ed-hint');
     if (el) el.textContent = hints[_activeTool] || '';
@@ -251,7 +294,11 @@ function _updateHint() {
 function _updateCursor() {
     const vp = _editorEl && _editorEl.querySelector('#img-editor-viewport');
     if (!vp) return;
-    const cursors = { pan: 'grab', crop: 'crosshair', pen: 'crosshair', text: 'text' };
+    const cursors = {
+        pan: 'grab', crop: 'crosshair', pen: 'crosshair', text: 'text',
+        rect: 'crosshair', ellipse: 'crosshair', line: 'crosshair', arrow: 'crosshair',
+        highlight: 'crosshair', eraser: 'cell', callout: 'crosshair', blur: 'crosshair',
+    };
     vp.style.cursor = cursors[_activeTool] || 'default';
 }
 
@@ -377,6 +424,42 @@ function _onMouseDown(e) {
         _ctx.fill();
         return;
     }
+
+    if (_activeTool === 'highlight') {
+        _isDrawing = true;
+        const pt = _vpToImg(e.clientX, e.clientY);
+        _lastDrawPt = pt;
+        _ctx.save();
+        _ctx.globalAlpha = 0.4;
+        _ctx.beginPath();
+        _ctx.arc(pt.x, pt.y, _penSize * 3, 0, Math.PI * 2);
+        _ctx.fillStyle = _penColor;
+        _ctx.fill();
+        _ctx.restore();
+        return;
+    }
+
+    if (_activeTool === 'eraser') {
+        _isDrawing = true;
+        const pt = _vpToImg(e.clientX, e.clientY);
+        _lastDrawPt = pt;
+        _ctx.save();
+        _ctx.globalCompositeOperation = 'destination-out';
+        _ctx.beginPath();
+        _ctx.arc(pt.x, pt.y, _penSize * 2, 0, Math.PI * 2);
+        _ctx.fillStyle = 'rgba(0,0,0,1)';
+        _ctx.fill();
+        _ctx.restore();
+        return;
+    }
+
+    if (['rect', 'ellipse', 'line', 'arrow', 'callout', 'blur'].includes(_activeTool)) {
+        const pt = _vpToImg(e.clientX, e.clientY);
+        _isShaping     = true;
+        _shapeStart    = pt;
+        _shapeSnapshot = _ctx.getImageData(0, 0, _canvas.width, _canvas.height);
+        return;
+    }
 }
 
 function _onMouseMove(e, ovCanvas, ovCtx) {
@@ -397,15 +480,53 @@ function _onMouseMove(e, ovCanvas, ovCtx) {
 
     if (_isDrawing && _lastDrawPt) {
         const pt = _vpToImg(e.clientX, e.clientY);
-        _ctx.beginPath();
-        _ctx.moveTo(_lastDrawPt.x, _lastDrawPt.y);
-        _ctx.lineTo(pt.x, pt.y);
-        _ctx.strokeStyle = _penColor;
-        _ctx.lineWidth   = _penSize;
-        _ctx.lineCap     = 'round';
-        _ctx.lineJoin    = 'round';
-        _ctx.stroke();
+        if (_activeTool === 'pen') {
+            _ctx.beginPath();
+            _ctx.moveTo(_lastDrawPt.x, _lastDrawPt.y);
+            _ctx.lineTo(pt.x, pt.y);
+            _ctx.strokeStyle = _penColor;
+            _ctx.lineWidth   = _penSize;
+            _ctx.lineCap     = 'round';
+            _ctx.lineJoin    = 'round';
+            _ctx.stroke();
+        } else if (_activeTool === 'highlight') {
+            _ctx.save();
+            _ctx.globalAlpha = 0.4;
+            _ctx.beginPath();
+            _ctx.moveTo(_lastDrawPt.x, _lastDrawPt.y);
+            _ctx.lineTo(pt.x, pt.y);
+            _ctx.strokeStyle = _penColor;
+            _ctx.lineWidth   = _penSize * 6;
+            _ctx.lineCap     = 'round';
+            _ctx.lineJoin    = 'round';
+            _ctx.stroke();
+            _ctx.restore();
+        } else if (_activeTool === 'eraser') {
+            _ctx.save();
+            _ctx.globalCompositeOperation = 'destination-out';
+            _ctx.beginPath();
+            _ctx.moveTo(_lastDrawPt.x, _lastDrawPt.y);
+            _ctx.lineTo(pt.x, pt.y);
+            _ctx.strokeStyle = 'rgba(0,0,0,1)';
+            _ctx.lineWidth   = _penSize * 4;
+            _ctx.lineCap     = 'round';
+            _ctx.lineJoin    = 'round';
+            _ctx.stroke();
+            _ctx.restore();
+        }
         _lastDrawPt = pt;
+        return;
+    }
+
+    if (_isShaping && _shapeStart) {
+        const pt = _vpToImg(e.clientX, e.clientY);
+        if (_activeTool === 'blur') {
+            _blurPreviewRect = _normRect(_shapeStart, pt);
+            _redrawOverlay(ovCanvas, ovCtx);
+        } else {
+            _ctx.putImageData(_shapeSnapshot, 0, 0);
+            _applyShapeToCtx(_shapeStart, pt);
+        }
         return;
     }
 }
@@ -428,6 +549,25 @@ function _onMouseUp(e, ovCanvas, ovCtx) {
         _pushUndo();
         return;
     }
+
+    if (_isShaping) {
+        _isShaping = false;
+        const pt   = _vpToImg(e.clientX, e.clientY);
+        if (_activeTool === 'blur') {
+            const rect = _normRect(_shapeStart, pt);
+            if (rect.w > 2 && rect.h > 2) _applyBlur(rect);
+            _blurPreviewRect = null;
+            _redrawOverlay(ovCanvas, ovCtx);
+        } else {
+            _ctx.putImageData(_shapeSnapshot, 0, 0);
+            _commitShape(_shapeStart, pt);
+            if (_activeTool === 'callout') _calloutCount++;
+        }
+        _shapeSnapshot = null;
+        _shapeStart    = null;
+        _pushUndo();
+        return;
+    }
 }
 
 function _onMouseLeave() {
@@ -435,6 +575,18 @@ function _onMouseLeave() {
         _isDrawing  = false;
         _lastDrawPt = null;
         _pushUndo();
+    }
+    if (_isShaping) {
+        // Restore snapshot to cancel in-progress preview
+        if (_shapeSnapshot) {
+            _ctx.putImageData(_shapeSnapshot, 0, 0);
+            _shapeSnapshot = null;
+        }
+        _isShaping = false;
+        _shapeStart = null;
+        _blurPreviewRect = null;
+        const _ovEl = _editorEl && _editorEl.querySelector('#img-editor-overlay-canvas');
+        if (_ovEl) _redrawOverlay(_ovEl, _ovEl.getContext('2d'));
     }
     if (_isPanning) {
         _isPanning = false;
@@ -457,6 +609,25 @@ function _onKeyDown(e) {
 
 function _redrawOverlay(ov, ovCtx) {
     ovCtx.clearRect(0, 0, ov.width, ov.height);
+
+    if (_activeTool === 'blur' && _blurPreviewRect) {
+        const { x, y, w, h } = _blurPreviewRect;
+        const tl = _canvasToVp(x, y);
+        const br = _canvasToVp(x + w, y + h);
+        ovCtx.strokeStyle = '#fff';
+        ovCtx.lineWidth   = 1.5;
+        ovCtx.setLineDash([5, 3]);
+        ovCtx.strokeRect(tl.x, tl.y, br.x - tl.x, br.y - tl.y);
+        ovCtx.setLineDash([]);
+        ovCtx.fillStyle = 'rgba(0,0,0,0.6)';
+        ovCtx.fillRect(tl.x, tl.y - 18, 64, 16);
+        ovCtx.fillStyle = '#fff';
+        ovCtx.font = '10px sans-serif';
+        ovCtx.textBaseline = 'top';
+        ovCtx.fillText('Pixelate', tl.x + 4, tl.y - 17);
+        return;
+    }
+
     if (_activeTool !== 'crop' || !_cropRect) return;
 
     const { x, y, w, h } = _cropRect;
@@ -673,6 +844,121 @@ function _download() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+}
+
+// ── Shape tools ──────────────────────────────────────────────────────────────
+
+function _applyShapeToCtx(start, end) {
+    const x = Math.min(start.x, end.x);
+    const y = Math.min(start.y, end.y);
+    const w = Math.abs(end.x - start.x);
+    const h = Math.abs(end.y - start.y);
+    _ctx.save();
+    _ctx.strokeStyle = _penColor;
+    _ctx.fillStyle   = _penColor;
+    _ctx.lineWidth   = _penSize;
+    _ctx.lineCap     = 'round';
+    _ctx.lineJoin    = 'round';
+    switch (_activeTool) {
+        case 'rect':
+            if (_shapeFill) { _ctx.fillRect(x, y, w, h); }
+            else            { _ctx.strokeRect(x, y, w, h); }
+            break;
+        case 'ellipse':
+            if (w < 1 || h < 1) break;
+            _ctx.beginPath();
+            _ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
+            if (_shapeFill) _ctx.fill(); else _ctx.stroke();
+            break;
+        case 'line':
+            _ctx.beginPath();
+            _ctx.moveTo(start.x, start.y);
+            _ctx.lineTo(end.x, end.y);
+            _ctx.stroke();
+            break;
+        case 'arrow':
+            _drawArrow(start.x, start.y, end.x, end.y);
+            break;
+        case 'callout':
+            _drawCallout(end.x, end.y);
+            break;
+    }
+    _ctx.restore();
+}
+
+/** Alias — same as preview, called at mouseup to commit final position */
+function _commitShape(start, end) {
+    _applyShapeToCtx(start, end);
+}
+
+function _drawArrow(x1, y1, x2, y2) {
+    const headLen = Math.max(_penSize * 5, 12);
+    const angle   = Math.atan2(y2 - y1, x2 - x1);
+    _ctx.beginPath();
+    _ctx.moveTo(x1, y1);
+    _ctx.lineTo(x2, y2);
+    _ctx.stroke();
+    // Filled arrowhead
+    _ctx.save();
+    _ctx.translate(x2, y2);
+    _ctx.rotate(angle);
+    _ctx.beginPath();
+    _ctx.moveTo(0, 0);
+    _ctx.lineTo(-headLen, -headLen * 0.38);
+    _ctx.lineTo(-headLen,  headLen * 0.38);
+    _ctx.closePath();
+    _ctx.fillStyle = _penColor;
+    _ctx.fill();
+    _ctx.restore();
+}
+
+function _drawCallout(cx, cy) {
+    const r = Math.max(_penSize * 5, 14);
+    _ctx.beginPath();
+    _ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    _ctx.fillStyle = _penColor;
+    _ctx.fill();
+    _ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+    _ctx.lineWidth   = Math.max(1, _penSize * 0.5);
+    _ctx.stroke();
+    _ctx.fillStyle    = '#fff';
+    _ctx.font         = `bold ${Math.round(r * 1.3)}px sans-serif`;
+    _ctx.textAlign    = 'center';
+    _ctx.textBaseline = 'middle';
+    _ctx.fillText(String(_calloutCount), cx, cy);
+}
+
+function _applyBlur(rect) {
+    const blockSize = Math.max(4, Math.round(_penSize * 2));
+    const x  = Math.max(0, Math.round(rect.x));
+    const y  = Math.max(0, Math.round(rect.y));
+    const w  = Math.min(_canvas.width  - x, Math.round(rect.w));
+    const h  = Math.min(_canvas.height - y, Math.round(rect.h));
+    if (w < 2 || h < 2) return;
+    const imgData = _ctx.getImageData(x, y, w, h);
+    const d = imgData.data;
+    for (let by = 0; by < h; by += blockSize) {
+        for (let bx = 0; bx < w; bx += blockSize) {
+            const bw = Math.min(blockSize, w - bx);
+            const bh = Math.min(blockSize, h - by);
+            let r = 0, g = 0, b = 0, a = 0, cnt = 0;
+            for (let dy = 0; dy < bh; dy++) {
+                for (let dx = 0; dx < bw; dx++) {
+                    const i = ((by + dy) * w + (bx + dx)) * 4;
+                    r += d[i]; g += d[i+1]; b += d[i+2]; a += d[i+3]; cnt++;
+                }
+            }
+            r = Math.round(r/cnt); g = Math.round(g/cnt);
+            b = Math.round(b/cnt); a = Math.round(a/cnt);
+            for (let dy = 0; dy < bh; dy++) {
+                for (let dx = 0; dx < bw; dx++) {
+                    const i = ((by + dy) * w + (bx + dx)) * 4;
+                    d[i] = r; d[i+1] = g; d[i+2] = b; d[i+3] = a;
+                }
+            }
+        }
+    }
+    _ctx.putImageData(imgData, x, y);
 }
 
 // ── Close ─────────────────────────────────────────────────────────────────────

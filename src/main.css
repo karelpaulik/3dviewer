@@ -1947,7 +1947,7 @@ a, button, input, select {
     background: #444;
     border-color: #777;
 }
-.img-ed-tool-btn.active {
+.img-ed-tool-btn.active, .img-ed-btn.active {
     background: #1a4a8a;
     border-color: #4a8adf;
     color: #fff;
