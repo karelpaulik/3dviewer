@@ -2129,6 +2129,81 @@ a, button, input, select {
     margin-top: 12px;
     justify-content: flex-end;
 }
+/* ── Text placement dialog ───────────────────────────────────────────────── */
+.img-ed-text-dialog {
+    position: fixed;
+    background: #2a2a2a;
+    border: 1px solid #555;
+    border-radius: 6px;
+    padding: 0;
+    z-index: 200;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.7);
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    min-width: 260px;
+}
+.img-ed-txt-drag-handle {
+    background: #383838;
+    border-bottom: 1px solid #555;
+    border-radius: 6px 6px 0 0;
+    padding: 5px 10px;
+    font-size: 11px;
+    color: #aaa;
+    cursor: grab;
+    user-select: none;
+}
+.img-ed-txt-drag-handle:active { cursor: grabbing; }
+.img-ed-text-dialog > .img-ed-txt-input,
+.img-ed-text-dialog > .img-ed-text-opts,
+.img-ed-text-dialog > .img-ed-text-btns {
+    margin: 0 10px;
+}
+.img-ed-text-dialog > .img-ed-txt-input  { margin-top: 8px; }
+.img-ed-text-dialog > .img-ed-text-opts  { margin-top: 6px; }
+.img-ed-text-dialog > .img-ed-text-btns  { margin-top: 6px; margin-bottom: 10px; }
+.img-ed-txt-input {
+    background: #1a1a1a;
+    border: 1px solid #666;
+    border-radius: 3px;
+    color: #eee;
+    padding: 5px 8px;
+    font-size: 13px;
+    outline: none;
+    width: 100%;
+    box-sizing: border-box;
+    resize: vertical;
+    min-height: 60px;
+    font-family: sans-serif;
+    line-height: 1.4;
+}
+.img-ed-txt-input:focus { border-color: #4a8adf; }
+.img-ed-text-opts {
+    font-size: 12px;
+    color: #ccc;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+.img-ed-text-opts label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+.img-ed-text-opts input[type="number"] {
+    background: #1a1a1a;
+    border: 1px solid #555;
+    border-radius: 3px;
+    color: #ddd;
+    padding: 2px 4px;
+    font-size: 12px;
+}
+.img-ed-text-btns {
+    display: flex;
+    gap: 6px;
+    justify-content: flex-end;
+}
+.img-ed-text-btns .img-ed-btn {
+    width: auto;
+    padding: 0 10px;
+}
 .img-dialog-preview-info {
     color: #2a8a2a;
     font-weight: 500;

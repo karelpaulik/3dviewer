@@ -55,7 +55,16 @@ let _cropStart   = null;
 let _cropRect    = null;   // { x, y, w, h } in image coordinates
 
 // Text placement
-let _pendingText = false;
+let _pendingText    = false;
+let _textDialogEl   = null;   // floating text-input dialog
+let _textSnapshot   = null;   // canvas snapshot for live preview
+// Text drag-on-canvas (while dialog is open)
+let _textPos        = null;   // { x, y } text anchor in image coords
+let _textBBox       = null;   // { x, y, w, h } in image coords — for drag hit-test
+let _isDraggingText = false;
+let _textDragOff       = null;   // { dx, dy } offset from anchor at drag start
+let _textDragJustEnded = false;  // suppress click event after text drag ends
+let _textPreviewFn  = null;   // () => void — redraw current text preview
 
 // Eraser shape
 let _eraserShape     = 'circle'; // 'circle' | 'square'
@@ -268,7 +277,12 @@ function _buildUI() {
     vp.addEventListener('mousemove', e => { _onMouseMove(e, ovCanvas, ovCtx); });
     vp.addEventListener('mouseup',   e => { _onMouseUp(e, ovCanvas, ovCtx); });
     vp.addEventListener('mouseleave', _onMouseLeave);
-    vp.addEventListener('click',    e => { if (_activeTool === 'text') _placeText(e); });
+    vp.addEventListener('click',    e => {
+        if (_activeTool === 'text') {
+            if (_textDragJustEnded) { _textDragJustEnded = false; return; }
+            _placeText(e);
+        }
+    });
     vp.addEventListener('dblclick', e => { if (_activeTool === 'text') e.stopPropagation(); });
 
     // ── Keyboard shortcuts ──
@@ -291,6 +305,7 @@ function _buildUI() {
 // ── Tool helpers ──────────────────────────────────────────────────────────────
 
 function _setTool(tool) {
+    _cancelTextDialog();
     _activeTool = tool;
     ['pan', 'crop', 'pen', 'text', 'rect', 'ellipse', 'line', 'arrow', 'highlight', 'eraser', 'callout', 'blur'].forEach(t => {
         const btn = _editorEl.querySelector(`#img-ed-tool-${t}`);
@@ -488,6 +503,17 @@ function _onWheel(e) {
 function _onMouseDown(e) {
     if (e.button !== 0) return;
 
+    // ── Text drag (while text dialog is open) ──
+    if (_textDialogEl && _textBBox) {
+        const imgPt = _vpToImg(e.clientX, e.clientY);
+        if (imgPt.x >= _textBBox.x && imgPt.x <= _textBBox.x + _textBBox.w &&
+            imgPt.y >= _textBBox.y && imgPt.y <= _textBBox.y + _textBBox.h) {
+            _isDraggingText = true;
+            _textDragOff = { dx: imgPt.x - _textPos.x, dy: imgPt.y - _textPos.y };
+            return;
+        }
+    }
+
     if (_activeTool === 'pan' || e.ctrlKey) {
         _isPanning = true;
         _panStart  = { x: e.clientX - _panX, y: e.clientY - _panY };
@@ -557,6 +583,24 @@ function _onMouseDown(e) {
 }
 
 function _onMouseMove(e, ovCanvas, ovCtx) {
+    // ── Text drag ──
+    if (_isDraggingText && _textPos) {
+        const imgPt = _vpToImg(e.clientX, e.clientY);
+        _textPos.x = imgPt.x - _textDragOff.dx;
+        _textPos.y = imgPt.y - _textDragOff.dy;
+        if (_textPreviewFn) _textPreviewFn();
+        return;
+    }
+
+    // ── Hover cursor over text bbox ──
+    if (_textDialogEl && _textBBox && !_isDraggingText) {
+        const imgPt = _vpToImg(e.clientX, e.clientY);
+        const inBox = imgPt.x >= _textBBox.x && imgPt.x <= _textBBox.x + _textBBox.w &&
+                      imgPt.y >= _textBBox.y && imgPt.y <= _textBBox.y + _textBBox.h;
+        const vp = _editorEl && _editorEl.querySelector('#img-editor-viewport');
+        if (vp) vp.style.cursor = inBox ? 'move' : 'text';
+    }
+
     if (_isPanning) {
         _panX = e.clientX - _panStart.x;
         _panY = e.clientY - _panStart.y;
@@ -652,6 +696,13 @@ function _onMouseMove(e, ovCanvas, ovCtx) {
 }
 
 function _onMouseUp(e, ovCanvas, ovCtx) {
+    if (_isDraggingText) {
+        _isDraggingText    = false;
+        _textDragOff       = null;
+        _textDragJustEnded = true;
+        return;
+    }
+
     if (_isPanning) {
         _isPanning = false;
         _updateCursor();
@@ -736,6 +787,25 @@ function _onKeyDown(e) {
 
 function _redrawOverlay(ov, ovCtx) {
     ovCtx.clearRect(0, 0, ov.width, ov.height);
+
+    // ── Text placement bbox ──
+    if (_textBBox) {
+        const tl = _canvasToVp(_textBBox.x, _textBBox.y);
+        const br = _canvasToVp(_textBBox.x + _textBBox.w, _textBBox.y + _textBBox.h);
+        const rx = tl.x, ry = tl.y, rw = br.x - tl.x, rh = br.y - tl.y;
+        ovCtx.strokeStyle = 'rgba(80,160,255,0.9)';
+        ovCtx.lineWidth   = 1.5;
+        ovCtx.setLineDash([4, 3]);
+        ovCtx.strokeRect(rx, ry, rw, rh);
+        ovCtx.setLineDash([]);
+        // Move icon badge
+        ovCtx.fillStyle = 'rgba(80,160,255,0.85)';
+        ovCtx.fillRect(rx - 1, ry - 16, 20, 16);
+        ovCtx.fillStyle = '#fff';
+        ovCtx.font = '11px sans-serif';
+        ovCtx.textBaseline = 'middle';
+        ovCtx.fillText('\u2725', rx + 2, ry - 8);
+    }
 
     if (_activeTool === 'blur' && _blurPreviewRect) {
         const { x, y, w, h } = _blurPreviewRect;
@@ -847,14 +917,188 @@ function _cancelCrop() {
 // ── Text placement ────────────────────────────────────────────────────────────
 
 function _placeText(e) {
-    const pt   = _vpToImg(e.clientX, e.clientY);
-    const text = window.prompt('Enter text:', '');
-    if (!text) return;
-    _ctx.font         = `${_fontSize}px ${_fontFamily}`;
-    _ctx.fillStyle    = _textColor;
-    _ctx.textBaseline = 'top';
-    _ctx.fillText(text, pt.x, pt.y);
-    _pushUndo();
+    // Close any existing text dialog first
+    _cancelTextDialog();
+
+    _textPos = _vpToImg(e.clientX, e.clientY);
+    _textSnapshot = _ctx.getImageData(0, 0, _canvas.width, _canvas.height);
+
+    const bgChecked = _bgColor ? 'checked' : '';
+    const bgVal     = _bgColor || '#ffffff';
+    const bgOpacity = _bgColor ? '1' : '0.4';
+
+    const dlg = document.createElement('div');
+    dlg.className = 'img-ed-text-dialog';
+    dlg.style.left = (e.clientX + 14) + 'px';
+    dlg.style.top  = (e.clientY + 14) + 'px';
+    dlg.innerHTML = `
+        <div class="img-ed-txt-drag-handle" title="Drag to move">✎ Insert text</div>
+        <textarea class="img-ed-txt-input" placeholder="Enter text… (Enter = new line, Ctrl+Enter = confirm)" autocomplete="off" spellcheck="false" rows="3"></textarea>
+        <div class="img-ed-text-opts">
+            <label title="Text color">Color
+                <input type="color" class="img-ed-txt-color" value="${_textColor}">
+            </label>
+            <label title="Font size (px)">Size
+                <input type="number" class="img-ed-txt-size" min="6" max="400" value="${_fontSize}" style="width:52px">
+            </label>
+            <label title="Text background color">
+                <input type="checkbox" class="img-ed-txt-bg-en" ${bgChecked}>
+                BG <input type="color" class="img-ed-txt-bg-col" value="${bgVal}" style="opacity:${bgOpacity}">
+            </label>
+        </div>
+        <div class="img-ed-text-btns">
+            <button class="img-ed-btn img-ed-btn-primary img-ed-txt-ok" title="Confirm (Ctrl+Enter)">OK</button>
+            <button class="img-ed-btn img-ed-txt-cancel">Cancel</button>
+        </div>`;
+
+    _editorEl.appendChild(dlg);
+    _textDialogEl = dlg;
+
+    // Clamp so dialog doesn't overflow the window
+    const dr = dlg.getBoundingClientRect();
+    if (dr.right  > window.innerWidth  - 8) dlg.style.left = (window.innerWidth  - dr.width  - 8) + 'px';
+    if (dr.bottom > window.innerHeight - 8) dlg.style.top  = (window.innerHeight - dr.height - 8) + 'px';
+
+    const textInput  = dlg.querySelector('.img-ed-txt-input');
+    const colorInp   = dlg.querySelector('.img-ed-txt-color');
+    const sizeInp    = dlg.querySelector('.img-ed-txt-size');
+    const bgEnCb     = dlg.querySelector('.img-ed-txt-bg-en');
+    const bgColInp   = dlg.querySelector('.img-ed-txt-bg-col');
+    let   localBg    = _bgColor;
+    let   localColor = _textColor;
+    let   localSize  = _fontSize;
+
+    // ── Drag dialog handle ──
+    const handle = dlg.querySelector('.img-ed-txt-drag-handle');
+    let _dragOff = null;
+    handle.addEventListener('mousedown', ev => {
+        if (ev.button !== 0) return;
+        ev.preventDefault();
+        const r = dlg.getBoundingClientRect();
+        _dragOff = { x: ev.clientX - r.left, y: ev.clientY - r.top };
+        const _onMove = mv => {
+            dlg.style.left = (mv.clientX - _dragOff.x) + 'px';
+            dlg.style.top  = (mv.clientY - _dragOff.y) + 'px';
+        };
+        const _onUp = () => {
+            document.removeEventListener('mousemove', _onMove);
+            document.removeEventListener('mouseup',   _onUp);
+            _dragOff = null;
+        };
+        document.addEventListener('mousemove', _onMove);
+        document.addEventListener('mouseup',   _onUp);
+    });
+
+    const _getOvCanvas = () => _editorEl && _editorEl.querySelector('#img-editor-overlay-canvas');
+
+    const _drawMultiline = (txt) => {
+        const lineHeight = localSize * 1.25;
+        const lines = txt.split('\n');
+        const pad   = Math.max(2, Math.round(localSize * 0.15));
+        _ctx.font         = `${localSize}px ${_fontFamily}`;
+        _ctx.textBaseline = 'top';
+        const maxW   = lines.reduce((m, l) => Math.max(m, _ctx.measureText(l).width), 0);
+        const totalH = lines.length * lineHeight;
+        // Update bounding box for drag hit-test
+        _textBBox = {
+            x: _textPos.x - pad,
+            y: _textPos.y - pad,
+            w: Math.max(maxW + pad * 2, 20),
+            h: totalH + pad * 2,
+        };
+        if (localBg) {
+            _ctx.fillStyle = localBg;
+            _ctx.fillRect(_textPos.x - pad, _textPos.y - pad, maxW + pad * 2, totalH + pad * 2);
+        }
+        _ctx.fillStyle = localColor;
+        lines.forEach((line, i) => {
+            _ctx.fillText(line, _textPos.x, _textPos.y + i * lineHeight);
+        });
+    };
+
+    const _preview = () => {
+        _ctx.putImageData(_textSnapshot, 0, 0);
+        const txt = textInput.value;
+        if (!txt) {
+            _textBBox = null;
+        } else {
+            _drawMultiline(txt);
+        }
+        // Redraw overlay bbox
+        const ov = _getOvCanvas();
+        if (ov) _redrawOverlay(ov, ov.getContext('2d'));
+    };
+
+    _textPreviewFn = _preview;
+
+    textInput.addEventListener('input', _preview);
+
+    colorInp.addEventListener('input', () => {
+        localColor = colorInp.value;
+        _textColor = localColor;
+        _preview();
+    });
+
+    sizeInp.addEventListener('input', () => {
+        const v = Math.max(6, Math.min(400, +sizeInp.value || localSize));
+        localSize = v;
+        _fontSize = v;
+        _preview();
+    });
+
+    bgEnCb.addEventListener('change', () => {
+        localBg = bgEnCb.checked ? bgColInp.value : null;
+        bgColInp.style.opacity = bgEnCb.checked ? '1' : '0.4';
+        _preview();
+    });
+    bgColInp.addEventListener('input', () => {
+        if (bgEnCb.checked) { localBg = bgColInp.value; _preview(); }
+    });
+
+    const _confirm = () => {
+        const txt = textInput.value;
+        if (txt) {
+            _preview();
+            _pushUndo();
+        } else {
+            _ctx.putImageData(_textSnapshot, 0, 0);
+        }
+        _closeTextDialog();
+    };
+
+    const _cancel = () => {
+        if (_textSnapshot) _ctx.putImageData(_textSnapshot, 0, 0);
+        _closeTextDialog();
+    };
+
+    dlg.querySelector('.img-ed-txt-ok').addEventListener('click', _confirm);
+    dlg.querySelector('.img-ed-txt-cancel').addEventListener('click', _cancel);
+
+    // Ctrl+Enter confirms; Escape cancels; plain Enter = new line (textarea default)
+    textInput.addEventListener('keydown', ev => {
+        if ((ev.ctrlKey || ev.metaKey) && ev.key === 'Enter') { ev.preventDefault(); _confirm(); }
+        if (ev.key === 'Escape') { ev.preventDefault(); _cancel(); }
+    });
+
+    textInput.focus();
+}
+
+function _closeTextDialog() {
+    if (_textDialogEl) { _textDialogEl.remove(); _textDialogEl = null; }
+    _textSnapshot    = null;
+    _textBBox        = null;
+    _textPos         = null;
+    _textPreviewFn   = null;
+    _isDraggingText  = false;
+    _textDragOff     = null;
+    // Clear overlay bbox
+    const ov = _editorEl && _editorEl.querySelector('#img-editor-overlay-canvas');
+    if (ov) _redrawOverlay(ov, ov.getContext('2d'));
+}
+
+function _cancelTextDialog() {
+    if (_textSnapshot && _canvas) _ctx.putImageData(_textSnapshot, 0, 0);
+    _closeTextDialog();
 }
 
 // ── Canvas Size dialog ───────────────────────────────────────────────────────
@@ -1062,7 +1306,7 @@ function _download() {
     const lastDot = _att.name.lastIndexOf('.');
     const base    = lastDot >= 0 ? _att.name.slice(0, lastDot) : _att.name;
     a.href     = url;
-    a.download = `${base}_edited.${ext}`;
+    a.download = `${base}.${ext}`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -1190,6 +1434,7 @@ function _applyBlur(rect) {
 
 function _close() {
     if (_editorEl) {
+        _closeTextDialog();
         document.removeEventListener('keydown', _editorEl._keyHandler);
         if (_editorEl._ro) _editorEl._ro.disconnect();
         _editorEl.remove();
