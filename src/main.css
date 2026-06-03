@@ -2067,6 +2067,16 @@ a, button, input, select {
     font-size: 12px;
 }
 .img-ed-resize-row input[type="checkbox"] { cursor: pointer; }
+.img-ed-anchor-btn {
+    background: #1a1a1a;
+    border: 1px solid #555;
+    border-radius: 3px;
+    color: #aaa;
+    cursor: pointer;
+    line-height: 1;
+}
+.img-ed-anchor-btn:hover { background: #2a3a4a; color: #fff; }
+.img-ed-anchor-btn.active { background: #1a4a8a; border-color: #4a8adf; color: #fff; }
 .img-ed-resize-btns {
     display: flex;
     gap: 8px;

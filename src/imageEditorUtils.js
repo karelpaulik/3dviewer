@@ -152,7 +152,8 @@ function _buildUI() {
                 <button class="img-ed-btn" id="img-ed-rotate-ccw" title="Rotate 90° CCW">↺ 90°</button>
                 <button class="img-ed-btn" id="img-ed-flip-h"     title="Flip Horizontal">⇄ H</button>
                 <button class="img-ed-btn" id="img-ed-flip-v"     title="Flip Vertical">⇅ V</button>
-                <button class="img-ed-btn" id="img-ed-resize"     title="Resize canvas">⊡ Resize</button>
+                <button class="img-ed-btn" id="img-ed-resize"       title="Resize canvas (scales image)">⊡ Resize</button>
+                <button class="img-ed-btn" id="img-ed-canvas-size" title="Canvas Size — změní plátno bez škálování obrazu">▦ Canvas size</button>
                 <div class="img-ed-sep"></div>
 
                 <button class="img-ed-btn img-ed-btn-primary" id="img-ed-apply-crop" style="display:none">✔ Apply Crop</button>
@@ -224,6 +225,7 @@ function _buildUI() {
     _editorEl.querySelector('#img-ed-flip-h').addEventListener('click', () => _flip('h'));
     _editorEl.querySelector('#img-ed-flip-v').addEventListener('click', () => _flip('v'));
     _editorEl.querySelector('#img-ed-resize').addEventListener('click', _showResizeDialog);
+    _editorEl.querySelector('#img-ed-canvas-size').addEventListener('click', _showCanvasSizeDialog);
 
     _editorEl.querySelector('#img-ed-apply-crop').addEventListener('click',  _applyCrop);
     _editorEl.querySelector('#img-ed-cancel-crop').addEventListener('click', _cancelCrop);
@@ -763,6 +765,99 @@ function _placeText(e) {
     _ctx.textBaseline = 'top';
     _ctx.fillText(text, pt.x, pt.y);
     _pushUndo();
+}
+
+// ── Canvas Size dialog ───────────────────────────────────────────────────────
+
+let _canvasSizeDialogEl = null;
+
+function _showCanvasSizeDialog() {
+    if (_canvasSizeDialogEl) _canvasSizeDialogEl.remove();
+    const origW = _canvas.width;
+    const origH = _canvas.height;
+
+    const dlg = document.createElement('div');
+    dlg.className = 'img-ed-resize-dialog';
+    dlg.innerHTML = `
+        <div class="img-ed-resize-title">Canvas Size</div>
+        <div class="img-ed-resize-row">
+            <label>Width\u00a0 <input type="number" id="img-ed-csw" min="1" value="${origW}" style="width:80px"> px</label>
+        </div>
+        <div class="img-ed-resize-row">
+            <label>Height <input type="number" id="img-ed-csh" min="1" value="${origH}" style="width:80px"> px</label>
+        </div>
+        <div class="img-ed-resize-row" style="margin-top:10px;font-size:11px;color:#aaa">Anchor</div>
+        <div id="img-ed-cs-anchor" style="display:grid;grid-template-columns:repeat(3,26px);gap:3px;margin-bottom:10px">
+            ${ ['nw','n','ne','w','c','e','sw','s','se'].map(k =>
+                `<button class="img-ed-anchor-btn${k==='c'?' active':''}" data-anchor="${k}" style="width:26px;height:26px;padding:0;font-size:13px">${
+                    {nw:'↖',n:'↑',ne:'↗',w:'←',c:'·',e:'→',sw:'↙',s:'↓',se:'↘'}[k]
+                }</button>`
+            ).join('') }
+        </div>
+        <div class="img-ed-resize-row" style="font-size:11px;color:#888">Fill: <span id="img-ed-cs-fill-label"></span></div>
+        <div class="img-ed-resize-btns">
+            <button class="img-ed-btn img-ed-btn-primary" id="img-ed-csapply">Apply</button>
+            <button class="img-ed-btn" id="img-ed-cscancel">Cancel</button>
+        </div>`;
+    _editorEl.appendChild(dlg);
+    _canvasSizeDialogEl = dlg;
+
+    // Fill label
+    const fillLabel = dlg.querySelector('#img-ed-cs-fill-label');
+    fillLabel.textContent = _bgColor ? _bgColor : 'transparent';
+    fillLabel.style.color = _bgColor || '#666';
+
+    // Anchor selection
+    let _anchor = 'c';
+    dlg.querySelectorAll('.img-ed-anchor-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            dlg.querySelectorAll('.img-ed-anchor-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            _anchor = btn.dataset.anchor;
+        });
+    });
+
+    const wInp = dlg.querySelector('#img-ed-csw');
+    const hInp = dlg.querySelector('#img-ed-csh');
+
+    dlg.querySelector('#img-ed-csapply').addEventListener('click', () => {
+        const nw = Math.max(1, Math.round(+wInp.value));
+        const nh = Math.max(1, Math.round(+hInp.value));
+
+        // Compute origin offset based on anchor
+        const anchorX = { nw:0, n:0.5, ne:1, w:0, c:0.5, e:1, sw:0, s:0.5, se:1 }[_anchor];
+        const anchorY = { nw:0, n:0,   ne:0, w:0.5, c:0.5, e:0.5, sw:1, s:1, se:1 }[_anchor];
+        const ox = Math.round((nw - origW) * anchorX);
+        const oy = Math.round((nh - origH) * anchorY);
+
+        const tmp = document.createElement('canvas');
+        tmp.width = nw; tmp.height = nh;
+        const tc = tmp.getContext('2d');
+
+        // Fill background
+        if (_bgColor) {
+            tc.fillStyle = _bgColor;
+            tc.fillRect(0, 0, nw, nh);
+        }
+        // Draw original image at offset
+        tc.drawImage(_canvas, ox, oy);
+
+        _canvas.width = nw; _canvas.height = nh;
+        _ctx.clearRect(0, 0, nw, nh);
+        if (_bgColor) {
+            _ctx.fillStyle = _bgColor;
+            _ctx.fillRect(0, 0, nw, nh);
+        }
+        _ctx.drawImage(tmp, 0, 0);
+
+        dlg.remove(); _canvasSizeDialogEl = null;
+        _fitToView();
+        _pushUndo();
+    });
+
+    dlg.querySelector('#img-ed-cscancel').addEventListener('click', () => {
+        dlg.remove(); _canvasSizeDialogEl = null;
+    });
 }
 
 // ── Resize dialog ─────────────────────────────────────────────────────────────
