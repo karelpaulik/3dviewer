@@ -5,6 +5,7 @@
 
 import JSZip from 'jszip';
 import { buildWysiwygEditor } from './annotationUtils.js';
+import { openImageEditor } from './imageEditorUtils.js';
 
 let attachmentsStore = []; // [{ id, name, mimeType, data (base64 string), size, addedAt }]
 let _guiRef = null;
@@ -65,6 +66,9 @@ export function refreshAttachmentsGui() {
         const folder = _guiRef.addFolder(`${prefix}${att.name}  (${sizeStr})`);
         if (_canOpenInBrowser(att.mimeType)) {
             folder.add({ fn: () => _openAttachment(att) }, 'fn').name('↗  Open');
+        }
+        if (att.mimeType && att.mimeType.startsWith('image/')) {
+            folder.add({ fn: () => _editAttachment(att) }, 'fn').name('✏  Edit');
         }
         folder.add({ fn: () => _downloadAttachment(att) }, 'fn').name('⬇  Download');
         folder.add({ fn: () => _deleteAttachment(att.id) }, 'fn').name('✕  Delete');
@@ -153,6 +157,7 @@ function _buildModal() {
                     <input id="att-modal-name-input" title="Click to rename (extension is read-only)" style="background:transparent;border:none;border-bottom:1px solid transparent;color:#eee;font-size:13px;font-family:sans-serif;outline:none;flex:1;min-width:0;padding:0;cursor:text;" />
                     <span id="att-modal-name-ext" style="color:#888;font-size:13px;font-family:sans-serif;white-space:nowrap;flex-shrink:0;"></span>
                 </span>
+                <button id="att-modal-edit-btn" title="Edit image" style="display:none;background:none;border:1px solid #555;color:#aaa;font-size:12px;cursor:pointer;line-height:1;padding:2px 8px;border-radius:3px;flex-shrink:0;">✏ Edit</button>
                 <button id="att-modal-comment-btn" title="Comment" style="background:none;border:1px solid #555;color:#aaa;font-size:12px;cursor:pointer;line-height:1;padding:2px 8px;border-radius:3px;flex-shrink:0;">💬</button>
                 <button id="att-modal-close" style="background:none;border:none;color:#eee;font-size:20px;cursor:pointer;line-height:1;padding:0 4px;margin-left:4px;flex-shrink:0;">✕</button>
             </div>
@@ -166,6 +171,10 @@ function _buildModal() {
     _modalEl.querySelector('#att-modal-prev').addEventListener('click', () => _carouselStep(-1));
     _modalEl.querySelector('#att-modal-next').addEventListener('click', () => _carouselStep(+1));
     _modalEl.querySelector('#att-modal-comment-btn').addEventListener('click', () => _toggleCommentPanel(_carouselList[_carouselIndex]));
+    _modalEl.querySelector('#att-modal-edit-btn').addEventListener('click', () => {
+        const att = _carouselList[_carouselIndex];
+        if (att) _editAttachment(att);
+    });
 
     const nameInput = _modalEl.querySelector('#att-modal-name-input');
     nameInput.addEventListener('focus', () => { nameInput.style.borderBottomColor = '#888'; });
@@ -348,9 +357,41 @@ function _renderModal(att) {
         content.appendChild(iframe);
     }
 
+    // Show/hide edit button depending on whether current attachment is an image
+    const editBtn = _modalEl.querySelector('#att-modal-edit-btn');
+    if (editBtn) editBtn.style.display = (mime.startsWith('image/')) ? '' : 'none';
+
     // Rebuild comment editor if panel is open
     if (_commentPanelOpen) _buildCommentEditor(att);
     _updateCommentBtn();
+}
+
+function _editAttachment(att) {
+    // Close modal viewer first, then open editor
+    if (_modalEl) _modalEl.style.display = 'none';
+
+    openImageEditor(
+        att,
+        // onSaveOverwrite
+        (newBase64, newSize, newMime) => {
+            att.data     = newBase64;
+            att.size     = newSize;
+            att.mimeType = newMime;
+            refreshAttachmentsGui();
+        },
+        // onSaveNew
+        (newBase64, newSize, newName, newMime) => {
+            attachmentsStore.push({
+                id:      Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+                name:    newName,
+                mimeType: newMime,
+                data:    newBase64,
+                size:    newSize,
+                addedAt: new Date().toISOString(),
+            });
+            refreshAttachmentsGui();
+        }
+    );
 }
 
 function _downloadAttachment(att) {

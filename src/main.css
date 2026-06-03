@@ -1885,6 +1885,194 @@ a, button, input, select {
     font-size: 12px;
     color: #555;
 }
+
+/* ── Image Editor ─────────────────────────────────────────────────────────── */
+#img-editor-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 100000;
+    background: #111;
+    display: flex;
+    flex-direction: column;
+}
+#img-editor-wrap {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+}
+#img-editor-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 10px;
+    background: #2a2a2a;
+    border-bottom: 1px solid #3a3a3a;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+    min-height: 40px;
+    box-sizing: border-box;
+    user-select: none;
+}
+.img-ed-title {
+    font-family: sans-serif;
+    font-size: 12px;
+    color: #aaa;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 200px;
+}
+.img-ed-sep {
+    width: 1px;
+    height: 20px;
+    background: #444;
+    margin: 0 2px;
+    flex-shrink: 0;
+}
+.img-ed-btn, .img-ed-tool-btn {
+    padding: 3px 8px;
+    border: 1px solid #555;
+    border-radius: 3px;
+    background: #333;
+    color: #ddd;
+    font-size: 12px;
+    font-family: sans-serif;
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+    line-height: 1.5;
+}
+.img-ed-btn:hover, .img-ed-tool-btn:hover {
+    background: #444;
+    border-color: #777;
+}
+.img-ed-tool-btn.active {
+    background: #1a4a8a;
+    border-color: #4a8adf;
+    color: #fff;
+}
+.img-ed-btn-primary {
+    background: #1a5c2a;
+    border-color: #3a9a5a;
+    color: #fff;
+}
+.img-ed-btn-primary:hover { background: #2a7a3a; }
+.img-ed-btn-save {
+    background: #1a3a5c;
+    border-color: #3a6a9a;
+    color: #fff;
+}
+.img-ed-btn-save:hover { background: #2a5a8a; }
+.img-ed-label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    font-family: sans-serif;
+    color: #ccc;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+.img-ed-label input[type="number"] {
+    background: #222;
+    border: 1px solid #555;
+    border-radius: 3px;
+    color: #ddd;
+    padding: 2px 4px;
+    font-size: 12px;
+}
+.img-ed-label input[type="color"] {
+    width: 28px;
+    height: 22px;
+    border: 1px solid #555;
+    border-radius: 3px;
+    padding: 1px;
+    background: none;
+    cursor: pointer;
+}
+#img-editor-viewport {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    background: #1a1a1a;
+    background-image: repeating-conic-gradient(#222 0% 25%, #1a1a1a 0% 50%);
+    background-size: 16px 16px;
+}
+#img-editor-canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    image-rendering: pixelated;
+    transform-origin: 0 0;
+    box-shadow: 0 0 20px rgba(0,0,0,0.7);
+}
+#img-editor-overlay-canvas {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    width: 100%;
+    height: 100%;
+}
+#img-editor-statusbar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 3px 12px;
+    background: #2a2a2a;
+    border-top: 1px solid #3a3a3a;
+    flex-shrink: 0;
+    font-family: monospace;
+    font-size: 11px;
+    color: #888;
+}
+#img-ed-hint { flex: 1; text-align: right; color: #666; }
+
+/* Resize dialog */
+.img-ed-resize-dialog {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: #2a2a2a;
+    border: 1px solid #555;
+    border-radius: 6px;
+    padding: 16px 20px;
+    z-index: 100;
+    font-family: sans-serif;
+    min-width: 220px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.6);
+}
+.img-ed-resize-title {
+    font-size: 13px;
+    color: #eee;
+    margin-bottom: 12px;
+    font-weight: bold;
+}
+.img-ed-resize-row {
+    margin-bottom: 8px;
+    font-size: 12px;
+    color: #ccc;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.img-ed-resize-row label { display: flex; align-items: center; gap: 6px; }
+.img-ed-resize-row input[type="number"] {
+    background: #1a1a1a;
+    border: 1px solid #555;
+    border-radius: 3px;
+    color: #ddd;
+    padding: 2px 6px;
+    font-size: 12px;
+}
+.img-ed-resize-row input[type="checkbox"] { cursor: pointer; }
+.img-ed-resize-btns {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+    justify-content: flex-end;
+}
 .img-dialog-preview-info {
     color: #2a8a2a;
     font-weight: 500;
