@@ -29,10 +29,11 @@ let _redoStack = [];
 const MAX_UNDO = 30;
 
 // Tool state
-let _activeTool = 'pan';     // 'pan'|'crop'|'pen'|'text'
+let _activeTool = 'pan';     // 'pan'|'crop'|'pen'|'text'|...
 let _penColor   = '#ff0000';
 let _penSize    = 3;
 let _textColor  = '#ff0000';
+let _bgColor    = null;       // null = transparent (destination-out), hex = solid fill
 let _fontSize   = 18;
 let _fontFamily = 'sans-serif';
 
@@ -135,6 +136,10 @@ function _buildUI() {
                 <label class="img-ed-label" title="Pen / Text colour">
                     Color <input type="color" id="img-ed-color" value="#ff0000">
                 </label>
+                <label class="img-ed-label" title="Barva pozadí (Erase, Callout fill) — průhledné pokud nezatrženo">
+                    <input type="checkbox" id="img-ed-bg-enable" title="Použít barvu pozadí">
+                    BG <input type="color" id="img-ed-bgcolor" value="#ffffff" style="opacity:0.4">
+                </label>
                 <label class="img-ed-label" title="Pen stroke width">
                     Size <input type="number" id="img-ed-pensize" min="1" max="100" value="3" style="width:44px">
                 </label>
@@ -203,6 +208,14 @@ function _buildUI() {
         _penColor  = e.target.value;
         _textColor = e.target.value;
     });
+    const bgEnableCb  = _editorEl.querySelector('#img-ed-bg-enable');
+    const bgColorInp  = _editorEl.querySelector('#img-ed-bgcolor');
+    const _syncBg = () => {
+        _bgColor = bgEnableCb.checked ? bgColorInp.value : null;
+        bgColorInp.style.opacity = bgEnableCb.checked ? '1' : '0.4';
+    };
+    bgEnableCb.addEventListener('change', _syncBg);
+    bgColorInp.addEventListener('input',  _syncBg);
     _editorEl.querySelector('#img-ed-pensize').addEventListener('input', e => { _penSize = +e.target.value; });
     _editorEl.querySelector('#img-ed-fontsize').addEventListener('input', e => { _fontSize = +e.target.value; });
 
@@ -457,10 +470,14 @@ function _onMouseDown(e) {
         const pt = _vpToImg(e.clientX, e.clientY);
         _lastDrawPt = pt;
         _ctx.save();
-        _ctx.globalCompositeOperation = 'destination-out';
+        if (_bgColor) {
+            _ctx.fillStyle = _bgColor;
+        } else {
+            _ctx.globalCompositeOperation = 'destination-out';
+            _ctx.fillStyle = 'rgba(0,0,0,1)';
+        }
         _ctx.beginPath();
         _ctx.arc(pt.x, pt.y, _penSize * 2, 0, Math.PI * 2);
-        _ctx.fillStyle = 'rgba(0,0,0,1)';
         _ctx.fill();
         _ctx.restore();
         return;
@@ -516,11 +533,16 @@ function _onMouseMove(e, ovCanvas, ovCtx) {
             _ctx.restore();
         } else if (_activeTool === 'eraser') {
             _ctx.save();
-            _ctx.globalCompositeOperation = 'destination-out';
+            if (_bgColor) {
+                _ctx.fillStyle   = _bgColor;
+                _ctx.strokeStyle = _bgColor;
+            } else {
+                _ctx.globalCompositeOperation = 'destination-out';
+                _ctx.strokeStyle = 'rgba(0,0,0,1)';
+            }
             _ctx.beginPath();
             _ctx.moveTo(_lastDrawPt.x, _lastDrawPt.y);
             _ctx.lineTo(pt.x, pt.y);
-            _ctx.strokeStyle = 'rgba(0,0,0,1)';
             _ctx.lineWidth   = _penSize * 4;
             _ctx.lineCap     = 'round';
             _ctx.lineJoin    = 'round';
@@ -929,6 +951,10 @@ function _drawCallout(cx, cy) {
     const r = Math.max(_penSize * 5, 14);
     _ctx.beginPath();
     _ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    if (_bgColor) {
+        _ctx.fillStyle = _bgColor;
+        _ctx.fill();
+    }
     _ctx.strokeStyle = _penColor;
     _ctx.lineWidth   = Math.max(1.5, _penSize);
     _ctx.stroke();
