@@ -57,6 +57,9 @@ let _cropRect    = null;   // { x, y, w, h } in image coordinates
 // Text placement
 let _pendingText = false;
 
+// Eraser shape
+let _eraserShape     = 'circle'; // 'circle' | 'square'
+
 // Shape drawing state (rect, ellipse, line, arrow, callout, blur)
 let _shapeFill       = false;
 let _isShaping       = false;
@@ -83,6 +86,7 @@ function _launch(att, onSaveOverwrite, onSaveNew) {
     _cropRect        = null;
     _calloutCount    = 1;
     _shapeFill       = false;
+    _eraserShape     = 'circle';
     _blurPreviewRect = null;
 
     _buildUI();
@@ -145,6 +149,7 @@ function _buildUI() {
                     <button class="img-ed-tool-btn" id="img-ed-tool-pen"       title="Freehand pen">✏ Pen</button>
                     <button class="img-ed-tool-btn" id="img-ed-tool-highlight" title="Highlighter (semi-transparent)">🖌 Hl</button>
                     <button class="img-ed-tool-btn" id="img-ed-tool-eraser"    title="Eraser — erase drawing">⬜ Erase</button>
+                    <button class="img-ed-btn" id="img-ed-eraser-shape" title="Toggle eraser shape: circle / square">○</button>
                     <button class="img-ed-tool-btn" id="img-ed-tool-text"      title="Text (click on image)">Text</button>
                     <div class="img-ed-sep"></div>
                     <span class="img-ed-group-label">Shapes</span>
@@ -207,6 +212,14 @@ function _buildUI() {
 
     ['pan', 'crop', 'pen', 'text', 'rect', 'ellipse', 'line', 'arrow', 'highlight', 'eraser', 'callout', 'blur'].forEach(tool => {
         _editorEl.querySelector(`#img-ed-tool-${tool}`).addEventListener('click', () => _setTool(tool));
+    });
+
+    _editorEl.querySelector('#img-ed-eraser-shape').addEventListener('click', () => {
+        _eraserShape = _eraserShape === 'circle' ? 'square' : 'circle';
+        const btn = _editorEl.querySelector('#img-ed-eraser-shape');
+        btn.textContent = _eraserShape === 'circle' ? '○' : '□';
+        btn.classList.toggle('active', _eraserShape === 'square');
+        _updateCursor();
     });
 
     _editorEl.querySelector('#img-ed-fill-toggle').addEventListener('click', () => {
@@ -332,19 +345,26 @@ function _updateCursor() {
         const c = document.createElement('canvas');
         c.width = c.height = size;
         const cx = c.getContext('2d');
-        cx.beginPath();
-        cx.arc(size / 2, size / 2, r, 0, Math.PI * 2);
-        if (_activeTool === 'highlight') {
-            cx.strokeStyle = 'rgba(0,0,0,0.7)';
-            cx.lineWidth   = 1.5;
-            cx.stroke();
-            cx.strokeStyle = 'rgba(255,255,255,0.6)';
-            cx.lineWidth   = 0.8;
-            cx.stroke();
-        } else {
+        if (_activeTool === 'eraser' && _eraserShape === 'square') {
+            const s = r * 2;
             cx.strokeStyle = 'rgba(255,80,80,0.85)';
             cx.lineWidth   = 1.5;
-            cx.stroke();
+            cx.strokeRect((size - s) / 2, (size - s) / 2, s, s);
+        } else {
+            cx.beginPath();
+            cx.arc(size / 2, size / 2, r, 0, Math.PI * 2);
+            if (_activeTool === 'highlight') {
+                cx.strokeStyle = 'rgba(0,0,0,0.7)';
+                cx.lineWidth   = 1.5;
+                cx.stroke();
+                cx.strokeStyle = 'rgba(255,255,255,0.6)';
+                cx.lineWidth   = 0.8;
+                cx.stroke();
+            } else {
+                cx.strokeStyle = 'rgba(255,80,80,0.85)';
+                cx.lineWidth   = 1.5;
+                cx.stroke();
+            }
         }
         // clamp hotspot to valid range
         const hot = Math.min(Math.max(0, Math.round(size / 2)), 128);
@@ -515,9 +535,14 @@ function _onMouseDown(e) {
             _ctx.globalCompositeOperation = 'destination-out';
             _ctx.fillStyle = 'rgba(0,0,0,1)';
         }
-        _ctx.beginPath();
-        _ctx.arc(pt.x, pt.y, _penSize * 2, 0, Math.PI * 2);
-        _ctx.fill();
+        if (_eraserShape === 'square') {
+            const s = _penSize * 4;
+            _ctx.fillRect(pt.x - s / 2, pt.y - s / 2, s, s);
+        } else {
+            _ctx.beginPath();
+            _ctx.arc(pt.x, pt.y, _penSize * 2, 0, Math.PI * 2);
+            _ctx.fill();
+        }
         _ctx.restore();
         return;
     }
@@ -586,13 +611,27 @@ function _onMouseMove(e, ovCanvas, ovCtx) {
                 _ctx.globalCompositeOperation = 'destination-out';
                 _ctx.strokeStyle = 'rgba(0,0,0,1)';
             }
-            _ctx.beginPath();
-            _ctx.moveTo(_lastDrawPt.x, _lastDrawPt.y);
-            _ctx.lineTo(pt.x, pt.y);
-            _ctx.lineWidth   = _penSize * 4;
-            _ctx.lineCap     = 'round';
-            _ctx.lineJoin    = 'round';
-            _ctx.stroke();
+            if (_eraserShape === 'square') {
+                // Stamp squares along the drag path
+                const s = _penSize * 4;
+                const dx = pt.x - _lastDrawPt.x;
+                const dy = pt.y - _lastDrawPt.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                const steps = Math.max(1, Math.ceil(dist / (s * 0.5)));
+                for (let i = 0; i <= steps; i++) {
+                    const tx = _lastDrawPt.x + (dx * i) / steps;
+                    const ty = _lastDrawPt.y + (dy * i) / steps;
+                    _ctx.fillRect(tx - s / 2, ty - s / 2, s, s);
+                }
+            } else {
+                _ctx.beginPath();
+                _ctx.moveTo(_lastDrawPt.x, _lastDrawPt.y);
+                _ctx.lineTo(pt.x, pt.y);
+                _ctx.lineWidth   = _penSize * 4;
+                _ctx.lineCap     = 'round';
+                _ctx.lineJoin    = 'round';
+                _ctx.stroke();
+            }
             _ctx.restore();
         }
         _lastDrawPt = pt;
