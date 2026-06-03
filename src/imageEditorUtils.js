@@ -193,7 +193,10 @@ function _buildUI() {
                 <canvas id="img-editor-overlay-canvas"></canvas>
             </div>
             <div id="img-editor-statusbar">
-                <span id="img-ed-zoom-label">100%</span>
+                <label id="img-ed-zoom-wrap" title="Zoom % — klikni pro 100%">
+                    <input type="number" id="img-ed-zoom-label" min="1" max="2000" value="100" step="10">
+                    <span id="img-ed-zoom-pct">%</span>
+                </label>
                 <span id="img-ed-size-label"></span>
                 <span id="img-ed-hint"></span>
             </div>
@@ -258,6 +261,29 @@ function _buildUI() {
     _editorEl.querySelector('#img-ed-rotate-ccw').addEventListener('click', () => _rotate(-90));
     _editorEl.querySelector('#img-ed-flip-h').addEventListener('click', () => _flip('h'));
     _editorEl.querySelector('#img-ed-flip-v').addEventListener('click', () => _flip('v'));
+
+    // Zoom input: Enter or blur applies value; click selects all for quick overwrite
+    const zoomInp = _editorEl.querySelector('#img-ed-zoom-label');
+    const _applyZoomInput = () => {
+        const v = Math.min(2000, Math.max(1, Math.round(+zoomInp.value || 100)));
+        zoomInp.value = v;
+        const vp = _editorEl.querySelector('#img-editor-viewport');
+        const vpW = vp.clientWidth  || 800;
+        const vpH = vp.clientHeight || 600;
+        // Zoom around canvas center
+        const cx = vpW / 2, cy = vpH / 2;
+        const newZoom = v / 100;
+        _panX = cx - (cx - _panX) * (newZoom / _zoom);
+        _panY = cy - (cy - _panY) * (newZoom / _zoom);
+        _zoom = newZoom;
+        _applyTransform();
+    };
+    zoomInp.addEventListener('keydown', ev => {
+        if (ev.key === 'Enter') { ev.preventDefault(); _applyZoomInput(); zoomInp.blur(); }
+        if (ev.key === 'Escape') { zoomInp.value = Math.round(_zoom * 100); zoomInp.blur(); }
+    });
+    zoomInp.addEventListener('blur', _applyZoomInput);
+    zoomInp.addEventListener('click', ev => { ev.stopPropagation(); zoomInp.select(); });
     _editorEl.querySelector('#img-ed-resize').addEventListener('click', _showResizeDialog);
     _editorEl.querySelector('#img-ed-canvas-size').addEventListener('click', _showCanvasSizeDialog);
 
@@ -468,12 +494,22 @@ function _fitToView() {
     _applyTransform();
 }
 
+function _zoom100() {
+    const vp = _editorEl.querySelector('#img-editor-viewport');
+    const vpW = vp.clientWidth  || 800;
+    const vpH = vp.clientHeight || 600;
+    _zoom = 1;
+    _panX = (vpW - _canvas.width)  / 2;
+    _panY = (vpH - _canvas.height) / 2;
+    _applyTransform();
+}
+
 function _applyTransform() {
     if (!_canvas) return;
     _canvas.style.transform         = `translate(${_panX}px, ${_panY}px) scale(${_zoom})`;
     _canvas.style.transformOrigin   = '0 0';
     const zl = _editorEl && _editorEl.querySelector('#img-ed-zoom-label');
-    if (zl) zl.textContent = `${Math.round(_zoom * 100)}%`;
+    if (zl && document.activeElement !== zl) zl.value = Math.round(_zoom * 100);
 }
 
 function _onWheel(e) {

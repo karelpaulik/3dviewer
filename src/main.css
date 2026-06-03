@@ -2069,10 +2069,36 @@ a, button, input, select {
     border-top: 1px solid #3a3a3a;
     flex-shrink: 0;
     font-family: monospace;
-    font-size: 11px;
-    color: #888;
+    font-size: 12px;
+    color: #bbb;
 }
-#img-ed-hint { flex: 1; text-align: right; color: #666; }
+#img-ed-hint { flex: 1; text-align: right; color: #bbb; }
+#img-ed-zoom-wrap {
+    display: flex;
+    align-items: center;
+    gap: 1px;
+    cursor: text;
+}
+#img-ed-zoom-label {
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    color: #bbb;
+    font-family: monospace;
+    font-size: 12px;
+    width: 46px;
+    padding: 1px 3px;
+    text-align: right;
+    outline: none;
+    -moz-appearance: textfield;
+    cursor: text;
+    transition: background 0.1s, border-color 0.1s, color 0.1s;
+}
+#img-ed-zoom-label::-webkit-inner-spin-button,
+#img-ed-zoom-label::-webkit-outer-spin-button { -webkit-appearance: none; }
+#img-ed-zoom-label:hover { background: #3a3a3a; border-color: #555; color: #fff; }
+#img-ed-zoom-label:focus { background: #1a1a1a; border-color: #4a8adf; color: #fff; }
+#img-ed-zoom-pct { color: #bbb; font-family: monospace; font-size: 12px; }
 
 /* Resize dialog */
 .img-ed-resize-dialog {
