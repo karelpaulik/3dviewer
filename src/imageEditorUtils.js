@@ -47,6 +47,7 @@ let _panStart    = { x: 0, y: 0 };
 // Pen drawing
 let _isDrawing   = false;
 let _lastDrawPt  = null;
+let _hlPath      = [];   // highlight path points (snapshot-based redraw)
 
 // Crop
 let _isCropping  = false;
@@ -109,64 +110,69 @@ function _buildUI() {
     _editorEl.innerHTML = `
         <div id="img-editor-wrap">
             <div id="img-editor-toolbar">
-                <span class="img-ed-title" id="img-ed-filename"></span>
-                <div class="img-ed-sep"></div>
 
-                <button class="img-ed-btn" id="img-ed-undo" title="Undo (Ctrl+Z)">↩ Undo</button>
-                <button class="img-ed-btn" id="img-ed-redo" title="Redo (Ctrl+Y)">↪ Redo</button>
-                <button class="img-ed-btn" id="img-ed-goto-begin" title="Goto begin — zobrazit původní obrázek (undo/redo zůstává)">⏮ Orig</button>
-                <div class="img-ed-sep"></div>
+                <div class="img-ed-row img-ed-row-top">
+                    <span class="img-ed-title" id="img-ed-filename"></span>
+                    <div class="img-ed-sep"></div>
+                    <button class="img-ed-btn" id="img-ed-undo"       title="Undo (Ctrl+Z)">↩ Undo</button>
+                    <button class="img-ed-btn" id="img-ed-redo"       title="Redo (Ctrl+Y)">↪ Redo</button>
+                    <button class="img-ed-btn" id="img-ed-goto-begin" title="Show original image (undo/redo stack preserved)">⏮ Orig</button>
+                    <div class="img-ed-sep"></div>
+                    <button class="img-ed-btn" id="img-ed-rotate-cw"  title="Rotate 90° CW">↻ 90°</button>
+                    <button class="img-ed-btn" id="img-ed-rotate-ccw" title="Rotate 90° CCW">↺ 90°</button>
+                    <button class="img-ed-btn" id="img-ed-flip-h"     title="Flip Horizontal">⇄ H</button>
+                    <button class="img-ed-btn" id="img-ed-flip-v"     title="Flip Vertical">⇅ V</button>
+                    <button class="img-ed-btn" id="img-ed-resize"      title="Resize (scales image)">⊡ Resize</button>
+                    <button class="img-ed-btn" id="img-ed-canvas-size" title="Canvas Size — without scaling the image">▦ Canvas size</button>
+                    <div class="img-ed-sep"></div>
+                    <button class="img-ed-btn img-ed-btn-primary" id="img-ed-apply-crop"  style="display:none">✔ Apply Crop</button>
+                    <button class="img-ed-btn"                    id="img-ed-cancel-crop" style="display:none">✕ Cancel</button>
+                    <div class="img-ed-sep" id="img-ed-crop-sep"  style="display:none"></div>
+                    <div style="flex:1"></div>
+                    <button class="img-ed-btn img-ed-btn-save" id="img-ed-save-overwrite" title="Overwrite original attachment">💾 Overwrite</button>
+                    <button class="img-ed-btn img-ed-btn-save" id="img-ed-save-new"       title="Save as new attachment in Files">＋ Save as new</button>
+                    <button class="img-ed-btn img-ed-btn-save" id="img-ed-download"       title="Download to disk">⬇ Download</button>
+                    <div class="img-ed-sep"></div>
+                    <button class="img-ed-btn" id="img-ed-close">✕ Close</button>
+                </div>
 
-                <button class="img-ed-tool-btn" id="img-ed-tool-pan"  title="Pan / Move (Space+drag)">✋ Pan</button>
-                <button class="img-ed-tool-btn" id="img-ed-tool-crop" title="Crop">✂ Crop</button>
-                <button class="img-ed-tool-btn" id="img-ed-tool-pen"       title="Freehand pen">✏ Pen</button>
-                <button class="img-ed-tool-btn" id="img-ed-tool-text"      title="Place text (double-click on image)">T Text</button>
-                <button class="img-ed-tool-btn" id="img-ed-tool-rect"      title="Obdélník">▭ Rect</button>
-                <button class="img-ed-tool-btn" id="img-ed-tool-ellipse"   title="Elipsa">⬭ Ellipse</button>
-                <button class="img-ed-tool-btn" id="img-ed-tool-line"      title="Přímá čára">╱ Line</button>
-                <button class="img-ed-tool-btn" id="img-ed-tool-arrow"     title="Šipka s hlavicí">→ Arrow</button>
-                <button class="img-ed-tool-btn" id="img-ed-tool-highlight" title="Zvýrazňovač (poloprůhledný)">🖌 Hl</button>
-                <button class="img-ed-tool-btn" id="img-ed-tool-eraser"    title="Guma — vymazat kresbu">⬜ Erase</button>
-                <button class="img-ed-tool-btn" id="img-ed-tool-callout"   title="Číslovaný callout (kroužek s číslem)">① Callout</button>
-                <button class="img-ed-tool-btn" id="img-ed-tool-blur"      title="Pixelate / Blur výběr (ochrana soukromí)">⊞ Blur</button>
-                <button class="img-ed-btn" id="img-ed-fill-toggle"         title="Přepnout Fill / Outline pro tvary (Rect, Ellipse)">◻ Outline</button>
-                <button class="img-ed-btn" id="img-ed-callout-reset"       title="Reset callout číslování na 1">↺①</button>
-                <div class="img-ed-sep"></div>
+                <div class="img-ed-row img-ed-row-tools">
+                    <span class="img-ed-group-label">View</span>
+                    <button class="img-ed-tool-btn" id="img-ed-tool-pan"  title="Pan">✋ Pan</button>
+                    <button class="img-ed-tool-btn" id="img-ed-tool-crop" title="Crop">✂ Crop</button>
+                    <div class="img-ed-sep"></div>
+                    <span class="img-ed-group-label">Draw</span>
+                    <button class="img-ed-tool-btn" id="img-ed-tool-pen"       title="Freehand pen">✏ Pen</button>
+                    <button class="img-ed-tool-btn" id="img-ed-tool-highlight" title="Highlighter (semi-transparent)">🖌 Hl</button>
+                    <button class="img-ed-tool-btn" id="img-ed-tool-eraser"    title="Eraser — erase drawing">⬜ Erase</button>
+                    <button class="img-ed-tool-btn" id="img-ed-tool-text"      title="Text (click on image)">Text</button>
+                    <div class="img-ed-sep"></div>
+                    <span class="img-ed-group-label">Shapes</span>
+                    <button class="img-ed-tool-btn" id="img-ed-tool-rect"    title="Rectangle">▭ Rect</button>
+                    <button class="img-ed-tool-btn" id="img-ed-tool-ellipse" title="Ellipse">⬭ Ellipse</button>
+                    <button class="img-ed-tool-btn" id="img-ed-tool-line"    title="Straight line">╱ Line</button>
+                    <button class="img-ed-tool-btn" id="img-ed-tool-arrow"   title="Arrow with head">→ Arrow</button>
+                    <button class="img-ed-tool-btn" id="img-ed-tool-callout" title="Numbered callout">① Callout</button>
+                    <button class="img-ed-btn" id="img-ed-callout-reset" title="Reset callout numbering to 1">↺①</button>
+                    <button class="img-ed-tool-btn" id="img-ed-tool-blur"    title="Pixelate / Blur selection">⊞ Blur</button>
+                    <button class="img-ed-btn" id="img-ed-fill-toggle"   title="Toggle Fill / Outline (Rect, Ellipse)">◻ Outline</button>
+                    <div class="img-ed-sep"></div>
+                    <span class="img-ed-group-label">Options</span>
+                    <label class="img-ed-label" title="Drawing color">
+                        Color <input type="color" id="img-ed-color" value="#ff0000">
+                    </label>
+                    <label class="img-ed-label" title="Background color (Erase, Callout fill) — transparent if unchecked">
+                        <input type="checkbox" id="img-ed-bg-enable" title="Enable background color">
+                        BG <input type="color" id="img-ed-bgcolor" value="#ffffff" style="opacity:0.4">
+                    </label>
+                    <label class="img-ed-label" title="Brush / stroke size">
+                        Size <input type="number" id="img-ed-pensize" min="1" max="100" value="3" style="width:44px">
+                    </label>
+                    <label class="img-ed-label" title="Font size (px)">
+                        Font <input type="number" id="img-ed-fontsize" min="6" max="200" value="18" style="width:44px">
+                    </label>
+                </div>
 
-                <label class="img-ed-label" title="Pen / Text colour">
-                    Color <input type="color" id="img-ed-color" value="#ff0000">
-                </label>
-                <label class="img-ed-label" title="Barva pozadí (Erase, Callout fill) — průhledné pokud nezatrženo">
-                    <input type="checkbox" id="img-ed-bg-enable" title="Použít barvu pozadí">
-                    BG <input type="color" id="img-ed-bgcolor" value="#ffffff" style="opacity:0.4">
-                </label>
-                <label class="img-ed-label" title="Pen stroke width">
-                    Size <input type="number" id="img-ed-pensize" min="1" max="100" value="3" style="width:44px">
-                </label>
-                <label class="img-ed-label" title="Font size (px)">
-                    Font <input type="number" id="img-ed-fontsize" min="6" max="200" value="18" style="width:44px">
-                </label>
-                <div class="img-ed-sep"></div>
-
-                <button class="img-ed-btn" id="img-ed-rotate-cw"  title="Rotate 90° CW">↻ 90°</button>
-                <button class="img-ed-btn" id="img-ed-rotate-ccw" title="Rotate 90° CCW">↺ 90°</button>
-                <button class="img-ed-btn" id="img-ed-flip-h"     title="Flip Horizontal">⇄ H</button>
-                <button class="img-ed-btn" id="img-ed-flip-v"     title="Flip Vertical">⇅ V</button>
-                <button class="img-ed-btn" id="img-ed-resize"       title="Resize canvas (scales image)">⊡ Resize</button>
-                <button class="img-ed-btn" id="img-ed-canvas-size" title="Canvas Size — změní plátno bez škálování obrazu">▦ Canvas size</button>
-                <div class="img-ed-sep"></div>
-
-                <button class="img-ed-btn img-ed-btn-primary" id="img-ed-apply-crop" style="display:none">✔ Apply Crop</button>
-                <button class="img-ed-btn" id="img-ed-cancel-crop" style="display:none">✕ Cancel</button>
-                <div class="img-ed-sep" id="img-ed-crop-sep" style="display:none"></div>
-
-                <div style="flex:1"></div>
-
-                <button class="img-ed-btn img-ed-btn-save" id="img-ed-save-overwrite" title="Overwrite original attachment">💾 Overwrite</button>
-                <button class="img-ed-btn img-ed-btn-save" id="img-ed-save-new"       title="Save as new attachment in Files">＋ Save as new</button>
-                <button class="img-ed-btn img-ed-btn-save" id="img-ed-download"       title="Download to disk">⬇ Download</button>
-                <div class="img-ed-sep"></div>
-                <button class="img-ed-btn" id="img-ed-close">✕ Close</button>
             </div>
             <div id="img-editor-viewport">
                 <canvas id="img-editor-canvas"></canvas>
@@ -217,7 +223,7 @@ function _buildUI() {
     };
     bgEnableCb.addEventListener('change', _syncBg);
     bgColorInp.addEventListener('input',  _syncBg);
-    _editorEl.querySelector('#img-ed-pensize').addEventListener('input', e => { _penSize = +e.target.value; });
+    _editorEl.querySelector('#img-ed-pensize').addEventListener('input', e => { _penSize = +e.target.value; _updateCursor(); });
     _editorEl.querySelector('#img-ed-fontsize').addEventListener('input', e => { _fontSize = +e.target.value; });
 
     _editorEl.querySelector('#img-ed-rotate-cw').addEventListener('click',  () => _rotate(90));
@@ -311,10 +317,39 @@ function _updateHint() {
 function _updateCursor() {
     const vp = _editorEl && _editorEl.querySelector('#img-editor-viewport');
     if (!vp) return;
+
+    if (_activeTool === 'highlight' || _activeTool === 'eraser') {
+        const r = Math.max(2, Math.round(
+            (_activeTool === 'highlight' ? _penSize * 8 : _penSize * 4) * _zoom * 0.5
+        ));
+        const size = r * 2 + 4;
+        const c = document.createElement('canvas');
+        c.width = c.height = size;
+        const cx = c.getContext('2d');
+        cx.beginPath();
+        cx.arc(size / 2, size / 2, r, 0, Math.PI * 2);
+        if (_activeTool === 'highlight') {
+            cx.strokeStyle = 'rgba(0,0,0,0.7)';
+            cx.lineWidth   = 1.5;
+            cx.stroke();
+            cx.strokeStyle = 'rgba(255,255,255,0.6)';
+            cx.lineWidth   = 0.8;
+            cx.stroke();
+        } else {
+            cx.strokeStyle = 'rgba(255,80,80,0.85)';
+            cx.lineWidth   = 1.5;
+            cx.stroke();
+        }
+        // clamp hotspot to valid range
+        const hot = Math.min(Math.max(0, Math.round(size / 2)), 128);
+        vp.style.cursor = `url(${c.toDataURL()}) ${hot} ${hot}, crosshair`;
+        return;
+    }
+
     const cursors = {
         pan: 'grab', crop: 'crosshair', pen: 'crosshair', text: 'text',
         rect: 'crosshair', ellipse: 'crosshair', line: 'crosshair', arrow: 'crosshair',
-        highlight: 'crosshair', eraser: 'cell', callout: 'crosshair', blur: 'crosshair',
+        callout: 'crosshair', blur: 'crosshair',
     };
     vp.style.cursor = cursors[_activeTool] || 'default';
 }
@@ -414,6 +449,7 @@ function _onWheel(e) {
     _panY = my - (my - _panY) * (newZoom / _zoom);
     _zoom = newZoom;
     _applyTransform();
+    _updateCursor();
 
     // Redraw overlay
     const ov = _editorEl.querySelector('#img-editor-overlay-canvas');
@@ -457,13 +493,8 @@ function _onMouseDown(e) {
         _isDrawing = true;
         const pt = _vpToImg(e.clientX, e.clientY);
         _lastDrawPt = pt;
-        _ctx.save();
-        _ctx.globalAlpha = 0.4;
-        _ctx.beginPath();
-        _ctx.arc(pt.x, pt.y, _penSize * 3, 0, Math.PI * 2);
-        _ctx.fillStyle = _penColor;
-        _ctx.fill();
-        _ctx.restore();
+        _hlPath = [pt];
+        _shapeSnapshot = _ctx.getImageData(0, 0, _canvas.width, _canvas.height);
         return;
     }
 
@@ -522,16 +553,23 @@ function _onMouseMove(e, ovCanvas, ovCtx) {
             _ctx.lineJoin    = 'round';
             _ctx.stroke();
         } else if (_activeTool === 'highlight') {
+            _hlPath.push(pt);
+            // Restore snapshot and redraw entire path once → no alpha accumulation
+            _ctx.putImageData(_shapeSnapshot, 0, 0);
+            const off = document.createElement('canvas');
+            off.width = _canvas.width; off.height = _canvas.height;
+            const oc = off.getContext('2d');
+            oc.strokeStyle = _penColor;
+            oc.lineWidth   = _penSize * 8;
+            oc.lineCap     = 'round';
+            oc.lineJoin    = 'round';
+            oc.beginPath();
+            oc.moveTo(_hlPath[0].x, _hlPath[0].y);
+            for (let i = 1; i < _hlPath.length; i++) oc.lineTo(_hlPath[i].x, _hlPath[i].y);
+            oc.stroke();
             _ctx.save();
-            _ctx.globalAlpha = 0.4;
-            _ctx.beginPath();
-            _ctx.moveTo(_lastDrawPt.x, _lastDrawPt.y);
-            _ctx.lineTo(pt.x, pt.y);
-            _ctx.strokeStyle = _penColor;
-            _ctx.lineWidth   = _penSize * 6;
-            _ctx.lineCap     = 'round';
-            _ctx.lineJoin    = 'round';
-            _ctx.stroke();
+            _ctx.globalAlpha = 0.25;
+            _ctx.drawImage(off, 0, 0);
             _ctx.restore();
         } else if (_activeTool === 'eraser') {
             _ctx.save();
@@ -583,6 +621,8 @@ function _onMouseUp(e, ovCanvas, ovCtx) {
     if (_isDrawing) {
         _isDrawing  = false;
         _lastDrawPt = null;
+        _hlPath     = [];
+        _shapeSnapshot = null;
         _pushUndo();
         return;
     }
@@ -611,6 +651,11 @@ function _onMouseLeave() {
     if (_isDrawing) {
         _isDrawing  = false;
         _lastDrawPt = null;
+        _hlPath     = [];
+        if (_shapeSnapshot && _activeTool === 'highlight') {
+            // cancel incomplete highlight stroke — keep as-is
+            _shapeSnapshot = null;
+        }
         _pushUndo();
     }
     if (_isShaping) {
