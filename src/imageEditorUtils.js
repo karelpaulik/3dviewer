@@ -118,49 +118,49 @@ function _buildUI() {
                 <div class="img-ed-row img-ed-row-top">
                     <input class="img-ed-title" id="img-ed-filename" title="Click to rename" spellcheck="false">
                     <div class="img-ed-sep"></div>
-                    <button class="img-ed-btn" id="img-ed-undo"       title="Undo (Ctrl+Z)">↩ Undo</button>
-                    <button class="img-ed-btn" id="img-ed-redo"       title="Redo (Ctrl+Y)">↪ Redo</button>
-                    <button class="img-ed-btn" id="img-ed-goto-begin" title="Show original image (undo/redo stack preserved)">⏮ Orig</button>
+                    <button class="img-ed-btn" id="img-ed-undo"       title="Undo (Ctrl+Z)">↩</button>
+                    <button class="img-ed-btn" id="img-ed-redo"       title="Redo (Ctrl+Y)">↪</button>
+                    <button class="img-ed-btn" id="img-ed-goto-begin" title="Show original image (undo/redo stack preserved)">⏮</button>
                     <div class="img-ed-sep"></div>
-                    <button class="img-ed-btn" id="img-ed-rotate-cw"  title="Rotate 90° CW">↻ 90°</button>
-                    <button class="img-ed-btn" id="img-ed-rotate-ccw" title="Rotate 90° CCW">↺ 90°</button>
-                    <button class="img-ed-btn" id="img-ed-flip-h"     title="Flip Horizontal">⇄ H</button>
-                    <button class="img-ed-btn" id="img-ed-flip-v"     title="Flip Vertical">⇅ V</button>
-                    <button class="img-ed-btn" id="img-ed-resize"      title="Resize (scales image)">⊡ Resize</button>
-                    <button class="img-ed-btn" id="img-ed-canvas-size" title="Canvas Size — without scaling the image">▦ Canvas size</button>
+                    <button class="img-ed-btn" id="img-ed-rotate-cw"  title="Rotate 90° CW">↻</button>
+                    <button class="img-ed-btn" id="img-ed-rotate-ccw" title="Rotate 90° CCW">↺</button>
+                    <button class="img-ed-btn" id="img-ed-flip-h"     title="Flip Horizontal">⇄</button>
+                    <button class="img-ed-btn" id="img-ed-flip-v"     title="Flip Vertical">⇅</button>
+                    <button class="img-ed-btn img-ed-btn-text" id="img-ed-resize"      title="Resize (scales image)">⊡ Resize</button>
+                    <button class="img-ed-btn img-ed-btn-text" id="img-ed-canvas-size" title="Canvas Size — without scaling the image">▦ Canvas resize</button>
                     <div class="img-ed-sep"></div>
-                    <button class="img-ed-btn img-ed-btn-primary" id="img-ed-apply-crop"  style="display:none">✔ Apply Crop</button>
-                    <button class="img-ed-btn"                    id="img-ed-cancel-crop" style="display:none">✕ Cancel</button>
+                    <button class="img-ed-btn img-ed-btn-primary" id="img-ed-apply-crop"  style="display:none">✔</button>
+                    <button class="img-ed-btn"                    id="img-ed-cancel-crop" style="display:none">✕</button>
                     <div class="img-ed-sep" id="img-ed-crop-sep"  style="display:none"></div>
                     <div style="flex:1"></div>
-                    <button class="img-ed-btn img-ed-btn-save" id="img-ed-save-overwrite" title="Overwrite original attachment">💾 Overwrite</button>
-                    <button class="img-ed-btn img-ed-btn-save" id="img-ed-save-new"       title="Save as new attachment in Files">＋ Save as new</button>
-                    <button class="img-ed-btn img-ed-btn-save" id="img-ed-download"       title="Download to disk">⬇ Download</button>
+                    <button class="img-ed-btn img-ed-btn-save" id="img-ed-save-overwrite" title="Save (overwrite current attachment)">💾</button>
+                    <button class="img-ed-btn img-ed-btn-save" id="img-ed-save-new"       title="Save as new attachment in Files">💾✎</button>
+                    <button class="img-ed-btn img-ed-btn-save" id="img-ed-download"       title="Download to disk">⬇</button>
                     <div class="img-ed-sep"></div>
-                    <button class="img-ed-btn" id="img-ed-close">✕ Close</button>
+                    <button class="img-ed-btn" id="img-ed-close" title="Close">✕</button>
                 </div>
 
                 <div class="img-ed-row img-ed-row-tools">
                     <span class="img-ed-group-label">View</span>
-                    <button class="img-ed-tool-btn" id="img-ed-tool-pan"  title="Pan">✋ Pan</button>
-                    <button class="img-ed-tool-btn" id="img-ed-tool-crop" title="Crop">✂ Crop</button>
+                    <button class="img-ed-tool-btn" id="img-ed-tool-pan"  title="Pan">✋</button>
+                    <button class="img-ed-tool-btn" id="img-ed-tool-crop" title="Crop">⛶</button>
                     <div class="img-ed-sep"></div>
                     <span class="img-ed-group-label">Draw</span>
-                    <button class="img-ed-tool-btn" id="img-ed-tool-pen"       title="Freehand pen">✏ Pen</button>
-                    <button class="img-ed-tool-btn" id="img-ed-tool-highlight" title="Highlighter (semi-transparent)">🖌 Hl</button>
-                    <button class="img-ed-tool-btn" id="img-ed-tool-eraser"    title="Eraser — erase drawing">⬜ Erase</button>
+                    <button class="img-ed-tool-btn" id="img-ed-tool-pen"       title="Freehand pen">✎</button>
+                    <button class="img-ed-tool-btn" id="img-ed-tool-highlight" title="Highlighter (semi-transparent)">🖌</button>
+                    <button class="img-ed-tool-btn" id="img-ed-tool-eraser"    title="Eraser — erase drawing">🩹</button>
                     <button class="img-ed-btn" id="img-ed-eraser-shape" title="Toggle eraser shape: circle / square">○</button>
-                    <button class="img-ed-tool-btn" id="img-ed-tool-text"      title="Text (click on image)">Text</button>
+                    <button class="img-ed-tool-btn" id="img-ed-tool-text"      title="Text (click on image)">T</button>
                     <div class="img-ed-sep"></div>
                     <span class="img-ed-group-label">Shapes</span>
-                    <button class="img-ed-tool-btn" id="img-ed-tool-rect"    title="Rectangle">▭ Rect</button>
-                    <button class="img-ed-tool-btn" id="img-ed-tool-ellipse" title="Ellipse">⬭ Ellipse</button>
-                    <button class="img-ed-tool-btn" id="img-ed-tool-line"    title="Straight line">╱ Line</button>
-                    <button class="img-ed-tool-btn" id="img-ed-tool-arrow"   title="Arrow with head">→ Arrow</button>
-                    <button class="img-ed-tool-btn" id="img-ed-tool-callout" title="Numbered callout">① Callout</button>
+                    <button class="img-ed-tool-btn" id="img-ed-tool-rect"    title="Rectangle">▭</button>
+                    <button class="img-ed-tool-btn" id="img-ed-tool-ellipse" title="Ellipse">⬭</button>
+                    <button class="img-ed-tool-btn" id="img-ed-tool-line"    title="Straight line">╱</button>
+                    <button class="img-ed-tool-btn" id="img-ed-tool-arrow"   title="Arrow with head">→</button>
+                    <button class="img-ed-tool-btn" id="img-ed-tool-callout" title="Numbered callout">①</button>
                     <button class="img-ed-btn" id="img-ed-callout-reset" title="Reset callout numbering to 1">↺①</button>
-                    <button class="img-ed-tool-btn" id="img-ed-tool-blur"    title="Pixelate / Blur selection">⊞ Blur</button>
-                    <button class="img-ed-btn" id="img-ed-fill-toggle"   title="Toggle Fill / Outline (Rect, Ellipse)">◻ Outline</button>
+                    <button class="img-ed-tool-btn" id="img-ed-tool-blur"    title="Pixelate / Blur selection">⊞</button>
+                    <button class="img-ed-btn" id="img-ed-fill-toggle"   title="Toggle Fill / Outline (Rect, Ellipse)">◻</button>
                     <div class="img-ed-sep"></div>
                     <span class="img-ed-group-label">Options</span>
                     <label class="img-ed-label" title="Drawing color">
@@ -225,7 +225,7 @@ function _buildUI() {
     _editorEl.querySelector('#img-ed-fill-toggle').addEventListener('click', () => {
         _shapeFill = !_shapeFill;
         const btn = _editorEl.querySelector('#img-ed-fill-toggle');
-        btn.textContent = _shapeFill ? '■ Fill' : '◻ Outline';
+        btn.textContent = _shapeFill ? '■' : '◻';
         btn.classList.toggle('active', _shapeFill);
     });
     _editorEl.querySelector('#img-ed-callout-reset').addEventListener('click', () => { _calloutCount = 1; });
