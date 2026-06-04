@@ -985,8 +985,7 @@ function _onKeyDown(e) {
         return;
     }
     if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
-        if (_clipboardData) { e.preventDefault(); _pasteClipboard(); }
-        return;
+        e.preventDefault(); _pasteClipboard(); return;
     }
     if (e.key === 'f' || e.key === 'F') { _fitToView(); return; }
     if (e.key === 'Escape') { _cancelCrop(); if (_activeTool === 'select') _clearSelection(); return; }
@@ -1790,30 +1789,70 @@ function _copySelection() {
             new Uint8ClampedArray(_selImageData.data),
             _selImageData.width, _selImageData.height
         );
-        return;
+    } else {
+        const cx = Math.round(Math.max(0, _selRect.x));
+        const cy = Math.round(Math.max(0, _selRect.y));
+        const cw = Math.round(Math.min(_canvas.width  - cx, _selRect.w));
+        const ch = Math.round(Math.min(_canvas.height - cy, _selRect.h));
+        if (cw < 1 || ch < 1) return;
+        _clipboardData = _ctx.getImageData(cx, cy, cw, ch);
     }
-    const cx = Math.round(Math.max(0, _selRect.x));
-    const cy = Math.round(Math.max(0, _selRect.y));
-    const cw = Math.round(Math.min(_canvas.width  - cx, _selRect.w));
-    const ch = Math.round(Math.min(_canvas.height - cy, _selRect.h));
-    if (cw < 1 || ch < 1) return;
-    _clipboardData = _ctx.getImageData(cx, cy, cw, ch);
+    // Write to system clipboard as PNG
+    if (navigator.clipboard && navigator.clipboard.write) {
+        const tmp = document.createElement('canvas');
+        tmp.width  = _clipboardData.width;
+        tmp.height = _clipboardData.height;
+        tmp.getContext('2d').putImageData(_clipboardData, 0, 0);
+        tmp.toBlob(blob => {
+            navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]).catch(() => {});
+        }, 'image/png');
+    }
 }
 
-function _pasteClipboard() {
-    if (!_clipboardData) return;
+async function _pasteClipboard() {
+    // Try system clipboard first
+    let imageData = null;
+    if (navigator.clipboard && navigator.clipboard.read) {
+        try {
+            const items = await navigator.clipboard.read();
+            for (const item of items) {
+                const imageType = item.types.find(t => t.startsWith('image/'));
+                if (imageType) {
+                    const blob = await item.getType(imageType);
+                    const bmp  = await createImageBitmap(blob);
+                    const tmp  = document.createElement('canvas');
+                    tmp.width  = bmp.width;
+                    tmp.height = bmp.height;
+                    const tc   = tmp.getContext('2d');
+                    tc.drawImage(bmp, 0, 0);
+                    imageData = tc.getImageData(0, 0, bmp.width, bmp.height);
+                    bmp.close();
+                    break;
+                }
+            }
+        } catch (_) {
+            // Permission denied or no image in system clipboard — fall through
+        }
+    }
+    // Fall back to internal clipboard
+    if (!imageData) imageData = _clipboardData;
+    if (!imageData) return;
+
+    // Update internal clipboard so subsequent pastes are consistent
+    _clipboardData = imageData;
+
     // Commit any current floating selection before pasting
     _clearSelection();
 
     // Place the pasted content as a new floating selection,
     // offset +16px from top-left so repeated pastes stack visually
-    const pasteX = Math.min(16, _canvas.width  - _clipboardData.width);
-    const pasteY = Math.min(16, _canvas.height - _clipboardData.height);
+    const pasteX = Math.min(16, _canvas.width  - imageData.width);
+    const pasteY = Math.min(16, _canvas.height - imageData.height);
 
-    _selRect         = { x: pasteX, y: pasteY, w: _clipboardData.width, h: _clipboardData.height };
+    _selRect         = { x: pasteX, y: pasteY, w: imageData.width, h: imageData.height };
     _selImageData    = new ImageData(
-        new Uint8ClampedArray(_clipboardData.data),
-        _clipboardData.width, _clipboardData.height
+        new Uint8ClampedArray(imageData.data),
+        imageData.width, imageData.height
     );
     // Snapshot the canvas as-is (original untouched) — the floated content is
     // drawn ON TOP; committing (_clearSelection) blends it in.
