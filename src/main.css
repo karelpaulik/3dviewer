@@ -1936,16 +1936,17 @@ a, button, input, select {
 /* Titlebar — drag handle + per-window buttons */
 .img-editor-titlebar {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     align-items: center;
     gap: 4px;
-    padding: 3px 6px;
+    padding: 3px 6px 0 6px;
     background: #252525;
     border-bottom: 1px solid #3a3a3a;
     flex-shrink: 0;
     user-select: none;
     cursor: default;
-    overflow: hidden;
+    overflow-x: clip;
+    overflow-y: visible;
     min-height: 36px;
 }
 .img-ed-titlebar-title {
@@ -1960,8 +1961,28 @@ a, button, input, select {
     display: flex;
     align-items: center;
     gap: 3px;
-    flex-wrap: wrap;
-    flex: 0 0 auto;
+    flex-wrap: nowrap;
+    flex: 0 1 auto;
+    overflow-x: auto;
+    overflow-y: visible;
+    scrollbar-width: thin;
+    scrollbar-color: #666 #333;
+    min-width: 0;
+    padding-bottom: 5px;
+    margin-bottom: -1px;
+}
+.img-ed-titlebar-btns::-webkit-scrollbar {
+    height: 4px;
+}
+.img-ed-titlebar-btns::-webkit-scrollbar-track {
+    background: #333;
+}
+.img-ed-titlebar-btns::-webkit-scrollbar-thumb {
+    background: #666;
+    border-radius: 2px;
+}
+.img-ed-titlebar-btns::-webkit-scrollbar-thumb:hover {
+    background: #888;
 }
 .img-editor-titlebar-icon {
     font-size: 14px;

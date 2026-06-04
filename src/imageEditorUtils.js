@@ -257,29 +257,32 @@ function _buildInstanceUI(inst) {
     win.style.zIndex = _guiOnTop ? String(_Z_EDITOR_BEHIND) : String(_nextZIndex++);
     win.innerHTML = `
         <div class="img-editor-titlebar">
-            <span class="img-editor-titlebar-icon">🖼</span>
-            <input class="img-ed-title img-editor-titlebar-name" title="Click to rename" spellcheck="false" value="">
-            <div style="flex:1"></div>
-            <button class="img-ed-btn" id="img-ed-undo"       title="Undo (Ctrl+Z)">↩</button>
-            <button class="img-ed-btn" id="img-ed-redo"       title="Redo (Ctrl+Y)">↪</button>
-            <button class="img-ed-btn" id="img-ed-goto-begin" title="Show original image (undo/redo stack preserved)">⏮</button>
-            <div class="img-ed-sep"></div>
-            <button class="img-ed-btn" id="img-ed-rotate-cw"  title="Rotate 90° CW">↻</button>
-            <button class="img-ed-btn" id="img-ed-rotate-ccw" title="Rotate 90° CCW">↺</button>
-            <button class="img-ed-btn" id="img-ed-flip-h"     title="Flip Horizontal">⇄</button>
-            <button class="img-ed-btn" id="img-ed-flip-v"     title="Flip Vertical">⇅</button>
-            <button class="img-ed-btn img-ed-btn-text" id="img-ed-resize"      title="Resize (scales image)">⊡ Resize</button>
-            <button class="img-ed-btn img-ed-btn-text" id="img-ed-canvas-size" title="Canvas Size — without scaling the image">▦ Canvas resize</button>
-            <div class="img-ed-sep"></div>
-            <button class="img-ed-btn img-ed-btn-primary" id="img-ed-apply-crop"  style="display:none">✔</button>
-            <button class="img-ed-btn"                    id="img-ed-cancel-crop" style="display:none">✕</button>
-            <div class="img-ed-sep" id="img-ed-crop-sep"  style="display:none"></div>
-            <button class="img-ed-btn" id="img-ed-save-overwrite" title="Save (overwrite current attachment)">💾</button>
-            <button class="img-ed-btn" id="img-ed-save-new"       title="Save as new attachment in Files">💾✎</button>
-            <button class="img-ed-btn" id="img-ed-download"       title="Download to disk">⬇</button>
-            <div class="img-ed-sep"></div>
-            <button class="img-ed-btn" id="img-ed-maximize" title="Maximize window">⤢</button>
-            <button class="img-ed-btn img-ed-btn-close" id="img-ed-close" title="Close">✕</button>
+            <div class="img-ed-titlebar-title">
+                <span class="img-editor-titlebar-icon">🖼</span>
+                <input class="img-ed-title img-editor-titlebar-name" title="Click to rename" spellcheck="false" value="">
+            </div>
+            <div class="img-ed-titlebar-btns">
+                <button class="img-ed-btn" id="img-ed-undo"       title="Undo (Ctrl+Z)">↩</button>
+                <button class="img-ed-btn" id="img-ed-redo"       title="Redo (Ctrl+Y)">↪</button>
+                <button class="img-ed-btn" id="img-ed-goto-begin" title="Show original image (undo/redo stack preserved)">⏮</button>
+                <div class="img-ed-sep"></div>
+                <button class="img-ed-btn" id="img-ed-rotate-cw"  title="Rotate 90° CW">↻</button>
+                <button class="img-ed-btn" id="img-ed-rotate-ccw" title="Rotate 90° CCW">↺</button>
+                <button class="img-ed-btn" id="img-ed-flip-h"     title="Flip Horizontal">⇄</button>
+                <button class="img-ed-btn" id="img-ed-flip-v"     title="Flip Vertical">⇅</button>
+                <button class="img-ed-btn img-ed-btn-text" id="img-ed-resize"      title="Resize (scales image)">⊡ Resize</button>
+                <button class="img-ed-btn img-ed-btn-text" id="img-ed-canvas-size" title="Canvas Size — without scaling the image">▦ Canvas resize</button>
+                <div class="img-ed-sep"></div>
+                <button class="img-ed-btn img-ed-btn-primary" id="img-ed-apply-crop"  style="display:none">✔</button>
+                <button class="img-ed-btn"                    id="img-ed-cancel-crop" style="display:none">✕</button>
+                <div class="img-ed-sep" id="img-ed-crop-sep"  style="display:none"></div>
+                <button class="img-ed-btn" id="img-ed-save-overwrite" title="Save (overwrite current attachment)">💾</button>
+                <button class="img-ed-btn" id="img-ed-save-new"       title="Save as new attachment in Files">💾✎</button>
+                <button class="img-ed-btn" id="img-ed-download"       title="Download to disk">⬇</button>
+                <div class="img-ed-sep"></div>
+                <button class="img-ed-btn" id="img-ed-maximize" title="Maximize window">⤢</button>
+                <button class="img-ed-btn img-ed-btn-close" id="img-ed-close" title="Close">✕</button>
+            </div>
         </div>
         <div class="img-editor-viewport">
             <canvas class="img-editor-canvas"></canvas>
@@ -513,7 +516,7 @@ function _setTool(inst, tool) {
 
 function _updateHint(inst) {
     const hints = {
-        pan:       'Drag to pan | Scroll to zoom | Fit: F',
+        pan:       'Fit: F',
         crop:      'Drag to select crop region | Apply / Cancel',
         pen:       'Drag to draw freehand | Size = stroke width',
         text:      'Click on image to place text',
