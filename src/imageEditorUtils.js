@@ -41,6 +41,7 @@ let _toolbarEl    = null;     // shared toolbar DOM element
 let _nextZIndex   = 100001;   // z-index counter for window stacking
 let _nextWinPos   = 0;        // cascade offset for new windows
 let _guiOnTop     = false;    // when true, GUI floats above editor windows
+let _showWinChrome = true;    // when false, titlebar & statusbar of all windows are hidden
 
 // ── Instance factory ──────────────────────────────────────────────────────────
 
@@ -179,6 +180,7 @@ function _ensureToolbar() {
             <button class="img-ed-btn" id="img-ed-fit-all"    title="Fit all images to their window">⛶ Fit all</button>
             <button class="img-ed-btn img-ed-btn-close" id="img-ed-close-all" title="Close all editor windows">✕ all</button>
             <div style="flex:1 1 0"></div>
+            <button class="img-ed-btn" id="img-ed-chrome-toggle" title="Toggle titlebar &amp; statusbar on all windows">⊟ Bars</button>
             <button class="img-ed-btn" id="img-ed-guitop" title="Toggle: Editor on top / GUI on top">💼 GUI</button>
         </div>`;
 
@@ -234,6 +236,9 @@ function _ensureToolbar() {
     _toolbarEl.querySelector('#img-ed-fit-all').addEventListener('click',       () => _instances.forEach(inst => _fitToView(inst)));
     _toolbarEl.querySelector('#img-ed-close-all').addEventListener('click',    () => { while (_instances.length) _close(_instances[0]); });
     _toolbarEl.querySelector('#img-ed-guitop').addEventListener('click',       () => _toggleGuiOnTop());
+    _toolbarEl.querySelector('#img-ed-chrome-toggle').addEventListener('click', () => _toggleWinChrome());
+    const chromeBtn = _toolbarEl.querySelector('#img-ed-chrome-toggle');
+    if (chromeBtn) chromeBtn.classList.toggle('active', !_showWinChrome);
 
     _syncToolbarActiveState();
 }
@@ -301,6 +306,7 @@ function _buildInstanceUI(inst) {
 
     document.body.appendChild(win);
     inst.winEl = win;
+    _applyWinChrome(inst);
 
     inst.canvas = win.querySelector('.img-editor-canvas');
     inst.ctx    = inst.canvas.getContext('2d', { willReadFrequently: true });
@@ -1553,6 +1559,21 @@ function _resizeAll() {
 const _Z_EDITOR_NORMAL  = 100001;
 const _Z_EDITOR_BEHIND  = 999;
 const _Z_TOOLBAR_GUITOP = 1002;  // just above GUI (1001) so toggle btn is clickable
+
+function _toggleWinChrome() {
+    _showWinChrome = !_showWinChrome;
+    const btn = _toolbarEl && _toolbarEl.querySelector('#img-ed-chrome-toggle');
+    if (btn) btn.classList.toggle('active', !_showWinChrome);
+    _instances.forEach(inst => _applyWinChrome(inst));
+}
+
+function _applyWinChrome(inst) {
+    if (!inst.winEl) return;
+    const tb = inst.winEl.querySelector('.img-editor-titlebar');
+    const sb = inst.winEl.querySelector('.img-editor-statusbar');
+    if (tb) tb.style.display = _showWinChrome ? '' : 'none';
+    if (sb) sb.style.display = _showWinChrome ? '' : 'none';
+}
 
 function _toggleGuiOnTop() {
     _guiOnTop = !_guiOnTop;

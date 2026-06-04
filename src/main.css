@@ -2114,7 +2114,7 @@ a, button, input, select {
 }
 .img-ed-btn-save:hover { background: #2a5a8a; }
 /* Toolbar-level buttons that carry text labels need auto width */
-#img-ed-save-all, #img-ed-close-all, #img-ed-arrange, #img-ed-resize-all, #img-ed-fit-all, #img-ed-guitop {
+#img-ed-save-all, #img-ed-close-all, #img-ed-arrange, #img-ed-resize-all, #img-ed-fit-all, #img-ed-guitop, #img-ed-chrome-toggle {
     width: auto;
     padding: 0 8px;
     font-size: 12px;
