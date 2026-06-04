@@ -311,6 +311,75 @@ function _buildUI() {
     });
     vp.addEventListener('dblclick', e => { if (_activeTool === 'text') e.stopPropagation(); });
 
+    // ── Touch events ──
+    let _pinchDist0 = null; // initial pinch distance for zoom gesture
+
+    const _touchToMouse = (touch) => ({
+        button: 0, buttons: 1,
+        clientX: touch.clientX, clientY: touch.clientY,
+        ctrlKey: false, metaKey: false,
+        preventDefault: () => {},
+        stopPropagation: () => {},
+    });
+
+    vp.addEventListener('touchstart', e => {
+        if (e.touches.length === 2) {
+            // Begin pinch-to-zoom
+            const dx = e.touches[1].clientX - e.touches[0].clientX;
+            const dy = e.touches[1].clientY - e.touches[0].clientY;
+            _pinchDist0 = Math.sqrt(dx * dx + dy * dy);
+            e.preventDefault();
+            return;
+        }
+        _pinchDist0 = null;
+        if (e.touches.length !== 1) return;
+        e.preventDefault();
+        _onMouseDown(_touchToMouse(e.touches[0]));
+    }, { passive: false });
+
+    vp.addEventListener('touchmove', e => {
+        if (e.touches.length === 2 && _pinchDist0 !== null) {
+            // Pinch-to-zoom
+            e.preventDefault();
+            const dx = e.touches[1].clientX - e.touches[0].clientX;
+            const dy = e.touches[1].clientY - e.touches[0].clientY;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            const rect = vp.getBoundingClientRect();
+            const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left;
+            const my = (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top;
+            const delta = dist / _pinchDist0;
+            _pinchDist0 = dist;
+            const newZoom = Math.min(Math.max(_zoom * delta, 0.05), 20);
+            _panX = mx - (mx - _panX) * (newZoom / _zoom);
+            _panY = my - (my - _panY) * (newZoom / _zoom);
+            _zoom = newZoom;
+            _applyTransform();
+            _updateCursor();
+            _redrawOverlay(ovCanvas, ovCtx);
+            return;
+        }
+        if (e.touches.length !== 1) return;
+        e.preventDefault();
+        _onMouseMove(_touchToMouse(e.touches[0]), ovCanvas, ovCtx);
+    }, { passive: false });
+
+    vp.addEventListener('touchend', e => {
+        _pinchDist0 = null;
+        const touch = e.changedTouches[0];
+        e.preventDefault();
+        _onMouseUp(_touchToMouse(touch), ovCanvas, ovCtx);
+        // Simulate click for text tool
+        if (_activeTool === 'text' && e.changedTouches.length === 1) {
+            if (_textDragJustEnded) { _textDragJustEnded = false; return; }
+            _placeText(_touchToMouse(touch));
+        }
+    }, { passive: false });
+
+    vp.addEventListener('touchcancel', () => {
+        _pinchDist0 = null;
+        _onMouseLeave();
+    });
+
     // ── Keyboard shortcuts ──
     document.addEventListener('keydown', _onKeyDown);
     // Mark the listener so we can remove it on close
@@ -1007,23 +1076,39 @@ function _placeText(e) {
     // ── Drag dialog handle ──
     const handle = dlg.querySelector('.img-ed-txt-drag-handle');
     let _dragOff = null;
+    const _startDlgDrag = (clientX, clientY) => {
+        const r = dlg.getBoundingClientRect();
+        _dragOff = { x: clientX - r.left, y: clientY - r.top };
+    };
+    const _moveDlg = (clientX, clientY) => {
+        if (!_dragOff) return;
+        dlg.style.left = (clientX - _dragOff.x) + 'px';
+        dlg.style.top  = (clientY - _dragOff.y) + 'px';
+    };
+    const _endDlgDrag = () => { _dragOff = null; };
+
     handle.addEventListener('mousedown', ev => {
         if (ev.button !== 0) return;
         ev.preventDefault();
-        const r = dlg.getBoundingClientRect();
-        _dragOff = { x: ev.clientX - r.left, y: ev.clientY - r.top };
-        const _onMove = mv => {
-            dlg.style.left = (mv.clientX - _dragOff.x) + 'px';
-            dlg.style.top  = (mv.clientY - _dragOff.y) + 'px';
-        };
+        _startDlgDrag(ev.clientX, ev.clientY);
+        const _onMove = mv => _moveDlg(mv.clientX, mv.clientY);
         const _onUp = () => {
             document.removeEventListener('mousemove', _onMove);
             document.removeEventListener('mouseup',   _onUp);
-            _dragOff = null;
+            _endDlgDrag();
         };
         document.addEventListener('mousemove', _onMove);
         document.addEventListener('mouseup',   _onUp);
     });
+    handle.addEventListener('touchstart', ev => {
+        ev.preventDefault();
+        _startDlgDrag(ev.touches[0].clientX, ev.touches[0].clientY);
+    }, { passive: false });
+    handle.addEventListener('touchmove', ev => {
+        ev.preventDefault();
+        _moveDlg(ev.touches[0].clientX, ev.touches[0].clientY);
+    }, { passive: false });
+    handle.addEventListener('touchend', () => _endDlgDrag());
 
     const _getOvCanvas = () => _editorEl && _editorEl.querySelector('#img-editor-overlay-canvas');
 
