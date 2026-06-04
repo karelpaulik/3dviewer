@@ -61,6 +61,12 @@ export function refreshAttachmentsGui() {
         _guiRef.add({ fn: _downloadAllAsZip }, 'fn').name('⬇  Download all as ZIP');
     }
 
+    // "Edit all images" button — only shown when there is at least one image attachment
+    const imageAtts = attachmentsStore.filter(a => a.mimeType && a.mimeType.startsWith('image/'));
+    if (imageAtts.length > 0) {
+        _guiRef.add({ fn: () => imageAtts.forEach(a => _editAttachment(a)) }, 'fn').name('✏  Edit all images…');
+    }
+
     // One folder per attachment with download + delete buttons inside
     attachmentsStore.forEach(att => {
         const sizeStr = _formatSize(att.size);
