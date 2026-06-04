@@ -205,7 +205,7 @@ function _buildUI() {
     document.body.appendChild(_editorEl);
 
     _canvas = _editorEl.querySelector('#img-editor-canvas');
-    _ctx    = _canvas.getContext('2d');
+    _ctx    = _canvas.getContext('2d', { willReadFrequently: true });
     const ovCanvas = _editorEl.querySelector('#img-editor-overlay-canvas');
     const ovCtx    = ovCanvas.getContext('2d');
 
