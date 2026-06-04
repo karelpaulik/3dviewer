@@ -40,6 +40,7 @@ let _activeInst   = null;     // currently focused instance
 let _toolbarEl    = null;     // shared toolbar DOM element
 let _nextZIndex   = 100001;   // z-index counter for window stacking
 let _nextWinPos   = 0;        // cascade offset for new windows
+let _guiOnTop     = false;    // when true, GUI floats above editor windows
 
 // ── Instance factory ──────────────────────────────────────────────────────────
 
@@ -171,9 +172,12 @@ function _ensureToolbar() {
             </label>
             <div class="img-ed-sep"></div>
             <button class="img-ed-btn" id="img-ed-arrange"   title="Arrange all windows into a grid">⊞ Tile</button>
-            <button class="img-ed-btn img-ed-btn-save" id="img-ed-save-all"   title="Save all open images (overwrite)">💾 all</button>
+            <button class="img-ed-btn" id="img-ed-save-all"   title="Save all open images (overwrite)">💾 all</button>
             <button class="img-ed-btn" id="img-ed-resize-all" title="Resize all open images to the same dimensions">⊡ Resize all</button>
+            <button class="img-ed-btn" id="img-ed-fit-all"    title="Fit all images to their window">⛶ Fit all</button>
             <button class="img-ed-btn img-ed-btn-close" id="img-ed-close-all" title="Close all editor windows">✕ all</button>
+            <div style="flex:1 1 0"></div>
+            <button class="img-ed-btn" id="img-ed-guitop" title="Toggle: Editor on top / GUI on top">💼 GUI</button>
         </div>`;
 
     document.body.appendChild(_toolbarEl);
@@ -225,7 +229,9 @@ function _ensureToolbar() {
     _toolbarEl.querySelector('#img-ed-arrange').addEventListener('click',   () => _autoArrange());
     _toolbarEl.querySelector('#img-ed-save-all').addEventListener('click',    () => [..._instances].forEach(inst => _saveOverwrite(inst)));
     _toolbarEl.querySelector('#img-ed-resize-all').addEventListener('click',   () => _resizeAll());
+    _toolbarEl.querySelector('#img-ed-fit-all').addEventListener('click',       () => _instances.forEach(inst => _fitToView(inst)));
     _toolbarEl.querySelector('#img-ed-close-all').addEventListener('click',    () => { while (_instances.length) _close(_instances[0]); });
+    _toolbarEl.querySelector('#img-ed-guitop').addEventListener('click',       () => _toggleGuiOnTop());
 
     _syncToolbarActiveState();
 }
@@ -248,7 +254,7 @@ function _buildInstanceUI(inst) {
     win.className = 'img-editor-window';
     win.style.left = (60 + offset) + 'px';
     win.style.top  = (60 + offset) + 'px';
-    win.style.zIndex = _nextZIndex++;
+    win.style.zIndex = _guiOnTop ? String(_Z_EDITOR_BEHIND) : String(_nextZIndex++);
     win.innerHTML = `
         <div class="img-editor-titlebar">
             <span class="img-editor-titlebar-icon">🖼</span>
@@ -268,9 +274,9 @@ function _buildInstanceUI(inst) {
             <button class="img-ed-btn img-ed-btn-primary" id="img-ed-apply-crop"  style="display:none">✔</button>
             <button class="img-ed-btn"                    id="img-ed-cancel-crop" style="display:none">✕</button>
             <div class="img-ed-sep" id="img-ed-crop-sep"  style="display:none"></div>
-            <button class="img-ed-btn img-ed-btn-save" id="img-ed-save-overwrite" title="Save (overwrite current attachment)">💾</button>
-            <button class="img-ed-btn img-ed-btn-save" id="img-ed-save-new"       title="Save as new attachment in Files">💾✎</button>
-            <button class="img-ed-btn img-ed-btn-save" id="img-ed-download"       title="Download to disk">⬇</button>
+            <button class="img-ed-btn" id="img-ed-save-overwrite" title="Save (overwrite current attachment)">💾</button>
+            <button class="img-ed-btn" id="img-ed-save-new"       title="Save as new attachment in Files">💾✎</button>
+            <button class="img-ed-btn" id="img-ed-download"       title="Download to disk">⬇</button>
             <div class="img-ed-sep"></div>
             <button class="img-ed-btn" id="img-ed-maximize" title="Maximize window">⤢</button>
             <button class="img-ed-btn img-ed-btn-close" id="img-ed-close" title="Close">✕</button>
@@ -465,12 +471,13 @@ function _makeDraggable(win, handle) {
 // ── Focus management ──────────────────────────────────────────────────────────
 
 function _focusInstance(inst) {
+    const z = _guiOnTop ? _Z_EDITOR_BEHIND : _nextZIndex++;
     if (_activeInst === inst) {
-        inst.winEl.style.zIndex = _nextZIndex++;
+        inst.winEl.style.zIndex = String(z);
         return;
     }
     _activeInst = inst;
-    inst.winEl.style.zIndex = _nextZIndex++;
+    inst.winEl.style.zIndex = String(z);
     _instances.forEach(i => i.winEl.classList.toggle('img-editor-window--active', i === inst));
     _syncToolbarActiveState();
     _syncCropButtons(inst);
@@ -1506,6 +1513,37 @@ function _resizeAll() {
         dlg.remove();
     });
     dlg.querySelector('#img-ed-racancel').addEventListener('click', () => dlg.remove());
+}
+
+// ── GUI-on-top toggle ─────────────────────────────────────────────────────────
+
+// GUI z-index is 1001 (see #gui-container in main.css).
+// Editor windows normally sit at 100001+. When _guiOnTop is true we drop
+// editor windows to 999 (below GUI) but keep the toolbar above GUI so the
+// toggle button stays reachable.
+const _Z_EDITOR_NORMAL  = 100001;
+const _Z_EDITOR_BEHIND  = 999;
+const _Z_TOOLBAR_GUITOP = 1002;  // just above GUI (1001) so toggle btn is clickable
+
+function _toggleGuiOnTop() {
+    _guiOnTop = !_guiOnTop;
+    _applyGuiOnTop();
+}
+
+function _applyGuiOnTop() {
+    if (!_toolbarEl) return;
+    const btn = _toolbarEl.querySelector('#img-ed-guitop');
+    if (_guiOnTop) {
+        _toolbarEl.style.zIndex = String(_Z_TOOLBAR_GUITOP);
+        _instances.forEach(inst => { inst.winEl.style.zIndex = String(_Z_EDITOR_BEHIND); });
+        if (btn) { btn.classList.add('active'); btn.title = 'Editor on top (click to switch)'; }
+    } else {
+        _toolbarEl.style.zIndex = '';          // CSS default (100002 from stylesheet)
+        // Restore each window's original stacking order
+        _instances.forEach((inst, i) => { inst.winEl.style.zIndex = String(_Z_EDITOR_NORMAL + i); });
+        _nextZIndex = _Z_EDITOR_NORMAL + _instances.length;
+        if (btn) { btn.classList.remove('active'); btn.title = 'GUI on top (click to switch)'; }
+    }
 }
 
 // ── Auto-arrange (tile) ───────────────────────────────────────────────────────
