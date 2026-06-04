@@ -1548,6 +1548,8 @@ function _applyGuiOnTop() {
 
 // ── Auto-arrange (tile) ───────────────────────────────────────────────────────
 
+export function autoArrangeImageEditors() { _autoArrange(); }
+
 function _autoArrange() {
     const n = _instances.length;
     if (n === 0) return;

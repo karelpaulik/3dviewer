@@ -5,7 +5,7 @@
 
 import JSZip from 'jszip';
 import { buildWysiwygEditor } from './annotationUtils.js';
-import { openImageEditor } from './imageEditorUtils.js';
+import { openImageEditor, autoArrangeImageEditors } from './imageEditorUtils.js';
 
 let attachmentsStore = []; // [{ id, name, mimeType, data (base64 string), size, addedAt }]
 let _guiRef = null;
@@ -64,7 +64,17 @@ export function refreshAttachmentsGui() {
     // "Edit all images" button — only shown when there is at least one image attachment
     const imageAtts = attachmentsStore.filter(a => a.mimeType && a.mimeType.startsWith('image/'));
     if (imageAtts.length > 0) {
-        _guiRef.add({ fn: () => imageAtts.forEach(a => _editAttachment(a)) }, 'fn').name('✏  Edit all images…');
+        _guiRef.add({ fn: () => {
+            imageAtts.forEach(a => _editAttachment(a));
+            if (imageAtts.length > 1) {
+                // Small delay so the browser paints the windows before the dialog blocks rendering
+                setTimeout(() => {
+                    if (window.confirm('Arrange windows as tile?')) {
+                        autoArrangeImageEditors();
+                    }
+                }, 150);
+            }
+        } }, 'fn').name('✏  Edit all images…');
     }
 
     // One folder per attachment with download + delete buttons inside
