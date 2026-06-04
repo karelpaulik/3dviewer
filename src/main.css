@@ -2092,6 +2092,13 @@ a, button, input, select {
     color: #fff;
 }
 .img-ed-btn-save:hover { background: #2a5a8a; }
+/* Toolbar-level buttons that carry text labels need auto width */
+#img-ed-save-all, #img-ed-close-all, #img-ed-arrange, #img-ed-resize-all {
+    width: auto;
+    padding: 0 8px;
+    font-size: 12px;
+    text-transform: none;
+}
 .img-ed-btn-text {
     width: auto;
     padding: 0 7px;

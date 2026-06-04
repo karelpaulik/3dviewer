@@ -170,7 +170,10 @@ function _ensureToolbar() {
                 Font <input type="number" id="img-ed-fontsize" min="6" max="200" value="18" style="width:44px">
             </label>
             <div class="img-ed-sep"></div>
-            <button class="img-ed-btn" id="img-ed-arrange" title="Arrange all windows into a grid">⊞ Tile</button>
+            <button class="img-ed-btn" id="img-ed-arrange"   title="Arrange all windows into a grid">⊞ Tile</button>
+            <button class="img-ed-btn img-ed-btn-save" id="img-ed-save-all"   title="Save all open images (overwrite)">💾 all</button>
+            <button class="img-ed-btn" id="img-ed-resize-all" title="Resize all open images to the same dimensions">⊡ Resize all</button>
+            <button class="img-ed-btn img-ed-btn-close" id="img-ed-close-all" title="Close all editor windows">✕ all</button>
         </div>`;
 
     document.body.appendChild(_toolbarEl);
@@ -219,7 +222,10 @@ function _ensureToolbar() {
     });
     _toolbarEl.querySelector('#img-ed-fontsize').addEventListener('input', e => { _fontSize = +e.target.value; });
 
-    _toolbarEl.querySelector('#img-ed-arrange').addEventListener('click', () => _autoArrange());
+    _toolbarEl.querySelector('#img-ed-arrange').addEventListener('click',   () => _autoArrange());
+    _toolbarEl.querySelector('#img-ed-save-all').addEventListener('click',    () => [..._instances].forEach(inst => _saveOverwrite(inst)));
+    _toolbarEl.querySelector('#img-ed-resize-all').addEventListener('click',   () => _resizeAll());
+    _toolbarEl.querySelector('#img-ed-close-all').addEventListener('click',    () => { while (_instances.length) _close(_instances[0]); });
 
     _syncToolbarActiveState();
 }
@@ -1442,6 +1448,64 @@ function _applyBlur(inst, rect) {
         }
     }
     inst.ctx.putImageData(imgData, x, y);
+}
+
+// ── Resize all ───────────────────────────────────────────────────────────────
+
+function _resizeAll() {
+    if (_instances.length === 0) return;
+
+    // Use first instance dimensions as defaults
+    const refW = _instances[0].canvas.width;
+    const refH = _instances[0].canvas.height;
+
+    // Build a shared dialog attached to body
+    const existing = document.getElementById('img-ed-resize-all-dlg');
+    if (existing) existing.remove();
+
+    const dlg = document.createElement('div');
+    dlg.id = 'img-ed-resize-all-dlg';
+    dlg.className = 'img-ed-resize-dialog';
+    dlg.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:200000;';
+    dlg.innerHTML = `
+        <div class="img-ed-resize-title">Resize all images</div>
+        <div class="img-ed-resize-row"><label>Width  <input type="number" id="img-ed-raw" min="1" value="${refW}" style="width:80px"> px</label></div>
+        <div class="img-ed-resize-row"><label>Height <input type="number" id="img-ed-rah" min="1" value="${refH}" style="width:80px"> px</label></div>
+        <div class="img-ed-resize-row"><label><input type="checkbox" id="img-ed-ralock" checked> Keep aspect ratio (per image)</label></div>
+        <div class="img-ed-resize-btns">
+            <button class="img-ed-btn img-ed-btn-primary" id="img-ed-raapply">Apply to all</button>
+            <button class="img-ed-btn" id="img-ed-racancel">Cancel</button>
+        </div>`;
+    document.body.appendChild(dlg);
+
+    const rwInp = dlg.querySelector('#img-ed-raw');
+    const rhInp = dlg.querySelector('#img-ed-rah');
+    const lock  = dlg.querySelector('#img-ed-ralock');
+
+    rwInp.addEventListener('input', () => { if (!lock.checked) return; rhInp.value = Math.round(+rwInp.value * refH / refW); });
+    rhInp.addEventListener('input', () => { if (!lock.checked) return; rwInp.value = Math.round(+rhInp.value * refW / refH); });
+
+    dlg.querySelector('#img-ed-raapply').addEventListener('click', () => {
+        const targetW = Math.max(1, Math.round(+rwInp.value));
+        const targetH = Math.max(1, Math.round(+rhInp.value));
+        _instances.forEach(inst => {
+            let nw = targetW, nh = targetH;
+            if (lock.checked) {
+                // scale each image proportionally to fit target box
+                const scale = Math.min(targetW / inst.canvas.width, targetH / inst.canvas.height);
+                nw = Math.max(1, Math.round(inst.canvas.width  * scale));
+                nh = Math.max(1, Math.round(inst.canvas.height * scale));
+            }
+            const tmp = document.createElement('canvas');
+            tmp.width = nw; tmp.height = nh;
+            tmp.getContext('2d').drawImage(inst.canvas, 0, 0, nw, nh);
+            inst.canvas.width = nw; inst.canvas.height = nh;
+            inst.ctx.drawImage(tmp, 0, 0);
+            _fitToView(inst); _pushUndo(inst);
+        });
+        dlg.remove();
+    });
+    dlg.querySelector('#img-ed-racancel').addEventListener('click', () => dlg.remove());
 }
 
 // ── Auto-arrange (tile) ───────────────────────────────────────────────────────
