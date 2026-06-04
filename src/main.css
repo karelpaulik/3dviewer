@@ -1887,28 +1887,100 @@ a, button, input, select {
 }
 
 /* ── Image Editor ─────────────────────────────────────────────────────────── */
-#img-editor-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 100000;
-    background: #111;
-    display: flex;
-    flex-direction: column;
-}
-#img-editor-wrap {
-    display: flex;
-    flex-direction: column;
-    width: 100%;
-    height: 100%;
-}
+
+/* Shared toolbar — fixed at top, shown while any editor window is open */
 #img-editor-toolbar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 100002;
     display: flex;
     flex-direction: column;
     background: #2a2a2a;
     border-bottom: 1px solid #3a3a3a;
     flex-shrink: 0;
     user-select: none;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.5);
 }
+
+/* Floating editor window */
+.img-editor-window {
+    position: fixed;
+    width: 900px;
+    height: 640px;
+    min-width: 360px;
+    min-height: 260px;
+    background: #111;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid #444;
+    border-radius: 6px;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.8);
+    resize: both;
+    overflow: hidden;
+    z-index: 100001;
+}
+.img-editor-window--active {
+    border-color: #4a8adf;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.8), 0 0 0 1px rgba(74,138,223,0.5);
+}
+.img-editor-window--maximized {
+    resize: none !important;
+    border-radius: 0 !important;
+    border-left: none !important;
+    border-right: none !important;
+    border-bottom: none !important;
+}
+
+/* Titlebar — drag handle + per-window buttons */
+.img-editor-titlebar {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    padding: 3px 6px;
+    background: #252525;
+    border-bottom: 1px solid #3a3a3a;
+    flex-shrink: 0;
+    user-select: none;
+    cursor: default;
+    overflow: hidden;
+    min-height: 36px;
+    flex-wrap: nowrap;
+}
+.img-editor-titlebar-icon {
+    font-size: 14px;
+    flex-shrink: 0;
+    margin-right: 2px;
+}
+.img-editor-titlebar-name {
+    font-family: sans-serif;
+    font-size: 12px;
+    color: #ccc;
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid transparent;
+    outline: none;
+    padding: 0 2px;
+    max-width: 180px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: text;
+    flex-shrink: 1;
+    min-width: 40px;
+    transition: border-color 0.15s;
+}
+.img-editor-titlebar-name:hover,
+.img-editor-titlebar-name:focus {
+    border-bottom-color: #666;
+    color: #eee;
+}
+.img-ed-btn-close {
+    margin-left: 2px;
+    color: #c66;
+}
+.img-ed-btn-close:hover { background: #5a1a1a; border-color: #c44; color: #fff; }
 .img-ed-row {
     display: flex;
     align-items: center;
@@ -2037,7 +2109,7 @@ a, button, input, select {
     background: none;
     cursor: pointer;
 }
-#img-editor-viewport {
+.img-editor-viewport {
     flex: 1;
     position: relative;
     overflow: hidden;
@@ -2045,7 +2117,7 @@ a, button, input, select {
     background-image: repeating-conic-gradient(#222 0% 25%, #1a1a1a 0% 50%);
     background-size: 16px 16px;
 }
-#img-editor-canvas {
+.img-editor-canvas {
     position: absolute;
     top: 0;
     left: 0;
@@ -2053,14 +2125,14 @@ a, button, input, select {
     transform-origin: 0 0;
     box-shadow: 0 0 20px rgba(0,0,0,0.7);
 }
-#img-editor-overlay-canvas {
+.img-editor-overlay-canvas {
     position: absolute;
     inset: 0;
     pointer-events: none;
     width: 100%;
     height: 100%;
 }
-#img-editor-statusbar {
+.img-editor-statusbar {
     display: flex;
     align-items: center;
     gap: 16px;
@@ -2072,14 +2144,14 @@ a, button, input, select {
     font-size: 12px;
     color: #bbb;
 }
-#img-ed-hint { flex: 1; text-align: right; color: #bbb; }
-#img-ed-zoom-wrap {
+.img-ed-hint { flex: 1; text-align: right; color: #bbb; }
+.img-ed-zoom-wrap {
     display: flex;
     align-items: center;
     gap: 1px;
     cursor: text;
 }
-#img-ed-zoom-label {
+.img-ed-zoom-label {
     background: transparent;
     border: 1px solid transparent;
     border-radius: 3px;
@@ -2094,11 +2166,11 @@ a, button, input, select {
     cursor: text;
     transition: background 0.1s, border-color 0.1s, color 0.1s;
 }
-#img-ed-zoom-label::-webkit-inner-spin-button,
-#img-ed-zoom-label::-webkit-outer-spin-button { -webkit-appearance: none; }
-#img-ed-zoom-label:hover { background: #3a3a3a; border-color: #555; color: #fff; }
-#img-ed-zoom-label:focus { background: #1a1a1a; border-color: #4a8adf; color: #fff; }
-#img-ed-zoom-pct { color: #bbb; font-family: monospace; font-size: 12px; }
+.img-ed-zoom-label::-webkit-inner-spin-button,
+.img-ed-zoom-label::-webkit-outer-spin-button { -webkit-appearance: none; }
+.img-ed-zoom-label:hover { background: #3a3a3a; border-color: #555; color: #fff; }
+.img-ed-zoom-label:focus { background: #1a1a1a; border-color: #4a8adf; color: #fff; }
+.img-ed-zoom-pct { color: #bbb; font-family: monospace; font-size: 12px; }
 
 /* Resize dialog */
 .img-ed-resize-dialog {
