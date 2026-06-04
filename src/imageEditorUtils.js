@@ -77,6 +77,18 @@ let _shapeSnapshot   = null;
 let _calloutCount    = 1;
 let _blurPreviewRect = null;
 
+// Selection tool
+let _selRect         = null;   // { x, y, w, h } in image coords — current selection
+let _isSelectingRect = false;  // dragging to define selection
+let _selStart        = null;   // drag start point (image coords)
+let _isMovingSel     = false;  // dragging the floated selection content
+let _selMoveOff      = null;   // { dx, dy } offset within selRect at move start
+let _selImageData    = null;   // lifted ImageData (floating selection content)
+let _selHoleSnapshot = null;   // full-canvas ImageData with the "hole" carved
+
+// Clipboard (copy/paste within editor session)
+let _clipboardData   = null;   // ImageData | null — last Ctrl+C'd region
+
 // Resize dialog (keep ref to close it)
 let _resizeDialogEl = null;
 
@@ -97,6 +109,10 @@ function _launch(att, onSaveOverwrite, onSaveNew) {
     _shapeFill       = false;
     _eraserShape     = 'circle';
     _blurPreviewRect = null;
+    _selRect         = null;
+    _isSelectingRect = false;
+    _selImageData    = null;
+    _selHoleSnapshot = null;
 
     _buildUI();
 
@@ -153,6 +169,7 @@ function _buildUI() {
                     <span class="img-ed-group-label">View</span>
                     <button class="img-ed-tool-btn" id="img-ed-tool-pan"  title="Pan">✋</button>
                     <button class="img-ed-tool-btn" id="img-ed-tool-crop" title="Crop">⛶</button>
+                    <button class="img-ed-tool-btn" id="img-ed-tool-select" title="Select — drag rectangle">⬚</button>
                     <div class="img-ed-sep"></div>
                     <span class="img-ed-group-label">Draw</span>
                     <button class="img-ed-tool-btn" id="img-ed-tool-pen"       title="Freehand pen">✎</button>
@@ -222,7 +239,7 @@ function _buildUI() {
     _editorEl.querySelector('#img-ed-redo').addEventListener('click', _redo);
     _editorEl.querySelector('#img-ed-goto-begin').addEventListener('click', _gotoBegin);
 
-    ['pan', 'crop', 'pen', 'text', 'rect', 'ellipse', 'line', 'arrow', 'highlight', 'eraser', 'callout', 'blur'].forEach(tool => {
+    ['pan', 'crop', 'select', 'pen', 'text', 'rect', 'ellipse', 'line', 'arrow', 'highlight', 'eraser', 'callout', 'blur'].forEach(tool => {
         _editorEl.querySelector(`#img-ed-tool-${tool}`).addEventListener('click', () => _setTool(tool));
     });
 
@@ -401,8 +418,9 @@ function _buildUI() {
 
 function _setTool(tool) {
     _cancelTextDialog();
+    if (_activeTool === 'select' && tool !== 'select') _clearSelection();
     _activeTool = tool;
-    ['pan', 'crop', 'pen', 'text', 'rect', 'ellipse', 'line', 'arrow', 'highlight', 'eraser', 'callout', 'blur'].forEach(t => {
+    ['pan', 'crop', 'select', 'pen', 'text', 'rect', 'ellipse', 'line', 'arrow', 'highlight', 'eraser', 'callout', 'blur'].forEach(t => {
         const btn = _editorEl.querySelector(`#img-ed-tool-${t}`);
         if (btn) btn.classList.toggle('active', t === tool);
     });
@@ -438,6 +456,7 @@ function _updateHint() {
         eraser:    'Drag to erase to transparent | Size controls width',
         callout:   'Click to place numbered callout | ↺① resets counter',
         blur:      'Drag to select area to pixelate | Size = block size',
+        select:    'Drag to select rectangle | drag inside to move | Delete to erase',
     };
     const el = _editorEl && _editorEl.querySelector('#img-ed-hint');
     if (el) el.textContent = hints[_activeTool] || '';
@@ -485,7 +504,7 @@ function _updateCursor() {
     const cursors = {
         pan: 'grab', crop: 'crosshair', pen: 'crosshair', text: 'text',
         rect: 'crosshair', ellipse: 'crosshair', line: 'crosshair', arrow: 'crosshair',
-        callout: 'crosshair', blur: 'crosshair',
+        callout: 'crosshair', blur: 'crosshair', select: 'crosshair',
     };
     vp.style.cursor = cursors[_activeTool] || 'default';
 }
@@ -619,6 +638,21 @@ function _onMouseDown(e) {
         }
     }
 
+    if (_activeTool === 'select' && !e.ctrlKey) {
+        const pt = _vpToImg(e.clientX, e.clientY);
+        if (_selRect && _ptInRect(pt, _selRect)) {
+            if (!_selImageData) _liftSelection();
+            _isMovingSel = true;
+            _selMoveOff  = { dx: pt.x - _selRect.x, dy: pt.y - _selRect.y };
+        } else {
+            _clearSelection();
+            _isSelectingRect = true;
+            _selStart = pt;
+            _selRect  = null;
+        }
+        return;
+    }
+
     if (_activeTool === 'pan' || e.ctrlKey) {
         _isPanning = true;
         _panStart  = { x: e.clientX - _panX, y: e.clientY - _panY };
@@ -706,6 +740,13 @@ function _onMouseMove(e, ovCanvas, ovCtx) {
         if (vp) vp.style.cursor = inBox ? 'move' : 'text';
     }
 
+    // ── Hover cursor for selection tool ──
+    if (_activeTool === 'select' && _selRect && !_isSelectingRect && !_isMovingSel) {
+        const selPt = _vpToImg(e.clientX, e.clientY);
+        const vpEl  = _editorEl && _editorEl.querySelector('#img-editor-viewport');
+        if (vpEl) vpEl.style.cursor = _ptInRect(selPt, _selRect) ? 'move' : 'crosshair';
+    }
+
     if (_isPanning) {
         _panX = e.clientX - _panStart.x;
         _panY = e.clientY - _panStart.y;
@@ -717,6 +758,24 @@ function _onMouseMove(e, ovCanvas, ovCtx) {
     if (_isCropping && _cropStart) {
         const pt = _vpToImg(e.clientX, e.clientY);
         _cropRect = _normRect(_cropStart, pt);
+        _redrawOverlay(ovCanvas, ovCtx);
+        return;
+    }
+
+    if (_isSelectingRect && _selStart) {
+        const pt = _vpToImg(e.clientX, e.clientY);
+        _selRect = _normRect(_selStart, pt);
+        _redrawOverlay(ovCanvas, ovCtx);
+        return;
+    }
+
+    if (_isMovingSel && _selImageData) {
+        const pt = _vpToImg(e.clientX, e.clientY);
+        const newX = pt.x - _selMoveOff.dx;
+        const newY = pt.y - _selMoveOff.dy;
+        _selRect = { x: newX, y: newY, w: _selRect.w, h: _selRect.h };
+        _ctx.putImageData(_selHoleSnapshot, 0, 0);
+        _drawFloatedAt(newX, newY);
         _redrawOverlay(ovCanvas, ovCtx);
         return;
     }
@@ -808,6 +867,29 @@ function _onMouseUp(e, ovCanvas, ovCtx) {
         return;
     }
 
+    if (_isSelectingRect) {
+        _isSelectingRect = false;
+        if (!_selRect || _selRect.w < 2 || _selRect.h < 2) {
+            _selRect = null;
+            const ov = _editorEl && _editorEl.querySelector('#img-editor-overlay-canvas');
+            if (ov) _redrawOverlay(ov, ov.getContext('2d'));
+        }
+        _updateCursor();
+        return;
+    }
+
+    if (_isMovingSel) {
+        _isMovingSel = false;
+        _selMoveOff  = null;
+        if (_selImageData) {
+            _selImageData    = null;
+            _selHoleSnapshot = null;
+            _pushUndo();
+        }
+        _updateCursor();
+        return;
+    }
+
     if (_isPanning) {
         _isPanning = false;
         _updateCursor();
@@ -875,6 +957,20 @@ function _onMouseLeave() {
         _isPanning = false;
         _updateCursor();
     }
+    if (_isSelectingRect) {
+        _isSelectingRect = false;
+        if (!_selRect || _selRect.w < 2 || _selRect.h < 2) _selRect = null;
+    }
+    if (_isMovingSel) {
+        _isMovingSel = false;
+        _selMoveOff  = null;
+        if (_selImageData) {
+            _selImageData    = null;
+            _selHoleSnapshot = null;
+            _pushUndo();
+        }
+        _updateCursor();
+    }
 }
 
 function _onKeyDown(e) {
@@ -884,8 +980,19 @@ function _onKeyDown(e) {
 
     if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); _undo(); return; }
     if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'z'))) { e.preventDefault(); _redo(); return; }
+    if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
+        if (_activeTool === 'select' && _selRect) { e.preventDefault(); _copySelection(); }
+        return;
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
+        if (_clipboardData) { e.preventDefault(); _pasteClipboard(); }
+        return;
+    }
     if (e.key === 'f' || e.key === 'F') { _fitToView(); return; }
-    if (e.key === 'Escape') { _cancelCrop(); return; }
+    if (e.key === 'Escape') { _cancelCrop(); if (_activeTool === 'select') _clearSelection(); return; }
+    if ((e.key === 'Delete' || e.key === 'Backspace') && _activeTool === 'select' && _selRect) {
+        e.preventDefault(); _deleteSelection(); return;
+    }
 }
 
 // ── Overlay canvas (crop selection) ──────────────────────────────────────────
@@ -910,6 +1017,40 @@ function _redrawOverlay(ov, ovCtx) {
         ovCtx.font = '11px sans-serif';
         ovCtx.textBaseline = 'middle';
         ovCtx.fillText('\u2725', rx + 2, ry - 8);
+    }
+
+    // ── Selection rectangle ──
+    if (_activeTool === 'select' && _selRect) {
+        const { x, y, w, h } = _selRect;
+        const tl = _canvasToVp(x, y);
+        const br = _canvasToVp(x + w, y + h);
+        const rx = tl.x, ry = tl.y, rw = br.x - tl.x, rh = br.y - tl.y;
+        // Dashed border
+        ovCtx.strokeStyle = '#0078d7';
+        ovCtx.lineWidth   = 1.5;
+        ovCtx.setLineDash([5, 3]);
+        ovCtx.strokeRect(rx, ry, rw, rh);
+        ovCtx.setLineDash([]);
+        // Corner + edge handles
+        const hs = 6;
+        [[rx, ry], [rx + rw / 2, ry], [rx + rw, ry],
+         [rx, ry + rh / 2],            [rx + rw, ry + rh / 2],
+         [rx, ry + rh], [rx + rw / 2, ry + rh], [rx + rw, ry + rh]].forEach(([hx, hy]) => {
+            ovCtx.fillStyle   = '#fff';
+            ovCtx.fillRect(hx - hs / 2, hy - hs / 2, hs, hs);
+            ovCtx.strokeStyle = '#0078d7';
+            ovCtx.lineWidth   = 1;
+            ovCtx.strokeRect(hx - hs / 2, hy - hs / 2, hs, hs);
+        });
+        // Size label
+        const lbl  = `${Math.round(w)} \u00d7 ${Math.round(h)}`;
+        const lblW = lbl.length * 6 + 10;
+        ovCtx.fillStyle = 'rgba(0,120,215,0.85)';
+        ovCtx.fillRect(rx, ry - 18, lblW, 16);
+        ovCtx.fillStyle = '#fff';
+        ovCtx.font = '10px sans-serif';
+        ovCtx.textBaseline = 'middle';
+        ovCtx.fillText(lbl, rx + 4, ry - 10);
     }
 
     if (_activeTool === 'blur' && _blurPreviewRect) {
@@ -1563,6 +1704,135 @@ function _close() {
         _canvas   = null;
         _ctx      = null;
     }
+}
+
+// ── Selection helpers ─────────────────────────────────────────────────────────
+
+function _ptInRect(pt, r) {
+    return pt.x >= r.x && pt.x <= r.x + r.w && pt.y >= r.y && pt.y <= r.y + r.h;
+}
+
+function _liftSelection() {
+    if (!_selRect) return;
+    const cx = Math.round(Math.max(0, _selRect.x));
+    const cy = Math.round(Math.max(0, _selRect.y));
+    const cw = Math.round(Math.min(_canvas.width  - cx, _selRect.w));
+    const ch = Math.round(Math.min(_canvas.height - cy, _selRect.h));
+    if (cw < 1 || ch < 1) return;
+    _selImageData = _ctx.getImageData(cx, cy, cw, ch);
+    _ctx.save();
+    if (_bgColor) { _ctx.fillStyle = _bgColor; _ctx.fillRect(cx, cy, cw, ch); }
+    else          { _ctx.clearRect(cx, cy, cw, ch); }
+    _ctx.restore();
+    _selHoleSnapshot = _ctx.getImageData(0, 0, _canvas.width, _canvas.height);
+    _selRect = { x: cx, y: cy, w: cw, h: ch };
+}
+
+function _drawFloatedAt(x, y) {
+    if (!_selImageData) return;
+    const tmp = document.createElement('canvas');
+    tmp.width  = _selImageData.width;
+    tmp.height = _selImageData.height;
+    tmp.getContext('2d').putImageData(_selImageData, 0, 0);
+    _ctx.drawImage(tmp, Math.round(x), Math.round(y));
+}
+
+function _clearSelection() {
+    if (_selImageData && _selHoleSnapshot && _selRect) {
+        _ctx.putImageData(_selHoleSnapshot, 0, 0);
+        _drawFloatedAt(_selRect.x, _selRect.y);
+        _pushUndo();
+    }
+    _selRect         = null;
+    _selStart        = null;
+    _isSelectingRect = false;
+    _isMovingSel     = false;
+    _selMoveOff      = null;
+    _selImageData    = null;
+    _selHoleSnapshot = null;
+    const ov = _editorEl && _editorEl.querySelector('#img-editor-overlay-canvas');
+    if (ov) _redrawOverlay(ov, ov.getContext('2d'));
+}
+
+function _deleteSelection() {
+    if (!_selRect) return;
+    if (_selImageData && _selHoleSnapshot) {
+        // Floating: restore the hole, discarding floated content
+        _ctx.putImageData(_selHoleSnapshot, 0, 0);
+    } else {
+        // Static: carve the hole now
+        const cx = Math.round(Math.max(0, _selRect.x));
+        const cy = Math.round(Math.max(0, _selRect.y));
+        const cw = Math.round(Math.min(_canvas.width  - cx, _selRect.w));
+        const ch = Math.round(Math.min(_canvas.height - cy, _selRect.h));
+        if (cw >= 1 && ch >= 1) {
+            _ctx.save();
+            if (_bgColor) { _ctx.fillStyle = _bgColor; _ctx.fillRect(cx, cy, cw, ch); }
+            else          { _ctx.clearRect(cx, cy, cw, ch); }
+            _ctx.restore();
+        }
+    }
+    _selImageData    = null;
+    _selHoleSnapshot = null;
+    _selRect         = null;
+    _isMovingSel     = false;
+    _isSelectingRect = false;
+    _pushUndo();
+    const ov = _editorEl && _editorEl.querySelector('#img-editor-overlay-canvas');
+    if (ov) _redrawOverlay(ov, ov.getContext('2d'));
+}
+
+function _copySelection() {
+    if (!_selRect) return;
+    if (_selImageData) {
+        // Already floating — copy the floating content
+        _clipboardData = new ImageData(
+            new Uint8ClampedArray(_selImageData.data),
+            _selImageData.width, _selImageData.height
+        );
+        return;
+    }
+    const cx = Math.round(Math.max(0, _selRect.x));
+    const cy = Math.round(Math.max(0, _selRect.y));
+    const cw = Math.round(Math.min(_canvas.width  - cx, _selRect.w));
+    const ch = Math.round(Math.min(_canvas.height - cy, _selRect.h));
+    if (cw < 1 || ch < 1) return;
+    _clipboardData = _ctx.getImageData(cx, cy, cw, ch);
+}
+
+function _pasteClipboard() {
+    if (!_clipboardData) return;
+    // Commit any current floating selection before pasting
+    _clearSelection();
+
+    // Place the pasted content as a new floating selection,
+    // offset +16px from top-left so repeated pastes stack visually
+    const pasteX = Math.min(16, _canvas.width  - _clipboardData.width);
+    const pasteY = Math.min(16, _canvas.height - _clipboardData.height);
+
+    _selRect         = { x: pasteX, y: pasteY, w: _clipboardData.width, h: _clipboardData.height };
+    _selImageData    = new ImageData(
+        new Uint8ClampedArray(_clipboardData.data),
+        _clipboardData.width, _clipboardData.height
+    );
+    // Snapshot the canvas as-is (original untouched) — the floated content is
+    // drawn ON TOP; committing (_clearSelection) blends it in.
+    _selHoleSnapshot = _ctx.getImageData(0, 0, _canvas.width, _canvas.height);
+    _drawFloatedAt(pasteX, pasteY);
+
+    // Switch to select tool so the user can drag immediately
+    if (_activeTool !== 'select') {
+        _activeTool = 'select';
+        ['pan', 'crop', 'select', 'pen', 'text', 'rect', 'ellipse', 'line', 'arrow', 'highlight', 'eraser', 'callout', 'blur'].forEach(t => {
+            const btn = _editorEl && _editorEl.querySelector(`#img-ed-tool-${t}`);
+            if (btn) btn.classList.toggle('active', t === 'select');
+        });
+        _updateHint();
+        _updateCursor();
+    }
+
+    const ov = _editorEl && _editorEl.querySelector('#img-editor-overlay-canvas');
+    if (ov) _redrawOverlay(ov, ov.getContext('2d'));
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
