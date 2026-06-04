@@ -112,6 +112,8 @@ function _launch(att, onSaveOverwrite, onSaveNew) {
     _ensureToolbar();
     _buildInstanceUI(inst);
     _focusInstance(inst);
+    // Defer maximize one frame so the toolbar is fully rendered and getBoundingClientRect returns correct height
+    requestAnimationFrame(() => _toggleMaximize(inst));
 
     const img = new Image();
     img.onload = () => {
@@ -469,6 +471,30 @@ function _makeDraggable(win, handle) {
         document.addEventListener('mousemove', onMove);
         document.addEventListener('mouseup',   onUp);
     });
+
+    handle.addEventListener('touchstart', ev => {
+        if (ev.touches.length !== 1) return;
+        if (ev.target.closest('button, input')) return;
+        if (win.classList.contains('img-editor-window--maximized')) return;
+        ev.preventDefault();
+        const touch = ev.touches[0];
+        const r = win.getBoundingClientRect();
+        const dragOff = { x: touch.clientX - r.left, y: touch.clientY - r.top };
+        const onMove = mv => {
+            if (mv.touches.length !== 1) return;
+            const t = mv.touches[0];
+            win.style.left = (t.clientX - dragOff.x) + 'px';
+            win.style.top  = (t.clientY - dragOff.y) + 'px';
+        };
+        const onEnd = () => {
+            document.removeEventListener('touchmove',  onMove);
+            document.removeEventListener('touchend',   onEnd);
+            document.removeEventListener('touchcancel', onEnd);
+        };
+        document.addEventListener('touchmove',   onMove,  { passive: false });
+        document.addEventListener('touchend',    onEnd);
+        document.addEventListener('touchcancel', onEnd);
+    }, { passive: false });
 }
 
 // ── Focus management ──────────────────────────────────────────────────────────
@@ -1597,7 +1623,7 @@ function _toggleMaximize(inst) {
         const toolbarH = _toolbarEl ? _toolbarEl.getBoundingClientRect().height : 0;
         win.style.left   = '0px';
         win.style.top    = toolbarH + 'px';
-        win.style.width  = '100vw';
+        win.style.width  = window.innerWidth + 'px';
         win.style.height = (window.innerHeight - toolbarH) + 'px';
         win.classList.add('img-editor-window--maximized');
         inst.isMaximized = true;
