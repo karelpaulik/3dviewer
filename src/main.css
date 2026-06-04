@@ -1936,8 +1936,9 @@ a, button, input, select {
 /* Titlebar — drag handle + per-window buttons */
 .img-editor-titlebar {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 3px;
+    gap: 4px;
     padding: 3px 6px;
     background: #252525;
     border-bottom: 1px solid #3a3a3a;
@@ -1946,7 +1947,21 @@ a, button, input, select {
     cursor: default;
     overflow: hidden;
     min-height: 36px;
-    flex-wrap: nowrap;
+}
+.img-ed-titlebar-title {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    flex: 1 1 100px;
+    min-width: 60px;
+    overflow: hidden;
+}
+.img-ed-titlebar-btns {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    flex-wrap: wrap;
+    flex: 0 0 auto;
 }
 .img-editor-titlebar-icon {
     font-size: 14px;

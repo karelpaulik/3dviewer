@@ -169,6 +169,8 @@ function _ensureToolbar() {
             <label class="img-ed-label" title="Font size (px)">
                 Font <input type="number" id="img-ed-fontsize" min="6" max="200" value="18" style="width:44px">
             </label>
+            <div class="img-ed-sep"></div>
+            <button class="img-ed-btn" id="img-ed-arrange" title="Arrange all windows into a grid">⊞ Tile</button>
         </div>`;
 
     document.body.appendChild(_toolbarEl);
@@ -216,6 +218,8 @@ function _ensureToolbar() {
         if (_activeInst) _updateCursor(_activeInst);
     });
     _toolbarEl.querySelector('#img-ed-fontsize').addEventListener('input', e => { _fontSize = +e.target.value; });
+
+    _toolbarEl.querySelector('#img-ed-arrange').addEventListener('click', () => _autoArrange());
 
     _syncToolbarActiveState();
 }
@@ -958,7 +962,7 @@ function _onKeyDown(inst, e) {
     }
     if ((e.ctrlKey || e.metaKey) && e.key === 'v') { e.preventDefault(); _pasteClipboard(inst); return; }
     if (e.key === 'f' || e.key === 'F') { _fitToView(inst); return; }
-    if (e.key === 'Escape') { _cancelCrop(inst); if (_activeTool === 'select') _clearSelection(inst); return; }
+    if (e.key === 'Escape') { _cancelCrop(inst); if (_activeTool === 'select') _clearSelection(inst); _setTool(inst, 'pan'); return; }
     if ((e.key === 'Delete' || e.key === 'Backspace') && _activeTool === 'select' && inst.selRect) {
         e.preventDefault(); _deleteSelection(inst); return;
     }
@@ -1438,6 +1442,42 @@ function _applyBlur(inst, rect) {
         }
     }
     inst.ctx.putImageData(imgData, x, y);
+}
+
+// ── Auto-arrange (tile) ───────────────────────────────────────────────────────
+
+function _autoArrange() {
+    const n = _instances.length;
+    if (n === 0) return;
+
+    // First restore any maximized windows so sizes are predictable
+    _instances.forEach(inst => { if (inst.isMaximized) _toggleMaximize(inst); });
+
+    const toolbarH = _toolbarEl ? _toolbarEl.getBoundingClientRect().height : 0;
+    const availW   = window.innerWidth;
+    const availH   = window.innerHeight - toolbarH;
+    const margin   = 6;
+
+    const cols = Math.ceil(Math.sqrt(n));
+    const rows = Math.ceil(n / cols);
+
+    const cellW = Math.floor((availW - margin * (cols + 1)) / cols);
+    const cellH = Math.floor((availH - margin * (rows + 1)) / rows);
+
+    _instances.forEach((inst, i) => {
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        const x = margin + col * (cellW + margin);
+        const y = toolbarH + margin + row * (cellH + margin);
+        const win = inst.winEl;
+        win.style.left   = x + 'px';
+        win.style.top    = y + 'px';
+        win.style.width  = cellW + 'px';
+        win.style.height = cellH + 'px';
+        win.style.zIndex = 100001 + i;
+    });
+
+    requestAnimationFrame(() => _instances.forEach(inst => _fitToView(inst)));
 }
 
 // ── Maximize / restore ───────────────────────────────────────────────────────
