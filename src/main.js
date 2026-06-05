@@ -480,6 +480,7 @@ const viewProp = {
     annotation3dMode: false, // CSS3D annotation (note) mode
     showAnnotations: true, // Toggle visibility of all annotations
     showBehindModel: false, // Zobrazit kóty/poznámky i za modelem (depthTest off)
+    xrayOnSelect: false, // X-ray efekt při výběru objektu (depthTest off)
     orientedSelectionBox: 'local',
 };
 
@@ -1504,6 +1505,17 @@ function addMainGui() {
         folderProp.add({ fn: showHiddenObjects }, 'fn').name('Show hidden objects');
         folderProp.add({ fn: toggleHiddenObjects }, 'fn').name('Switch hidden objects');
         folderProp.add(viewProp, 'wireframe').name('Wireframe').onChange(function(value){ toggleWireframeAll(value); }).listen();
+        folderProp.add(viewProp, 'xrayOnSelect').name('X-ray on select').onChange(function(value) {
+            if (!value) {
+                lastSelectedMeshes.forEach(child => { clearXray(child); });
+                selectedObjects.forEach(obj => obj.traverse(child => { if (child.isMesh) clearXray(child); }));
+                render();
+            } else {
+                lastSelectedMeshes.forEach(child => { applyXray(child); });
+                selectedObjects.forEach(obj => obj.traverse(child => { if (child.isMesh) applyXray(child); }));
+                render();
+            }
+        }).listen();
         folderProp.add(viewProp, 'orientedSelectionBox', ['local', 'world']).name('Selection box').onChange(function(){ render(); }).listen();
         folderProp.addColor(viewProp, 'backgroundColor').name('Background').onChange(function(value){ scene.background = new THREE.Color(value); render(); });
         folderProp.add(viewProp, 'perspCam').name('Persp. camera').onChange(function(value){setCamera(); render(); });
@@ -3783,7 +3795,7 @@ function toggleObjectInMultiSelect(obj) {
         multiOriginalParents.push(obj.parent);   // uložit před attach
         setNavigationPosition(obj);              // před attach – parent chain ještě odpovídá DOM
         pivotObject.attach(obj);
-        obj.traverse(child => { if (child.isMesh) { applyEmissive(child, 0xff0000); applyXray(child); } });
+        obj.traverse(child => { if (child.isMesh) { applyEmissive(child, 0xff0000); if (viewProp.xrayOnSelect) applyXray(child); } });
         const h = new PaddedBoxHelper(obj, 0x00ccff, viewProp.multiSelectBoxPadding);
         scene.add(h);
         multiSelectionHelpers.push(h);
@@ -3991,7 +4003,7 @@ function restoreGroupFromHistory() {
         const h = new PaddedBoxHelper(obj, 0x00ccff, viewProp.multiSelectBoxPadding);
         scene.add(h);
         multiSelectionHelpers.push(h);
-        obj.traverse(child => { if (child.isMesh) { applyEmissive(child, 0xff0000); applyXray(child); } });
+        obj.traverse(child => { if (child.isMesh) { applyEmissive(child, 0xff0000); if (viewProp.xrayOnSelect) applyXray(child); } });
     });
 
     console.log(`Group History: group "${snapshot.name}" restored (${selectedObjects.length} objects).`);
@@ -4763,7 +4775,7 @@ function selectObject(object) {
         } );
         lastSelectedMeshes.forEach( child => {
             applyEmissive(child, 0xff0000);
-            applyXray(child);
+            if (viewProp.xrayOnSelect) applyXray(child);
         });
         console.log("selected object: ", lastSelectedObject);
 
@@ -5405,7 +5417,7 @@ function onClick( event ) {
             lastSelectedObject = resolveCADSelection(clickTarget);
             // Aplikujeme emissivní zvýraznění na nový objekt
             lastSelectedObject.traverse(child => { if (child.isMesh) lastSelectedMeshes.push(child); });
-            lastSelectedMeshes.forEach(child => { applyEmissive(child, 0xff0000); applyXray(child); });
+            lastSelectedMeshes.forEach(child => { applyEmissive(child, 0xff0000); if (viewProp.xrayOnSelect) applyXray(child); });
             outlinerHighlight(lastSelectedObject);
             render();
         } else {
