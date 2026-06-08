@@ -14,7 +14,18 @@
 		<meta name="description" content="Bedobe CAD Explorer – interactive 3D assembly presenter for STL and GLTF models with cross-section, animation and HTML export.">
 		<meta name="keywords" content="3D Editor, 3D viewer, 3D assembly, 3D Studio, STL, GLTF, GLB, three.js, cross section, 3D presenter, bedobe, 3D Tech Studio, CAD, CAD explorer, CAD workspace, CAD tool, CAD insight, CAD viewer, CAD presenterr">
 		<link rel="icon" type="image/png" href="./favicon-32x32.png">
-		<script type="module" crossorigin src="./assets/index-DNJ46kSs.js"></script>
+		<link rel="manifest" href="./manifest.json">
+		<meta name="theme-color" content="#72645b">
+		<script>
+			if ('serviceWorker' in navigator) {
+				window.addEventListener('load', () => {
+					navigator.serviceWorker.register('/sw.js').catch(err => {
+						console.warn('SW registration failed:', err);
+					});
+				});
+			}
+		</script>
+		<script type="module" crossorigin src="./assets/index-DOMkEo3y.js"></script>
 		<link rel="stylesheet" crossorigin href="./assets/index-BUwVvLr7.css">
 	</head>
 	<body id="body">

@@ -1,0 +1,27 @@
+{
+  "name": "Bedobe CAD Explorer",
+  "short_name": "Bedobe",
+  "description": "Interactive 3D CAD viewer with assembly, cross-section and HTML export.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#72645b",
+  "theme_color": "#72645b",
+  "icons": [
+    {
+      "src": "/favicon-32x32.png",
+      "sizes": "32x32",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
