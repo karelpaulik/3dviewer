@@ -395,10 +395,25 @@ function _updateCadDim3dHintUI(overrideAxis) {
     }
 }
 
+// --- Face-to-face snap hint overlay (created in init) ---
+let _faceSnapHintDiv = null;
+function _updateFaceSnapHintUI() {
+    if (!_faceSnapHintDiv) return;
+    if (faceSnapMode) {
+        _faceSnapHintDiv.innerHTML = faceSnapStep === 0
+            ? '🎯 Face snap &nbsp;·&nbsp; Click the face of the object to move &nbsp;·&nbsp; ESC: cancel'
+            : '🎯 Face snap &nbsp;·&nbsp; Click target face to align to &nbsp;·&nbsp; ESC: cancel';
+        _faceSnapHintDiv.style.display = 'block';
+    } else {
+        _faceSnapHintDiv.style.display = 'none';
+    }
+}
+
 let INTERSECTED;
 let isMouseDown = false;
 let isTouchDragging = false;
 let suppressTouchEndOnce = false; // Prevents deselect after long-press context menu
+let _suppressNextClick = false;   // Prevents object selection on the click that closes a context menu
 
 let isTouchScreen;
 
@@ -411,6 +426,14 @@ const sceneLights = []; // Reference na světla scény (hemisféra + 2x directio
 const lightHelperObjects = []; // LightHelper objekty // ArrowHelper pro vizualizaci raycasting paprsku
 let isTransformDragging = false;
 let orthoHalfSize = 500; // Polovelikost frustumu ortografické kamery v world units (dynamicky přepočítána po načtení modelu)
+// --- Face-to-face snap state ---
+let faceSnapMode = false;
+let faceSnapStep = 0;        // 0 = picking source face, 1 = picking target face
+let faceSnapSourcePoint = null;   // world-space point on source face
+let faceSnapSourceNormal = null;  // world-space normal of source face
+let faceSnapSourceObject = null;  // the Object3D to be moved
+let faceSnapArrow = null;         // ArrowHelper visual feedback
+let faceSnapHighlightMesh = null; // Single-triangle highlight overlay
 let previousTransformState = null; // Uložení předchozího stavu pro undo
 let previousGroupTransformStates = []; // World positions of group objects before drag (for assembly recording)
 
@@ -1154,6 +1177,9 @@ function init() {
                     viewProp.isSelectAllowed = true;
                     render();
                 }
+                if (faceSnapMode) {
+                    cancelFaceSnapMode();
+                }
                 _syncModeBtns();
                 statusCircleDetectEl.style.display = 'none';
                 cancelAddLeaderLine();
@@ -1398,6 +1424,10 @@ function init() {
     _cadDim3dHintDiv = document.createElement('div');
     _cadDim3dHintDiv.style.cssText = 'position:fixed;bottom:68px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.75);color:#fff;padding:5px 14px;border-radius:5px;font-size:12px;pointer-events:none;display:none;z-index:1000;white-space:nowrap;';
     document.body.appendChild(_cadDim3dHintDiv);
+
+    _faceSnapHintDiv = document.createElement('div');
+    _faceSnapHintDiv.style.cssText = 'position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:rgba(0,80,160,0.88);color:#fff;padding:5px 14px;border-radius:5px;font-size:12px;pointer-events:none;display:none;z-index:1000;white-space:nowrap;';
+    document.body.appendChild(_faceSnapHintDiv);
 } //End init 
 
 // Přepočítá frustum ortografické kamery podle aktuálního obsahu meshObjects.
@@ -4905,7 +4935,7 @@ function render() {
     // isMouseOverGui - pokud kurzor nad GUI a současně nad objektem, pak má přednost GUI.
     const _guiHitEl = document.elementFromPoint(mouse.x * window.innerWidth / 2 + window.innerWidth / 2,
                                                 -mouse.y * window.innerHeight / 2 + window.innerHeight / 2);
-    const isMouseOverGui = _guiHitEl && (guiWrapper.contains(_guiHitEl) || _guiHitEl.closest('.lil-gui'));
+    const isMouseOverGui = _guiHitEl && (guiWrapper.contains(_guiHitEl) || _guiHitEl.closest('.lil-gui') || _guiHitEl.closest('.ctx-menu'));
     
     // Nezvýrazňujeme objekty při dragování (rotaci/posouvání) nebo při transformaci
     if (!isTransformDragging && !isMouseOverGui && !isMouseDown && !isTouchDragging && viewProp.isSelectAllowed && !isDocOverlayBlockingInput()) {      
@@ -4972,6 +5002,13 @@ function render() {
     }
 
     // Measurement hover preview – raycast for point preview when in measure mode
+    // Face snap highlight – show hovered triangle during face-to-face snap mode
+    if (faceSnapMode && !isMouseOverGui && !isMouseDown) {
+        updateFaceSnapHighlight();
+    } else if (!faceSnapMode && faceSnapHighlightMesh) {
+        clearFaceSnapHighlight();
+    }
+
     if (viewProp.measureMode && isMeasureActive() && !isMouseOverGui && !isMouseDown) {
         raycaster.setFromCamera(mouse, currentCamera);
         const mIntersects = raycaster.intersectObjects(meshObjects);
@@ -5179,6 +5216,91 @@ function onMouseDown( event ) {
     isMouseDown = true;
 }
 
+function clearFaceSnapHighlight() {
+    if (faceSnapHighlightMesh) {
+        scene.remove(faceSnapHighlightMesh);
+        faceSnapHighlightMesh.geometry.dispose();
+        faceSnapHighlightMesh = null;
+    }
+}
+
+function updateFaceSnapHighlight() {
+    if (!faceSnapMode) { clearFaceSnapHighlight(); return; }
+
+    raycaster.setFromCamera(mouse, currentCamera);
+    const fsIntersects = raycaster.intersectObjects(meshObjects);
+    const fsIsFullyVisible = (obj) => { let o = obj; while (o) { if (!o.visible) return false; o = o.parent; } return true; };
+    const fsVisible = (renderer.localClippingEnabled && clipPlanes.length > 0)
+        ? fsIntersects.filter(hit => fsIsFullyVisible(hit.object) && clipPlanes.some(p => p.distanceToPoint(hit.point) >= 0))
+        : fsIntersects.filter(hit => fsIsFullyVisible(hit.object));
+
+    if (!fsVisible.length || !fsVisible[0].face) { clearFaceSnapHighlight(); return; }
+
+    const hit = fsVisible[0];
+    const geom = hit.object.geometry;
+    if (!geom || !geom.attributes.position) { clearFaceSnapHighlight(); return; }
+
+    const posAttr = geom.attributes.position;
+    const face = hit.face;
+
+    // Get the 3 vertices in world space
+    const va = new THREE.Vector3().fromBufferAttribute(posAttr, face.a).applyMatrix4(hit.object.matrixWorld);
+    const vb = new THREE.Vector3().fromBufferAttribute(posAttr, face.b).applyMatrix4(hit.object.matrixWorld);
+    const vc = new THREE.Vector3().fromBufferAttribute(posAttr, face.c).applyMatrix4(hit.object.matrixWorld);
+
+    // Offset slightly along world-space face normal to prevent z-fighting
+    const normalMatrix = new THREE.Matrix3().getNormalMatrix(hit.object.matrixWorld);
+    const worldNormal = face.normal.clone().applyMatrix3(normalMatrix).normalize();
+    const offset = worldNormal.multiplyScalar(0.002 * Math.max(
+        va.distanceTo(vb), vb.distanceTo(vc), vc.distanceTo(va)
+    ));
+    va.add(offset); vb.add(offset); vc.add(offset);
+
+    // Reuse or create highlight mesh
+    if (!faceSnapHighlightMesh) {
+        const triGeo = new THREE.BufferGeometry();
+        triGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(9), 3));
+        const mat = new THREE.MeshBasicMaterial({
+            color: 0xffdd00, transparent: true, opacity: 0.55,
+            side: THREE.DoubleSide, depthTest: false
+        });
+        faceSnapHighlightMesh = new THREE.Mesh(triGeo, mat);
+        faceSnapHighlightMesh.renderOrder = 999;
+        scene.add(faceSnapHighlightMesh);
+    }
+
+    const positions = faceSnapHighlightMesh.geometry.attributes.position;
+    positions.setXYZ(0, va.x, va.y, va.z);
+    positions.setXYZ(1, vb.x, vb.y, vb.z);
+    positions.setXYZ(2, vc.x, vc.y, vc.z);
+    positions.needsUpdate = true;
+    faceSnapHighlightMesh.geometry.computeBoundingSphere();
+}
+
+function startFaceSnapMode() {
+    faceSnapMode = true;
+    faceSnapStep = 0;
+    faceSnapSourcePoint = null;
+    faceSnapSourceNormal = null;
+    faceSnapSourceObject = null;
+    if (faceSnapArrow) { scene.remove(faceSnapArrow); faceSnapArrow = null; }
+    clearFaceSnapHighlight();
+    _updateFaceSnapHintUI();
+    render();
+}
+
+function cancelFaceSnapMode() {
+    faceSnapMode = false;
+    faceSnapStep = 0;
+    faceSnapSourcePoint = null;
+    faceSnapSourceNormal = null;
+    faceSnapSourceObject = null;
+    if (faceSnapArrow) { scene.remove(faceSnapArrow); faceSnapArrow = null; }
+    clearFaceSnapHighlight();
+    _updateFaceSnapHintUI();
+    render();
+}
+
 function onMouseUp( event ) {
     isMouseDown = false;
 }
@@ -5197,6 +5319,11 @@ function onClick( event ) {
     // Pokud je kliknuto na kontextové menu, ignorujeme selekci
     const elAtClick = document.elementFromPoint(event.clientX, event.clientY);
     if (elAtClick && elAtClick.closest('.ctx-menu')) {
+        return;
+    }
+    // Příznak nastavený při kliknutí na položku kontextového menu (menu je v okamžiku onClick již skryté)
+    if (_suppressNextClick) {
+        _suppressNextClick = false;
         return;
     }
 
@@ -5410,6 +5537,77 @@ function onClick( event ) {
                 const worldPoint3d = clickNDC3d.unproject(currentCamera);
                 addAnnotation3dPoint(worldPoint3d, null, render);
             }
+        }
+        return;
+    }
+
+    // --- Face-to-face snap mode ---
+    if (faceSnapMode) {
+        mouseUpPos.x = event.clientX;
+        mouseUpPos.y = event.clientY;
+        if (mouseDownPos.distanceTo(mouseUpPos) > 3) return;
+
+        raycaster.setFromCamera(mouse, currentCamera);
+        const fsIntersects = raycaster.intersectObjects(meshObjects);
+        const fsIsFullyVisible = (obj) => { let o = obj; while (o) { if (!o.visible) return false; o = o.parent; } return true; };
+        const fsVisible = (renderer.localClippingEnabled && clipPlanes.length > 0)
+            ? fsIntersects.filter(hit => fsIsFullyVisible(hit.object) && clipPlanes.some(p => p.distanceToPoint(hit.point) >= 0))
+            : fsIntersects.filter(hit => fsIsFullyVisible(hit.object));
+
+        if (fsVisible.length === 0 || !fsVisible[0].face) {
+            if (faceSnapStep === 0) alert('First select the object to move.');
+            return;
+        }
+        const hit = fsVisible[0];
+
+        if (faceSnapStep === 0) {
+            // Step 0: pick source face + set source object from hit
+            faceSnapSourceObject = resolveCADSelection(hit.object);
+            faceSnapSourcePoint = hit.point.clone();
+            const normalMatrix0 = new THREE.Matrix3().getNormalMatrix(hit.object.matrixWorld);
+            faceSnapSourceNormal = hit.face.normal.clone().applyMatrix3(normalMatrix0).normalize();
+
+            // Visual: blue arrow along source face normal
+            if (faceSnapArrow) scene.remove(faceSnapArrow);
+            const box3 = new THREE.Box3().setFromObject(faceSnapSourceObject);
+            const arrowLen = Math.max(box3.getSize(new THREE.Vector3()).length() * 0.15, 1);
+            faceSnapArrow = new THREE.ArrowHelper(faceSnapSourceNormal, faceSnapSourcePoint, arrowLen, 0x1188ff, arrowLen * 0.25, arrowLen * 0.15);
+            scene.add(faceSnapArrow);
+
+            faceSnapStep = 1;
+            clearFaceSnapHighlight();
+            _updateFaceSnapHintUI();
+            render();
+        } else {
+            // Step 1: pick target face – compute & apply translation
+            const targetPoint = hit.point.clone();
+            const normalMatrix1 = new THREE.Matrix3().getNormalMatrix(hit.object.matrixWorld);
+            const targetNormal = hit.face.normal.clone().applyMatrix3(normalMatrix1).normalize();
+
+            // Project (targetPoint − sourcePoint) onto target normal to get flush offset
+            const diff = new THREE.Vector3().subVectors(targetPoint, faceSnapSourcePoint);
+            const offset = diff.dot(targetNormal);
+            const worldTranslation = targetNormal.clone().multiplyScalar(offset);
+
+            // Apply translation in world space, then convert back to parent-local space
+            const obj = faceSnapSourceObject;
+            savePreviousTransformState(); // for undo
+            obj.updateWorldMatrix(true, false);
+            const worldPos = new THREE.Vector3().setFromMatrixPosition(obj.matrixWorld);
+            worldPos.add(worldTranslation);
+            if (obj.parent) {
+                obj.parent.updateWorldMatrix(true, false);
+                const invParent = new THREE.Matrix4().copy(obj.parent.matrixWorld).invert();
+                worldPos.applyMatrix4(invParent);
+            }
+            obj.position.copy(worldPos);
+
+            // Record in assembly edit mode
+            if (assemblyState.editMode && assemblyState.currentStepIndex >= 0 && previousTransformState) {
+                recordAssemblyTransformation();
+            }
+
+            cancelFaceSnapMode();
         }
         return;
     }
@@ -8397,6 +8595,15 @@ function assemblyMoveStepDown() {
         m.appendChild(simpleItem('Hide object', () => {
             if (lastSelectedObject) hideObject(lastSelectedObject);
             hideAll();
+        }));
+
+        m.appendChild(separator());
+
+        // Face-to-face snap
+        m.appendChild(simpleItem('🎯 Face-to-face snap', () => {
+            _suppressNextClick = true;
+            hideAll();
+            setTimeout(() => startFaceSnapMode(), 0);
         }));
 
         m.appendChild(separator());
