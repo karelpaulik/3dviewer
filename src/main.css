@@ -708,8 +708,10 @@ a, button, input, select {
     display: flex;
     flex-direction: row-reverse;
     align-items: flex-start;
+    pointer-events: none;
 }
 #gui-container > .lil-gui {
+    pointer-events: auto;
     width: 300px !important;
     flex: 0 0 auto;
     max-height: calc(100vh - 28px - 32px);

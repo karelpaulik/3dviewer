@@ -296,7 +296,7 @@ document.body.appendChild(statusCircleDetectEl);
 
 // Wrapper reference for hit-testing (toolbar + panels + outliner)
 let outlinerPanelEl = null;
-const guiWrapper = { contains(el) { return guiToolbar.contains(el) || guiContainer.contains(el) || (outlinerPanelEl && outlinerPanelEl.contains(el)) || statusBar.contains(el); } };
+const guiWrapper = { contains(el) { return guiToolbar.contains(el) || Object.values(guiPanels).some(p => p.gui && p.gui.domElement.style.display !== 'none' && p.gui.domElement.contains(el)) || (outlinerPanelEl && outlinerPanelEl.contains(el)) || statusBar.contains(el); } };
 
 let guiView = null;
 let guiAssembly = null;
