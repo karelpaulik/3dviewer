@@ -7405,6 +7405,7 @@ function addHelpGui() {
     helpGui.add({ fn() { openHelp('/help/guide-for-beginners.json'); } }, 'fn').name('📖 Guide for beginners');
     helpGui.add({ fn() { openHelp('/help/screen-layout.json'); } }, 'fn').name('🖥️ Screen layout');
     helpGui.add({ fn() { openHelp('/help/supported-file-formats.json'); } }, 'fn').name('📂 Supported File Formats');
+    helpGui.add({ fn() { openHelp('/help/pwa-install.json'); } }, 'fn').name('📲 Install as Local App (PWA)');
     const panelHelpFolder = helpGui.addFolder('Panels');
     panelHelpFolder.add({ fn() { openHelp('/help/panel-edit.json'); } }, 'fn').name('✏️ Edit');
     panelHelpFolder.add({ fn() { openHelp('/help/panel-view.json'); } }, 'fn').name('🔭 View');
