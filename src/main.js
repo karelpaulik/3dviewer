@@ -3950,6 +3950,37 @@ function navigateGroupHistory(dir) {
     render();
 }
 
+// Přidá všechny objekty aktuálního assembly kroku do group selection.
+function assemblySelectStepObjects() {
+    const ci = assemblyState.currentStepIndex;
+    if (ci < 0 || ci >= assemblyData.steps.length) return;
+    const step = assemblyData.steps[ci];
+    const objs = step.transformations
+        .map(t => t.objectRef)
+        .filter(o => o && o.parent);
+    if (objs.length === 0) return;
+
+    // Clear existing multi-select
+    deactivateMultiSelect();
+    multiSelectionHelpers.forEach(h => scene.remove(h));
+    multiSelectionHelpers.length = 0;
+    selectedObjects.length = 0;
+    multiOriginalParents.length = 0;
+
+    // Add each step object to the selection
+    objs.forEach(obj => {
+        selectedObjects.push(obj);
+        multiOriginalParents.push(obj.parent);
+        const h = new PaddedBoxHelper(obj, 0x00ccff, viewProp.multiSelectBoxPadding);
+        scene.add(h);
+        multiSelectionHelpers.push(h);
+        obj.traverse(child => { if (child.isMesh) { applyEmissive(child, 0xff0000); if (viewProp.xrayOnSelect) applyXray(child); } });
+    });
+
+    activateMultiSelect();
+    render();
+}
+
 // Zobrazí PaddedBoxHelpery kolem objektů aktuálního assembly kroku, pokud je aktivní edit mode.
 // Volá se z updateAssemblyGuiInfo() a při přepnutí editMode.
 function updateAssemblyStepHelpers() {
@@ -7361,6 +7392,7 @@ function addAssemblyGui() {
     editControls.push( editFolder.add({ fn: assemblyMoveStepUp }, 'fn').name('↑  Move step up') );
     editControls.push( editFolder.add({ fn: assemblyMoveStepDown }, 'fn').name('↓  Move step down') );
     editControls.push( editFolder.add({ fn: assemblyRemoveObjectFromStep }, 'fn').name('✕  Remove object from step') );
+    editControls.push( editFolder.add({ fn: assemblySelectStepObjects }, 'fn').name('☑  Select step objects') );
     editControls.push( editFolder.add({ fn: assemblySaveCameraView }, 'fn').name('📷  Save camera view') );
     editControls.push( editFolder.add({ fn: assemblyClearCameraView }, 'fn').name('✕  Clear camera view') );
 
