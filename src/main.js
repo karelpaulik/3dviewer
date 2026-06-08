@@ -5695,6 +5695,11 @@ function onClick( event ) {
                 worldPos.applyMatrix4(invParent);
             }
             obj.position.copy(worldPos);
+            obj.updateWorldMatrix(false, true); // force update before section line recompute
+
+            // Refresh section lines after move
+            if (viewProp.showCrossSection) updateCrossSectionLines();
+            if (viewProp.sectionCrossLines) updateSectionCrossLines();
 
             // Record in assembly edit mode
             if (assemblyState.editMode && assemblyState.currentStepIndex >= 0 && previousTransformState) {
@@ -5768,6 +5773,11 @@ function onClick( event ) {
                 worldPos.applyMatrix4(invParent);
             }
             obj.position.copy(worldPos);
+            obj.updateWorldMatrix(false, true); // force update before section line recompute
+
+            // Refresh section lines after move
+            if (viewProp.showCrossSection) updateCrossSectionLines();
+            if (viewProp.sectionCrossLines) updateSectionCrossLines();
 
             if (assemblyState.editMode && assemblyState.currentStepIndex >= 0 && previousTransformState) {
                 recordAssemblyTransformation();
