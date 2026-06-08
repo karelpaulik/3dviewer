@@ -7807,6 +7807,7 @@ function animateAssemblyStep(transformations, forward, onComplete) {
             delay: delaySec,
             onUpdate() {
                 applyTransforms(transformations, startStates, proxy.t);
+                assemblyStepHelpers.forEach(h => h.update());
                 if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) updateCrossSectionLines();
                 if (viewProp.sectionCrossLines) updateSectionCrossLines();
                 render();
@@ -7839,6 +7840,7 @@ function animateAssemblyStep(transformations, forward, onComplete) {
                     tr.objectRef.position.lerpVectors(s.pos, s.targetPos, proxy.t);
                     if (s.hasRot)   tr.objectRef.quaternion.slerpQuaternions(s.quat, s.targetQuat, proxy.t);
                     if (s.hasScale) tr.objectRef.scale.lerpVectors(s.scale, s.targetScale, proxy.t);
+                    assemblyStepHelpers.forEach(h => h.update());
                     if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) updateCrossSectionLines();
                     if (viewProp.sectionCrossLines) updateSectionCrossLines();
                     render();
