@@ -1769,23 +1769,17 @@ function addMainGui() {
     // --- File panel (Export / Import) ---
     const fileGui = new GUI({ container: guiContainer, title: 'File' });
     fileGui.add({ fn: importGlbFile }, 'fn').name('Import GLB…');
-    fileGui.add({ fn: importGltfFile }, 'fn').name('Import GLTF (folder)…');
-    fileGui.add({ fn: importObjFile }, 'fn').name('Import OBJ (folder)…');
-    fileGui.add({ fn: import3mfFile }, 'fn').name('Import 3MF…');
-    fileGui.add({ fn: importFbxFile }, 'fn').name('Import FBX (folder)…');
-    fileGui.add({ fn: importStlFile }, 'fn').name('Import STL…');
-    fileGui.add({ fn: importStpFile }, 'fn').name('Import STP/STEP…');
-    fileGui.add({ fn: importIgesFile }, 'fn').name('Import IGS/IGES…');
     fileGui.add({ fn: exportAllModelsDraco }, 'fn').name('Export all to GLB (Compression)');
     fileGui.add({ fn: exportSelectedObjectDraco }, 'fn').name('Export selected to GLB (Compression)');
-    const exportNoCompFolder = fileGui.addFolder('Export to GLB without compression');
-    exportNoCompFolder.add({ fn: exportAllModels }, 'fn').name('Export all to GLB');
-    exportNoCompFolder.add({ fn: exportSelectedObject }, 'fn').name('Export selected to GLB');
-    exportNoCompFolder.close();
-    const exportStlFolder = fileGui.addFolder('Export to STL');
-    exportStlFolder.add({ fn: exportAllModelsStl }, 'fn').name('Export all to STL…');
-    exportStlFolder.add({ fn: exportSelectedObjectStl }, 'fn').name('Export selected to STL…');
-    exportStlFolder.close();
+    const importOtherFolder = fileGui.addFolder('Import other formats');
+    importOtherFolder.add({ fn: importGltfFile }, 'fn').name('Import GLTF (folder)…');
+    importOtherFolder.add({ fn: importObjFile }, 'fn').name('Import OBJ (folder)…');
+    importOtherFolder.add({ fn: import3mfFile }, 'fn').name('Import 3MF…');
+    importOtherFolder.add({ fn: importFbxFile }, 'fn').name('Import FBX (folder)…');
+    importOtherFolder.add({ fn: importStlFile }, 'fn').name('Import STL…');
+    importOtherFolder.add({ fn: importStpFile }, 'fn').name('Import STP/STEP…');
+    importOtherFolder.add({ fn: importIgesFile }, 'fn').name('Import IGS/IGES…');
+    importOtherFolder.close();
     const demoFolder = fileGui.addFolder('Import demo');
     demoFolder.close();
     demoFolder.add({ fn() {
@@ -1813,6 +1807,14 @@ function addMainGui() {
             fitView();
         });
     } }, 'fn').name('DJI_drone');
+    const exportNoCompFolder = fileGui.addFolder('Export to GLB without compression');
+    exportNoCompFolder.add({ fn: exportAllModels }, 'fn').name('Export all to GLB');
+    exportNoCompFolder.add({ fn: exportSelectedObject }, 'fn').name('Export selected to GLB');
+    exportNoCompFolder.close();
+    const exportStlFolder = fileGui.addFolder('Export to STL');
+    exportStlFolder.add({ fn: exportAllModelsStl }, 'fn').name('Export all to STL…');
+    exportStlFolder.add({ fn: exportSelectedObjectStl }, 'fn').name('Export selected to STL…');
+    exportStlFolder.close();
     const exportHtmlFolder = fileGui.addFolder('Export self-contained HTML');
     exportHtmlFolder.close();
     exportHtmlFolder.add({ fn() { exportToHTML(loadedModels, assemblyGui, viewProp, assemblyWriteToUserData, assemblyClearUserData); } }, 'fn').name('Export to HTML');
