@@ -296,7 +296,7 @@ document.body.appendChild(statusCircleDetectEl);
 
 // Wrapper reference for hit-testing (toolbar + panels + outliner)
 let outlinerPanelEl = null;
-const guiWrapper = { contains(el) { return guiToolbar.contains(el) || Object.values(guiPanels).some(p => p.gui && p.gui.domElement.style.display !== 'none' && p.gui.domElement.contains(el)) || (outlinerPanelEl && outlinerPanelEl.contains(el)) || statusBar.contains(el); } };
+const guiWrapper = { contains(el) { return guiToolbar.contains(el) || Object.values(guiPanels).some(p => p.gui && p.gui.domElement.style.display !== 'none' && p.gui.domElement.contains(el)) || (outlinerPanelEl && outlinerPanelEl.contains(el)) || statusBar.contains(el) || statusCircleDetectEl.contains(el); } };
 
 let guiView = null;
 let guiAssembly = null;
@@ -409,6 +409,20 @@ function _updateFaceSnapHintUI() {
     }
 }
 
+// --- Point-to-point snap hint overlay (created in init) ---
+let _ptpSnapHintDiv = null;
+function _updatePtpSnapHintUI() {
+    if (!_ptpSnapHintDiv) return;
+    if (ptpSnapMode) {
+        _ptpSnapHintDiv.innerHTML = ptpSnapStep === 0
+            ? '📍 Point snap &nbsp;·&nbsp; Click source point on the object to move &nbsp;·&nbsp; ESC: cancel'
+            : '📍 Point snap &nbsp;·&nbsp; Click target point to snap to &nbsp;·&nbsp; ESC: cancel';
+        _ptpSnapHintDiv.style.display = 'block';
+    } else {
+        _ptpSnapHintDiv.style.display = 'none';
+    }
+}
+
 let INTERSECTED;
 let isMouseDown = false;
 let isTouchDragging = false;
@@ -434,6 +448,12 @@ let faceSnapSourceNormal = null;  // world-space normal of source face
 let faceSnapSourceObject = null;  // the Object3D to be moved
 let faceSnapArrow = null;         // ArrowHelper visual feedback
 let faceSnapHighlightMesh = null; // Single-triangle highlight overlay
+// --- Point-to-point snap state ---
+let ptpSnapMode = false;
+let ptpSnapStep = 0;         // 0 = picking source point, 1 = picking target point
+let ptpSnapSourcePoint = null;    // world-space source point
+let ptpSnapSourceObject = null;   // the Object3D to be moved
+let ptpSnapDotMesh = null;        // SphereGeometry preview dot
 let previousTransformState = null; // Uložení předchozího stavu pro undo
 let previousGroupTransformStates = []; // World positions of group objects before drag (for assembly recording)
 
@@ -1180,6 +1200,9 @@ function init() {
                 if (faceSnapMode) {
                     cancelFaceSnapMode();
                 }
+                if (ptpSnapMode) {
+                    cancelPtpSnapMode();
+                }
                 _syncModeBtns();
                 statusCircleDetectEl.style.display = 'none';
                 cancelAddLeaderLine();
@@ -1428,6 +1451,10 @@ function init() {
     _faceSnapHintDiv = document.createElement('div');
     _faceSnapHintDiv.style.cssText = 'position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:rgba(0,80,160,0.88);color:#fff;padding:5px 14px;border-radius:5px;font-size:12px;pointer-events:none;display:none;z-index:1000;white-space:nowrap;';
     document.body.appendChild(_faceSnapHintDiv);
+
+    _ptpSnapHintDiv = document.createElement('div');
+    _ptpSnapHintDiv.style.cssText = 'position:fixed;bottom:112px;left:50%;transform:translateX(-50%);background:rgba(0,120,60,0.88);color:#fff;padding:5px 14px;border-radius:5px;font-size:12px;pointer-events:none;display:none;z-index:1000;white-space:nowrap;';
+    document.body.appendChild(_ptpSnapHintDiv);
 } //End init 
 
 // Přepočítá frustum ortografické kamery podle aktuálního obsahu meshObjects.
@@ -5009,6 +5036,41 @@ function render() {
         clearFaceSnapHighlight();
     }
 
+    // Point-to-point snap – show hover dot preview
+    if (ptpSnapMode && !isMouseOverGui && !isMouseDown) {
+        raycaster.setFromCamera(mouse, currentCamera);
+        const ptpIntersects = raycaster.intersectObjects(meshObjects);
+        const ptpIsVis = (obj) => { let o = obj; while (o) { if (!o.visible) return false; o = o.parent; } return true; };
+        const ptpVisible = (renderer.localClippingEnabled && clipPlanes.length > 0)
+            ? ptpIntersects.filter(h => ptpIsVis(h.object) && clipPlanes.some(p => p.distanceToPoint(h.point) >= 0))
+            : ptpIntersects.filter(h => ptpIsVis(h.object));
+        if (ptpVisible.length > 0) {
+            let previewPt = ptpVisible[0].point.clone();
+            if (viewProp.detectCircleCenter) {
+                const c = detectCircleCenterFromHit(ptpVisible[0]);
+                if (c) previewPt = c;
+            }
+            // Size dot relative to the hit object's bounding sphere radius
+            const bsR = ptpVisible[0].object.geometry?.boundingSphere?.radius ?? 1;
+            const dotR = Math.max(bsR * 0.012, 0.5);
+            if (!ptpSnapDotMesh) {
+                ptpSnapDotMesh = new THREE.Mesh(
+                    new THREE.SphereGeometry(1, 10, 10),
+                    new THREE.MeshBasicMaterial({ color: 0x00dd44, depthTest: false })
+                );
+                ptpSnapDotMesh.renderOrder = 999;
+                scene.add(ptpSnapDotMesh);
+            }
+            ptpSnapDotMesh.scale.setScalar(dotR);
+            ptpSnapDotMesh.position.copy(previewPt);
+            ptpSnapDotMesh.visible = true;
+        } else if (ptpSnapDotMesh) {
+            ptpSnapDotMesh.visible = false;
+        }
+    } else if (!ptpSnapMode && ptpSnapDotMesh) {
+        clearPtpSnapDot();
+    }
+
     if (viewProp.measureMode && isMeasureActive() && !isMouseOverGui && !isMouseDown) {
         raycaster.setFromCamera(mouse, currentCamera);
         const mIntersects = raycaster.intersectObjects(meshObjects);
@@ -5277,8 +5339,7 @@ function updateFaceSnapHighlight() {
     faceSnapHighlightMesh.geometry.computeBoundingSphere();
 }
 
-function startFaceSnapMode() {
-    faceSnapMode = true;
+function startFaceSnapMode() {    faceSnapMode = true;
     faceSnapStep = 0;
     faceSnapSourcePoint = null;
     faceSnapSourceNormal = null;
@@ -5298,6 +5359,38 @@ function cancelFaceSnapMode() {
     if (faceSnapArrow) { scene.remove(faceSnapArrow); faceSnapArrow = null; }
     clearFaceSnapHighlight();
     _updateFaceSnapHintUI();
+    render();
+}
+
+function clearPtpSnapDot() {
+    if (ptpSnapDotMesh) {
+        scene.remove(ptpSnapDotMesh);
+        ptpSnapDotMesh.geometry.dispose();
+        ptpSnapDotMesh = null;
+    }
+}
+
+function startPtpSnapMode() {
+    ptpSnapMode = true;
+    ptpSnapStep = 0;
+    ptpSnapSourcePoint = null;
+    ptpSnapSourceObject = null;
+    clearPtpSnapDot();
+    statusCircleDetectEl.style.display = '';
+    _updatePtpSnapHintUI();
+    render();
+}
+
+function cancelPtpSnapMode() {
+    ptpSnapMode = false;
+    ptpSnapStep = 0;
+    ptpSnapSourcePoint = null;
+    ptpSnapSourceObject = null;
+    clearPtpSnapDot();
+    statusCircleDetectEl.style.display = 'none';
+    viewProp.detectCircleCenter = false;
+    statusCircleDetectCb.checked = false;
+    _updatePtpSnapHintUI();
     render();
 }
 
@@ -5562,7 +5655,8 @@ function onClick( event ) {
 
         if (faceSnapStep === 0) {
             // Step 0: pick source face + set source object from hit
-            faceSnapSourceObject = resolveCADSelection(hit.object);
+            // Use currently selected object (may be a group), fall back to hit resolution
+            faceSnapSourceObject = lastSelectedObject || resolveCADSelection(hit.object);
             faceSnapSourcePoint = hit.point.clone();
             const normalMatrix0 = new THREE.Matrix3().getNormalMatrix(hit.object.matrixWorld);
             faceSnapSourceNormal = hit.face.normal.clone().applyMatrix3(normalMatrix0).normalize();
@@ -5608,6 +5702,78 @@ function onClick( event ) {
             }
 
             cancelFaceSnapMode();
+        }
+        return;
+    }
+
+    // --- Point-to-point snap mode ---
+    if (ptpSnapMode) {
+        mouseUpPos.x = event.clientX;
+        mouseUpPos.y = event.clientY;
+        if (mouseDownPos.distanceTo(mouseUpPos) > 3) return;
+
+        raycaster.setFromCamera(mouse, currentCamera);
+        const ptpIntersects = raycaster.intersectObjects(meshObjects);
+        const ptpIsVis = (obj) => { let o = obj; while (o) { if (!o.visible) return false; o = o.parent; } return true; };
+        const ptpVisible = (renderer.localClippingEnabled && clipPlanes.length > 0)
+            ? ptpIntersects.filter(h => ptpIsVis(h.object) && clipPlanes.some(p => p.distanceToPoint(h.point) >= 0))
+            : ptpIntersects.filter(h => ptpIsVis(h.object));
+
+        if (ptpVisible.length === 0) {
+            if (ptpSnapStep === 0) alert('First click the source point on the object to move.');
+            return;
+        }
+        const ptpHit = ptpVisible[0];
+        let ptpPoint = ptpHit.point.clone();
+        if (viewProp.detectCircleCenter) {
+            const c = detectCircleCenterFromHit(ptpHit);
+            if (c) ptpPoint = c;
+        }
+
+        if (ptpSnapStep === 0) {
+            // Step 0: record source object + point; show green dot anchor
+            // Use the currently selected object (may be a group), fall back to hit resolution
+            ptpSnapSourceObject = lastSelectedObject || resolveCADSelection(ptpHit.object);
+            ptpSnapSourcePoint = ptpPoint;
+
+            // Leave the dot visible as anchor marker
+            clearPtpSnapDot();
+            const bsR = ptpHit.object.geometry?.boundingSphere?.radius ?? 1;
+            const dotR = Math.max(bsR * 0.012, 0.5);
+            ptpSnapDotMesh = new THREE.Mesh(
+                new THREE.SphereGeometry(1, 10, 10),
+                new THREE.MeshBasicMaterial({ color: 0x00dd44, depthTest: false })
+            );
+            ptpSnapDotMesh.renderOrder = 999;
+            ptpSnapDotMesh.scale.setScalar(dotR);
+            ptpSnapDotMesh.position.copy(ptpSnapSourcePoint);
+            scene.add(ptpSnapDotMesh);
+
+            ptpSnapStep = 1;
+            _updatePtpSnapHintUI();
+            render();
+        } else {
+            // Step 1: compute full 3D translation (target – source) and apply
+            const targetPoint = ptpPoint;
+            const worldTranslation = new THREE.Vector3().subVectors(targetPoint, ptpSnapSourcePoint);
+
+            const obj = ptpSnapSourceObject;
+            savePreviousTransformState();
+            obj.updateWorldMatrix(true, false);
+            const worldPos = new THREE.Vector3().setFromMatrixPosition(obj.matrixWorld);
+            worldPos.add(worldTranslation);
+            if (obj.parent) {
+                obj.parent.updateWorldMatrix(true, false);
+                const invParent = new THREE.Matrix4().copy(obj.parent.matrixWorld).invert();
+                worldPos.applyMatrix4(invParent);
+            }
+            obj.position.copy(worldPos);
+
+            if (assemblyState.editMode && assemblyState.currentStepIndex >= 0 && previousTransformState) {
+                recordAssemblyTransformation();
+            }
+
+            cancelPtpSnapMode();
         }
         return;
     }
@@ -8604,6 +8770,13 @@ function assemblyMoveStepDown() {
             _suppressNextClick = true;
             hideAll();
             setTimeout(() => startFaceSnapMode(), 0);
+        }));
+
+        // Point-to-point snap
+        m.appendChild(simpleItem('📍 Point-to-point snap', () => {
+            _suppressNextClick = true;
+            hideAll();
+            setTimeout(() => startPtpSnapMode(), 0);
         }));
 
         m.appendChild(separator());
