@@ -3983,16 +3983,17 @@ function assemblySelectStepObjects() {
 
 // Zobrazí PaddedBoxHelpery kolem objektů aktuálního assembly kroku, pokud je aktivní edit mode.
 // Volá se z updateAssemblyGuiInfo() a při přepnutí editMode.
-function updateAssemblyStepHelpers() {
+function updateAssemblyStepHelpers(stepOverride = null) {
     // Odstraníme staré helpery
     assemblyStepHelpers.forEach(h => scene.remove(h));
     assemblyStepHelpers.length = 0;
 
     if (!assemblyState.editMode) { render(); return; }
     const ci = assemblyState.currentStepIndex;
-    if (ci < 0 || ci >= assemblyData.steps.length) { render(); return; }
 
-    const step = assemblyData.steps[ci];
+    const step = stepOverride ?? (ci >= 0 && ci < assemblyData.steps.length ? assemblyData.steps[ci] : null);
+    if (!step) { render(); return; }
+
     step.transformations.forEach(t => {
         if (!t.objectRef || !t.objectRef.parent) return;
         const h = new PaddedBoxHelper(t.objectRef, 0xffee00, viewProp.multiSelectBoxPadding);
@@ -8061,11 +8062,14 @@ function assemblyPrevStep() {
     // Commit state before animating so mid-animation reversals always have correct currentStepIndex.
     assemblyState.currentStepIndex--;
     updateAssemblyGuiInfo();
+    // Fix: override helpers to track the step being reversed (not the decremented index).
+    if (assemblyState.editMode) updateAssemblyStepHelpers(step);
     const logBack = () => {
         const label = assemblyState.currentStepIndex < 0
             ? 'Assembled'
             : `Step ${assemblyState.currentStepIndex + 1}: "${assemblyData.steps[assemblyState.currentStepIndex].name}"`;
         console.log(`[Assembly] ← Back → ${label}`);
+        updateAssemblyStepHelpers(); // switch helpers to new current step after animation
     };
     if (useCamera) {
         // Camera animates first, then parts move back.
