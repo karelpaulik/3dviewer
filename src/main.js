@@ -614,6 +614,11 @@ class PaddedBoxHelper extends THREE.LineSegments {
         if (object !== undefined) this.object = object;
         if (this.object === undefined) return;
 
+        // Hide helper if the tracked object or any of its ancestors is invisible
+        let _o = this.object;
+        while (_o) { if (!_o.visible) { this.visible = false; return; } _o = _o.parent; }
+        this.visible = true;
+
         const min = new THREE.Vector3(Infinity, Infinity, Infinity);
         const max = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
         const v = new THREE.Vector3();
@@ -624,6 +629,7 @@ class PaddedBoxHelper extends THREE.LineSegments {
             // Compute bounding box from vertices in the object's local space (OBB)
             const invMatrix = new THREE.Matrix4().copy(this.object.matrixWorld).invert();
             this.object.traverse(child => {
+                if (!child.visible) return;
                 if (isAnnotOrDim(child)) return;
                 if (child.geometry && child.geometry.attributes.position) {
                     const pos = child.geometry.attributes.position;
@@ -638,6 +644,7 @@ class PaddedBoxHelper extends THREE.LineSegments {
             // World-space AABB – manual traversal to skip annotations/dimensions
             const v2 = new THREE.Vector3();
             this.object.traverse(child => {
+                if (!child.visible) return;
                 if (isAnnotOrDim(child)) return;
                 if (child.geometry && child.geometry.attributes.position) {
                     const pos = child.geometry.attributes.position;
@@ -4053,6 +4060,9 @@ function updateAssemblyStepHelpers(stepOverride = null) {
 
     step.transformations.forEach(t => {
         if (!t.objectRef || !t.objectRef.parent) return;
+        // Skip objects that are hidden (or have a hidden ancestor)
+        let o = t.objectRef;
+        while (o) { if (!o.visible) return; o = o.parent; }
         const h = new PaddedBoxHelper(t.objectRef, 0xffee00, viewProp.multiSelectBoxPadding);
         scene.add(h);
         assemblyStepHelpers.push(h);
