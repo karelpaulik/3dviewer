@@ -1944,6 +1944,18 @@ function addMainGui() {
         });
     } }, 'fn').name('Remove numeric suffix (_1, _2…)');
     editGui.add({ fn() {
+        const toCapitalize = [];
+        loadedModels.forEach(root => root.traverse(obj => {
+            if (obj.name && obj.name[0] >= 'a' && obj.name[0] <= 'z') toCapitalize.push(obj);
+        }));
+        if (toCapitalize.length === 0) { alert('Žádné objekty s malým prvním písmenem nenalezeny.'); return; }
+        if (!confirm(`Změnit první písmeno na velké u ${toCapitalize.length} objektů?`)) return;
+        toCapitalize.forEach(obj => {
+            obj.name = obj.name[0].toUpperCase() + obj.name.slice(1);
+            updateObjectLabel(obj);
+        });
+    } }, 'fn').name('Capitalize first letter');
+    editGui.add({ fn() {
         if (!confirm('Clear all measurements/dimensions?')) return;
         clearMeasurements(render);
         clearCadDim3dMeasurements(render);
