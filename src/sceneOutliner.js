@@ -74,7 +74,17 @@ function showCtxMenu(x, y, obj, li) {
     hideShowItem.textContent = obj.visible ? 'Hide' : 'Show';
     hideShowItem.addEventListener('click', () => {
         hideCtxMenu();
-        if (onToggleVisibility) onToggleVisibility(obj);
+        if (onToggleVisibility) {
+            const isMulti = groupHighlightNodes.size > 1 && groupHighlightNodes.has(li);
+            if (isMulti) {
+                groupHighlightNodes.forEach(selLi => {
+                    const selObj = domToObject.get(selLi);
+                    if (selObj) onToggleVisibility(selObj);
+                });
+            } else {
+                onToggleVisibility(obj);
+            }
+        }
     });
     menu.appendChild(hideShowItem);
 
@@ -735,7 +745,17 @@ function createTreeNode(obj, depth) {
     eye.title = obj.visible ? 'Hide' : 'Show';
     eye.addEventListener('click', (e) => {
         e.stopPropagation();
-        if (onToggleVisibility) onToggleVisibility(obj);
+        if (onToggleVisibility) {
+            const isMulti = groupHighlightNodes.size > 1 && groupHighlightNodes.has(li);
+            if (isMulti) {
+                groupHighlightNodes.forEach(selLi => {
+                    const selObj = domToObject.get(selLi);
+                    if (selObj) onToggleVisibility(selObj);
+                });
+            } else {
+                onToggleVisibility(obj);
+            }
+        }
     });
     row.appendChild(eye);
 
