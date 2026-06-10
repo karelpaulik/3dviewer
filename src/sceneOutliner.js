@@ -289,10 +289,23 @@ function startInlineRename(li, obj) {
     input.select();
 
     function commit() {
-        const newName = input.value.trim();
-        obj.name = newName || original;
+        const newName = input.value.trim() || original;
         input.replaceWith(labelEl);
-        labelEl.textContent = getDisplayName(obj);
+
+        // Multi-selection: rename all selected items with the same name
+        const isMulti = groupHighlightNodes.size > 1 && groupHighlightNodes.has(li);
+        if (isMulti) {
+            groupHighlightNodes.forEach(selLi => {
+                const selObj = domToObject.get(selLi);
+                if (!selObj) return;
+                selObj.name = newName;
+                const selLabel = selLi.querySelector(':scope > .outliner-row > .outliner-label');
+                if (selLabel) selLabel.textContent = getDisplayName(selObj);
+            });
+        } else {
+            obj.name = newName;
+            labelEl.textContent = getDisplayName(obj);
+        }
     }
 
     function cancel() {
