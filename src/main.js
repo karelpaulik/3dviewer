@@ -4416,6 +4416,13 @@ function cleanupModel() {
         // Move all children to grandparent, preserving world-space transform
         for (const child of children) {
             parent.attach(child);
+            // Update stored init transform to the new local-space values so
+            // that "Reset whole model" restores objects to correct positions.
+            if (child.userData.initPosition !== undefined) {
+                child.userData.initPosition = child.position.clone();
+                child.userData.initRotation = child.rotation.clone();
+                child.userData.initScale    = child.scale.clone();
+            }
         }
 
         // Remove the now-empty (or childless) unnamed node
@@ -4465,6 +4472,13 @@ function flattenHierarchy(obj) {
     // Re-parent each child to grandparent while preserving world transform
     for (const child of children) {
         parent.attach(child);
+        // Update stored init transform to the new local-space values so
+        // that "Reset whole model" restores objects to correct positions.
+        if (child.userData.initPosition !== undefined) {
+            child.userData.initPosition = child.position.clone();
+            child.userData.initRotation = child.rotation.clone();
+            child.userData.initScale    = child.scale.clone();
+        }
     }
 
     // Remove the now-empty node
