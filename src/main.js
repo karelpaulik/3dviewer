@@ -727,7 +727,7 @@ outlinerPanelEl = initOutliner({
     onShowAll: () => {
         showHiddenObjects();
     },
-    onRemove: (obj) => removeModel(obj),
+    onRemove: (obj, skipConfirm) => removeModel(obj, skipConfirm),
     onPromoteToRoot: (obj) => promoteToRoot(obj),
     onReparent: (draggedObjs, targetObj, position) => {
         const objsToMove = Array.isArray(draggedObjs) ? draggedObjs : [draggedObjs];
@@ -4626,8 +4626,8 @@ function clearSceneKeepDocs() {
     }
 }
 
-function removeModel(part) {
-    if (!confirm('Do you really want to permanently remove object?')) return;
+function removeModel(part, skipConfirm = false) {
+    if (!skipConfirm && !confirm('Do you really want to permanently remove object?')) return;
     try {				
         deselectObject();
 
@@ -4690,6 +4690,20 @@ function removeModel(part) {
         // Pokud šlo o kořenový model, odebereme i z loadedModels
         const lmIdx = loadedModels.indexOf(part);
         if (lmIdx !== -1) loadedModels.splice(lmIdx, 1);
+
+        // Vyčistíme z multi-výběru, aby deactivateMultiSelect nevrátil odstraněný objekt zpět do scény
+        const selIdx = selectedObjects.indexOf(part);
+        if (selIdx !== -1) {
+            selectedObjects.splice(selIdx, 1);
+            multiOriginalParents.splice(selIdx, 1);
+            if (multiSelectionHelpers[selIdx]) {
+                scene.remove(multiSelectionHelpers[selIdx]);
+                multiSelectionHelpers.splice(selIdx, 1);
+            }
+            if (selectedObjects.length === 0) {
+                clearMultiSelect();
+            }
+        }
 
         // Aktualizujeme GUI assembly po vyčištění dat
         if (_assemblyFolderRef) updateAssemblyGuiInfo();

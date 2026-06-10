@@ -265,7 +265,16 @@ function showCtxMenu(x, y, obj, li) {
     removeItem.textContent = 'Remove';
     removeItem.addEventListener('click', () => {
         hideCtxMenu();
-        if (onRemove) onRemove(obj);
+        if (onRemove) {
+            const isMulti = groupHighlightNodes.size > 1 && groupHighlightNodes.has(li);
+            if (isMulti) {
+                const selectedObjs = Array.from(groupHighlightNodes).map(selLi => domToObject.get(selLi)).filter(Boolean);
+                if (!confirm(`Do you really want to permanently remove ${selectedObjs.length} objects?`)) return;
+                selectedObjs.forEach(selObj => onRemove(selObj, true));
+            } else {
+                onRemove(obj);
+            }
+        }
     });
     menu.appendChild(removeItem);
 
