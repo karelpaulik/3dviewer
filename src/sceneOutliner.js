@@ -19,6 +19,7 @@ let onShowAll = null;
 let onSortChildren = null;
 let onCloneObject = null;
 let onAddObject3D = null;
+let onPromoteToRoot = null;
 
 // -------------------------------------------------------------------
 // Context menu
@@ -236,6 +237,18 @@ function showCtxMenu(x, y, obj, li) {
     sepClone.className = 'outliner-ctx-sep';
     menu.appendChild(sepClone);
 
+    // --- Promote to root (only for nested objects) ---
+    if (!lastLoadedModels.includes(obj)) {
+        const promoteItem = document.createElement('div');
+        promoteItem.className = 'outliner-ctx-item outliner-ctx-danger';
+        promoteItem.textContent = 'Promote to root';
+        promoteItem.addEventListener('click', () => {
+            hideCtxMenu();
+            if (onPromoteToRoot) onPromoteToRoot(obj);
+        });
+        menu.appendChild(promoteItem);
+    }
+
     // --- Remove ---
     const removeItem = document.createElement('div');
     removeItem.className = 'outliner-ctx-item outliner-ctx-danger';
@@ -329,7 +342,7 @@ let currentMatchSet = new Set();
  * @param {{ onSelect: Function, onToggleVisibility: Function }} callbacks
  * @returns {HTMLDivElement} the panel element (for guiWrapper hit-testing)
  */
-export function initOutliner({ onSelect, onToggleVisibility: onVis, onGroupAdd: onGroupAddCb, onGroupRemove: onGroupRemoveCb, onHideOthers: onHideOthersCb, onShowAll: onShowAllCb, onReparent: onReparentCb, onRemove: onRemoveCb, onSortChildren: onSortChildrenCb, onCloneObject: onCloneObjectCb, onAddObject3D: onAddObject3DCb }) {
+export function initOutliner({ onSelect, onToggleVisibility: onVis, onGroupAdd: onGroupAddCb, onGroupRemove: onGroupRemoveCb, onHideOthers: onHideOthersCb, onShowAll: onShowAllCb, onReparent: onReparentCb, onRemove: onRemoveCb, onSortChildren: onSortChildrenCb, onCloneObject: onCloneObjectCb, onAddObject3D: onAddObject3DCb, onPromoteToRoot: onPromoteToRootCb }) {
     onSelectObject = onSelect;
     onToggleVisibility = onVis;
     onGroupAdd = onGroupAddCb || null;
@@ -341,6 +354,7 @@ export function initOutliner({ onSelect, onToggleVisibility: onVis, onGroupAdd: 
     onSortChildren = onSortChildrenCb || null;
     onCloneObject = onCloneObjectCb || null;
     onAddObject3D = onAddObject3DCb || null;
+    onPromoteToRoot = onPromoteToRootCb || null;
 
     // --- Panel container ---
     panelEl = document.createElement('div');

@@ -727,6 +727,7 @@ outlinerPanelEl = initOutliner({
         showHiddenObjects();
     },
     onRemove: (obj) => removeModel(obj),
+    onPromoteToRoot: (obj) => promoteToRoot(obj),
     onReparent: (draggedObjs, targetObj, position) => {
         const objsToMove = Array.isArray(draggedObjs) ? draggedObjs : [draggedObjs];
         const newParent = position === 'into' ? targetObj : targetObj.parent;
@@ -4483,6 +4484,62 @@ function flattenHierarchy(obj) {
     if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) {
         updateCrossSectionLines();
     }
+
+    rebuildTree(loadedModels, true);
+    render();
+}
+
+function promoteToRoot(obj) {
+    if (!obj) return;
+
+    // Find the root ancestor that is tracked in loadedModels
+    let root = obj;
+    while (root.parent && !loadedModels.includes(root)) {
+        root = root.parent;
+    }
+    if (root === obj) return; // Already a root
+
+    if (!confirm('Promote this object to root level?\nAll ancestor objects (and their other children) will be removed.')) return;
+
+    deselectObject();
+
+    // Remember the position of the old root so we can insert the promoted object there
+    const rootIdx = loadedModels.indexOf(root);
+
+    // Detach obj from its current parent and re-attach directly to the scene,
+    // preserving world-space transform (position / rotation / scale).
+    scene.attach(obj);
+
+    // Remove the old root subtree (obj is already detached from it)
+    removeMeasurementsForOwner(root);
+    removeAnnotationsForOwner(root);
+    removeAnnotations3dForOwner(root);
+    removeCadDim3dMeasurementsForOwner(root);
+
+    // Clean up meshObjects and hiddenObjects for the old root's remaining subtree
+    root.traverse(child => {
+        const mi = meshObjects.indexOf(child);
+        if (mi !== -1) meshObjects.splice(mi, 1);
+        const hi = hiddenObjects.indexOf(child);
+        if (hi !== -1) hiddenObjects.splice(hi, 1);
+    });
+
+    scene.remove(root);
+
+    // Replace the old root entry in loadedModels with the promoted object
+    if (rootIdx !== -1) {
+        loadedModels.splice(rootIdx, 1, obj);
+    } else {
+        loadedModels.push(obj);
+    }
+
+    if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) {
+        updateCrossSectionLines();
+    }
+    if (viewProp.sectionCrossLines) {
+        updateSectionCrossLines();
+    }
+    if (viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render);
 
     rebuildTree(loadedModels, true);
     render();
