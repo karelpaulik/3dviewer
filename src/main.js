@@ -727,37 +727,55 @@ outlinerPanelEl = initOutliner({
         showHiddenObjects();
     },
     onRemove: (obj) => removeModel(obj),
-    onReparent: (draggedObj, targetObj, position) => {
-        // Guard: prevent circular hierarchy (dropping onto own descendant)
-        let cur = targetObj;
-        while (cur) { if (cur === draggedObj) return; cur = cur.parent; }
+    onReparent: (draggedObjs, targetObj, position) => {
+        const objsToMove = Array.isArray(draggedObjs) ? draggedObjs : [draggedObjs];
+        const newParent = position === 'into' ? targetObj : targetObj.parent;
+        if (!newParent) return;
+
+        // Filter out objects that would create a circular hierarchy
+        const validObjs = objsToMove.filter(draggedObj => {
+            let cur = targetObj;
+            while (cur) { if (cur === draggedObj) return false; cur = cur.parent; }
+            return true;
+        });
+        if (validObjs.length === 0) return;
 
         deselectObject();
         clearMultiSelect();
 
-        const wasRoot = loadedModels.includes(draggedObj);
-        const newParent = position === 'into' ? targetObj : targetObj.parent;
-        if (!newParent) return;
+        // Capture wasRoot before any reparenting (attach() changes parent)
+        const isNowRoot = newParent === scene;
+        const wasRootSet = new Set(validObjs.filter(o => loadedModels.includes(o)));
 
-        // Reparent while preserving world-space transform
-        newParent.attach(draggedObj);
+        // Reparent all objects while preserving world-space transform
+        // attach() always appends to the end of newParent.children
+        for (const draggedObj of validObjs) {
+            newParent.attach(draggedObj);
+        }
 
-        // For before/after: splice to correct sibling position
+        // For before/after: place all moved objects together next to targetObj
         if (position === 'before' || position === 'after') {
             const children = newParent.children;
-            const dragIdx = children.indexOf(draggedObj);
-            children.splice(dragIdx, 1);
+            // Remove all moved objects (they are now at the end after attach())
+            for (const draggedObj of validObjs) {
+                const idx = children.indexOf(draggedObj);
+                if (idx !== -1) children.splice(idx, 1);
+            }
+            // Find targetObj's position in the remaining children array
             const targetIdx = children.indexOf(targetObj);
-            children.splice(position === 'before' ? targetIdx : targetIdx + 1, 0, draggedObj);
+            const insertAt = position === 'before' ? targetIdx : targetIdx + 1;
+            children.splice(insertAt, 0, ...validObjs);
         }
 
         // Sync loadedModels (root = direct child of scene)
-        const isNowRoot = draggedObj.parent === scene;
-        if (wasRoot && !isNowRoot) {
-            const idx = loadedModels.indexOf(draggedObj);
-            if (idx !== -1) loadedModels.splice(idx, 1);
-        } else if (!wasRoot && isNowRoot) {
-            if (!loadedModels.includes(draggedObj)) loadedModels.push(draggedObj);
+        for (const draggedObj of validObjs) {
+            const wasRoot = wasRootSet.has(draggedObj);
+            if (wasRoot && !isNowRoot) {
+                const idx = loadedModels.indexOf(draggedObj);
+                if (idx !== -1) loadedModels.splice(idx, 1);
+            } else if (!wasRoot && isNowRoot) {
+                if (!loadedModels.includes(draggedObj)) loadedModels.push(draggedObj);
+            }
         }
         if (isNowRoot) {
             // Keep loadedModels order in sync with scene.children order
@@ -847,6 +865,14 @@ outlinerPanelEl = initOutliner({
             render();
         }
         updateVisibilityIcon(obj);
+    },
+    onAddObject3D: (parentObj) => {
+        const newObj = new THREE.Object3D();
+        newObj.name = 'Object3D';
+        parentObj.add(newObj);
+        rebuildTree(loadedModels, true);
+        selectObject(newObj);
+        render();
     }
 });
 

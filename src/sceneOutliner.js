@@ -18,6 +18,7 @@ let onHideOthers = null;
 let onShowAll = null;
 let onSortChildren = null;
 let onCloneObject = null;
+let onAddObject3D = null;
 
 // -------------------------------------------------------------------
 // Context menu
@@ -210,6 +211,16 @@ function showCtxMenu(x, y, obj, li) {
         menu.appendChild(sep3b);
     }
 
+    // --- Add empty Object3D child ---
+    const addObj3DItem = document.createElement('div');
+    addObj3DItem.className = 'outliner-ctx-item';
+    addObj3DItem.textContent = 'Add empty Object3D';
+    addObj3DItem.addEventListener('click', () => {
+        hideCtxMenu();
+        if (onAddObject3D) onAddObject3D(obj);
+    });
+    menu.appendChild(addObj3DItem);
+
     // --- Clone ---
     const cloneItem = document.createElement('div');
     cloneItem.className = 'outliner-ctx-item';
@@ -284,6 +295,7 @@ function startInlineRename(li, obj) {
 
 // Drag & Drop state
 let _draggedObj = null;
+let _draggedObjs = null; // all group-selected objects when dragging with multi-select
 let _dragOverLi = null;
 let _dragOverPos = null; // 'before' | 'into' | 'after'
 let _lastDragEndTime = 0; // Timestamp of last dragend – blocks spurious post-drag clicks
@@ -317,7 +329,7 @@ let currentMatchSet = new Set();
  * @param {{ onSelect: Function, onToggleVisibility: Function }} callbacks
  * @returns {HTMLDivElement} the panel element (for guiWrapper hit-testing)
  */
-export function initOutliner({ onSelect, onToggleVisibility: onVis, onGroupAdd: onGroupAddCb, onGroupRemove: onGroupRemoveCb, onHideOthers: onHideOthersCb, onShowAll: onShowAllCb, onReparent: onReparentCb, onRemove: onRemoveCb, onSortChildren: onSortChildrenCb, onCloneObject: onCloneObjectCb }) {
+export function initOutliner({ onSelect, onToggleVisibility: onVis, onGroupAdd: onGroupAddCb, onGroupRemove: onGroupRemoveCb, onHideOthers: onHideOthersCb, onShowAll: onShowAllCb, onReparent: onReparentCb, onRemove: onRemoveCb, onSortChildren: onSortChildrenCb, onCloneObject: onCloneObjectCb, onAddObject3D: onAddObject3DCb }) {
     onSelectObject = onSelect;
     onToggleVisibility = onVis;
     onGroupAdd = onGroupAddCb || null;
@@ -328,6 +340,7 @@ export function initOutliner({ onSelect, onToggleVisibility: onVis, onGroupAdd: 
     onRemove = onRemoveCb || null;
     onSortChildren = onSortChildrenCb || null;
     onCloneObject = onCloneObjectCb || null;
+    onAddObject3D = onAddObject3DCb || null;
 
     // --- Panel container ---
     panelEl = document.createElement('div');
@@ -704,6 +717,14 @@ function createTreeNode(obj, depth) {
     // --- Drag & Drop ---
     row.addEventListener('dragstart', (e) => {
         _draggedObj = obj;
+        // If this node is part of the group selection, drag all group members together
+        if (groupHighlightNodes.has(li)) {
+            _draggedObjs = Array.from(groupHighlightNodes)
+                .map(n => domToObject.get(n))
+                .filter(Boolean);
+        } else {
+            _draggedObjs = null;
+        }
         e.dataTransfer.effectAllowed = 'move';
         e.dataTransfer.setData('text/plain', ''); // required for Firefox
         li.classList.add('outliner-drag-source');
@@ -714,15 +735,19 @@ function createTreeNode(obj, depth) {
         li.classList.remove('outliner-drag-source');
         clearDropIndicators();
         _draggedObj = null;
+        _draggedObjs = null;
         _dragOverLi = null;
         _dragOverPos = null;
     });
 
     row.addEventListener('dragover', (e) => {
         if (!_draggedObj || _draggedObj === obj) return;
-        // Prevent dropping onto own descendant
+        // When group-dragging, skip if hovered item is one of the dragged objects
+        if (_draggedObjs && _draggedObjs.includes(obj)) return;
+        // Prevent dropping onto own descendant of any dragged object
         let cur = obj;
-        while (cur) { if (cur === _draggedObj) return; cur = cur.parent; }
+        const isDragged = (n) => _draggedObjs ? _draggedObjs.includes(n) : n === _draggedObj;
+        while (cur) { if (isDragged(cur)) return; cur = cur.parent; }
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
         const rect = row.getBoundingClientRect();
@@ -740,13 +765,14 @@ function createTreeNode(obj, depth) {
     row.addEventListener('drop', (e) => {
         e.preventDefault();
         const source = _draggedObj;
+        const sources = _draggedObjs || [source];
         const target = _dragOverLi ? domToObject.get(_dragOverLi) : null;
         const pos = _dragOverPos;
         clearDropIndicators();
         _dragOverLi = null;
         _dragOverPos = null;
         if (!source || !target || source === target) return;
-        if (onReparent) onReparent(source, target, pos);
+        if (onReparent) onReparent(sources, target, pos);
     });
 
     // --- Context menu (right-click + touch long-press) ---
