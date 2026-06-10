@@ -565,6 +565,7 @@ const extent = {
 const part = {
     color: "#888888",
     bbSize: "",
+    worldPos: "",
     showBBox: false,
 };
 let bbHelper = null; // Dedicated PaddedBoxHelper for bounding box display toggle
@@ -1039,6 +1040,9 @@ function init() {
         }
         if (isTransformDragging && viewProp.sectionCrossLines) {
             updateSectionCrossLines();
+        }
+        if (isTransformDragging && lastSelectedObject && selectedFolder) {
+            updateWorldPos();
         }
         // Delta-sync: pohyb pivotu přeneseme na skutečný objekt (objekt zůstává u původního rodiče).
         // Funguje pro translate, rotate i scale – matice přesně zachovává world-space transformaci.
@@ -2062,6 +2066,20 @@ function addMainGui() {
     registerGuiPanel('Edit', editGui);
 }
 
+/** Update part.worldPos from the TransformControl gizmo (singleSelectPivot) world position. */
+function updateWorldPos() {
+    const wp = new THREE.Vector3();
+    if (singleSelectPivot) {
+        wp.copy(singleSelectPivot.position);
+    } else if (lastSelectedObject) {
+        lastSelectedObject.getWorldPosition(wp);
+    } else {
+        part.worldPos = '–';
+        return;
+    }
+    part.worldPos = wp.x.toFixed(3) + ',  ' + wp.y.toFixed(3) + ',  ' + wp.z.toFixed(3);
+}
+
 /** Compute bounding box dimensions of obj respecting orientedSelectionBox setting and update part.bbSize */
 function updateBBoxSize(obj) {
     const min = new THREE.Vector3(Infinity, Infinity, Infinity);
@@ -2162,6 +2180,10 @@ function refreshSelectedObjGui(obj) {
     // Bounding box dimensions text
     updateBBoxSize(obj);
     selectedFolder.add(part, 'bbSize').name('Bounding box').disable().listen();
+
+    // World-space position of TransformControl gizmo (from absolute zero / axis helper origin)
+    updateWorldPos();
+    selectedFolder.add(part, 'worldPos').name('Position (X, Y, Z)').disable().listen();
 
     // Toggle to show/hide bounding box wireframe
     part.showBBox = false;
