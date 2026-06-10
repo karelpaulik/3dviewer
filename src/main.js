@@ -4438,7 +4438,7 @@ function cleanupModel() {
     if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) {
         updateCrossSectionLines();
     }
-    rebuildTree(loadedModels);
+    rebuildTree(loadedModels, true);
     render();
 }
 
@@ -4484,7 +4484,7 @@ function flattenHierarchy(obj) {
         updateCrossSectionLines();
     }
 
-    rebuildTree(loadedModels);
+    rebuildTree(loadedModels, true);
     render();
 }
 
@@ -4614,7 +4614,7 @@ function removeModel(part) {
         // Aktualizace solid section (odebraný objekt nesmí figurovat ve stencilu)
         if (viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render);
 
-        rebuildTree(loadedModels);
+        rebuildTree(loadedModels, true);
         render();
     } catch(err) {
         console.log("Error: removeModel " + err.message);
