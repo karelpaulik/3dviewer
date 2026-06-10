@@ -4400,10 +4400,6 @@ function fileNameWithoutExtension(path) {
 }
 
 function cleanupModel() {
-    if (!confirm('Flatten all unnamed nodes in the model?')) return;
-    // Detach TransformControls and clear GUI before restructuring the scene graph
-    deselectObject();
-
     // Collect all unnamed Object3D nodes (skip scene root, meshes, lights, cameras)
     // Traverse only loadedModels subtrees – this naturally avoids TransformControls,
     // helpers and other scene-level objects that don't belong to user content.
@@ -4423,6 +4419,10 @@ function cleanupModel() {
         console.log('cleanupModel: no unnamed nodes found.');
         return;
     }
+
+    if (!confirm(`Flatten all unnamed nodes in the model?\n(${toProcess.length} unnamed node(s) found)`)) return;
+    // Detach TransformControls and clear GUI before restructuring the scene graph
+    deselectObject();
 
     // Reverse pre-order → post-order: children are processed before their parents.
     // This correctly handles nested unnamed nodes.
