@@ -1886,6 +1886,11 @@ function addMainGui() {
     const demoFolder = fileGui.addFolder('Import demo');
     demoFolder.close();
     demoFolder.add({ fn() {
+        loadGlbModel('./models/drilling_machine.glb', 'drilling_machine.glb', 0.001, true).then(() => {
+            fitView();
+        });
+    } }, 'fn').name('Drilling machine (MAIN DEMO)');
+    demoFolder.add({ fn() {
         loadGlbModel('./models/motor.glb', 'motor.glb', 0.001, true).then(() => {
             fitView();
         });
@@ -1900,11 +1905,6 @@ function addMainGui() {
             fitView();
         });
     } }, 'fn').name('CNC');
-    demoFolder.add({ fn() {
-        loadGlbModel('./models/drilling_machine.glb', 'drilling_machine.glb', 0.001, true).then(() => {
-            fitView();
-        });
-    } }, 'fn').name('drilling machine');
     demoFolder.add({ fn() {
         loadGlbModel('./models/DJI_drone.glb', 'DJI_drone.glb', 0.001, true).then(() => {
             fitView();
