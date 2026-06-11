@@ -87,6 +87,7 @@ const assemblyGui = {
     editStepInfo: '\u2013 no step \u2013',
     stepName: '',
     stepDescription: '',
+    showStepOverlay: true,
     animationDuration: 1000,
     animationEase: 'power1.inOut',
     animationRepeat: 0,
@@ -100,6 +101,11 @@ const assemblyGui = {
     zoomCoeff: 1,
 };
 // ============================================
+
+// Assembly step overlay (top-center of viewport)
+const assemblyStepOverlay = document.createElement('div');
+assemblyStepOverlay.id = 'assembly-step-overlay';
+document.body.appendChild(assemblyStepOverlay);
 
 // GUI toolbar (full-width top bar) + panel container (right-aligned below)
 const guiToolbar = document.createElement('div');
@@ -7856,6 +7862,9 @@ function addAssemblyGui() {
     // --- Playback ---
     const playbackFolder = assemblyFolder.addFolder('Playback');
     playbackFolder.add(assemblyGui, 'stepInfo').name('Status').disable().listen();
+    playbackFolder.add(assemblyGui, 'showStepOverlay').name('Show step overlay').onChange(function(value) {
+        assemblyStepOverlay.style.display = value ? '' : 'none';
+    }).listen();
     playbackFolder.add(assemblyGui, 'animationLoop').name('Loop  ∞  (start ↔ finish)').listen();
     playbackFolder.add(assemblyGui, 'animationCamera').name('Camera  🎥  (animate camera)').listen();
     playbackFolder.add(assemblyGui, 'zoomCoeff', 0.1, 5.0, 0.05).name('Zoom coeff  🔍  (ortho only)').listen();
@@ -8006,6 +8015,22 @@ function updateAssemblyGuiInfo() {
     } else {
         const step = assemblyData.steps[assemblyState.currentStepIndex];
         assemblyGui.stepInfo = `${assemblyState.currentStepIndex + 1}/${n}: ${step.name}`;
+    }
+
+    // Viewport step overlay
+    {
+        const ci = assemblyState.currentStepIndex;
+        if (ci >= 0 && ci < n) {
+            const step = assemblyData.steps[ci];
+            const nameHtml = `<span class="aso-name">${step.name || ''}</span>`;
+            const descHtml = step.description ? `<span class="aso-desc">${step.description}</span>` : '';
+            assemblyStepOverlay.innerHTML = nameHtml + descHtml;
+            assemblyStepOverlay.classList.add('visible');
+        } else {
+            assemblyStepOverlay.innerHTML = '';
+            assemblyStepOverlay.classList.remove('visible');
+        }
+        assemblyStepOverlay.style.display = assemblyGui.showStepOverlay ? '' : 'none';
     }
 
     // Edit status — mirrors current playback step
