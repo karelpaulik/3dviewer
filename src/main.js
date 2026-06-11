@@ -7930,7 +7930,7 @@ function addAssemblyGui() {
     editControls.push( editFolder.add({ fn: assemblyDeleteStep }, 'fn').name('✕  Delete step') );
     editControls.push( editFolder.add({ fn: assemblyMoveStepUp }, 'fn').name('↑  Move step up') );
     editControls.push( editFolder.add({ fn: assemblyMoveStepDown }, 'fn').name('↓  Move step down') );
-    editControls.push( editFolder.add({ fn: assemblyRemoveObjectFromStep }, 'fn').name('✕  Remove object from step') );
+    editControls.push( editFolder.add({ fn: assemblyRemoveObjectFromStep }, 'fn').name('✕  Remove selected from step') );
     editControls.push( editFolder.add({ fn: assemblySelectStepObjects }, 'fn').name('☑  Select step objects') );
     editControls.push( editFolder.add({ fn: assemblySaveCameraView }, 'fn').name('📷  Save camera view') );
     editControls.push( editFolder.add({ fn: assemblyClearCameraView }, 'fn').name('✕  Clear camera view') );
@@ -8776,29 +8776,38 @@ function assemblyRemoveObjectFromStep() {
         console.log('[Assembly] No step selected – select a step using the playback controls.');
         return;
     }
-    if (!lastSelectedObject) {
-        console.log('[Assembly] No object selected.');
+    // Build the list of objects to process: multi-selection or single selection
+    const targets = selectedObjects.length > 0 ? [...selectedObjects] : (lastSelectedObject ? [lastSelectedObject] : []);
+    if (targets.length === 0) {
+        alert('No object selected.');
         return;
     }
     const step = assemblyData.steps[ci];
-    const before = step.transformations.length;
 
-    // Check the object is actually in this step before asking
-    const isInStep = step.transformations.some(t => t.objectRef === lastSelectedObject);
-    if (!isInStep) {
-        console.log(`[Assembly] Object "${lastSelectedObject.name}" not found in step "${step.name}".`);
+    // Filter to objects that are actually in this step
+    const inStep = targets.filter(obj => step.transformations.some(t => t.objectRef === obj));
+    if (inStep.length === 0) {
+        console.log(`[Assembly] None of the selected objects found in step "${step.name}".`);
         return;
     }
 
-    if (!confirm(`Remove "${lastSelectedObject.name}" from step "${step.name}"?`)) return;
+    const names = inStep.map(o => o.name || '(unnamed)').join(', ');
+    if (!confirm(`Remove ${inStep.length > 1 ? 'objects' : `"${names}"`} from step "${step.name}"?`)) return;
 
-    step.transformations = step.transformations.filter(t => t.objectRef !== lastSelectedObject);
-    const removed = before - step.transformations.length;
-    if (removed > 0) {
-        // Repair the chain so following steps get correct init values
-        repairChainForObject(lastSelectedObject);
-        console.log(`[Assembly] Object "${lastSelectedObject.name}" removed from step "${step.name}".`);
+    inStep.forEach(obj => {
+        step.transformations = step.transformations.filter(t => t.objectRef !== obj);
+        repairChainForObject(obj);
+        console.log(`[Assembly] Object "${obj.name}" removed from step "${step.name}".`);
+    });
+
+    if (confirm('Reset init. location?')) {
+        // If group transform is active, objects are parented to pivotObject.
+        // Deactivate first so they are re-attached to their original parents
+        // (world-space positions preserved), then reset to initPosition/Rotation/Scale.
+        if (viewProp.isGroupTransformActive) deactivateMultiSelect();
+        inStep.forEach(obj => setDefPosRotScale(obj));
     }
+
     updateAssemblyGuiInfo();
 }
 
