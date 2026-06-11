@@ -7948,6 +7948,25 @@ function addAttachmentsGui() {
 }
 
 function addHelpGui() {
+    // Create welcome dialog – shown once on every page load
+    const welcomeDialog = document.createElement('dialog');
+    welcomeDialog.id = 'welcome-dialog';
+    welcomeDialog.innerHTML = `
+        <h2>BEDOBE</h2>
+        <h3>CAD Explorer</h3>
+        <p><strong>Welcome to the 3D model exploration and documentation platform.</strong></p>
+        <p><strong>Created by International CAD developers community</strong></p>
+        <p>BEDOBE is a web-based CAD Explorer, assembly workflow editor, and document editor built with Three.js. It allows you to load various 3D models, explore their structure, create documentation, create step-by-step assembly instructions with smooth animations and much much more.</p>
+        <p>The goal of the project is to provide a publicly available <strong>CAD explorer</strong> for everyone.</p>
+        <hr>
+        <p>Have an idea for improvement? Contact us at:</p>
+        <p><a href="mailto:info@bedobe.eu">info@bedobe.eu</a></p>
+        <form method="dialog"><button>Start</button></form>
+    `;
+    welcomeDialog.addEventListener('click', e => { if (e.target === welcomeDialog) welcomeDialog.close(); });
+    document.body.appendChild(welcomeDialog);
+    welcomeDialog.showModal();
+
         // Create <dialog> element once
     const aboutDialog = document.createElement('dialog');
     aboutDialog.id = 'about-dialog';

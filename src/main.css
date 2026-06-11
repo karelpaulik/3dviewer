@@ -64,7 +64,8 @@ a:hover {
 	text-decoration: underline;
 }
 
-#about-dialog {
+#about-dialog,
+#welcome-dialog {
 	background: #2a2a2a;
 	color: #eee;
 	padding: 32px 44px;
@@ -78,20 +79,24 @@ a:hover {
 	border: none;
 }
 
-#about-dialog::backdrop {
+#about-dialog::backdrop,
+#welcome-dialog::backdrop {
 	background: rgba(0, 0, 0, 0.45);
 }
 
-#about-dialog h2 {
+#about-dialog h2,
+#welcome-dialog h2 {
 	margin: 0 0 12px;
 }
 
-#about-dialog p {
+#about-dialog p,
+#welcome-dialog p {
 	margin: 0 0 18px;
 	font-size: 15px;
 }
 
-#about-dialog button {
+#about-dialog button,
+#welcome-dialog button {
 	padding: 6px 24px;
 	cursor: pointer;
 	border: none;
