@@ -1073,7 +1073,8 @@ function init() {
         if (event.value) { // Dragování začalo
             // V edit modu zakázat posun objektu bez definovaného name
             if (assemblyState.editMode) {
-                const dragObj = transformControls.object;
+                // Použijeme lastSelectedObject – transformControls.object může být pivot
+                const dragObj = lastSelectedObject || transformControls.object;
                 const hasName = dragObj && dragObj.name && dragObj.name.trim() !== '';
                 if (!hasName) {
                     transformControls.detach();
@@ -4978,12 +4979,11 @@ function selectObject(object) {
     if (object) {        
         lastSelectedObject = object;// Nastavíme nové reference
 
-        // V assembly edit modu připojíme TC přímo na objekt (assembly tracking potřebuje
-        // obj.position v local space, pivot by způsobil chybné záznamy).
-        // Jinak vytvoříme pivot na středu bboxu, aby gizmo bylo vždy ve středu objektu.
-        if (assemblyState.editMode) {
-            transformControls.attach(object);// Připojíme TransformControls
-        } else {
+        // Vždy vytvoříme pivot na středu bboxu, aby gizmo bylo ve středu objektu
+        // (platí i pro assembly edit mode). Delta-sync v change eventu přenese pohyb
+        // pivotu na skutečný objekt; savePreviousTransformState/recordAssemblyTransformation
+        // čtou lastSelectedObject, nikoli pivot – assembly tracking zůstává správný.
+        {
             object.updateWorldMatrix(true, true);
             const bbox = new THREE.Box3().setFromObject(object);
             const bboxCenter = new THREE.Vector3();
