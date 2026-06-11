@@ -71,6 +71,7 @@ const assemblyAnchors = new Map();
 const assemblyState = {
     editMode: false,       // When true, object drags are recorded into the active edit step
     currentStepIndex: -1,  // -1 = fully assembled; N = steps[0..N] have been applied (also used as the edit target)
+    disassembledMode: false, // When true, we are in the fully-disassembled state (via Reset to finish), distinct from editing the last step
 };
 
 let assemblyAnimation = null;         // GSAP tween handle for step animation
@@ -4120,7 +4121,7 @@ function updateAssemblyStepHelpers(stepOverride = null) {
     assemblyStepHelpers.forEach(h => scene.remove(h));
     assemblyStepHelpers.length = 0;
 
-    if (!assemblyState.editMode) { render(); return; }
+    if (!assemblyState.editMode || assemblyState.disassembledMode) { render(); return; }
     const ci = assemblyState.currentStepIndex;
 
     const step = stepOverride ?? (ci >= 0 && ci < assemblyData.steps.length ? assemblyData.steps[ci] : null);
@@ -7909,6 +7910,16 @@ function addAssemblyGui() {
         updateAssemblyStepHelpers();
         console.log(`[Assembly] Edit mode: ${value}`);
     }).listen();
+    editFolder.add({ fn: function() {
+        assemblyResetToFinish();
+        assemblyState.disassembledMode = true;
+        assemblyState.editMode = true;
+        assemblyGui.editMode = true;
+        editControls.forEach(c => c.enable());
+        updateAssemblyStepHelpers();
+        updateAssemblyGuiInfo();
+        console.log('[Assembly] Edit disassembled mode activated.');
+    }}, 'fn').name('✏  Edit disassembled  [End]');
     editFolder.add(assemblyGui, 'editStepInfo').name('Active step').disable().listen();
 
     // Controls that are enabled only in edit mode
@@ -8069,13 +8080,22 @@ function rebuildAssemblyStepsList() {
 
     assemblyData.steps.forEach((step, i) => {
         const isActive = i === assemblyState.currentStepIndex;
+        const isDisassembledActive = isActive && assemblyState.disassembledMode;
+        const isNormalActive = isActive && !assemblyState.disassembledMode;
         const camIcon  = step.camera ? '  📷' : '';
-        const label = `${isActive ? '▶ ' : '   '}${i + 1}:  ${step.name}${camIcon}`;
+        let prefix;
+        if (isDisassembledActive)   prefix = '✏ ';
+        else if (isNormalActive)    prefix = '▶ ';
+        else                        prefix = '   ';
+        const label = `${prefix}${i + 1}:  ${step.name}${camIcon}`;
         const btn = { go: function() { assemblyGoToStep(i); } };
         const ctrl = assemblyStepsListFolder.add(btn, 'go').name(label);
-        if (step.camera) {
-            const btnEl = ctrl.domElement.querySelector('button');
-            if (btnEl) {
+        const btnEl = ctrl.domElement.querySelector('button');
+        if (btnEl) {
+            if (isDisassembledActive) {
+                btnEl.style.color = '#cc88ff';
+                btnEl.style.fontWeight = 'bold';
+            } else if (step.camera) {
                 btnEl.style.color = '#f0c040';
                 btnEl.style.fontWeight = 'bold';
             }
@@ -8109,6 +8129,7 @@ function _snapAndAnimate(snapIndex, goingForward) {
 // Animate to the fully assembled state (step 0 plays backward).
 function assemblyGoToAssembled() {
     if (assemblyState.currentStepIndex === -1) return;
+    assemblyState.disassembledMode = false;
     _snapAndAnimate(0, false);
 }
 
@@ -8116,6 +8137,7 @@ function assemblyGoToAssembled() {
 function assemblyGoToStep(targetIndex) {
     if (targetIndex < 0 || targetIndex >= assemblyData.steps.length) return;
     if (targetIndex === assemblyState.currentStepIndex) return;
+    assemblyState.disassembledMode = false;
 
     if (assemblyAnimation) { assemblyAnimation.kill(); assemblyAnimation = null; }
 
@@ -8128,11 +8150,20 @@ function assemblyGoToStep(targetIndex) {
     }
 }
 
+// Returns the last step in which objectRef already has a transformation recorded.
+// Used in disassembledMode to route edits to the object's own step instead of the last one.
+function findObjectHomeStep(obj) {
+    let homeStep = null;
+    for (const step of assemblyData.steps) {
+        if (step.transformations.some(t => t.objectRef === obj)) homeStep = step;
+    }
+    return homeStep;
+}
+
 // Records assembly transformations for all objects in an active group selection.
 // Positions are computed in each object's original-parent local space to survive deactivation.
 function recordGroupTransformations() {
-    const step = assemblyData.steps[assemblyState.currentStepIndex];
-    if (!step) return;
+    if (!assemblyData.steps[assemblyState.currentStepIndex]) return;
 
     previousGroupTransformStates.forEach((state, i) => {
         const obj = state.object;
@@ -8164,7 +8195,12 @@ function recordGroupTransformations() {
         const scaleDelta = finalScale.distanceTo(initScale);
         if (posDelta < 0.0001 && rotDelta < 0.0001 && scaleDelta < 0.0001) return;
 
-        const existing = step.transformations.find(t => t.objectRef === obj);
+        // In disassembledMode, write to the object's own (home) step instead of the last step.
+        const targetStep = (assemblyState.disassembledMode && findObjectHomeStep(obj))
+            ? findObjectHomeStep(obj)
+            : assemblyData.steps[assemblyState.currentStepIndex];
+
+        const existing = targetStep.transformations.find(t => t.objectRef === obj);
         if (existing) {
             existing.finalPosition  = { x: finalPos.x,  y: finalPos.y,  z: finalPos.z };
             existing.finalQuaternion = { x: finalQuat.x, y: finalQuat.y, z: finalQuat.z, w: finalQuat.w };
@@ -8178,7 +8214,7 @@ function recordGroupTransformations() {
                     scale:      { x: initScale.x, y: initScale.y, z: initScale.z },
                 });
             }
-            step.transformations.push({
+            targetStep.transformations.push({
                 objectRef: obj,
                 initPosition:   { x: initPos.x,  y: initPos.y,  z: initPos.z },
                 finalPosition:  { x: finalPos.x,  y: finalPos.y,  z: finalPos.z },
@@ -8189,7 +8225,7 @@ function recordGroupTransformations() {
             });
         }
         repairChainForObject(obj);
-        console.log(`[Assembly] Step ${step.id} "${step.name}": recorded transform of object "${obj.name}" (group)`);
+        console.log(`[Assembly] Step ${targetStep.id} "${targetStep.name}": recorded transform of object "${obj.name}" (group)${assemblyState.disassembledMode ? ' [disassembled mode]' : ''}`);
     });
 
     previousGroupTransformStates = [];
@@ -8200,7 +8236,10 @@ function recordGroupTransformations() {
 function recordAssemblyTransformation() {
     const obj = previousTransformState?.object;
     if (!obj || !previousTransformState) return;
-    const step = assemblyData.steps[assemblyState.currentStepIndex];
+    // In disassembledMode, route to the object's own (home) step; fall back to current step.
+    const step = (assemblyState.disassembledMode && findObjectHomeStep(obj))
+        ? findObjectHomeStep(obj)
+        : assemblyData.steps[assemblyState.currentStepIndex];
     if (!step) return;
 
     const prevPos   = previousTransformState.position;   // THREE.Vector3
@@ -8244,7 +8283,7 @@ function recordAssemblyTransformation() {
     }
 
     repairChainForObject(obj);
-    console.log(`[Assembly] Step ${step.id} "${step.name}": recorded transform of object "${obj.name}"`);
+    console.log(`[Assembly] Step ${step.id} "${step.name}": recorded transform of object "${obj.name}"${assemblyState.disassembledMode ? ' [disassembled mode]' : ''}`);
     updateAssemblyGuiInfo();
 }
 
@@ -8462,6 +8501,7 @@ function assemblyResetToStart() {
     });
 
     assemblyState.currentStepIndex = -1;
+    assemblyState.disassembledMode = false;
     updateAssemblyGuiInfo();
     if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) updateCrossSectionLines();
     if (viewProp.sectionCrossLines) updateSectionCrossLines();
@@ -8568,6 +8608,7 @@ function assemblyNextStep() {
     // Then snap any (possibly just-started) assembly animation.
     assemblyAnimationFinalize?.();
     assemblyAnimationFinalize = null;
+    assemblyState.disassembledMode = false;
 
     const nextIndex = assemblyState.currentStepIndex + 1;
     if (nextIndex >= assemblyData.steps.length) {
@@ -8611,6 +8652,7 @@ function assemblyPrevStep() {
     // Then snap any (possibly just-started) assembly animation.
     assemblyAnimationFinalize?.();
     assemblyAnimationFinalize = null;
+    assemblyState.disassembledMode = false;
 
     if (assemblyState.currentStepIndex < 0) {
         console.log('[Assembly] Already at the start.');
