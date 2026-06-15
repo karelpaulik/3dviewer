@@ -409,7 +409,8 @@ canvas {
 
 /* Solid Section and Show Section Mesh buttons – bottom-left, next to section-btn */
 #solid-section-btn,
-#show-section-mesh-btn {
+#show-section-mesh-btn,
+#cross-section-lines-btn {
     position: fixed;
     bottom: 36px;
     z-index: 1002;
@@ -433,13 +434,18 @@ canvas {
 #show-section-mesh-btn {
     left: 128px;
 }
+#cross-section-lines-btn {
+    left: 168px;
+}
 #solid-section-btn:hover,
-#show-section-mesh-btn:hover {
+#show-section-mesh-btn:hover,
+#cross-section-lines-btn:hover {
     background: rgba(42, 42, 42, 0.9);
     color: #ddd;
 }
 #solid-section-btn.active,
-#show-section-mesh-btn.active {
+#show-section-mesh-btn.active,
+#cross-section-lines-btn.active {
     background: rgba(0, 0, 0, 0.9);
     color: #4af;
 }
@@ -447,7 +453,7 @@ canvas {
 /* Status bar (footer) */
 #status-bar {
 	position: fixed;
-	bottom: 0;
+	bottom: 0;    
 	left: 0;
 	right: 0;
 	height: 32px;

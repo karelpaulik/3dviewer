@@ -261,8 +261,10 @@ sectionBtn.addEventListener('click', () => {
     sectionBtn.classList.toggle('active', viewProp.section);
     solidSectionBtn.style.display = viewProp.section ? 'block' : 'none';
     showSectionMeshBtn.style.display = viewProp.section ? 'block' : 'none';
+    crossSectionLinesBtn.style.display = viewProp.section ? 'block' : 'none'; // Add this line
     solidSectionBtn.classList.toggle('active', viewProp.solidSection);
     showSectionMeshBtn.classList.toggle('active', viewProp.showSectionMesh);
+    crossSectionLinesBtn.classList.toggle('active', viewProp.sectionCrossLines); // Add this line
     if (sectionCtrl) sectionCtrl.updateDisplay();
 });
 document.body.appendChild(sectionBtn);
@@ -299,11 +301,24 @@ showSectionMeshBtn.addEventListener('click', () => {
 });
 document.body.appendChild(showSectionMeshBtn);
 
+// Cross Section Lines button (visible only when section is active)
+const crossSectionLinesBtn = document.createElement('button');
+crossSectionLinesBtn.id = 'cross-section-lines-btn';
+crossSectionLinesBtn.title = 'Cross Section Lines';
+crossSectionLinesBtn.textContent = '⌿'; // Using a placeholder icon, adjust as needed
+crossSectionLinesBtn.addEventListener('click', () => {
+    viewProp.sectionCrossLines = !viewProp.sectionCrossLines;
+    updateSectionCrossLines();
+    crossSectionLinesBtn.classList.toggle('active', viewProp.sectionCrossLines);
+    render();
+});
+document.body.appendChild(crossSectionLinesBtn);
+
 document.body.appendChild(statusCircleDetectEl);
 
 // Wrapper reference for hit-testing (toolbar + panels + outliner)
 let outlinerPanelEl = null;
-const guiWrapper = { contains(el) { return guiToolbar.contains(el) || Object.values(guiPanels).some(p => p.gui && p.gui.domElement.style.display !== 'none' && p.gui.domElement.contains(el)) || (outlinerPanelEl && outlinerPanelEl.contains(el)) || statusBar.contains(el) || statusCircleDetectEl.contains(el) || fsBtn.contains(el) || sectionBtn.contains(el) || solidSectionBtn.contains(el) || showSectionMeshBtn.contains(el); } };
+const guiWrapper = { contains(el) { return guiToolbar.contains(el) || Object.values(guiPanels).some(p => p.gui && p.gui.domElement.style.display !== 'none' && p.gui.domElement.contains(el)) || (outlinerPanelEl && outlinerPanelEl.contains(el)) || statusBar.contains(el) || statusCircleDetectEl.contains(el) || fsBtn.contains(el) || sectionBtn.contains(el) || solidSectionBtn.contains(el) || showSectionMeshBtn.contains(el) || crossSectionLinesBtn.contains(el); } }; // Add crossSectionLinesBtn here
 
 let guiView = null;
 let guiAssembly = null;
