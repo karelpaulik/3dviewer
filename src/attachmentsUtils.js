@@ -309,6 +309,150 @@ function _updateCommentBtn() {
     btn.style.color = _commentPanelOpen ? '#fff' : '#aaa';
 }
 
+function _mountImagePreview(container, blobUrl) {
+    const vp = document.createElement('div');
+    vp.style.cssText = 'width:100%;height:100%;overflow:hidden;position:relative;cursor:grab;touch-action:none;';
+
+    const img = document.createElement('img');
+    img.src = blobUrl;
+    img.draggable = false;
+    img.style.cssText = 'position:absolute;left:0;top:0;transform-origin:0 0;user-select:none;-webkit-user-drag:none;';
+
+    const state = {
+        zoom: 1,
+        panX: 0,
+        panY: 0,
+        isPanning: false,
+        panStart: { x: 0, y: 0 },
+        pinchDist0: null,
+        touchMoved: false,
+        lastTap: 0,
+    };
+
+    function applyTransform() {
+        img.style.transform = `translate(${state.panX}px, ${state.panY}px) scale(${state.zoom})`;
+    }
+
+    function fitToView() {
+        const vpW = vp.clientWidth || 800;
+        const vpH = vp.clientHeight || 600;
+        const iw = img.naturalWidth;
+        const ih = img.naturalHeight;
+        if (!iw || !ih) return;
+        state.zoom = Math.min(vpW / iw, vpH / ih, 1) * 0.95;
+        state.panX = (vpW - iw * state.zoom) / 2;
+        state.panY = (vpH - ih * state.zoom) / 2;
+        applyTransform();
+    }
+
+    function zoomAt(mx, my, delta) {
+        const newZoom = Math.min(Math.max(state.zoom * delta, 0.05), 20);
+        state.panX = mx - (mx - state.panX) * (newZoom / state.zoom);
+        state.panY = my - (my - state.panY) * (newZoom / state.zoom);
+        state.zoom = newZoom;
+        applyTransform();
+    }
+
+    img.onload = fitToView;
+
+    vp.addEventListener('wheel', e => {
+        e.preventDefault();
+        const rect = vp.getBoundingClientRect();
+        zoomAt(e.clientX - rect.left, e.clientY - rect.top, e.deltaY < 0 ? 1.12 : 1 / 1.12);
+    }, { passive: false });
+
+    function onMouseMove(e) {
+        if (!state.isPanning) return;
+        state.panX = e.clientX - state.panStart.x;
+        state.panY = e.clientY - state.panStart.y;
+        applyTransform();
+    }
+
+    function onMouseUp() {
+        if (!state.isPanning) return;
+        state.isPanning = false;
+        vp.style.cursor = 'grab';
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
+    }
+
+    vp.addEventListener('mousedown', e => {
+        if (e.button !== 0) return;
+        state.isPanning = true;
+        state.panStart = { x: e.clientX - state.panX, y: e.clientY - state.panY };
+        vp.style.cursor = 'grabbing';
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+    });
+
+    vp.addEventListener('dblclick', fitToView);
+
+    vp.addEventListener('touchstart', e => {
+        if (e.touches.length === 2) {
+            const dx = e.touches[1].clientX - e.touches[0].clientX;
+            const dy = e.touches[1].clientY - e.touches[0].clientY;
+            state.pinchDist0 = Math.sqrt(dx * dx + dy * dy);
+            state.isPanning = false;
+            e.preventDefault();
+            return;
+        }
+        state.pinchDist0 = null;
+        if (e.touches.length !== 1) return;
+        e.preventDefault();
+        state.touchMoved = false;
+        state.isPanning = true;
+        state.panStart = { x: e.touches[0].clientX - state.panX, y: e.touches[0].clientY - state.panY };
+    }, { passive: false });
+
+    vp.addEventListener('touchmove', e => {
+        if (e.touches.length === 2 && state.pinchDist0 !== null) {
+            e.preventDefault();
+            const dx = e.touches[1].clientX - e.touches[0].clientX;
+            const dy = e.touches[1].clientY - e.touches[0].clientY;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            const rect = vp.getBoundingClientRect();
+            const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left;
+            const my = (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top;
+            const delta = dist / state.pinchDist0;
+            state.pinchDist0 = dist;
+            zoomAt(mx, my, delta);
+            return;
+        }
+        if (e.touches.length !== 1 || !state.isPanning) return;
+        e.preventDefault();
+        state.touchMoved = true;
+        state.panX = e.touches[0].clientX - state.panStart.x;
+        state.panY = e.touches[0].clientY - state.panStart.y;
+        applyTransform();
+    }, { passive: false });
+
+    vp.addEventListener('touchend', e => {
+        state.pinchDist0 = null;
+        state.isPanning = false;
+        if (e.changedTouches.length === 1 && !state.touchMoved) {
+            const now = Date.now();
+            if (now - state.lastTap < 300) {
+                fitToView();
+                state.lastTap = 0;
+            } else {
+                state.lastTap = now;
+            }
+        }
+        state.touchMoved = false;
+    }, { passive: false });
+
+    vp.addEventListener('touchcancel', () => {
+        state.pinchDist0 = null;
+        state.isPanning = false;
+        state.touchMoved = false;
+    });
+
+    new ResizeObserver(() => fitToView()).observe(vp);
+
+    vp.appendChild(img);
+    container.appendChild(vp);
+}
+
 function _openAttachment(att) {
     _carouselList = attachmentsStore.filter(a => _canOpenInBrowser(a.mimeType));
     _carouselIndex = _carouselList.findIndex(a => a.id === att.id);
@@ -359,13 +503,7 @@ function _renderModal(att) {
     content.style.background = mime.startsWith('text/') ? '#f5f5f5' : '#1a1a1a';
 
     if (mime.startsWith('image/')) {
-        const wrap = document.createElement('div');
-        wrap.style.cssText = 'width:100%;height:100%;display:flex;align-items:center;justify-content:center;';
-        const img = document.createElement('img');
-        img.src = _activeBlobUrl;
-        img.style.cssText = 'max-width:100%;max-height:100%;object-fit:contain;';
-        wrap.appendChild(img);
-        content.appendChild(wrap);
+        _mountImagePreview(content, _activeBlobUrl);
     } else if (mime.startsWith('video/')) {
         const v = document.createElement('video');
         v.src = _activeBlobUrl;
