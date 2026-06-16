@@ -186,10 +186,10 @@ export function getDocumentsStore() {
     return documentsStore;
 }
 
-/** Returns true when the doc overlay is visible but 3D navigation is NOT active.
- *  In that state hover-highlight and selection should be suppressed. */
+/** Returns true when the doc overlay is open and 3D model interaction should be suppressed.
+ *  Always blocks while editing; in view mode blocks unless 3D navigation is toggled on. */
 export function isDocOverlayBlockingInput() {
-    return _overlayEl !== null && _overlayEl.style.display !== 'none' && !_nav3d;
+    return _overlayEl !== null && _overlayEl.style.display !== 'none' && (_isEditMode || !_nav3d);
 }
 
 // Call before export to flush any unsaved editor content

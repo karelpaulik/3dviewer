@@ -5214,16 +5214,18 @@ function render() {
         INTERSECTED = null;
     }
 
+    const docBlocks3dInput = isDocOverlayBlockingInput();
+
     // Measurement hover preview – raycast for point preview when in measure mode
     // Face snap highlight – show hovered triangle during face-to-face snap mode
-    if (faceSnapMode && !isMouseOverGui && !isMouseDown) {
+    if (faceSnapMode && !docBlocks3dInput && !isMouseOverGui && !isMouseDown) {
         updateFaceSnapHighlight();
-    } else if (!faceSnapMode && faceSnapHighlightMesh) {
+    } else if ((!faceSnapMode || docBlocks3dInput) && faceSnapHighlightMesh) {
         clearFaceSnapHighlight();
     }
 
     // Point-to-point snap – show hover dot preview
-    if (ptpSnapMode && !isMouseOverGui && !isMouseDown) {
+    if (ptpSnapMode && !docBlocks3dInput && !isMouseOverGui && !isMouseDown) {
         raycaster.setFromCamera(mouse, currentCamera);
         const ptpIntersects = raycaster.intersectObjects(meshObjects);
         const ptpIsVis = (obj) => { let o = obj; while (o) { if (!o.visible) return false; o = o.parent; } return true; };
@@ -5253,11 +5255,11 @@ function render() {
         } else if (ptpSnapDotMesh) {
             ptpSnapDotMesh.visible = false;
         }
-    } else if (!ptpSnapMode && ptpSnapDotMesh) {
+    } else if ((!ptpSnapMode || docBlocks3dInput) && ptpSnapDotMesh) {
         clearPtpSnapDot();
     }
 
-    if (viewProp.measureMode && isMeasureActive() && !isMouseOverGui && !isMouseDown) {
+    if (viewProp.measureMode && isMeasureActive() && !docBlocks3dInput && !isMouseOverGui && !isMouseDown) {
         raycaster.setFromCamera(mouse, currentCamera);
         const mIntersects = raycaster.intersectObjects(meshObjects);
         const mIsFullyVisible = (obj) => { let o = obj; while (o) { if (!o.visible) return false; o = o.parent; } return true; };
@@ -5279,7 +5281,7 @@ function render() {
     }
 
     // Angle measurement hover preview
-    if (viewProp.angleMode && isAngleActive() && !isMouseOverGui && !isMouseDown) {
+    if (viewProp.angleMode && isAngleActive() && !docBlocks3dInput && !isMouseOverGui && !isMouseDown) {
         raycaster.setFromCamera(mouse, currentCamera);
         const aIntersects = raycaster.intersectObjects(meshObjects);
         const aIsFullyVisible = (obj) => { let o = obj; while (o) { if (!o.visible) return false; o = o.parent; } return true; };
@@ -5301,7 +5303,7 @@ function render() {
     }
 
     // CAD dimension preview
-    if (viewProp.cadDimMode && isCadDimActive() && !isMouseOverGui) {
+    if (viewProp.cadDimMode && isCadDimActive() && !docBlocks3dInput && !isMouseOverGui) {
         const cdStep = getCadDimStep();
         if (cdStep < 2) {
             // Phases 0 & 1: surface hover marker + dashed line from p1
@@ -5333,7 +5335,7 @@ function render() {
     _updateCadDimHintUI();
 
     // CAD dimension 3D preview
-    if (viewProp.cadDim3dMode && isCadDim3dActive() && !isMouseOverGui) {
+    if (viewProp.cadDim3dMode && isCadDim3dActive() && !docBlocks3dInput && !isMouseOverGui) {
         const cdStep3d = getCadDim3dStep();
         if (cdStep3d < 2) {
             if (!isMouseDown) {
@@ -5363,7 +5365,7 @@ function render() {
     _updateCadDim3dHintUI();
 
     // Annotation hover preview – CSS2D (regular mode or add-leader mode)
-    if ((viewProp.annotationMode && isAnnotationActive() || isAddLeaderLineActive()) && !isMouseOverGui && !isMouseDown) {
+    if ((viewProp.annotationMode && isAnnotationActive() || isAddLeaderLineActive()) && !docBlocks3dInput && !isMouseOverGui && !isMouseDown) {
         raycaster.setFromCamera(mouse, currentCamera);
         const nIntersects = raycaster.intersectObjects(meshObjects);
         const nIsFullyVisible = (obj) => { let o = obj; while (o) { if (!o.visible) return false; o = o.parent; } return true; };
@@ -5388,7 +5390,7 @@ function render() {
     }
 
     // Annotation hover preview – CSS3D (regular mode or add-leader mode)
-    if ((viewProp.annotation3dMode && isAnnotation3dActive() || isAddLeaderLine3dActive()) && !isMouseOverGui && !isMouseDown) {
+    if ((viewProp.annotation3dMode && isAnnotation3dActive() || isAddLeaderLine3dActive()) && !docBlocks3dInput && !isMouseOverGui && !isMouseDown) {
         raycaster.setFromCamera(mouse, currentCamera);
         const n3Intersects = raycaster.intersectObjects(meshObjects);
         const n3IsFullyVisible = (obj) => { let o = obj; while (o) { if (!o.visible) return false; o = o.parent; } return true; };
@@ -5605,6 +5607,9 @@ function onClick( event ) {
         _suppressNextClick = false;
         return;
     }
+
+    // Document editor open – ignore all 3D model interaction (annotation, measure, select, …)
+    if (isDocOverlayBlockingInput()) return;
 
     // --- Measurement mode ---
     if (viewProp.measureMode && isMeasureActive()) {
@@ -9440,6 +9445,7 @@ function assemblyMoveStepDown() {
 
     // --- Shared trigger (mouse RMB + touch long-press) ---
     function triggerContextMenu(x, y) {
+        if (isDocOverlayBlockingInput()) return;
         if (viewProp.selectDimensionMode && isSelectDimActive() && getSelectedCadDim3d()) {
             refreshCadDim3dMenu();
             showAt(menuCadDim3d, x, y);
@@ -9458,6 +9464,7 @@ function assemblyMoveStepDown() {
     // --- Mouse RMB handler ---
     window.addEventListener('contextmenu', function(event) {
         if (isMouseOnGUI(event)) return; // let GUI handle its own RMB
+        if (isDocOverlayBlockingInput()) return;
         event.preventDefault();
 
         // In CAD dim phase 2 – cycle axis instead of showing context menu
