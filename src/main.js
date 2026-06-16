@@ -253,6 +253,7 @@ sectionBtn.title = 'Section View';
 sectionBtn.textContent = '✂';
 sectionBtn.addEventListener('click', () => {
     viewProp.section = !viewProp.section;
+    syncShowSectionMeshWithSection();
     renderer.localClippingEnabled = viewProp.section;
     viewProp.sectionGizmo = viewProp.section;
     activateSectionGizmo(viewProp.section);
@@ -1662,7 +1663,7 @@ function addMainGui() {
             render();
         });
         const sectionFolder = folderProp.addFolder("Section view");   
-            sectionCtrl = sectionFolder.add(viewProp, 'section').name('Section').onChange(function(value){renderer.localClippingEnabled = value; viewProp.sectionGizmo = value; activateSectionGizmo(value); updateSectionCrossLines(); viewProp.solidSection = value; if (value) computeSolidSection(scene, meshObjects, viewProp, render); else clearSolidSection(scene, render); render(); sectionBtn.classList.toggle('active', value); solidSectionBtn.style.display = value ? 'block' : 'none'; showSectionMeshBtn.style.display = value ? 'block' : 'none'; crossSectionLinesBtn.style.display = value ? 'block' : 'none'; solidSectionBtn.classList.toggle('active', viewProp.solidSection); showSectionMeshBtn.classList.toggle('active', viewProp.showSectionMesh); crossSectionLinesBtn.classList.toggle('active', viewProp.sectionCrossLines); if (solidSectionCtrl) solidSectionCtrl.updateDisplay(); }).listen();
+            sectionCtrl = sectionFolder.add(viewProp, 'section').name('Section').onChange(function(value){ syncShowSectionMeshWithSection(); renderer.localClippingEnabled = value; viewProp.sectionGizmo = value; activateSectionGizmo(value); updateSectionCrossLines(); viewProp.solidSection = value; if (value) computeSolidSection(scene, meshObjects, viewProp, render); else clearSolidSection(scene, render); render(); sectionBtn.classList.toggle('active', value); solidSectionBtn.style.display = value ? 'block' : 'none'; showSectionMeshBtn.style.display = value ? 'block' : 'none'; crossSectionLinesBtn.style.display = value ? 'block' : 'none'; solidSectionBtn.classList.toggle('active', viewProp.solidSection); showSectionMeshBtn.classList.toggle('active', viewProp.showSectionMesh); crossSectionLinesBtn.classList.toggle('active', viewProp.sectionCrossLines); if (solidSectionCtrl) solidSectionCtrl.updateDisplay(); }).listen();
             sectionCrossLinesCtrl = sectionFolder.add(viewProp, 'sectionCrossLines').name('Cross Section Lines').onChange(function(value){updateSectionCrossLines(); crossSectionLinesBtn.classList.toggle('active', value); render(); }).listen();
             sectionFolder.addColor(viewProp, 'crossSectionColor').name('Cross Lines Color').onChange(function(value){ if(viewProp.sectionCrossLines) { updateSectionCrossLines(); render(); } });
             sectionFolder.add(viewProp, 'crossSectionOnHidden').name('Apply to hidden').onChange(function(value){ if(viewProp.sectionCrossLines) updateSectionCrossLines(); if(viewProp.showCrossSection) updateCrossSectionLines(); render(); });
@@ -3373,7 +3374,16 @@ function toggleSectionMeshAll() {
         });
     }
     render();
-}	
+}
+
+function syncShowSectionMeshWithSection() {
+    if (!viewProp.section && viewProp.showSectionMesh) {
+        viewProp.showSectionMesh = false;
+        toggleSectionMeshAll();
+        showSectionMeshBtn.classList.remove('active');
+        if (showSectionMeshCtrl) showSectionMeshCtrl.updateDisplay();
+    }
+}
 
 // Navigation functions used by keyboard and GUI
 function selectParent() {
@@ -7095,6 +7105,7 @@ function importSettingsFromGltfScene(gltfScene) {
             }
         }
 
+        syncShowSectionMeshWithSection();
         if (viewProp.sectionCrossLines) updateSectionCrossLines();
         if (viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render);
         if (viewProp.showSectionMesh) toggleSectionMeshAll();
