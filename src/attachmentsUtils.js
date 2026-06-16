@@ -4,11 +4,16 @@
 // Attachments can be downloaded to disk on demand.
 
 import JSZip from 'jszip';
+import * as pdfjsLib from 'pdfjs-dist';
+import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { buildWysiwygEditor } from './annotationUtils.js';
 import { openImageEditor, autoArrangeImageEditors } from './imageEditorUtils.js';
 
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
+
 let attachmentsStore = []; // [{ id, name, mimeType, data (base64 string), size, addedAt }]
 let _guiRef = null;
+let _pdfConverting = false;
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
@@ -87,6 +92,9 @@ export function refreshAttachmentsGui() {
         }
         if (att.mimeType && att.mimeType.startsWith('image/')) {
             folder.add({ fn: () => _editAttachment(att) }, 'fn').name('✏  Edit');
+        }
+        if (att.mimeType === 'application/pdf') {
+            folder.add({ fn: () => _convertPdfToImages(att) }, 'fn').name('🖼 Convert to images…');
         }
         folder.add({ fn: () => _downloadAttachment(att) }, 'fn').name('⬇  Download');
         folder.add({ fn: () => _deleteAttachment(att.id) }, 'fn').name('✕  Delete');
@@ -176,6 +184,7 @@ function _buildModal() {
                     <span id="att-modal-name-ext" style="color:#888;font-size:13px;font-family:sans-serif;white-space:nowrap;flex-shrink:0;"></span>
                 </span>
                 <button id="att-modal-edit-btn" title="Edit image" style="display:none;background:none;border:1px solid #555;color:#aaa;font-size:12px;cursor:pointer;line-height:1;padding:2px 8px;border-radius:3px;flex-shrink:0;">✏ Edit</button>
+                <button id="att-modal-convert-btn" title="Convert PDF pages to PNG/JPG images" style="display:none;background:none;border:1px solid #555;color:#aaa;font-size:12px;cursor:pointer;line-height:1;padding:2px 8px;border-radius:3px;flex-shrink:0;">🖼 → Images</button>
                 <button id="att-modal-comment-btn" title="Comment" style="background:none;border:1px solid #555;color:#aaa;font-size:12px;cursor:pointer;line-height:1;padding:2px 8px;border-radius:3px;flex-shrink:0;">💬</button>
                 <button id="att-modal-close" style="background:none;border:none;color:#eee;font-size:20px;cursor:pointer;line-height:1;padding:0 4px;margin-left:4px;flex-shrink:0;">✕</button>
             </div>
@@ -192,6 +201,10 @@ function _buildModal() {
     _modalEl.querySelector('#att-modal-edit-btn').addEventListener('click', () => {
         const att = _carouselList[_carouselIndex];
         if (att) _editAttachment(att);
+    });
+    _modalEl.querySelector('#att-modal-convert-btn').addEventListener('click', () => {
+        const att = _carouselList[_carouselIndex];
+        if (att) _convertPdfToImages(att);
     });
 
     const nameInput = _modalEl.querySelector('#att-modal-name-input');
@@ -375,9 +388,12 @@ function _renderModal(att) {
         content.appendChild(iframe);
     }
 
-    // Show/hide edit button depending on whether current attachment is an image
+    // Show/hide edit / convert buttons depending on attachment type
     const editBtn = _modalEl.querySelector('#att-modal-edit-btn');
     if (editBtn) editBtn.style.display = (mime.startsWith('image/')) ? '' : 'none';
+    const convertBtn = _modalEl.querySelector('#att-modal-convert-btn');
+    if (convertBtn) convertBtn.style.display = (mime === 'application/pdf') ? '' : 'none';
+    _updateConvertBtnState(_pdfConverting);
 
     // Rebuild comment editor if panel is open
     if (_commentPanelOpen) _buildCommentEditor(att);
@@ -480,6 +496,184 @@ function _editAttachment(att) {
             return newAtt;
         }
     );
+}
+
+function _pdfBaseName(name) {
+    const lastDot = name.lastIndexOf('.');
+    return lastDot >= 0 ? name.slice(0, lastDot) : name;
+}
+
+function _uniqueAttachmentName(proposedName) {
+    if (!attachmentsStore.some(a => a.name === proposedName)) return proposedName;
+    const lastDot = proposedName.lastIndexOf('.');
+    const base = lastDot >= 0 ? proposedName.slice(0, lastDot) : proposedName;
+    const ext = lastDot >= 0 ? proposedName.slice(lastDot) : '';
+    let n = 2;
+    while (attachmentsStore.some(a => a.name === `${base}-${n}${ext}`)) n++;
+    return `${base}-${n}${ext}`;
+}
+
+const PDF_RENDER_SCALE_MIN = 1;
+const PDF_RENDER_SCALE_MAX = 10;
+const PDF_RENDER_SCALE_DEFAULT = 3;
+const JPEG_QUALITY_DEFAULT = 0.95;
+
+function _parsePdfRenderScale(input) {
+    if (input == null || String(input).trim() === '') {
+        return PDF_RENDER_SCALE_DEFAULT;
+    }
+    const s = String(input).trim().toLowerCase();
+    let scale;
+    const dpiMatch = s.match(/^(\d+(?:\.\d+)?)\s*dpi$/);
+    if (dpiMatch) {
+        scale = parseFloat(dpiMatch[1]) / 72;
+    } else if (/^\d+(?:\.\d+)?$/.test(s)) {
+        scale = parseFloat(s);
+    } else {
+        return null;
+    }
+    if (!Number.isFinite(scale) || scale <= 0) return null;
+    return Math.min(PDF_RENDER_SCALE_MAX, Math.max(PDF_RENDER_SCALE_MIN, scale));
+}
+
+function _parseJpegQuality(input) {
+    if (input == null || String(input).trim() === '') {
+        return JPEG_QUALITY_DEFAULT;
+    }
+    const s = String(input).trim().replace(/%$/, '');
+    const n = parseInt(s, 10);
+    if (!Number.isFinite(n)) return null;
+    const clamped = Math.min(100, Math.max(50, n));
+    return clamped / 100;
+}
+
+function _askPdfConvertOptions() {
+    const formatChoice = window.prompt('Image format: png or jpg', 'png');
+    if (formatChoice == null) return null;
+    const format = formatChoice.trim().toLowerCase();
+    if (format !== 'png' && format !== 'jpg' && format !== 'jpeg') {
+        alert('Use png or jpg.');
+        return null;
+    }
+
+    const scaleRefLines = Array.from(
+        { length: PDF_RENDER_SCALE_MAX - PDF_RENDER_SCALE_MIN + 1 },
+        (_, i) => {
+            const s = PDF_RENDER_SCALE_MIN + i;
+            return `  scale ${s} ≈ ${s * 72} DPI`;
+        }
+    ).join('\n');
+
+    const scaleInput = window.prompt(
+        'Enter ONE value — scale (1–6) OR dpi:\n\n' +
+        '  Examples: 3   or   300dpi\n' +
+        '  Leave empty for default (3 ≈ 216 DPI)\n\n' +
+        scaleRefLines,
+        '3'
+    );
+    if (scaleInput == null) return null;
+
+    let scale = _parsePdfRenderScale(scaleInput);
+    if (scale == null) {
+        alert('Invalid quality. Using default scale 3.');
+        scale = PDF_RENDER_SCALE_DEFAULT;
+    }
+
+    const isJpeg = format === 'jpg' || format === 'jpeg';
+    let jpegQuality = JPEG_QUALITY_DEFAULT;
+    if (isJpeg) {
+        const qInput = window.prompt('Enter ONE number 1–100 (leave empty for default 95):', '95');
+        if (qInput == null) return null;
+        const q = _parseJpegQuality(qInput);
+        if (q == null) {
+            alert('Invalid quality. Using default 95.');
+            jpegQuality = JPEG_QUALITY_DEFAULT;
+        } else {
+            jpegQuality = q;
+        }
+    }
+
+    return { format, scale, jpegQuality };
+}
+
+function _updateConvertBtnState(busy) {
+    if (!_modalEl) return;
+    const btn = _modalEl.querySelector('#att-modal-convert-btn');
+    if (!btn || btn.style.display === 'none') return;
+    btn.disabled = busy;
+    btn.textContent = busy ? 'Converting…' : '🖼 → Images';
+    btn.style.opacity = busy ? '0.5' : '1';
+    btn.style.cursor = busy ? 'default' : 'pointer';
+}
+
+async function _convertPdfToImages(att, options) {
+    if (_pdfConverting) return;
+    if (!options) {
+        options = _askPdfConvertOptions();
+        if (!options) return;
+    }
+    const { format, scale, jpegQuality } = options;
+    const mimeType = (format === 'jpg' || format === 'jpeg') ? 'image/jpeg' : 'image/png';
+    const ext = mimeType === 'image/jpeg' ? 'jpg' : 'png';
+
+    _pdfConverting = true;
+    _updateConvertBtnState(true);
+
+    try {
+        const binary = atob(att.data);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+
+        const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
+        const numPages = pdf.numPages;
+        const baseName = _pdfBaseName(att.name);
+        let added = 0;
+
+        for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+            const page = await pdf.getPage(pageNum);
+            const viewport = page.getViewport({ scale });
+            const canvas = document.createElement('canvas');
+            canvas.width = viewport.width;
+            canvas.height = viewport.height;
+            const ctx = canvas.getContext('2d');
+            await page.render({ canvasContext: ctx, viewport, canvas }).promise;
+
+            const blob = await new Promise((resolve, reject) => {
+                canvas.toBlob(
+                    b => (b ? resolve(b) : reject(new Error('toBlob failed'))),
+                    mimeType,
+                    mimeType === 'image/jpeg' ? jpegQuality : undefined
+                );
+            });
+
+            const proposedName = numPages === 1
+                ? `${baseName}.${ext}`
+                : `${baseName}-page-${pageNum}.${ext}`;
+            const imageName = _uniqueAttachmentName(proposedName);
+
+            const data = await _blobToBase64(blob);
+            attachmentsStore.push({
+                id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+                name: imageName,
+                mimeType,
+                data,
+                size: blob.size,
+                addedAt: new Date().toISOString(),
+            });
+            added++;
+        }
+
+        if (added > 0) {
+            alert(`Added ${added} image(s).`);
+            refreshAttachmentsGui();
+        }
+    } catch (err) {
+        console.error(err);
+        alert('Cannot convert this PDF.');
+    } finally {
+        _pdfConverting = false;
+        _updateConvertBtnState(false);
+    }
 }
 
 function _downloadAttachment(att) {
