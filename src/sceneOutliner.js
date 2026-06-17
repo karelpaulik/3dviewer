@@ -19,14 +19,155 @@ let onShowAll = null;
 let onSortChildren = null;
 let onCloneObject = null;
 let onAddObject3D = null;
+let onAddPrimitive = null;
 let onPromoteToRoot = null;
 
 // -------------------------------------------------------------------
 // Context menu
 // -------------------------------------------------------------------
 
-/** Singleton context menu element (created once, reused). */
+/** @type {HTMLDivElement|null} */
 let ctxMenuEl = null;
+
+/** @type {HTMLButtonElement|null} */
+let addBtnEl = null;
+
+/** @type {HTMLDivElement|null} */
+let addPrimitiveMenuEl = null;
+
+/** @type {HTMLDivElement|null} */
+let activeFlyoutEl = null;
+
+/** @type {ReturnType<typeof setTimeout>|null} */
+let flyoutHideTimer = null;
+
+const MENU_MARGIN = 8;
+
+const PRIMITIVE_TYPES = [
+    ['box', 'Box'],
+    ['sphere', 'Sphere'],
+    ['cylinder', 'Cylinder'],
+    ['cone', 'Cone'],
+    ['plane', 'Plane'],
+    ['torus', 'Torus']
+];
+
+function resetMenuScrollStyles(menu) {
+    menu.style.maxHeight = '';
+    menu.style.overflowY = '';
+    menu.classList.remove('outliner-ctx-scroll');
+}
+
+/**
+ * Position a fixed menu within the viewport; enable vertical scroll when taller than viewport.
+ * @param {HTMLElement} menu
+ * @param {number} x
+ * @param {number} y
+ * @param {DOMRect|null} [anchorRect] flyout anchor — prefer opening to the right of this rect
+ */
+function positionFixedMenu(menu, x, y, anchorRect = null) {
+    resetMenuScrollStyles(menu);
+    menu.style.display = 'block';
+
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const maxAllowedH = vh - MENU_MARGIN * 2;
+
+    let effectiveH = menu.offsetHeight;
+    if (menu.offsetHeight > maxAllowedH) {
+        effectiveH = maxAllowedH;
+        menu.style.maxHeight = maxAllowedH + 'px';
+        menu.style.overflowY = 'auto';
+        menu.classList.add('outliner-ctx-scroll');
+    }
+
+    const mw = menu.offsetWidth;
+    let left = x;
+    let top = y;
+
+    if (anchorRect) {
+        left = anchorRect.right + 2;
+        top = anchorRect.top;
+        if (left + mw > vw - MENU_MARGIN) {
+            left = anchorRect.left - mw - 2;
+        }
+    } else if (left + mw > vw - MENU_MARGIN) {
+        left = vw - mw - MENU_MARGIN;
+    }
+
+    if (top + effectiveH > vh - MENU_MARGIN) {
+        top = vh - effectiveH - MENU_MARGIN;
+    }
+    if (top < MENU_MARGIN) top = MENU_MARGIN;
+    if (left < MENU_MARGIN) left = MENU_MARGIN;
+
+    menu.style.left = left + 'px';
+    menu.style.top = top + 'px';
+}
+
+function hidePrimitiveFlyout() {
+    if (flyoutHideTimer) {
+        clearTimeout(flyoutHideTimer);
+        flyoutHideTimer = null;
+    }
+    if (activeFlyoutEl) {
+        resetMenuScrollStyles(activeFlyoutEl);
+        activeFlyoutEl.remove();
+        activeFlyoutEl = null;
+    }
+}
+
+function scheduleHideFlyout() {
+    if (flyoutHideTimer) clearTimeout(flyoutHideTimer);
+    flyoutHideTimer = setTimeout(hidePrimitiveFlyout, 150);
+}
+
+function showPrimitiveFlyout(parentObj, anchorEl) {
+    if (!onAddPrimitive) return;
+    hidePrimitiveFlyout();
+
+    const flyout = document.createElement('div');
+    flyout.className = 'outliner-ctx-menu outliner-ctx-flyout';
+    PRIMITIVE_TYPES.forEach(([type, label]) => {
+        const item = document.createElement('div');
+        item.className = 'outliner-ctx-item';
+        item.textContent = label;
+        item.addEventListener('click', (e) => {
+            e.stopPropagation();
+            hideCtxMenu();
+            onAddPrimitive(type, parentObj);
+        });
+        flyout.appendChild(item);
+    });
+    document.body.appendChild(flyout);
+    activeFlyoutEl = flyout;
+
+    const rect = anchorEl.getBoundingClientRect();
+    positionFixedMenu(flyout, rect.right + 2, rect.top, rect);
+
+    flyout.addEventListener('mouseenter', () => {
+        if (flyoutHideTimer) {
+            clearTimeout(flyoutHideTimer);
+            flyoutHideTimer = null;
+        }
+    });
+    flyout.addEventListener('mouseleave', scheduleHideFlyout);
+}
+
+function appendAddPrimitiveSubmenu(menu, parentObj) {
+    const submenuItem = document.createElement('div');
+    submenuItem.className = 'outliner-ctx-item outliner-ctx-submenu';
+    submenuItem.textContent = 'Add primitive';
+    submenuItem.addEventListener('mouseenter', () => {
+        if (flyoutHideTimer) {
+            clearTimeout(flyoutHideTimer);
+            flyoutHideTimer = null;
+        }
+        showPrimitiveFlyout(parentObj, submenuItem);
+    });
+    submenuItem.addEventListener('mouseleave', scheduleHideFlyout);
+    menu.appendChild(submenuItem);
+}
 
 function getOrCreateCtxMenu() {
     if (ctxMenuEl) return ctxMenuEl;
@@ -37,7 +178,10 @@ function getOrCreateCtxMenu() {
 
     // Close on any outside click / Escape
     document.addEventListener('mousedown', (e) => {
-        if (!ctxMenuEl.contains(e.target)) hideCtxMenu();
+        if (e.button !== 0) return;
+        if (ctxMenuEl.contains(e.target)) return;
+        if (activeFlyoutEl && activeFlyoutEl.contains(e.target)) return;
+        hideCtxMenu();
     }, true);
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') hideCtxMenu();
@@ -46,10 +190,15 @@ function getOrCreateCtxMenu() {
 }
 
 function hideCtxMenu() {
-    if (ctxMenuEl) ctxMenuEl.style.display = 'none';
+    hidePrimitiveFlyout();
+    if (ctxMenuEl) {
+        resetMenuScrollStyles(ctxMenuEl);
+        ctxMenuEl.style.display = 'none';
+    }
 }
 
 function showCtxMenu(x, y, obj, li) {
+    hideAddPrimitiveMenu();
     const menu = getOrCreateCtxMenu();
     menu.innerHTML = '';
 
@@ -232,6 +381,11 @@ function showCtxMenu(x, y, obj, li) {
     });
     menu.appendChild(addObj3DItem);
 
+    // --- Add parametric primitives (submenu) ---
+    if (onAddPrimitive) {
+        appendAddPrimitiveSubmenu(menu, obj);
+    }
+
     // --- Clone ---
     const cloneItem = document.createElement('div');
     cloneItem.className = 'outliner-ctx-item';
@@ -278,14 +432,50 @@ function showCtxMenu(x, y, obj, li) {
     });
     menu.appendChild(removeItem);
 
-    // Position (keep within viewport)
-    menu.style.display = 'block';
-    const mw = menu.offsetWidth;
-    const mh = menu.offsetHeight;
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    menu.style.left = (x + mw > vw ? vw - mw - 4 : x) + 'px';
-    menu.style.top  = (y + mh > vh ? vh - mh - 4 : y) + 'px';
+    positionFixedMenu(menu, x, y);
+}
+
+function hideAddPrimitiveMenu() {
+    if (!addPrimitiveMenuEl) return;
+    resetMenuScrollStyles(addPrimitiveMenuEl);
+    addPrimitiveMenuEl.style.display = 'none';
+}
+
+function ensureAddPrimitiveMenu() {
+    if (addPrimitiveMenuEl) return addPrimitiveMenuEl;
+    addPrimitiveMenuEl = document.createElement('div');
+    addPrimitiveMenuEl.className = 'outliner-ctx-menu outliner-add-menu';
+    addPrimitiveMenuEl.style.display = 'none';
+
+    PRIMITIVE_TYPES.forEach(([type, label]) => {
+        const item = document.createElement('div');
+        item.className = 'outliner-ctx-item';
+        item.textContent = label;
+        item.addEventListener('click', (e) => {
+            e.stopPropagation();
+            hideAddPrimitiveMenu();
+            if (onAddPrimitive) onAddPrimitive(type, null);
+        });
+        addPrimitiveMenuEl.appendChild(item);
+    });
+
+    document.body.appendChild(addPrimitiveMenuEl);
+    document.addEventListener('click', (e) => {
+        if (addPrimitiveMenuEl && addPrimitiveMenuEl.style.display !== 'none') {
+            if (!addPrimitiveMenuEl.contains(e.target) && e.target !== addBtnEl) {
+                hideAddPrimitiveMenu();
+            }
+        }
+    });
+    return addPrimitiveMenuEl;
+}
+
+function showAddPrimitiveMenu(anchorEl) {
+    if (!onAddPrimitive) return;
+    hideCtxMenu();
+    const menu = ensureAddPrimitiveMenu();
+    const rect = anchorEl.getBoundingClientRect();
+    positionFixedMenu(menu, rect.left, rect.bottom + 2);
 }
 
 // -------------------------------------------------------------------
@@ -374,7 +564,7 @@ let currentMatchSet = new Set();
  * @param {{ onSelect: Function, onToggleVisibility: Function }} callbacks
  * @returns {HTMLDivElement} the panel element (for guiWrapper hit-testing)
  */
-export function initOutliner({ onSelect, onToggleVisibility: onVis, onGroupAdd: onGroupAddCb, onGroupRemove: onGroupRemoveCb, onHideOthers: onHideOthersCb, onShowAll: onShowAllCb, onReparent: onReparentCb, onRemove: onRemoveCb, onSortChildren: onSortChildrenCb, onCloneObject: onCloneObjectCb, onAddObject3D: onAddObject3DCb, onPromoteToRoot: onPromoteToRootCb }) {
+export function initOutliner({ onSelect, onToggleVisibility: onVis, onGroupAdd: onGroupAddCb, onGroupRemove: onGroupRemoveCb, onHideOthers: onHideOthersCb, onShowAll: onShowAllCb, onReparent: onReparentCb, onRemove: onRemoveCb, onSortChildren: onSortChildrenCb, onCloneObject: onCloneObjectCb, onAddObject3D: onAddObject3DCb, onAddPrimitive: onAddPrimitiveCb, onPromoteToRoot: onPromoteToRootCb }) {
     onSelectObject = onSelect;
     onToggleVisibility = onVis;
     onGroupAdd = onGroupAddCb || null;
@@ -386,6 +576,7 @@ export function initOutliner({ onSelect, onToggleVisibility: onVis, onGroupAdd: 
     onSortChildren = onSortChildrenCb || null;
     onCloneObject = onCloneObjectCb || null;
     onAddObject3D = onAddObject3DCb || null;
+    onAddPrimitive = onAddPrimitiveCb || null;
     onPromoteToRoot = onPromoteToRootCb || null;
 
     // --- Panel container ---
@@ -439,6 +630,19 @@ export function initOutliner({ onSelect, onToggleVisibility: onVis, onGroupAdd: 
     renameBtnEl.textContent = '\u270E';
     renameBtnEl.title = 'Bulk rename';
     renameBtnEl.addEventListener('click', openRenameDialog);
+    addBtnEl = document.createElement('button');
+    addBtnEl.className = 'outliner-search-add';
+    addBtnEl.textContent = '+';
+    addBtnEl.title = 'Add primitive (child of selection or new root)';
+    addBtnEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (addPrimitiveMenuEl && addPrimitiveMenuEl.style.display !== 'none') {
+            hideAddPrimitiveMenu();
+        } else {
+            showAddPrimitiveMenu(addBtnEl);
+        }
+    });
+    searchBar.appendChild(addBtnEl);
     searchBar.appendChild(searchInputEl);
     searchBar.appendChild(clearBtnEl);
     searchBar.appendChild(selectBtnEl);

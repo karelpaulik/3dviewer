@@ -33,6 +33,13 @@ import { initDocumentsGui, importDocumentsFromGltfScene, getDocumentsStore, flus
 import { initAttachmentsGui, importAttachmentsFromGltfScene, getAttachmentsStore } from './attachmentsUtils.js';
 import { openHelp } from './helpUtils.js';
 import { openBomDialog } from './bomUtils.js';
+import {
+    createParametricMesh,
+    registerParametricMesh,
+    prepareParametricClone,
+    isParametricMesh,
+    buildParametricGui
+} from './createObjectUtils.js';
 
 // Proměnné globálního rozsahu----------------------------------------------------------------------------------------
 let container, stats;
@@ -849,6 +856,7 @@ outlinerPanelEl = initOutliner({
                 }
                 child.renderOrder = 0;
                 meshObjects.push(child);
+                if (isParametricMesh(child)) prepareParametricClone(child);
             }
         });
         // Rebuild annotations/dimensions on the clone from copied userData
@@ -905,6 +913,9 @@ outlinerPanelEl = initOutliner({
         rebuildTree(loadedModels, true);
         selectObject(newObj);
         render();
+    },
+    onAddPrimitive: (type, parentObj) => {
+        addParametricPrimitive(type, parentObj);
     }
 });
 
@@ -2310,6 +2321,17 @@ function refreshSelectedObjGui(obj) {
         selectedFolder.add(matBtn, 'showMaterial').name('Show Material Properties');
         const matBtnAll = { showAllMaterial: function() { lastSelectedMeshes.forEach(child => applyEmissive(child, 0x000000)); render(); buildMaterialFolderAll(obj, selectedFolder); } };
         selectedFolder.add(matBtnAll, 'showAllMaterial').name('Show ALL Material Properties');
+    }
+
+    if (isParametricMesh(obj)) {
+        const paramFolder = selectedFolder.addFolder('Parametric');
+        buildParametricGui(paramFolder, obj, () => {
+            updateBBoxSize(obj);
+            if (bbHelper && part.showBBox) {
+                bbHelper.setFromObject(lastSelectedObject);
+            }
+            render();
+        });
     }
 
     const folder2 = selectedFolder.addFolder("Location");
@@ -4453,6 +4475,16 @@ function fileNameWithoutExtension(path) {
     return nameParts[0];			
 }
 
+function addParametricPrimitive(type, parentObj) {
+    _suppressNextClick = true;
+    const parent = parentObj || lastSelectedObject || scene;
+    const mesh = createParametricMesh(type, undefined, { clipPlanes });
+    registerParametricMesh(mesh, parent, scene, loadedModels, meshObjects);
+    rebuildTree(loadedModels, true);
+    selectObject(mesh);
+    render();
+}
+
 function cleanupModel() {
     // Collect all unnamed Object3D nodes (skip scene root, meshes, lights, cameras)
     // Traverse only loadedModels subtrees – this naturally avoids TransformControls,
@@ -5609,7 +5641,7 @@ function onClick( event ) {
     }
     // Pokud je kliknuto na kontextové menu, ignorujeme selekci
     const elAtClick = document.elementFromPoint(event.clientX, event.clientY);
-    if (elAtClick && elAtClick.closest('.ctx-menu')) {
+    if (elAtClick && elAtClick.closest('.ctx-menu, .outliner-ctx-menu')) {
         return;
     }
     // Příznak nastavený při kliknutí na položku kontextového menu (menu je v okamžiku onClick již skryté)
@@ -8047,6 +8079,7 @@ function addHelpGui() {
     panelHelpFolder.add({ fn() { openHelp('/help/panel-assembly.json'); } }, 'fn').name('🔩 Assembly');
     panelHelpFolder.add({ fn() { openHelp('/help/panel-docs.json'); } }, 'fn').name('📄 Docs');
     panelHelpFolder.add({ fn() { openHelp('/help/panel-files.json'); } }, 'fn').name('📎 Files');
+    panelHelpFolder.add({ fn() { openHelp('/help/panel-outliner.json'); } }, 'fn').name('🌳 Scene outliner');
     helpGui.add({ fn() { aboutDialog.showModal(); } }, 'fn').name('About');
     registerGuiPanel('Help', helpGui);
 }
@@ -9474,7 +9507,12 @@ function assemblyMoveStepDown() {
 
     // --- Mouse RMB handler ---
     window.addEventListener('contextmenu', function(event) {
-        if (isMouseOnGUI(event)) return; // let GUI handle its own RMB
+        if (isMouseOnGUI(event)) {
+            if (outlinerPanelEl && outlinerPanelEl.contains(event.target)) {
+                event.preventDefault();
+            }
+            return; // let GUI handle its own RMB
+        }
         if (isDocOverlayBlockingInput()) return;
         event.preventDefault();
 
