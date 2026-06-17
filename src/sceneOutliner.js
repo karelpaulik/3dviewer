@@ -10,6 +10,7 @@ let isOpen = false;
 // External callbacks set via init()
 let onSelectObject = null;
 let onToggleVisibility = null;
+let onToggleSelectable = null;
 let onGroupAdd = null;
 let onReparent = null;
 let onRemove = null;
@@ -236,6 +237,27 @@ function showCtxMenu(x, y, obj, li) {
         }
     });
     menu.appendChild(hideShowItem);
+
+    // --- Lock / Unlock selection (viewport) ---
+    const lockItem = document.createElement('div');
+    lockItem.className = 'outliner-ctx-item';
+    const isPickable = obj.userData?.selectable !== false;
+    lockItem.textContent = isPickable ? 'Lock selection' : 'Unlock selection';
+    lockItem.addEventListener('click', () => {
+        hideCtxMenu();
+        if (onToggleSelectable) {
+            const isMulti = groupHighlightNodes.size > 1 && groupHighlightNodes.has(li);
+            if (isMulti) {
+                groupHighlightNodes.forEach(selLi => {
+                    const selObj = domToObject.get(selLi);
+                    if (selObj) onToggleSelectable(selObj);
+                });
+            } else {
+                onToggleSelectable(obj);
+            }
+        }
+    });
+    menu.appendChild(lockItem);
 
     // --- Hide others ---
     const hideOthersItem = document.createElement('div');
@@ -564,9 +586,10 @@ let currentMatchSet = new Set();
  * @param {{ onSelect: Function, onToggleVisibility: Function }} callbacks
  * @returns {HTMLDivElement} the panel element (for guiWrapper hit-testing)
  */
-export function initOutliner({ onSelect, onToggleVisibility: onVis, onGroupAdd: onGroupAddCb, onGroupRemove: onGroupRemoveCb, onHideOthers: onHideOthersCb, onShowAll: onShowAllCb, onReparent: onReparentCb, onRemove: onRemoveCb, onSortChildren: onSortChildrenCb, onCloneObject: onCloneObjectCb, onAddObject3D: onAddObject3DCb, onAddPrimitive: onAddPrimitiveCb, onPromoteToRoot: onPromoteToRootCb }) {
+export function initOutliner({ onSelect, onToggleVisibility: onVis, onToggleSelectable: onSel, onGroupAdd: onGroupAddCb, onGroupRemove: onGroupRemoveCb, onHideOthers: onHideOthersCb, onShowAll: onShowAllCb, onReparent: onReparentCb, onRemove: onRemoveCb, onSortChildren: onSortChildrenCb, onCloneObject: onCloneObjectCb, onAddObject3D: onAddObject3DCb, onAddPrimitive: onAddPrimitiveCb, onPromoteToRoot: onPromoteToRootCb }) {
     onSelectObject = onSelect;
     onToggleVisibility = onVis;
+    onToggleSelectable = onSel || null;
     onGroupAdd = onGroupAddCb || null;
     onGroupRemove = onGroupRemoveCb || null;
     onHideOthers = onHideOthersCb || null;
@@ -803,6 +826,21 @@ export function updateVisibilityIcon(object) {
 }
 
 /**
+ * Update the selection-lock icon for a specific object.
+ * @param {import('three').Object3D} object
+ */
+export function updateSelectableIcon(object) {
+    const li = objectToDom.get(object);
+    if (!li) return;
+    const lockBtn = li.querySelector(':scope > .outliner-row > .outliner-selectable');
+    if (lockBtn) {
+        const pickable = object.userData?.selectable !== false;
+        lockBtn.textContent = pickable ? '👆' : '🛑';
+        lockBtn.title = pickable ? 'Lock selection (viewport)' : 'Unlock selection (viewport)';
+    }
+}
+
+/**
  * Navigate the outliner selection up or down through the currently visible nodes.
  * Returns the Object3D that should become selected, or null if nothing to navigate to.
  * @param {'up'|'down'} direction
@@ -951,7 +989,29 @@ function createTreeNode(obj, depth) {
     });
     row.appendChild(label);
 
-    // 3) Visibility eye
+    // 3) Selection lock (viewport pick)
+    const lock = document.createElement('span');
+    lock.className = 'outliner-selectable';
+    const pickable = obj.userData?.selectable !== false;
+    lock.textContent = pickable ? '👆' : '🛑';
+    lock.title = pickable ? 'Lock selection (viewport)' : 'Unlock selection (viewport)';
+    lock.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (onToggleSelectable) {
+            const isMulti = groupHighlightNodes.size > 1 && groupHighlightNodes.has(li);
+            if (isMulti) {
+                groupHighlightNodes.forEach(selLi => {
+                    const selObj = domToObject.get(selLi);
+                    if (selObj) onToggleSelectable(selObj);
+                });
+            } else {
+                onToggleSelectable(obj);
+            }
+        }
+    });
+    row.appendChild(lock);
+
+    // 4) Visibility eye
     const eye = document.createElement('span');
     eye.className = 'outliner-eye';
     eye.textContent = obj.visible ? '👁' : '🚫';

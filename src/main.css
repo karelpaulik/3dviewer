@@ -1361,6 +1361,18 @@ a, button, input, select {
     opacity: 1;
 }
 
+.outliner-selectable {
+    flex: 0 0 28px;
+    text-align: center;
+    cursor: pointer;
+    font-size: 13px;
+    line-height: 24px;
+    opacity: 0.6;
+}
+.outliner-selectable:hover {
+    opacity: 1;
+}
+
 /* Drag & Drop */
 .outliner-drag-source > .outliner-row {
     opacity: 0.35;

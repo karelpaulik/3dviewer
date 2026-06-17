@@ -22,7 +22,7 @@ import { GUI } from 'lil-gui';
 import ZipLoader from 'zip-loader';
 import { updateCrossSectionLines as updateCrossSectionLinesCore, updateSectionCrossLines as updateSectionCrossLinesCore } from './crossSectionUtils.js';
 import { exportToHTML, exportToHTMLDraco, exportToHTMLObfuscated, exportToHTMLObfuscatedDraco } from './htmlExport.js';
-import { initOutliner, toggleOutliner, rebuildTree, highlightObject as outlinerHighlight, updateVisibilityIcon, updateObjectLabel, isOutlinerOpen, navigateOutliner, highlightGroupObjects, clearGroupHighlights, setNavigationPosition } from './sceneOutliner.js';
+import { initOutliner, toggleOutliner, rebuildTree, highlightObject as outlinerHighlight, updateVisibilityIcon, updateSelectableIcon, updateObjectLabel, isOutlinerOpen, navigateOutliner, highlightGroupObjects, clearGroupHighlights, setNavigationPosition } from './sceneOutliner.js';
 import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements, isSelectDimActive, setSelectDimActive, deleteSelectedDimension, initSelectDimension, updateSelectDimensionCamera, reconstructMeasurements, stripMeasurementVisuals, setMeasurementsVisible, setMeasurementDepthTest, removeMeasurementsForOwner, isCadDimActive, setCadDimActive, getCadDimStep, getCadDimAxis, addCadDimPoint, updateCadDimPreview, updateCadDimHoverPreview, cycleCadDimAxis, placeCadDim, clearCadDimMeasurements, removeCadDimMeasurementsForOwner, getSelectedCadDim, setCadDimLabelMode, setCadDimDragMode, selectDimTouchStart, selectDimTouchMove, selectDimTouchEnd, registerLabelForSelection, getSelectedCadDim3d, getCadDimMeasurements, deleteCadDimByRef, convertCadDim3dTo2d, getFlatDimDefaults, applyDefaultsToAllFlatDim, setDimMarkerFixedSize, setDimMarkerFixedScreenPx, setDimMarkerWorldSize, setDimMarkerColor, getDimMarkerSettings } from './measurementUtils.js';
 import { detectCircleCenterFromHit } from './circleDetectionUtils.js';
 import { initAnnotations, isAnnotationActive, setAnnotationActive, addAnnotationPoint, getAnnotationPendingPoint, updateAnnotationPreview, updateAnnotationMarkerScales, setAnnotationsVisible, clearAnnotations, stripAnnotationVisuals, reconstructAnnotations, setAnnotationDepthTest, removeAnnotationsForOwner, getAnnotations, isAddLeaderLineActive, cancelAddLeaderLine, commitAddLeaderLine, deleteAnnotationByRef, setConvertTo3dFn, reconstructAnnotationFromRec, getFlatAnnDefaults, applyDefaultsToAllFlatAnnotations, setAnnMarkerFixedSize, setAnnMarkerFixedScreenPx, setAnnMarkerWorldSize, setAnnMarkerColor, getAnnMarkerSettings } from './annotationUtils.js';
@@ -905,6 +905,15 @@ outlinerPanelEl = initOutliner({
             render();
         }
         updateVisibilityIcon(obj);
+    },
+    onToggleSelectable: (obj) => {
+        obj.userData.selectable = (obj.userData.selectable === false);
+        updateSelectableIcon(obj);
+        if (INTERSECTED && !isObjectPickable(INTERSECTED)) {
+            INTERSECTED = null;
+            clearHighlight();
+        }
+        render();
     },
     onAddObject3D: (parentObj) => {
         const newObj = new THREE.Object3D();
@@ -5035,6 +5044,26 @@ function highlightObject(object) {
     }
 }
 
+// Vrací true, pokud objekt i všichni jeho předci nemají userData.selectable === false.
+function isObjectPickable(obj) {
+    if (!obj) return false;
+    let o = obj;
+    while (o) {
+        if (o.userData?.selectable === false) return false;
+        o = o.parent;
+    }
+    return true;
+}
+
+function getFirstPickableHit(visibleIntersects) {
+    for (const hit of visibleIntersects) {
+        if (isObjectPickable(hit.object) && isObjectPickable(resolveCADSelection(hit.object))) {
+            return hit.object;
+        }
+    }
+    return null;
+}
+
 // Pokud je cadSelection zapnutý, vrátí nejbližšího pojmenovaného předka (nebo mesh samotný, pokud žádný není).
 // Pokud je cadSelection vypnutý, vrátí objekt beze změny.
 function resolveCADSelection(object) {
@@ -5246,14 +5275,15 @@ function render() {
             ? intersects.filter(hit => isFullyVisible(hit.object) && clipPlanes.some(plane => plane.distanceToPoint(hit.point) >= 0))
             : intersects.filter(hit => isFullyVisible(hit.object));
 
-        if (visibleIntersects.length > 0) { // Myš je nad viditelnou částí objektu
-            if (INTERSECTED != visibleIntersects[0].object) { 
+        const pickableHit = getFirstPickableHit(visibleIntersects);
+        if (pickableHit) { // Myš je nad pickovatelnou viditelnou částí objektu
+            if (INTERSECTED != pickableHit) { 
                 // 1. Předchozímu objektu vypneme záři a helper
                 if (INTERSECTED) {
                     clearHighlight();
                 }   
                 // 2. Nastavíme nový objekt
-                INTERSECTED = visibleIntersects[0].object;
+                INTERSECTED = pickableHit;
                 // 3. Novému objektu zapneme záři a helper
                 highlightObject(INTERSECTED);
             }
@@ -6169,7 +6199,7 @@ function getFreshRaycastTarget() {
     const visible = (renderer.localClippingEnabled && clipPlanes.length > 0)
         ? intersects.filter(hit => isFullyVisible(hit.object) && clipPlanes.some(plane => plane.distanceToPoint(hit.point) >= 0))
         : intersects.filter(hit => isFullyVisible(hit.object));
-    return visible.length > 0 ? visible[0].object : null;
+    return getFirstPickableHit(visible);
 }
 
 function isTouchOnGUI(event) { // return: true/false
