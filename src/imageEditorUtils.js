@@ -21,7 +21,7 @@ let _activeTool = 'pan';     // 'pan'|'crop'|'pen'|'text'|...
 let _penColor   = '#ff0000';
 let _penSize    = 3;
 let _textColor  = '#ff0000';
-let _bgColor    = null;       // null = transparent, hex = solid fill
+let _bgColor    = '#ffffff';  // null = transparent, hex = solid fill
 let _fontSize   = 18;
 let _fontFamily = 'sans-serif';
 let _eraserShape = 'circle';  // 'circle' | 'square'
@@ -164,8 +164,8 @@ function _ensureToolbar() {
                 Color <input type="color" id="img-ed-color" value="#ff0000">
             </label>
             <label class="img-ed-label" title="Background color (Erase, Callout fill) — transparent if unchecked">
-                <input type="checkbox" id="img-ed-bg-enable" title="Enable background color">
-                BG <input type="color" id="img-ed-bgcolor" value="#ffffff" style="opacity:0.4">
+                <input type="checkbox" id="img-ed-bg-enable" title="Enable background color" checked>
+                BG <input type="color" id="img-ed-bgcolor" value="#ffffff">
             </label>
             <label class="img-ed-label" title="Brush / stroke size">
                 Size <input type="number" id="img-ed-pensize" min="1" max="100" value="3" style="width:44px">
@@ -223,6 +223,7 @@ function _ensureToolbar() {
     };
     bgEnableCb.addEventListener('change', _syncBg);
     bgColorInp.addEventListener('input',  _syncBg);
+    _syncBg();
 
     _toolbarEl.querySelector('#img-ed-pensize').addEventListener('input', e => {
         _penSize = +e.target.value;
