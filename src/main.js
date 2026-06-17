@@ -2204,13 +2204,14 @@ function refreshSelectedObjGui(obj) {
     selectedFolder.addColor(part, 'color').name('Specif. color').onChange(function(value){ changeColor(obj, value); });
 
     // Roughness / Metalness – read initial value from first material found, apply to all
-    const _matProxy = { roughness: 0.5, metalness: 0 };
+    const _matProxy = { roughness: 0.5, metalness: 0, wireframe: false };
     let _matFirst = false;
     obj.traverse(child => {
         if (!_matFirst && child.isMesh && child.material) {
             const m = Array.isArray(child.material) ? child.material[0] : child.material;
             if (m.roughness !== undefined) _matProxy.roughness = m.roughness;
             if (m.metalness !== undefined) _matProxy.metalness = m.metalness;
+            _matProxy.wireframe = !!m.wireframe;
             _matFirst = true;
         }
     });
@@ -2228,6 +2229,15 @@ function refreshSelectedObjGui(obj) {
             if (child.isMesh) {
                 const mats = Array.isArray(child.material) ? child.material : [child.material];
                 mats.forEach(m => { if (m.metalness !== undefined) { m.metalness = value; m.needsUpdate = true; } });
+            }
+        });
+        render();
+    });
+    selectedFolder.add(_matProxy, 'wireframe').name('Wireframe').onChange(function(value) {
+        obj.traverse(child => {
+            if (child.isMesh) {
+                const mats = Array.isArray(child.material) ? child.material : [child.material];
+                mats.forEach(m => { m.wireframe = value; m.needsUpdate = true; });
             }
         });
         render();
@@ -2443,7 +2453,7 @@ function refreshGroupGui() {
     });
 
     // Roughness / Metalness – read initial value from first material found, apply to all objects
-    const _grpMatProxy = { roughness: 0.5, metalness: 0 };
+    const _grpMatProxy = { roughness: 0.5, metalness: 0, wireframe: false };
     let _grpMatFirst = false;
     selectedObjects.forEach(o => {
         if (!_grpMatFirst) o.traverse(child => {
@@ -2451,6 +2461,7 @@ function refreshGroupGui() {
                 const m = Array.isArray(child.material) ? child.material[0] : child.material;
                 if (m.roughness !== undefined) _grpMatProxy.roughness = m.roughness;
                 if (m.metalness !== undefined) _grpMatProxy.metalness = m.metalness;
+                _grpMatProxy.wireframe = !!m.wireframe;
                 _grpMatFirst = true;
             }
         });
@@ -2469,6 +2480,15 @@ function refreshGroupGui() {
             if (child.isMesh) {
                 const mats = Array.isArray(child.material) ? child.material : [child.material];
                 mats.forEach(m => { if (m.metalness !== undefined) { m.metalness = value; m.needsUpdate = true; } });
+            }
+        }));
+        render();
+    });
+    selectedFolder.add(_grpMatProxy, 'wireframe').name('Wireframe (all)').onChange(function(value) {
+        selectedObjects.forEach(o => o.traverse(child => {
+            if (child.isMesh) {
+                const mats = Array.isArray(child.material) ? child.material : [child.material];
+                mats.forEach(m => { m.wireframe = value; m.needsUpdate = true; });
             }
         }));
         render();
