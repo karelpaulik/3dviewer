@@ -53,7 +53,6 @@ export function exportToHTML(loadedModels, assemblyGui, viewProp, assemblyWriteT
             showSectionMesh: viewProp.showSectionMesh,
             sectionCrossLines: viewProp.sectionCrossLines,
             crossSectionColor: viewProp.crossSectionColor,
-            solidSection: viewProp.solidSection,
             capColor: viewProp.capColor,
             px: viewProp.px,
             py: viewProp.py,
@@ -176,7 +175,6 @@ export function exportToHTMLDraco(loadedModels, assemblyGui, viewProp, assemblyW
             showSectionMesh: viewProp.showSectionMesh,
             sectionCrossLines: viewProp.sectionCrossLines,
             crossSectionColor: viewProp.crossSectionColor,
-            solidSection: viewProp.solidSection,
             capColor: viewProp.capColor,
             px: viewProp.px,
             py: viewProp.py,
@@ -459,7 +457,7 @@ canvas { display: block; width: 100%; height: 100%; }
     <div id="section-panel-body">
         <label class="chk-label"><input type="checkbox" id="chk-section"> Section</label>        
         <label class="chk-label"><input type="checkbox" id="chk-section-cross"> Cross Section Lines</label>
-        <label class="chk-label"><input type="checkbox" id="chk-solid-section"${sectionSettings.solidSection ? ' checked' : ''}> Solid Section</label>
+        <label class="chk-label"><input type="checkbox" id="chk-solid-section"> Solid Section</label>
         <label class="chk-label"><input type="checkbox" id="chk-section-mesh"> Section Mesh</label>
         <div class="sec-row"><span class="sec-axis">X</span><input type="range" id="sld-px" step="1"><input type="number" id="num-px" step="1"></div>
         <div class="sec-row"><span class="sec-axis">Y</span><input type="range" id="sld-py" step="1"><input type="number" id="num-py" step="1"></div>
@@ -550,7 +548,7 @@ const clipPlanes = [
 let sectionMeshEnabled = ${sectionSettings.showSectionMesh};
 let sectionCrossLinesEnabled = ${sectionSettings.sectionCrossLines};
 let sectionCrossLinesObj = null;
-let solidSectionEnabled = ${sectionSettings.solidSection};
+let solidSectionEnabled = false;
 const solidSectionCapColor = '${sectionSettings.capColor}';
 const solidSectionObjects = [];
 let sceneRoot = null;
@@ -1910,7 +1908,6 @@ export function exportToHTMLObfuscated(loadedModels, assemblyGui, viewProp, asse
             showSectionMesh: viewProp.showSectionMesh,
             sectionCrossLines: viewProp.sectionCrossLines,
             crossSectionColor: viewProp.crossSectionColor,
-            solidSection: viewProp.solidSection,
             capColor: viewProp.capColor,
             px: viewProp.px,
             py: viewProp.py,
@@ -2028,7 +2025,6 @@ export function exportToHTMLObfuscatedDraco(loadedModels, assemblyGui, viewProp,
             showSectionMesh: viewProp.showSectionMesh,
             sectionCrossLines: viewProp.sectionCrossLines,
             crossSectionColor: viewProp.crossSectionColor,
-            solidSection: viewProp.solidSection,
             capColor: viewProp.capColor,
             px: viewProp.px,
             py: viewProp.py,
@@ -2145,7 +2141,7 @@ function generateObfuscatedHTML(glbBase64, animSettings, sectionSettings, dracoD
     const secChecked = sectionSettings.section ? ' checked' : '';
     const secMeshChecked = sectionSettings.showSectionMesh ? ' checked' : '';
     const secCrossChecked = sectionSettings.sectionCrossLines ? ' checked' : '';
-    const secSolidChecked = sectionSettings.solidSection ? ' checked' : '';
+    const secSolidChecked = '';
 
     // ── Assemble obfuscated HTML ──
     return `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no"><style>${css}</style></head><body>` +

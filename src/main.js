@@ -7119,7 +7119,7 @@ function importSettingsFromGltfScene(gltfScene) {
 
     if (sectionSett) {
         const s = sectionSett;
-        const scalarKeys = ['px', 'py', 'pz', 'sectionCrossLines', 'crossSectionColor', 'solidSection', 'capColor', 'showSectionMesh'];
+        const scalarKeys = ['px', 'py', 'pz', 'sectionCrossLines', 'crossSectionColor', 'capColor', 'showSectionMesh'];
         scalarKeys.forEach(k => { if (s[k] !== undefined) viewProp[k] = s[k]; });
 
         // Apply clip plane positions
@@ -7139,7 +7139,6 @@ function importSettingsFromGltfScene(gltfScene) {
 
         syncShowSectionMeshWithSection();
         if (viewProp.sectionCrossLines) updateSectionCrossLines();
-        if (viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render);
         if (viewProp.showSectionMesh) toggleSectionMeshAll();
     }
 }
@@ -7332,7 +7331,6 @@ function exportAllModels() {
         pz:                viewProp.pz,
         sectionCrossLines: viewProp.sectionCrossLines,
         crossSectionColor: viewProp.crossSectionColor,
-        solidSection:      viewProp.solidSection,
         capColor:          viewProp.capColor,
         showSectionMesh:   viewProp.showSectionMesh,
     };
@@ -7409,7 +7407,6 @@ async function exportAllModelsDraco() {
         pz:                viewProp.pz,
         sectionCrossLines: viewProp.sectionCrossLines,
         crossSectionColor: viewProp.crossSectionColor,
-        solidSection:      viewProp.solidSection,
         capColor:          viewProp.capColor,
         showSectionMesh:   viewProp.showSectionMesh,
     };
@@ -7514,7 +7511,6 @@ function exportSelectedObject() {
             pz:                viewProp.pz,
             sectionCrossLines: viewProp.sectionCrossLines,
             crossSectionColor: viewProp.crossSectionColor,
-            solidSection:      viewProp.solidSection,
             capColor:          viewProp.capColor,
             showSectionMesh:   viewProp.showSectionMesh,
         };
@@ -7581,7 +7577,6 @@ function exportSelectedObject() {
         pz:                viewProp.pz,
         sectionCrossLines: viewProp.sectionCrossLines,
         crossSectionColor: viewProp.crossSectionColor,
-        solidSection:      viewProp.solidSection,
         capColor:          viewProp.capColor,
         showSectionMesh:   viewProp.showSectionMesh,
     };
@@ -7660,7 +7655,6 @@ async function exportSelectedObjectDraco() {
             pz:                viewProp.pz,
             sectionCrossLines: viewProp.sectionCrossLines,
             crossSectionColor: viewProp.crossSectionColor,
-            solidSection:      viewProp.solidSection,
             capColor:          viewProp.capColor,
             showSectionMesh:   viewProp.showSectionMesh,
         };
@@ -7780,7 +7774,6 @@ async function exportSelectedObjectDraco() {
         pz:                viewProp.pz,
         sectionCrossLines: viewProp.sectionCrossLines,
         crossSectionColor: viewProp.crossSectionColor,
-        solidSection:      viewProp.solidSection,
         capColor:          viewProp.capColor,
         showSectionMesh:   viewProp.showSectionMesh,
     };
