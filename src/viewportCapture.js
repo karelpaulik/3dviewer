@@ -62,6 +62,17 @@ function normalizeDisplayMediaCrop(video) {
     return { sx: 0, sy: 0, sw: vw, sh: vh, outW: vw, outH: vh };
 }
 
+function canvasFromFullVideoFrame(video) {
+    const out = document.createElement('canvas');
+    out.width = video.videoWidth;
+    out.height = video.videoHeight;
+    const ctx = out.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(video, 0, 0);
+    return out;
+}
+
 function canvasFromNormalizedVideoFrame(video) {
     const { sx, sy, sw, sh, outW, outH } = normalizeDisplayMediaCrop(video);
     const out = document.createElement('canvas');
@@ -72,6 +83,18 @@ function canvasFromNormalizedVideoFrame(video) {
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(video, sx, sy, sw, sh, 0, 0, outW, outH);
     return out;
+}
+
+/** @param {'browser'|'window'|'monitor'|undefined} displaySurface */
+function canvasFromVideoFrame(video, displaySurface) {
+    if (displaySurface === 'browser') {
+        return canvasFromNormalizedVideoFrame(video);
+    }
+    if (displaySurface === 'monitor' || displaySurface === 'window') {
+        return canvasFromFullVideoFrame(video);
+    }
+    // Unknown / unsupported — keep page-based heuristics (HiDPI tab capture, etc.)
+    return canvasFromNormalizedVideoFrame(video);
 }
 
 function waitForStableFrame() {
@@ -118,7 +141,8 @@ function waitForVideoReady(video, timeoutMs = 10000) {
 
 /**
  * Capture via getDisplayMedia (WYSIWYG screen pixels).
- * Output is normalized to stable page pixel dimensions (innerWidth/Height × devicePixelRatio).
+ * Tab (`browser`): normalized to stable page pixels (innerWidth/Height × devicePixelRatio).
+ * Window or monitor: full captured frame at native stream resolution.
  * @returns {Promise<HTMLCanvasElement>}
  */
 export async function captureScreenFromDisplayMedia() {
@@ -138,7 +162,7 @@ export async function captureScreenFromDisplayMedia() {
                 height: { ideal: idealH },
             },
             audio: false,
-            preferCurrentTab: true,
+            // Optional Chrome hint: show this tab without restricting the picker (no preferCurrentTab).
             selfBrowserSurface: 'include',
         });
     } catch (err) {
@@ -147,6 +171,9 @@ export async function captureScreenFromDisplayMedia() {
         }
         throw err;
     }
+
+    const track = stream.getVideoTracks()[0];
+    const displaySurface = track?.getSettings?.().displaySurface;
 
     const video = document.createElement('video');
     video.srcObject = stream;
@@ -157,7 +184,7 @@ export async function captureScreenFromDisplayMedia() {
         await waitForVideoReady(video);
         await waitForStableFrame();
 
-        return canvasFromNormalizedVideoFrame(video);
+        return canvasFromVideoFrame(video, displaySurface);
     } finally {
         stream.getTracks().forEach(track => track.stop());
         video.srcObject = null;
