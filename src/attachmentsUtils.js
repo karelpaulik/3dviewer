@@ -14,6 +14,8 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 let attachmentsStore = []; // [{ id, name, mimeType, data (base64 string), size, addedAt }]
 let _guiRef = null;
 let _pdfConverting = false;
+let _saveViewportFn = null;
+let _saveScreenCaptureFn = null;
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
@@ -41,9 +43,28 @@ export function importAttachmentsFromGltfScene(gltfScene) {
 }
 
 /** Initialise the lil-gui panel. Must be called once with the folder/GUI instance. */
-export function initAttachmentsGui(gui) {
+export function initAttachmentsGui(gui, saveViewportFn, saveScreenCaptureFn) {
     _guiRef = gui;
+    _saveViewportFn = saveViewportFn || null;
+    _saveScreenCaptureFn = saveScreenCaptureFn || null;
     refreshAttachmentsGui();
+}
+
+/** Add an image attachment from a Blob (e.g. viewport capture). */
+export async function addImageAttachmentFromBlob(blob, suggestedName) {
+    const name = _uniqueAttachmentName(suggestedName);
+    const mimeType = blob.type || 'image/png';
+    const data = await _blobToBase64(blob);
+    attachmentsStore.push({
+        id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+        name,
+        mimeType,
+        data,
+        size: blob.size,
+        addedAt: new Date().toISOString(),
+    });
+    refreshAttachmentsGui();
+    return name;
 }
 
 /** Rebuild the attachment list in the lil-gui panel. */
@@ -60,6 +81,12 @@ export function refreshAttachmentsGui() {
     _guiRef.add({ fn: _pasteImageFromClipboard }, 'fn').name('📋 Paste image…');
     // "New blank image" button
     _guiRef.add({ fn: _newImage }, 'fn').name('🖼 New image…');
+    if (_saveViewportFn) {
+        _guiRef.add({ fn: _saveViewportToFiles }, 'fn').name('📷 Save viewport…');
+    }
+    if (_saveScreenCaptureFn) {
+        _guiRef.add({ fn: _saveScreenCaptureToFiles }, 'fn').name('📸 Screen capture…');
+    }
 
     // "Download all as ZIP" button — only shown when there is at least one attachment
     if (attachmentsStore.length > 0) {
@@ -103,6 +130,27 @@ export function refreshAttachmentsGui() {
 }
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
+
+async function _saveViewportToFiles() {
+    if (!_saveViewportFn) return;
+    try {
+        await _saveViewportFn();
+    } catch (err) {
+        console.error('Viewport capture failed:', err);
+        alert('Failed to save viewport: ' + (err.message || err));
+    }
+}
+
+async function _saveScreenCaptureToFiles() {
+    if (!_saveScreenCaptureFn) return;
+    try {
+        await _saveScreenCaptureFn();
+    } catch (err) {
+        if (err.message === 'Screen capture was cancelled.') return;
+        console.error('Screen capture failed:', err);
+        alert('Failed to save screen capture: ' + (err.message || err));
+    }
+}
 
 function _addAttachments() {
     const input = document.createElement('input');

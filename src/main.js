@@ -30,7 +30,8 @@ import { initAnnotations3d, isAnnotation3dActive, setAnnotation3dActive, addAnno
 import { initCadDim3d, isCadDim3dActive, getCadDim3dStep, getCadDim3dAxis, setCadDim3dActive, addCadDim3dPoint, updateCadDim3dPreview, updateCadDim3dHoverPreview, cycleCadDim3dAxis, placeCadDim3d, clearCadDim3dMeasurements, removeCadDim3dMeasurementsForOwner, setCadDim3dVisible, setCadDim3dDepthTest, updateCadDim3dOrientations, updateCadDim3dMarkerScales, reconstructCadDim3d, stripCadDim3dVisuals, setCadDim3dLabelMode, setCadDim3dDragMode, setCadDim3dOrientationMode, setCadDim3dRotate, setCadDim3dLabelScaleDialog, setCadDim3dMirrored, setCadDim3dTextColor, setCadDim3dBgColor, getCadDim3dDefaults, convertCadDimTo3d, applyDefaultsToAllCadDim3d, setCadDimMarkerFixedSize, setCadDimMarkerFixedScreenPx, setCadDimMarkerWorldSize, setCadDimMarkerColor } from './cadDim3dUtils.js';
 import { computeSolidSection, clearSolidSection } from './solidSectionUtils.js';
 import { initDocumentsGui, importDocumentsFromGltfScene, getDocumentsStore, flushDocumentEdits, isDocOverlayBlockingInput, setDocLabelOptions } from './documentsUtils.js';
-import { initAttachmentsGui, importAttachmentsFromGltfScene, getAttachmentsStore } from './attachmentsUtils.js';
+import { initAttachmentsGui, importAttachmentsFromGltfScene, getAttachmentsStore, addImageAttachmentFromBlob } from './attachmentsUtils.js';
+import { captureViewportCanvas, captureViewportFromDisplayMedia } from './viewportCapture.js';
 import { openHelp } from './helpUtils.js';
 import { openBomDialog } from './bomUtils.js';
 import {
@@ -1005,7 +1006,7 @@ function init() {
     document.body.appendChild( container );
 
     //renderer
-    renderer = new THREE.WebGLRenderer( { antialias: true, stencil: true } );
+    renderer = new THREE.WebGLRenderer( { antialias: true, stencil: true, preserveDrawingBuffer: true } );
     renderer.setPixelRatio( window.devicePixelRatio );
     renderer.setSize( window.innerWidth, window.innerHeight );
     //renderer.outputEncoding = THREE.sRGBEncoding;	Toto bylo pro starší threejs
@@ -8260,8 +8261,40 @@ function addDocumentsGui() {
 
 function addAttachmentsGui() {
     const attGui = new GUI({ container: guiContainer, title: 'Files' });
-    initAttachmentsGui(attGui);
+    initAttachmentsGui(attGui, saveViewportToFiles, saveViewportScreenCaptureToFiles);
     registerGuiPanel('Files', attGui);
+}
+
+async function saveViewportToFiles() {
+    if (isDocOverlayBlockingInput()) {
+        alert('Close the document overlay before saving the viewport.');
+        return;
+    }
+    const canvas = await captureViewportCanvas({
+        webglCanvas: renderer.domElement,
+        css2dElement: css2DRenderer?.domElement,
+        css3dElement: css3DRenderer?.domElement,
+        renderFn: render,
+    });
+    const blob = await new Promise((resolve, reject) => {
+        canvas.toBlob(b => (b ? resolve(b) : reject(new Error('toBlob failed'))), 'image/png');
+    });
+    const ts = new Date().toISOString().slice(0, 19).replace('T', '_').replace(/:/g, '-');
+    await addImageAttachmentFromBlob(blob, `viewport-${ts}.png`);
+}
+
+async function saveViewportScreenCaptureToFiles() {
+    if (isDocOverlayBlockingInput()) {
+        alert('Close the document overlay before saving the viewport.');
+        return;
+    }
+    render();
+    const canvas = await captureViewportFromDisplayMedia();
+    const blob = await new Promise((resolve, reject) => {
+        canvas.toBlob(b => (b ? resolve(b) : reject(new Error('toBlob failed'))), 'image/png');
+    });
+    const ts = new Date().toISOString().slice(0, 19).replace('T', '_').replace(/:/g, '-');
+    await addImageAttachmentFromBlob(blob, `screen-${ts}.png`);
 }
 
 function addHelpGui() {
