@@ -31,7 +31,7 @@ import { initCadDim3d, isCadDim3dActive, getCadDim3dStep, getCadDim3dAxis, setCa
 import { computeSolidSection, clearSolidSection } from './solidSectionUtils.js';
 import { initDocumentsGui, importDocumentsFromGltfScene, getDocumentsStore, flushDocumentEdits, isDocOverlayBlockingInput, setDocLabelOptions } from './documentsUtils.js';
 import { initAttachmentsGui, importAttachmentsFromGltfScene, getAttachmentsStore, addImageAttachmentFromBlob } from './attachmentsUtils.js';
-import { captureViewportCanvas, captureViewportFromDisplayMedia } from './viewportCapture.js';
+import { captureScreenFromDisplayMedia } from './viewportCapture.js';
 import { openHelp } from './helpUtils.js';
 import { openBomDialog } from './bomUtils.js';
 import {
@@ -1006,7 +1006,7 @@ function init() {
     document.body.appendChild( container );
 
     //renderer
-    renderer = new THREE.WebGLRenderer( { antialias: true, stencil: true, preserveDrawingBuffer: true } );
+    renderer = new THREE.WebGLRenderer( { antialias: true, stencil: true } );
     renderer.setPixelRatio( window.devicePixelRatio );
     renderer.setSize( window.innerWidth, window.innerHeight );
     //renderer.outputEncoding = THREE.sRGBEncoding;	Toto bylo pro starší threejs
@@ -8261,35 +8261,17 @@ function addDocumentsGui() {
 
 function addAttachmentsGui() {
     const attGui = new GUI({ container: guiContainer, title: 'Files' });
-    initAttachmentsGui(attGui, saveViewportToFiles, saveViewportScreenCaptureToFiles);
+    initAttachmentsGui(attGui, saveScreenCaptureToFiles);
     registerGuiPanel('Files', attGui);
 }
 
-async function saveViewportToFiles() {
-    if (isDocOverlayBlockingInput()) {
-        alert('Close the document overlay before saving the viewport.');
-        return;
-    }
-    const canvas = await captureViewportCanvas({
-        webglCanvas: renderer.domElement,
-        css2dElement: css2DRenderer?.domElement,
-        css3dElement: css3DRenderer?.domElement,
-        renderFn: render,
-    });
-    const blob = await new Promise((resolve, reject) => {
-        canvas.toBlob(b => (b ? resolve(b) : reject(new Error('toBlob failed'))), 'image/png');
-    });
-    const ts = new Date().toISOString().slice(0, 19).replace('T', '_').replace(/:/g, '-');
-    await addImageAttachmentFromBlob(blob, `viewport-${ts}.png`);
-}
-
-async function saveViewportScreenCaptureToFiles() {
+async function saveScreenCaptureToFiles() {
     if (isDocOverlayBlockingInput()) {
         alert('Close the document overlay before saving the viewport.');
         return;
     }
     render();
-    const canvas = await captureViewportFromDisplayMedia();
+    const canvas = await captureScreenFromDisplayMedia();
     const blob = await new Promise((resolve, reject) => {
         canvas.toBlob(b => (b ? resolve(b) : reject(new Error('toBlob failed'))), 'image/png');
     });

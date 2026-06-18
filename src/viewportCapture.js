@@ -1,83 +1,5 @@
 // viewportCapture.js
-// Captures the visible 3D viewport (WebGL + CSS2D/CSS3D overlays) as a canvas.
-
-import html2canvas from 'html2canvas';
-
-const LABEL_SELECTOR = '.measurement-label, .annotation-label, .cad-dim-3d-label';
-
-async function snapshotLabelElement(el, dpr) {
-    const wrapper = document.createElement('div');
-    wrapper.style.cssText = 'position:fixed;left:-10000px;top:0;overflow:visible;';
-    const clone = el.cloneNode(true);
-    clone.style.transform = 'none';
-    clone.style.transformOrigin = 'top left';
-    clone.style.position = 'relative';
-    clone.style.margin = '0';
-    clone.style.display = 'block';
-    wrapper.appendChild(clone);
-    document.body.appendChild(wrapper);
-    try {
-        return await html2canvas(clone, {
-            backgroundColor: null,
-            scale: dpr,
-            logging: false,
-            useCORS: true,
-        });
-    } finally {
-        wrapper.remove();
-    }
-}
-
-async function captureLabelElement(ctx, el, dpr) {
-    const box = el.getBoundingClientRect();
-    if (box.width < 1 || box.height < 1) return;
-
-    const style = getComputedStyle(el);
-    if (style.display === 'none' || style.visibility === 'hidden') return;
-    if (parseFloat(style.opacity) < 0.01) return;
-
-    const snap = await snapshotLabelElement(el, dpr);
-    if (snap.width < 1 || snap.height < 1) return;
-
-    const dx = Math.round(box.left * dpr);
-    const dy = Math.round(box.top * dpr);
-    const w = Math.round(box.width * dpr);
-    const h = Math.round(box.height * dpr);
-    ctx.drawImage(snap, dx, dy, w, h);
-}
-
-async function captureLabelOverlays(ctx, roots, dpr) {
-    const seen = new Set();
-    for (const root of roots) {
-        if (!root) continue;
-        for (const el of root.querySelectorAll(LABEL_SELECTOR)) {
-            if (seen.has(el)) continue;
-            seen.add(el);
-            await captureLabelElement(ctx, el, dpr);
-        }
-    }
-}
-
-/**
- * Capture the page canvas as a PNG-ready composite (WebGL + CSS2D/CSS3D labels).
- * @param {{ webglCanvas: HTMLCanvasElement, css2dElement?: HTMLElement, css3dElement?: HTMLElement, renderFn: () => void }} opts
- */
-export async function captureViewportCanvas({ webglCanvas, css2dElement, css3dElement, renderFn }) {
-    renderFn();
-
-    const dpr = window.devicePixelRatio || 1;
-
-    const out = document.createElement('canvas');
-    out.width = webglCanvas.width;
-    out.height = webglCanvas.height;
-    const ctx = out.getContext('2d');
-
-    ctx.drawImage(webglCanvas, 0, 0);
-
-    await captureLabelOverlays(ctx, [css2dElement, css3dElement], dpr);
-
-    return out;
-}
+// Screen capture via getDisplayMedia (WYSIWYG page pixels).
 
 /** Expected page content size in physical pixels (CSS layout × devicePixelRatio). */
 function expectedPagePixelSize() {
@@ -199,7 +121,7 @@ function waitForVideoReady(video, timeoutMs = 10000) {
  * Output is normalized to stable page pixel dimensions (innerWidth/Height × devicePixelRatio).
  * @returns {Promise<HTMLCanvasElement>}
  */
-export async function captureViewportFromDisplayMedia() {
+export async function captureScreenFromDisplayMedia() {
     if (!navigator.mediaDevices?.getDisplayMedia) {
         throw new Error('Screen capture is not supported in this browser.');
     }

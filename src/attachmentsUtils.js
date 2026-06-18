@@ -14,7 +14,6 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 let attachmentsStore = []; // [{ id, name, mimeType, data (base64 string), size, addedAt }]
 let _guiRef = null;
 let _pdfConverting = false;
-let _saveViewportFn = null;
 let _saveScreenCaptureFn = null;
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -43,14 +42,13 @@ export function importAttachmentsFromGltfScene(gltfScene) {
 }
 
 /** Initialise the lil-gui panel. Must be called once with the folder/GUI instance. */
-export function initAttachmentsGui(gui, saveViewportFn, saveScreenCaptureFn) {
+export function initAttachmentsGui(gui, saveScreenCaptureFn) {
     _guiRef = gui;
-    _saveViewportFn = saveViewportFn || null;
     _saveScreenCaptureFn = saveScreenCaptureFn || null;
     refreshAttachmentsGui();
 }
 
-/** Add an image attachment from a Blob (e.g. viewport capture). */
+/** Add an image attachment from a Blob (e.g. screen capture). */
 export async function addImageAttachmentFromBlob(blob, suggestedName) {
     const name = _uniqueAttachmentName(suggestedName);
     const mimeType = blob.type || 'image/png';
@@ -81,9 +79,6 @@ export function refreshAttachmentsGui() {
     _guiRef.add({ fn: _pasteImageFromClipboard }, 'fn').name('📋 Paste image…');
     // "New blank image" button
     _guiRef.add({ fn: _newImage }, 'fn').name('🖼 New image…');
-    if (_saveViewportFn) {
-        _guiRef.add({ fn: _saveViewportToFiles }, 'fn').name('📷 Save viewport…');
-    }
     if (_saveScreenCaptureFn) {
         _guiRef.add({ fn: _saveScreenCaptureToFiles }, 'fn').name('📸 Screen capture…');
     }
@@ -130,16 +125,6 @@ export function refreshAttachmentsGui() {
 }
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
-
-async function _saveViewportToFiles() {
-    if (!_saveViewportFn) return;
-    try {
-        await _saveViewportFn();
-    } catch (err) {
-        console.error('Viewport capture failed:', err);
-        alert('Failed to save viewport: ' + (err.message || err));
-    }
-}
 
 async function _saveScreenCaptureToFiles() {
     if (!_saveScreenCaptureFn) return;
