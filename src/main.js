@@ -38,8 +38,18 @@ import {
     registerParametricMesh,
     prepareParametricClone,
     isParametricMesh,
-    buildParametricGui
+    buildParametricGui,
+    applyMeshMaterialDefaults
 } from './createObjectUtils.js';
+import {
+    performBooleanOperation,
+    pickMaterialFromObject,
+    BOOLEAN_OPERATION_LABELS,
+    ADDITION,
+    SUBTRACTION,
+    REVERSE_SUBTRACTION,
+    INTERSECTION
+} from './booleanUtils.js';
 
 // Proměnné globálního rozsahu----------------------------------------------------------------------------------------
 let container, stats;
@@ -460,6 +470,21 @@ function _updatePtpSnapHintUI() {
     }
 }
 
+// --- Boolean operation hint overlay (created in init) ---
+let _booleanHintDiv = null;
+function _updateBooleanHintUI() {
+    if (!_booleanHintDiv) return;
+    if (booleanMode) {
+        const stepText = booleanStep === 0
+            ? 'Boolean: klikněte na první objekt (A)'
+            : 'Boolean: klikněte na druhý objekt (B)';
+        _booleanHintDiv.innerHTML = `${stepText} &nbsp;·&nbsp; <button type="button" data-boolean-cancel style="margin-left:6px;padding:2px 10px;border:1px solid rgba(255,255,255,0.7);border-radius:4px;background:rgba(255,255,255,0.15);color:#fff;font-size:12px;cursor:pointer;">Zrušit</button>`;
+        _booleanHintDiv.style.display = 'block';
+    } else {
+        _booleanHintDiv.style.display = 'none';
+    }
+}
+
 let INTERSECTED;
 let isMouseDown = false;
 let isTouchDragging = false;
@@ -491,6 +516,13 @@ let ptpSnapStep = 0;         // 0 = picking source point, 1 = picking target poi
 let ptpSnapSourcePoint = null;    // world-space source point
 let ptpSnapSourceObject = null;   // the Object3D to be moved
 let ptpSnapDotMesh = null;        // SphereGeometry preview dot
+// --- Boolean operation state ---
+let booleanMode = false;
+let booleanStep = 0;
+let booleanOperation = null;
+let booleanObjectA = null;
+let booleanObjectB = null;
+let booleanHighlightHelper = null;
 let previousTransformState = null; // Uložení předchozího stavu pro undo
 let previousGroupTransformStates = []; // World positions of group objects before drag (for assembly recording)
 
@@ -1292,6 +1324,9 @@ function init() {
                 if (ptpSnapMode) {
                     cancelPtpSnapMode();
                 }
+                if (booleanMode) {
+                    cancelBooleanMode();
+                }
                 _syncModeBtns();
                 statusCircleDetectEl.style.display = 'none';
                 cancelAddLeaderLine();
@@ -1544,6 +1579,17 @@ function init() {
     _ptpSnapHintDiv = document.createElement('div');
     _ptpSnapHintDiv.style.cssText = 'position:fixed;bottom:112px;left:50%;transform:translateX(-50%);background:rgba(0,120,60,0.88);color:#fff;padding:5px 14px;border-radius:5px;font-size:12px;pointer-events:none;display:none;z-index:1000;white-space:nowrap;';
     document.body.appendChild(_ptpSnapHintDiv);
+
+    _booleanHintDiv = document.createElement('div');
+    _booleanHintDiv.style.cssText = 'position:fixed;bottom:134px;left:50%;transform:translateX(-50%);background:rgba(120,40,160,0.88);color:#fff;padding:5px 14px;border-radius:5px;font-size:12px;display:none;z-index:1000;white-space:nowrap;';
+    _booleanHintDiv.addEventListener('click', (e) => {
+        if (e.target.closest('[data-boolean-cancel]')) {
+            e.preventDefault();
+            e.stopPropagation();
+            cancelBooleanMode();
+        }
+    });
+    document.body.appendChild(_booleanHintDiv);
 } //End init 
 
 // Přepočítá frustum ortografické kamery podle aktuálního obsahu meshObjects.
@@ -2021,6 +2067,19 @@ function addMainGui() {
     editGui.add(viewProp, 'transformSpace').name('Transform: World space').onChange(function(value) {
         transformControls.setSpace( value ? 'world' : 'local' );
     }).listen();
+    function tryStartBoolean(operation) {
+        if (booleanMode) {
+            alert('Boolean režim je již aktivní. Dokončete výběr nebo zrušte (Cancel / ESC).');
+            return;
+        }
+        startBooleanMode(operation);
+    }
+    const booleanFolder = editGui.addFolder('Boolean Operations');
+    booleanFolder.add({ fn() { tryStartBoolean(ADDITION); } }, 'fn').name('Union (A ∪ B)');
+    booleanFolder.add({ fn() { tryStartBoolean(SUBTRACTION); } }, 'fn').name('Subtract (A − B)');
+    booleanFolder.add({ fn() { tryStartBoolean(REVERSE_SUBTRACTION); } }, 'fn').name('Subtract (B − A)');
+    booleanFolder.add({ fn() { tryStartBoolean(INTERSECTION); } }, 'fn').name('Intersect (A ∩ B)');
+    booleanFolder.close();
     const materialFolder = editGui.addFolder('Material operations');
     materialFolder.add({ fn() {
         const { count, affected } = countLegacyMaterials(loadedModels, ['basic']);
@@ -5674,6 +5733,95 @@ function cancelPtpSnapMode() {
     render();
 }
 
+function clearBooleanHighlight() {
+    if (booleanHighlightHelper) {
+        scene.remove(booleanHighlightHelper);
+        booleanHighlightHelper = null;
+    }
+}
+
+function startBooleanMode(operation) {
+    if (faceSnapMode) cancelFaceSnapMode();
+    if (ptpSnapMode) cancelPtpSnapMode();
+    booleanMode = true;
+    booleanStep = 0;
+    booleanOperation = operation;
+    booleanObjectA = null;
+    booleanObjectB = null;
+    clearBooleanHighlight();
+    deselectObject();
+    _updateBooleanHintUI();
+    render();
+}
+
+function cancelBooleanMode() {
+    booleanMode = false;
+    booleanStep = 0;
+    booleanOperation = null;
+    booleanObjectA = null;
+    booleanObjectB = null;
+    clearBooleanHighlight();
+    _updateBooleanHintUI();
+    render();
+}
+
+function registerBooleanResultMesh(mesh) {
+    mesh.userData.initPosition = new THREE.Vector3();
+    mesh.userData.initRotation = new THREE.Euler();
+    mesh.userData.initScale = new THREE.Vector3(1, 1, 1);
+    scene.add(mesh);
+    meshObjects.push(mesh);
+    loadedModels.push(mesh);
+    rebuildTree(loadedModels);
+    if (_assemblyFolderRef) updateAssemblyGuiInfo();
+    selectObject(mesh);
+    render();
+}
+
+function runBooleanAndRegister() {
+    let overlay = document.getElementById('booleanOverlay');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'booleanOverlay';
+        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:99999;color:#fff;font-size:22px;font-family:sans-serif;';
+        overlay.textContent = 'Boolean operation… please wait';
+        document.body.appendChild(overlay);
+    }
+    overlay.style.display = 'flex';
+
+    const objectA = booleanObjectA;
+    const objectB = booleanObjectB;
+    const operation = booleanOperation;
+
+    setTimeout(() => {
+        try {
+            const { geometry, error } = performBooleanOperation(objectA, objectB, operation);
+            if (error || !geometry) {
+                alert(error || 'Boolean operation failed.');
+                cancelBooleanMode();
+                return;
+            }
+
+            const material = pickMaterialFromObject(objectA);
+            applyMeshMaterialDefaults(material, clipPlanes);
+            const opLabel = BOOLEAN_OPERATION_LABELS[operation] || 'Boolean';
+            const nameA = (objectA.name || 'A').replace(/\s+/g, '_');
+            const nameB = (objectB.name || 'B').replace(/\s+/g, '_');
+            const resultMesh = new THREE.Mesh(geometry, material);
+            resultMesh.name = `Boolean_${opLabel}_${nameA}_${nameB}`;
+
+            registerBooleanResultMesh(resultMesh);
+            cancelBooleanMode();
+        } catch (err) {
+            console.error('Boolean operation error:', err);
+            alert(err?.message || 'Boolean operation failed.');
+            cancelBooleanMode();
+        } finally {
+            overlay.style.display = 'none';
+        }
+    }, 50);
+}
+
 function onMouseUp( event ) {
     isMouseDown = false;
 }
@@ -5913,6 +6061,40 @@ function onClick( event ) {
                 const worldPoint3d = clickNDC3d.unproject(currentCamera);
                 addAnnotation3dPoint(worldPoint3d, null, render);
             }
+        }
+        return;
+    }
+
+    // --- Boolean operation mode ---
+    if (booleanMode) {
+        mouseUpPos.x = event.clientX;
+        mouseUpPos.y = event.clientY;
+        if (mouseDownPos.distanceTo(mouseUpPos) > 3) return;
+
+        const hit = getFreshRaycastTarget();
+        if (!hit) {
+            alert(booleanStep === 0 ? 'Klikněte na první objekt (A).' : 'Klikněte na druhý objekt (B).');
+            return;
+        }
+
+        const picked = resolveCADSelection(hit);
+        if (!picked) return;
+
+        if (booleanStep === 0) {
+            booleanObjectA = picked;
+            clearBooleanHighlight();
+            booleanHighlightHelper = new PaddedBoxHelper(picked, 0xffaa00, viewProp.multiSelectBoxPadding);
+            scene.add(booleanHighlightHelper);
+            booleanStep = 1;
+            _updateBooleanHintUI();
+            render();
+        } else {
+            if (picked === booleanObjectA) {
+                alert('Vyberte jiný objekt pro B.');
+                return;
+            }
+            booleanObjectB = picked;
+            runBooleanAndRegister();
         }
         return;
     }
