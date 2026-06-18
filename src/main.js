@@ -35,6 +35,18 @@ import { captureScreenFromDisplayMedia } from './viewportCapture.js';
 import { openHelp } from './helpUtils.js';
 import { openBomDialog } from './bomUtils.js';
 import {
+    JITSI_SERVER_PRESETS,
+    JITSI_CUSTOM_PRESET,
+    initJitsiCall,
+    initJitsiDomainFromStorageAndUrl,
+    startJitsiCall,
+    leaveJitsiCall,
+    copyJitsiInviteLink,
+    getJitsiServerPreset,
+    getJitsiCustomDomain,
+    setJitsiDomainFromGui,
+} from './jitsiCall.js';
+import {
     createParametricMesh,
     registerParametricMesh,
     prepareParametricClone,
@@ -372,7 +384,7 @@ fileNameInput.title = 'File name (default name for export)';
 guiToolbar.insertBefore(fileNameInput, outlinerBtn.nextSibling);
 
 // Pre-create all toolbar buttons in desired order: Selected, File, Edit, View, Tools, Assembly, Docs, Help
-['Selected', 'File', 'Edit', 'View', 'Assembly', 'Docs', 'Files', 'Help'].forEach(name => {
+['Selected', 'File', 'Edit', 'View', 'Assembly', 'Docs', 'Files', 'Call', 'Help'].forEach(name => {
     const btn = document.createElement('button');
     btn.className = 'gui-toolbar-btn';
     btn.textContent = name;
@@ -1517,6 +1529,7 @@ function init() {
     addDocumentsGui();
     addAttachmentsGui();
     addHelpGui();
+    addCallGui();
     applyToolbarPreferences(); // Apply initial toolbar CSS from viewProp defaults
     initMeasurement(scene);
     initSelectDimension(currentCamera, render, orbitControls);
@@ -8322,6 +8335,60 @@ function addHelpGui() {
     panelHelpFolder.add({ fn() { openHelp('/help/panel-outliner.json'); } }, 'fn').name('🌳 Scene outliner');
     helpGui.add({ fn() { aboutDialog.showModal(); } }, 'fn').name('About');
     registerGuiPanel('Help', helpGui);
+}
+
+function addCallGui() {
+    initJitsiCall();
+    initJitsiDomainFromStorageAndUrl();
+
+    const callGui = new GUI({ container: guiContainer, title: 'Call' });
+
+    const jitsiGuiState = {
+        serverPreset: getJitsiServerPreset(),
+        customDomain: getJitsiCustomDomain(),
+    };
+
+    const presetOptions = [...JITSI_SERVER_PRESETS, JITSI_CUSTOM_PRESET];
+    const presetCtrl = callGui.add(jitsiGuiState, 'serverPreset', presetOptions)
+        .name('Jitsi server')
+        .onChange((preset) => {
+            updateJitsiCustomCtrl();
+            if (!setJitsiDomainFromGui(preset, jitsiGuiState.customDomain)) {
+                jitsiGuiState.serverPreset = getJitsiServerPreset();
+                jitsiGuiState.customDomain = getJitsiCustomDomain();
+                presetCtrl.updateDisplay();
+                customCtrl.updateDisplay();
+            }
+        });
+
+    const customCtrl = callGui.add(jitsiGuiState, 'customDomain')
+        .name('Custom server')
+        .onChange((value) => {
+            if (jitsiGuiState.serverPreset !== JITSI_CUSTOM_PRESET) return;
+            if (!setJitsiDomainFromGui(JITSI_CUSTOM_PRESET, value)) {
+                jitsiGuiState.customDomain = getJitsiCustomDomain();
+                customCtrl.updateDisplay();
+            }
+        });
+
+    function updateJitsiCustomCtrl() {
+        if (jitsiGuiState.serverPreset === JITSI_CUSTOM_PRESET) {
+            customCtrl.enable();
+        } else {
+            customCtrl.disable();
+        }
+    }
+    updateJitsiCustomCtrl();
+
+    callGui.add({ fn: () => startJitsiCall() }, 'fn').name('Start / join call');
+    callGui.add({ fn: () => copyJitsiInviteLink() }, 'fn').name('Copy invite link');
+    callGui.add({ fn: () => leaveJitsiCall() }, 'fn').name('Leave call');
+    registerGuiPanel('Call', callGui);
+
+    const roomFromUrl = new URLSearchParams(window.location.search).get('room');
+    if (roomFromUrl) {
+        startJitsiCall(roomFromUrl);
+    }
 }
 
 function updateAssemblyGuiInfo() {
