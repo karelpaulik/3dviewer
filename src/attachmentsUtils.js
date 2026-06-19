@@ -4,6 +4,7 @@
 // Attachments can be downloaded to disk on demand.
 
 import JSZip from 'jszip';
+import { PDFDocument } from 'pdf-lib';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { buildWysiwygEditor } from './annotationUtils.js';
@@ -14,6 +15,9 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 let attachmentsStore = []; // [{ id, name, mimeType, data (base64 string), size, addedAt }]
 let _guiRef = null;
 let _pdfConverting = false;
+let _pdfEditing = false;
+/** @type {{ sourceAtt: object, originalBytes: Uint8Array, numPages: number, scale: number, pageSizes: Map<number, { widthPt: number, heightPt: number }>, editedPages: Map<number, { base64: string, mimeType: string, size: number }> } | null} */
+let _pdfEditSession = null;
 let _saveScreenCaptureFn = null;
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -116,6 +120,7 @@ export function refreshAttachmentsGui() {
             folder.add({ fn: () => _editAttachment(att) }, 'fn').name('✏  Edit');
         }
         if (att.mimeType === 'application/pdf') {
+            folder.add({ fn: () => _editPdf(att) }, 'fn').name('✏  Edit PDF…');
             folder.add({ fn: () => _convertPdfToImages(att) }, 'fn').name('🖼 Convert to images…');
         }
         folder.add({ fn: () => _downloadAttachment(att) }, 'fn').name('⬇  Download');
@@ -233,7 +238,9 @@ function _buildModal() {
     _modalEl.querySelector('#att-modal-comment-btn').addEventListener('click', () => _toggleCommentPanel(_carouselList[_carouselIndex]));
     _modalEl.querySelector('#att-modal-edit-btn').addEventListener('click', () => {
         const att = _carouselList[_carouselIndex];
-        if (att) _editAttachment(att);
+        if (!att) return;
+        if (att.mimeType === 'application/pdf') _editPdf(att);
+        else _editAttachment(att);
     });
     _modalEl.querySelector('#att-modal-convert-btn').addEventListener('click', () => {
         const att = _carouselList[_carouselIndex];
@@ -561,7 +568,12 @@ function _renderModal(att) {
 
     // Show/hide edit / convert buttons depending on attachment type
     const editBtn = _modalEl.querySelector('#att-modal-edit-btn');
-    if (editBtn) editBtn.style.display = (mime.startsWith('image/')) ? '' : 'none';
+    if (editBtn) {
+        const canEdit = mime.startsWith('image/') || mime === 'application/pdf';
+        editBtn.style.display = canEdit ? '' : 'none';
+        editBtn.textContent = mime === 'application/pdf' ? '✏ Edit PDF' : '✏ Edit';
+        editBtn.title = mime === 'application/pdf' ? 'Edit PDF pages' : 'Edit image';
+    }
     const convertBtn = _modalEl.querySelector('#att-modal-convert-btn');
     if (convertBtn) convertBtn.style.display = (mime === 'application/pdf') ? '' : 'none';
     _updateConvertBtnState(_pdfConverting);
@@ -667,6 +679,272 @@ function _editAttachment(att) {
             return newAtt;
         }
     );
+}
+
+function _attToUint8Array(att) {
+    const binary = atob(att.data);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+}
+
+function _uint8ArrayToBase64(bytes) {
+    let binary = '';
+    const chunk = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunk) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+    }
+    return btoa(binary);
+}
+
+function _parsePageSelection(input, numPages) {
+    const s = String(input).trim().toLowerCase();
+    if (!s || s === 'all') {
+        return Array.from({ length: numPages }, (_, i) => i + 1);
+    }
+    const pages = new Set();
+    for (const part of s.split(',')) {
+        const p = part.trim();
+        if (!p) continue;
+        const rangeMatch = p.match(/^(\d+)\s*-\s*(\d+)$/);
+        if (rangeMatch) {
+            let a = parseInt(rangeMatch[1], 10);
+            let b = parseInt(rangeMatch[2], 10);
+            if (a > b) [a, b] = [b, a];
+            for (let n = a; n <= b; n++) pages.add(n);
+        } else if (/^\d+$/.test(p)) {
+            pages.add(parseInt(p, 10));
+        } else {
+            return null;
+        }
+    }
+    const result = [...pages].filter(n => n >= 1 && n <= numPages).sort((a, b) => a - b);
+    return result.length > 0 ? result : null;
+}
+
+async function _renderPdfPageCanvas(pdf, pageNum, scale) {
+    const page = await pdf.getPage(pageNum);
+    const viewport = page.getViewport({ scale });
+    const viewport1 = page.getViewport({ scale: 1 });
+    const canvas = document.createElement('canvas');
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    const ctx = canvas.getContext('2d');
+    await page.render({ canvasContext: ctx, viewport, canvas }).promise;
+    return {
+        canvas,
+        widthPt: viewport1.width,
+        heightPt: viewport1.height,
+    };
+}
+
+async function _canvasToBlob(canvas, mimeType, jpegQuality) {
+    return new Promise((resolve, reject) => {
+        canvas.toBlob(
+            b => (b ? resolve(b) : reject(new Error('toBlob failed'))),
+            mimeType,
+            mimeType === 'image/jpeg' ? jpegQuality : undefined
+        );
+    });
+}
+
+function _makePdfPageEditCallbacks(session, pageNum) {
+    return {
+        onSaveOverwrite(newBase64, newSize, newMime) {
+            session.editedPages.set(pageNum, {
+                base64: newBase64,
+                mimeType: newMime,
+                size: newSize,
+            });
+            _offerPdfExport(session);
+        },
+        onSaveNew(newBase64, newSize, newName, newMime) {
+            const newAtt = {
+                id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+                name: newName,
+                mimeType: newMime,
+                data: newBase64,
+                size: newSize,
+                addedAt: new Date().toISOString(),
+            };
+            attachmentsStore.push(newAtt);
+            refreshAttachmentsGui();
+            session.editedPages.set(pageNum, {
+                base64: newBase64,
+                mimeType: newMime,
+                size: newSize,
+            });
+            _offerPdfExport(session);
+            return newAtt;
+        },
+    };
+}
+
+function _offerPdfExport(session) {
+    const n = session.editedPages.size;
+    if (n === 0) return;
+    const proceed = window.confirm(
+        `${n} page(s) saved.\n\n` +
+        'Export changes back to PDF?\n\n' +
+        'Edited pages will be stored as images. Other pages stay unchanged.\n' +
+        'Text on edited pages will no longer be selectable.'
+    );
+    if (!proceed) return;
+    const overwrite = window.confirm(
+        'Overwrite the original PDF attachment?\n\n' +
+        'OK = overwrite original\n' +
+        'Cancel = save as a new PDF file'
+    );
+    _exportPdfWithEdits(session, overwrite ? 'overwrite' : 'new');
+}
+
+async function _exportPdfWithEdits(session, mode) {
+    try {
+        const srcDoc = await PDFDocument.load(session.originalBytes);
+        const outDoc = await PDFDocument.create();
+
+        for (let i = 0; i < session.numPages; i++) {
+            const pageNum = i + 1;
+            const edited = session.editedPages.get(pageNum);
+            if (edited) {
+                const size = session.pageSizes.get(pageNum);
+                if (!size) throw new Error(`Missing page size for page ${pageNum}`);
+                const imgBytes = _attToUint8Array({ data: edited.base64 });
+                const image = edited.mimeType === 'image/jpeg'
+                    ? await outDoc.embedJpg(imgBytes)
+                    : await outDoc.embedPng(imgBytes);
+                const page = outDoc.addPage([size.widthPt, size.heightPt]);
+                page.drawImage(image, {
+                    x: 0,
+                    y: 0,
+                    width: size.widthPt,
+                    height: size.heightPt,
+                });
+            } else {
+                const [copiedPage] = await outDoc.copyPages(srcDoc, [i]);
+                outDoc.addPage(copiedPage);
+            }
+        }
+
+        const pdfBytes = await outDoc.save();
+        const base64 = _uint8ArrayToBase64(pdfBytes);
+
+        if (mode === 'overwrite') {
+            session.sourceAtt.data = base64;
+            session.sourceAtt.size = pdfBytes.length;
+            session.sourceAtt.mimeType = 'application/pdf';
+            alert('PDF updated.');
+        } else {
+            const baseName = _pdfBaseName(session.sourceAtt.name);
+            const newName = _uniqueAttachmentName(`${baseName}-edited.pdf`);
+            attachmentsStore.push({
+                id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+                name: newName,
+                mimeType: 'application/pdf',
+                data: base64,
+                size: pdfBytes.length,
+                addedAt: new Date().toISOString(),
+            });
+            alert(`Saved as "${newName}".`);
+        }
+
+        // Keep session alive for other open page editors; base PDF reflects latest export
+        session.originalBytes = pdfBytes;
+        session.editedPages.clear();
+        refreshAttachmentsGui();
+    } catch (err) {
+        console.error(err);
+        alert('Failed to export PDF: ' + (err.message || err));
+    }
+}
+
+async function _editPdf(att) {
+    if (_pdfEditing || _pdfConverting) return;
+    if (_modalEl) _modalEl.style.display = 'none';
+
+    _pdfEditing = true;
+    try {
+        const bytes = _attToUint8Array(att);
+        const pdf = await pdfjsLib.getDocument({ data: bytes.slice() }).promise;
+        const numPages = pdf.numPages;
+
+        const pageInput = window.prompt(
+            `Pages to edit (${numPages} total).\n` +
+            'Examples: all   or   1   or   1, 3-5',
+            'all'
+        );
+        if (pageInput == null) return;
+
+        const selectedPages = _parsePageSelection(pageInput, numPages);
+        if (!selectedPages) {
+            alert('Invalid page selection.');
+            return;
+        }
+
+        const options = _askPdfConvertOptions();
+        if (!options) return;
+
+        const { format, scale, jpegQuality } = options;
+        const mimeType = (format === 'jpg' || format === 'jpeg') ? 'image/jpeg' : 'image/png';
+        const ext = mimeType === 'image/jpeg' ? 'jpg' : 'png';
+        const baseName = _pdfBaseName(att.name);
+
+        window.alert(
+            'Edited pages will be saved as images inside the PDF.\n' +
+            'Other pages stay unchanged.\n' +
+            'After saving a page in the editor, you will be asked to export back to PDF.\n' +
+            'Tip: save all pages first, then export once.'
+        );
+
+        const session = {
+            sourceAtt: att,
+            originalBytes: bytes,
+            numPages,
+            scale,
+            pageSizes: new Map(),
+            editedPages: new Map(),
+        };
+        _pdfEditSession = session;
+
+        const pageAtts = [];
+        for (const pageNum of selectedPages) {
+            const { canvas, widthPt, heightPt } = await _renderPdfPageCanvas(pdf, pageNum, scale);
+            session.pageSizes.set(pageNum, { widthPt, heightPt });
+
+            const blob = await _canvasToBlob(canvas, mimeType, jpegQuality);
+            const data = await _blobToBase64(blob);
+            const pageAtt = {
+                id: `pdf-edit-${att.id}-${pageNum}`,
+                name: numPages === 1 ? `${baseName}.${ext}` : `${baseName}-page-${pageNum}.${ext}`,
+                mimeType,
+                data,
+                size: blob.size,
+                addedAt: new Date().toISOString(),
+                _pdfEditPageNum: pageNum,
+            };
+            pageAtts.push(pageAtt);
+        }
+
+        pageAtts.forEach(pageAtt => {
+            const pageNum = pageAtt._pdfEditPageNum;
+            const cbs = _makePdfPageEditCallbacks(session, pageNum);
+            openImageEditor(pageAtt, cbs.onSaveOverwrite, cbs.onSaveNew);
+        });
+
+        if (pageAtts.length > 1) {
+            setTimeout(() => {
+                if (window.confirm('Arrange editor windows as tile?')) {
+                    autoArrangeImageEditors();
+                }
+            }, 150);
+        }
+    } catch (err) {
+        console.error(err);
+        alert('Cannot open PDF for editing: ' + (err.message || err));
+        _pdfEditSession = null;
+    } finally {
+        _pdfEditing = false;
+    }
 }
 
 function _pdfBaseName(name) {
@@ -791,31 +1069,16 @@ async function _convertPdfToImages(att, options) {
     _updateConvertBtnState(true);
 
     try {
-        const binary = atob(att.data);
-        const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-
-        const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
+        const bytes = _attToUint8Array(att);
+        const pdf = await pdfjsLib.getDocument({ data: bytes.slice() }).promise;
         const numPages = pdf.numPages;
         const baseName = _pdfBaseName(att.name);
         let added = 0;
 
         for (let pageNum = 1; pageNum <= numPages; pageNum++) {
-            const page = await pdf.getPage(pageNum);
-            const viewport = page.getViewport({ scale });
-            const canvas = document.createElement('canvas');
-            canvas.width = viewport.width;
-            canvas.height = viewport.height;
-            const ctx = canvas.getContext('2d');
-            await page.render({ canvasContext: ctx, viewport, canvas }).promise;
+            const { canvas } = await _renderPdfPageCanvas(pdf, pageNum, scale);
 
-            const blob = await new Promise((resolve, reject) => {
-                canvas.toBlob(
-                    b => (b ? resolve(b) : reject(new Error('toBlob failed'))),
-                    mimeType,
-                    mimeType === 'image/jpeg' ? jpegQuality : undefined
-                );
-            });
+            const blob = await _canvasToBlob(canvas, mimeType, jpegQuality);
 
             const proposedName = numPages === 1
                 ? `${baseName}.${ext}`
