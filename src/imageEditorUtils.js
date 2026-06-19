@@ -40,6 +40,9 @@ let _fontSize   = 18;
 let _fontFamily = 'sans-serif';
 let _eraserShape = 'circle';  // 'circle' | 'square'
 let _shapeFill   = false;
+let _crosshairColor     = '#00ff00';
+let _crosshairCursorCss = null;
+let _textCursorCss      = null;
 
 // Clipboard (shared across all instances + system clipboard)
 let _clipboardData = null;    // ImageData | null
@@ -191,6 +194,9 @@ function _ensureToolbar() {
                 <input type="checkbox" id="img-ed-bg-enable" title="Enable background color" checked>
                 BG <input type="color" id="img-ed-bgcolor" value="#ffffff">
             </label>
+            <label class="img-ed-label" title="Crosshair cursor color">
+                Cursor <input type="color" id="img-ed-cursor-color" value="#00ff00">
+            </label>
             <label class="img-ed-label" title="Brush / stroke size">
                 Size <input type="number" id="img-ed-pensize" min="1" max="100" value="3" style="width:44px">
             </label>
@@ -248,6 +254,13 @@ function _ensureToolbar() {
     bgEnableCb.addEventListener('change', _syncBg);
     bgColorInp.addEventListener('input',  _syncBg);
     _syncBg();
+
+    _toolbarEl.querySelector('#img-ed-cursor-color').addEventListener('input', e => {
+        _crosshairColor = e.target.value;
+        _crosshairCursorCss = null;
+        _textCursorCss = null;
+        _instances.forEach(inst => _updateCursor(inst));
+    });
 
     _toolbarEl.querySelector('#img-ed-pensize').addEventListener('input', e => {
         _penSize = +e.target.value;
@@ -614,6 +627,51 @@ function _updateHint(inst) {
     if (el) el.textContent = hints[_activeTool] || '';
 }
 
+function _getCrosshairCursorCss() {
+    if (_crosshairCursorCss) return _crosshairCursorCss;
+    const size = 32;
+    const hot = size / 2;
+    const arm = 12;
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
+    const cx = c.getContext('2d');
+    const drawCross = (strokeStyle, lineWidth) => {
+        cx.strokeStyle = strokeStyle;
+        cx.lineWidth = lineWidth;
+        cx.beginPath();
+        cx.moveTo(hot - arm, hot); cx.lineTo(hot + arm, hot);
+        cx.moveTo(hot, hot - arm); cx.lineTo(hot, hot + arm);
+        cx.stroke();
+    };
+    drawCross('rgba(0,0,0,0.7)', 2);
+    drawCross(_crosshairColor, 1);
+    _crosshairCursorCss = `url(${c.toDataURL()}) ${hot} ${hot}, crosshair`;
+    return _crosshairCursorCss;
+}
+
+function _getTextCursorCss() {
+    if (_textCursorCss) return _textCursorCss;
+    const size = 32;
+    const hotX = 16;
+    const hotY = 22;
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
+    const cx = c.getContext('2d');
+    const drawIBeam = (strokeStyle, lineWidth) => {
+        cx.strokeStyle = strokeStyle;
+        cx.lineWidth = lineWidth;
+        cx.beginPath();
+        cx.moveTo(12, 6); cx.lineTo(20, 6);
+        cx.moveTo(hotX, 6); cx.lineTo(hotX, hotY);
+        cx.moveTo(12, hotY); cx.lineTo(20, hotY);
+        cx.stroke();
+    };
+    drawIBeam('rgba(0,0,0,0.7)', 2);
+    drawIBeam(_crosshairColor, 1);
+    _textCursorCss = `url(${c.toDataURL()}) ${hotX} ${hotY}, text`;
+    return _textCursorCss;
+}
+
 function _updateCursor(inst) {
     const vp = inst.winEl && inst.winEl.querySelector('.img-editor-viewport');
     if (!vp) return;
@@ -644,10 +702,12 @@ function _updateCursor(inst) {
         return;
     }
 
+    const cross = _getCrosshairCursorCss();
+    const text = _getTextCursorCss();
     const cursors = {
-        pan: 'grab', crop: 'crosshair', pen: 'crosshair', text: 'text',
-        rect: 'crosshair', ellipse: 'crosshair', line: 'crosshair', arrow: 'crosshair',
-        callout: 'crosshair', blur: 'crosshair', select: 'crosshair',
+        pan: 'grab', crop: cross, pen: cross, text,
+        rect: cross, ellipse: cross, line: cross, arrow: cross,
+        callout: cross, blur: cross, select: cross,
     };
     vp.style.cursor = cursors[_activeTool] || 'default';
 }
@@ -863,7 +923,7 @@ function _onMouseMove(inst, e, ovCanvas, ovCtx) {
         const inBox = imgPt.x >= inst.textBBox.x && imgPt.x <= inst.textBBox.x + inst.textBBox.w &&
                       imgPt.y >= inst.textBBox.y && imgPt.y <= inst.textBBox.y + inst.textBBox.h;
         const vp = inst.winEl && inst.winEl.querySelector('.img-editor-viewport');
-        if (vp) vp.style.cursor = inBox ? 'move' : 'text';
+        if (vp) vp.style.cursor = inBox ? 'move' : _getTextCursorCss();
     }
 
     if (_activeTool === 'select' && inst.selRect && !inst.isSelectingRect && !inst.isMovingSel && !inst.isResizingSel) {
@@ -873,7 +933,7 @@ function _onMouseMove(inst, e, ovCanvas, ovCtx) {
             const handle = _hitTestSelHandle(inst, selPt);
             if (handle) vpEl.style.cursor = _cursorForSelHandle(handle);
             else if (_ptInRect(selPt, inst.selRect)) vpEl.style.cursor = 'move';
-            else vpEl.style.cursor = 'crosshair';
+            else vpEl.style.cursor = _getCrosshairCursorCss();
         }
     }
 
