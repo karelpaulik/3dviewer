@@ -1,6 +1,16 @@
 // jitsiCall.js
 // Lightweight Jitsi Meet embed (no backend required).
 
+import {
+    CALL_TYPE_JITSI,
+    generateRoomId,
+    sanitizeRoomId,
+    sanitizeHostname,
+    applyUrlParams,
+    buildShareUrl,
+    clearCallParamsFromUrl,
+} from './callUtils.js';
+
 export const JITSI_SERVER_PRESETS = [
     'meet.jit.si',
     'meet.ffmuc.net',
@@ -12,8 +22,6 @@ export const JITSI_CUSTOM_PRESET = 'Custom';
 const DEFAULT_JITSI_DOMAIN = 'meet.jit.si';
 const STORAGE_KEY = 'bedobe-jitsi-domain';
 const STORAGE_KEY_CUSTOM = 'bedobe-jitsi-custom-domain';
-const ROOM_ID_RE = /^[a-zA-Z0-9_-]{4,64}$/;
-const DOMAIN_RE = /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)+$/;
 
 let _dialog = null;
 let _iframe = null;
@@ -24,31 +32,8 @@ let _minimized = false;
 let _jitsiDomain = DEFAULT_JITSI_DOMAIN;
 let _customDomain = '';
 
-function generateRoomId() {
-    const suffix = crypto.randomUUID().replace(/-/g, '').slice(0, 10);
-    return `bedobe-${suffix}`;
-}
-
-function sanitizeRoomId(roomId) {
-    if (!roomId || !ROOM_ID_RE.test(roomId)) {
-        return null;
-    }
-    return roomId;
-}
-
 export function sanitizeJitsiDomain(input) {
-    if (!input || typeof input !== 'string') return null;
-
-    let value = input.trim();
-    if (!value) return null;
-
-    value = value.replace(/^https?:\/\//i, '');
-    value = value.split('/')[0].split('?')[0].split('#')[0];
-    value = value.replace(/:\d+$/, '');
-    value = value.toLowerCase();
-
-    if (!DOMAIN_RE.test(value)) return null;
-    return value;
+    return sanitizeHostname(input);
 }
 
 function persistJitsiDomain(domain) {
@@ -109,22 +94,12 @@ export function getJitsiCustomDomain() {
     return _customDomain;
 }
 
-function applyUrlParams(params) {
-    const query = params.toString();
-    history.replaceState(null, '', query ? `${location.pathname}?${query}` : location.pathname);
-}
-
 function syncActiveCallInUrl(roomId) {
     const params = new URLSearchParams(window.location.search);
     params.set('room', roomId);
     params.set('jitsi', _jitsiDomain);
-    applyUrlParams(params);
-}
-
-function clearCallParamsFromUrl() {
-    const params = new URLSearchParams(window.location.search);
-    params.delete('room');
-    params.delete('jitsi');
+    params.delete('call');
+    params.delete('peer');
     applyUrlParams(params);
 }
 
@@ -208,14 +183,6 @@ function buildJitsiIframeUrl(roomId) {
     return `https://${_jitsiDomain}/${encodeURIComponent(roomId)}#${hash}`;
 }
 
-function syncRoomInUrl(roomId) {
-    syncActiveCallInUrl(roomId);
-}
-
-function removeRoomFromUrl() {
-    clearCallParamsFromUrl();
-}
-
 function updateRoomLabel() {
     if (!_roomLabel) return;
 
@@ -294,11 +261,7 @@ export function getJitsiRoomId() {
 export function buildJitsiShareUrl(roomId) {
     const id = sanitizeRoomId(roomId) || _currentRoomId;
     if (!id) return window.location.href;
-
-    const params = new URLSearchParams(window.location.search);
-    params.set('room', id);
-    params.set('jitsi', _jitsiDomain);
-    return `${window.location.origin}${window.location.pathname}?${params}`;
+    return buildShareUrl(id, CALL_TYPE_JITSI, { jitsi: _jitsiDomain });
 }
 
 export async function copyJitsiInviteLink() {
@@ -316,12 +279,15 @@ export async function copyJitsiInviteLink() {
     }
 }
 
-export function startJitsiCall(roomId) {
+export async function startJitsiCall(roomId) {
+    const { leavePeerCall } = await import('./peerJSCall.js');
+    leavePeerCall();
+
     initJitsiCall();
 
     const id = sanitizeRoomId(roomId) || _currentRoomId || generateRoomId();
     _currentRoomId = id;
-    syncRoomInUrl(id);
+    syncActiveCallInUrl(id);
     updateRoomLabel();
 
     if (_iframe) {
@@ -341,7 +307,7 @@ export function leaveJitsiCall() {
     }
     _currentRoomId = null;
     updateRoomLabel();
-    removeRoomFromUrl();
+    clearCallParamsFromUrl();
     setJitsiCallMinimized(false);
 
     if (_dialog?.open) {

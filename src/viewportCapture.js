@@ -140,12 +140,10 @@ function waitForVideoReady(video, timeoutMs = 10000) {
 }
 
 /**
- * Capture via getDisplayMedia (WYSIWYG screen pixels).
- * Tab (`browser`): normalized to stable page pixels (innerWidth/Height × devicePixelRatio).
- * Window or monitor: full captured frame at native stream resolution.
- * @returns {Promise<HTMLCanvasElement>}
+ * Live display capture stream for screen sharing (caller must stop tracks when done).
+ * @returns {Promise<{ stream: MediaStream, track: MediaStreamTrack, displaySurface?: string }>}
  */
-export async function captureScreenFromDisplayMedia() {
+export async function acquireLiveDisplayStream() {
     if (!navigator.mediaDevices?.getDisplayMedia) {
         throw new Error('Screen capture is not supported in this browser.');
     }
@@ -162,18 +160,36 @@ export async function captureScreenFromDisplayMedia() {
                 height: { ideal: idealH },
             },
             audio: false,
-            // Optional Chrome hint: show this tab without restricting the picker (no preferCurrentTab).
             selfBrowserSurface: 'include',
         });
     } catch (err) {
         if (err.name === 'NotAllowedError' || err.name === 'AbortError') {
-            throw new Error('Screen capture was cancelled.');
+            throw new Error('Screen sharing was cancelled.');
         }
         throw err;
     }
 
     const track = stream.getVideoTracks()[0];
-    const displaySurface = track?.getSettings?.().displaySurface;
+    if (!track) {
+        stream.getTracks().forEach((t) => t.stop());
+        throw new Error('No video track in screen capture.');
+    }
+
+    return {
+        stream,
+        track,
+        displaySurface: track.getSettings?.().displaySurface,
+    };
+}
+
+/**
+ * Capture via getDisplayMedia (WYSIWYG screen pixels).
+ * Tab (`browser`): normalized to stable page pixels (innerWidth/Height × devicePixelRatio).
+ * Window or monitor: full captured frame at native stream resolution.
+ * @returns {Promise<HTMLCanvasElement>}
+ */
+export async function captureScreenFromDisplayMedia() {
+    const { stream, displaySurface } = await acquireLiveDisplayStream();
 
     const video = document.createElement('video');
     video.srcObject = stream;
@@ -186,7 +202,7 @@ export async function captureScreenFromDisplayMedia() {
 
         return canvasFromVideoFrame(video, displaySurface);
     } finally {
-        stream.getTracks().forEach(track => track.stop());
+        stream.getTracks().forEach((t) => t.stop());
         video.srcObject = null;
     }
 }

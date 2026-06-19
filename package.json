@@ -41,6 +41,7 @@
     "lil-gui": "^0.21.0",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^6.0.227",
+    "peerjs": "^1.5.5",
     "tesseract.js": "^7.0.0",
     "three": "^0.182.0",
     "three-bvh-csg": "^0.0.18",

@@ -224,6 +224,205 @@ a:hover {
     display: none;
 }
 
+/* ── PeerJS call panel (non-modal) ──────────────────────── */
+#peer-call-dialog {
+    position: fixed;
+    left: 16px;
+    bottom: 16px;
+    top: auto;
+    right: auto;
+    margin: 0;
+    background: #2a2a2a;
+    color: #eee;
+    padding: 14px 16px 16px;
+    border-radius: 10px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    border: none;
+    width: min(520px, calc(100vw - 32px));
+    max-height: min(560px, calc(100vh - 100px));
+    z-index: 1201;
+}
+#peer-call-dialog[open] {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+#peer-call-dialog::backdrop {
+    background: transparent;
+}
+.peer-call-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+.peer-call-header h2 {
+    margin: 0;
+    font-size: 15px;
+    color: #fff;
+    letter-spacing: 0.5px;
+}
+.peer-call-room,
+.peer-call-status {
+    font-size: 11px;
+    color: #888;
+    word-break: break-all;
+}
+.peer-call-status {
+    color: #aaa;
+}
+.peer-call-header-spacer {
+    flex: 1;
+    min-width: 8px;
+}
+.peer-call-btn {
+    padding: 5px 12px;
+    cursor: pointer;
+    border: none;
+    border-radius: 4px;
+    background: #555;
+    color: #eee;
+    font-size: 12px;
+    text-transform: none;
+}
+.peer-call-btn:hover {
+    background: #666;
+}
+.peer-call-btn-leave {
+    background: #7a3030;
+}
+.peer-call-btn-leave:hover {
+    background: #943838;
+}
+.peer-call-video-wrap {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    border-radius: 6px;
+}
+.peer-call-video-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 8px;
+    min-height: 240px;
+    max-height: 420px;
+    overflow: auto;
+    background: #111;
+    padding: 8px;
+    border-radius: 6px;
+}
+.peer-call-video {
+    display: block;
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    object-fit: cover;
+    border-radius: 4px;
+    background: #000;
+}
+.peer-call-video-local {
+    border: 2px solid #4a7a4a;
+}
+.peer-call-audio-tile {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 80px;
+    padding: 12px;
+    border-radius: 4px;
+    background: #1a1a1a;
+    color: #aaa;
+    font-size: 11px;
+    text-align: center;
+    word-break: break-all;
+}
+.peer-call-local-audio-placeholder {
+    border: 2px solid #4a5a7a;
+}
+.peer-call-local-screen-placeholder {
+    border: 2px solid #3a6a9a;
+}
+.peer-call-video-local.peer-call-video-screen {
+    border: 2px solid #3a6a9a;
+}
+.peer-call-btn-active {
+    background: #3a5a7a;
+}
+.peer-call-btn-active:hover {
+    background: #4a6a8a;
+}
+.peer-call-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+#peer-call-dialog.peer-call-minimized {
+    width: auto;
+    min-width: 280px;
+    padding-bottom: 14px;
+    max-height: none;
+}
+#peer-call-dialog.peer-call-minimized .peer-call-video-wrap {
+    display: none;
+}
+#peer-call-dialog.peer-call-minimized .peer-call-room,
+#peer-call-dialog.peer-call-minimized .peer-call-status {
+    display: none;
+}
+
+/* ── PeerJS remote fullscreen overlay ───────────────────── */
+.peer-call-fullscreen {
+    position: fixed;
+    inset: 0;
+    z-index: 1300;
+    background: #000;
+    display: flex;
+    flex-direction: column;
+}
+.peer-call-fullscreen[hidden] {
+    display: none;
+}
+.peer-call-fullscreen-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    background: #1a1a1a;
+    color: #eee;
+    flex-shrink: 0;
+}
+.peer-call-fullscreen-label {
+    font-size: 12px;
+    color: #aaa;
+    word-break: break-all;
+}
+#peer-fullscreen-video {
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+    object-fit: contain;
+    background: #000;
+}
+.peer-call-remote-wrap {
+    position: relative;
+}
+.peer-call-fs-btn {
+    position: absolute;
+    right: 4px;
+    bottom: 4px;
+    padding: 2px 6px;
+    cursor: pointer;
+    border: none;
+    border-radius: 3px;
+    background: rgba(0, 0, 0, 0.65);
+    color: #eee;
+    font-size: 14px;
+    line-height: 1.2;
+}
+.peer-call-fs-btn:hover {
+    background: rgba(40, 40, 40, 0.9);
+}
+
 .bom-header {
     display: flex;
     align-items: baseline;
