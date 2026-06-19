@@ -10,6 +10,7 @@ import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { buildWysiwygEditor } from './annotationUtils.js';
 import { openImageEditor, autoArrangeImageEditors } from './imageEditorUtils.js';
 import { runOcr, runOcrWithProgress, showOcrResultDialog } from './ocrUtils.js';
+import { openPdfPageManager } from './pdfPageManagerUtils.js';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
@@ -17,6 +18,7 @@ let attachmentsStore = []; // [{ id, name, mimeType, data (base64 string), size,
 let _guiRef = null;
 let _pdfConverting = false;
 let _pdfEditing = false;
+let _pdfPageManaging = false;
 /** @type {{ sourceAtt: object, originalBytes: Uint8Array, numPages: number, scale: number, pageSizes: Map<number, { widthPt: number, heightPt: number }>, editedPages: Map<number, { base64: string, mimeType: string, size: number }> } | null} */
 let _pdfEditSession = null;
 let _saveScreenCaptureFn = null;
@@ -122,6 +124,7 @@ export function refreshAttachmentsGui() {
         }
         if (att.mimeType === 'application/pdf') {
             folder.add({ fn: () => _editPdf(att) }, 'fn').name('✏  Edit PDF…');
+            folder.add({ fn: () => _managePdfPages(att) }, 'fn').name('📄  Manage PDF pages…');
             folder.add({ fn: () => _convertPdfToImages(att) }, 'fn').name('🖼 Convert to images…');
         }
         folder.add({ fn: () => _downloadAttachment(att) }, 'fn').name('⬇  Download');
@@ -224,6 +227,7 @@ function _buildModal() {
                 </span>
                 <button id="att-modal-ocr-btn" title="Recognize text (OCR)" style="display:none;background:none;border:1px solid #555;color:#aaa;font-size:12px;cursor:pointer;line-height:1;padding:2px 8px;border-radius:3px;flex-shrink:0;">🔤 OCR</button>
                 <button id="att-modal-edit-btn" title="Edit image" style="display:none;background:none;border:1px solid #555;color:#aaa;font-size:12px;cursor:pointer;line-height:1;padding:2px 8px;border-radius:3px;flex-shrink:0;">✏ Edit</button>
+                <button id="att-modal-pages-btn" title="Reorder, add, or delete PDF pages" style="display:none;background:none;border:1px solid #555;color:#aaa;font-size:12px;cursor:pointer;line-height:1;padding:2px 8px;border-radius:3px;flex-shrink:0;">📄 Pages</button>
                 <button id="att-modal-convert-btn" title="Convert PDF pages to PNG/JPG images" style="display:none;background:none;border:1px solid #555;color:#aaa;font-size:12px;cursor:pointer;line-height:1;padding:2px 8px;border-radius:3px;flex-shrink:0;">🖼 → Images</button>
                 <button id="att-modal-comment-btn" title="Comment" style="background:none;border:1px solid #555;color:#aaa;font-size:12px;cursor:pointer;line-height:1;padding:2px 8px;border-radius:3px;flex-shrink:0;">💬</button>
                 <button id="att-modal-close" style="background:none;border:none;color:#eee;font-size:20px;cursor:pointer;line-height:1;padding:0 4px;margin-left:4px;flex-shrink:0;">✕</button>
@@ -247,6 +251,10 @@ function _buildModal() {
         if (!att) return;
         if (att.mimeType === 'application/pdf') _editPdf(att);
         else _editAttachment(att);
+    });
+    _modalEl.querySelector('#att-modal-pages-btn').addEventListener('click', () => {
+        const att = _carouselList[_carouselIndex];
+        if (att) _managePdfPages(att);
     });
     _modalEl.querySelector('#att-modal-convert-btn').addEventListener('click', () => {
         const att = _carouselList[_carouselIndex];
@@ -635,6 +643,8 @@ function _renderModal(att) {
         editBtn.textContent = mime === 'application/pdf' ? '✏ Edit PDF' : '✏ Edit';
         editBtn.title = mime === 'application/pdf' ? 'Edit PDF pages' : 'Edit image';
     }
+    const pagesBtn = _modalEl.querySelector('#att-modal-pages-btn');
+    if (pagesBtn) pagesBtn.style.display = (mime === 'application/pdf') ? '' : 'none';
     const convertBtn = _modalEl.querySelector('#att-modal-convert-btn');
     if (convertBtn) convertBtn.style.display = (mime === 'application/pdf') ? '' : 'none';
     _updateConvertBtnState(_pdfConverting);
@@ -859,6 +869,35 @@ function _offerPdfExport(session) {
     _exportPdfWithEdits(session, overwrite ? 'overwrite' : 'new');
 }
 
+function _isPdfBusy() {
+    return _pdfEditing || _pdfConverting || _pdfPageManaging;
+}
+
+function _commitPdfAttachment(att, pdfBytes, mode) {
+    const base64 = _uint8ArrayToBase64(pdfBytes);
+
+    if (mode === 'overwrite') {
+        att.data = base64;
+        att.size = pdfBytes.length;
+        att.mimeType = 'application/pdf';
+        alert('PDF updated.');
+    } else {
+        const baseName = _pdfBaseName(att.name);
+        const newName = _uniqueAttachmentName(`${baseName}-pages-edited.pdf`);
+        attachmentsStore.push({
+            id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+            name: newName,
+            mimeType: 'application/pdf',
+            data: base64,
+            size: pdfBytes.length,
+            addedAt: new Date().toISOString(),
+        });
+        alert(`Saved as "${newName}".`);
+    }
+
+    refreshAttachmentsGui();
+}
+
 async function _exportPdfWithEdits(session, mode) {
     try {
         const srcDoc = await PDFDocument.load(session.originalBytes);
@@ -888,13 +927,9 @@ async function _exportPdfWithEdits(session, mode) {
         }
 
         const pdfBytes = await outDoc.save();
-        const base64 = _uint8ArrayToBase64(pdfBytes);
 
         if (mode === 'overwrite') {
-            session.sourceAtt.data = base64;
-            session.sourceAtt.size = pdfBytes.length;
-            session.sourceAtt.mimeType = 'application/pdf';
-            alert('PDF updated.');
+            _commitPdfAttachment(session.sourceAtt, pdfBytes, 'overwrite');
         } else {
             const baseName = _pdfBaseName(session.sourceAtt.name);
             const newName = _uniqueAttachmentName(`${baseName}-edited.pdf`);
@@ -902,25 +937,45 @@ async function _exportPdfWithEdits(session, mode) {
                 id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
                 name: newName,
                 mimeType: 'application/pdf',
-                data: base64,
+                data: _uint8ArrayToBase64(pdfBytes),
                 size: pdfBytes.length,
                 addedAt: new Date().toISOString(),
             });
             alert(`Saved as "${newName}".`);
+            refreshAttachmentsGui();
         }
 
         // Keep session alive for other open page editors; base PDF reflects latest export
         session.originalBytes = pdfBytes;
         session.editedPages.clear();
-        refreshAttachmentsGui();
     } catch (err) {
         console.error(err);
         alert('Failed to export PDF: ' + (err.message || err));
     }
 }
 
+async function _managePdfPages(att) {
+    if (_isPdfBusy()) {
+        alert('Another PDF operation is in progress. Please wait.');
+        return;
+    }
+    if (_modalEl) _modalEl.style.display = 'none';
+
+    await openPdfPageManager(att, {
+        attToUint8Array: _attToUint8Array,
+        uint8ArrayToBase64: _uint8ArrayToBase64,
+        parsePageSelection: _parsePageSelection,
+        pdfBaseName: _pdfBaseName,
+        uniqueAttachmentName: _uniqueAttachmentName,
+        getImageAttachments: () => attachmentsStore.filter(a => a.mimeType && a.mimeType.startsWith('image/')),
+        commitPdfAttachment: _commitPdfAttachment,
+        onOpen: () => { _pdfPageManaging = true; },
+        onClose: () => { _pdfPageManaging = false; },
+    });
+}
+
 async function _editPdf(att) {
-    if (_pdfEditing || _pdfConverting) return;
+    if (_isPdfBusy()) return;
     if (_modalEl) _modalEl.style.display = 'none';
 
     _pdfEditing = true;
@@ -1117,7 +1172,7 @@ function _updateConvertBtnState(busy) {
 }
 
 async function _convertPdfToImages(att, options) {
-    if (_pdfConverting) return;
+    if (_isPdfBusy()) return;
     if (!options) {
         options = _askPdfConvertOptions();
         if (!options) return;
