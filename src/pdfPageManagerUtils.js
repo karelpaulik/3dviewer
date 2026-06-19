@@ -113,7 +113,7 @@ function _ensureModal() {
     _modalEl = document.createElement('div');
     _modalEl.id = 'pdf-page-manager-modal';
     _modalEl.style.cssText =
-        'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,0.85);' +
+        'position:fixed;inset:0;z-index:100003;background:rgba(0,0,0,0.85);' +
         'display:none;flex-direction:column;align-items:center;justify-content:center;' +
         'padding:16px;box-sizing:border-box;font-family:sans-serif;';
 

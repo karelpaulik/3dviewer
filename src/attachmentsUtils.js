@@ -7,7 +7,13 @@ import JSZip from 'jszip';
 import { PDFDocument } from 'pdf-lib';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-import { buildWysiwygEditor } from './annotationUtils.js';
+import {
+    openFilePreview,
+    closeFilePreviewForAttachment,
+    isFilePreviewOpenForAttachment,
+    autoArrangeFilePreviews,
+    updateFilePreviewConvertState,
+} from './filePreviewUtils.js';
 import { openImageEditor, autoArrangeImageEditors } from './imageEditorUtils.js';
 import { runOcr, runOcrWithProgress, showOcrResultDialog } from './ocrUtils.js';
 import { openPdfPageManager } from './pdfPageManagerUtils.js';
@@ -93,6 +99,21 @@ export function refreshAttachmentsGui() {
     // "Download all as ZIP" button — only shown when there is at least one attachment
     if (attachmentsStore.length > 0) {
         _guiRef.add({ fn: _downloadAllAsZip }, 'fn').name('⬇  Download all as ZIP');
+    }
+
+    // "Open all viewable" button
+    const viewableAtts = attachmentsStore.filter(a => _canOpenInBrowser(a.mimeType));
+    if (viewableAtts.length > 0) {
+        _guiRef.add({ fn: () => {
+            viewableAtts.forEach(a => _openAttachment(a));
+            if (viewableAtts.length > 1) {
+                setTimeout(() => {
+                    if (window.confirm('Arrange windows as tile?')) {
+                        autoArrangeFilePreviews();
+                    }
+                }, 150);
+            }
+        } }, 'fn').name('↗  Open all viewable…');
     }
 
     // "Edit all images" button — only shown when there is at least one image attachment
@@ -203,164 +224,19 @@ function _canOpenInBrowser(mimeType) {
     );
 }
 
-let _modalEl = null;
-let _activeBlobUrl = null;
-let _carouselList = []; // filtered list of openable attachments
-let _carouselIndex = 0;
-let _commentPanelOpen = false;
-let _commentEditorContent = null; // the contenteditable div inside the comment editor
+const _previewHandlers = {
+    onOcr: (att, ocrBtn) => _runOcrOnPreviewAttachment(att, ocrBtn),
+    onEdit: att => _editAttachment(att),
+    onEditPdf: att => _editPdf(att),
+    onManagePages: att => _managePdfPages(att),
+    onConvertPdf: att => _convertPdfToImages(att),
+    onNameChanged: () => refreshAttachmentsGui(),
+    onClose: () => refreshAttachmentsGui(),
+    onAfterRender: () => _updateConvertBtnState(_pdfConverting),
+};
 
-function _buildModal() {
-    if (_modalEl) return;
-    _modalEl = document.createElement('div');
-    _modalEl.id = 'att-modal';
-    _modalEl.style.cssText = 'position:fixed;inset:0;z-index:99990;background:rgba(0,0,0,0.82);display:none;flex-direction:column;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;';
-    _modalEl.innerHTML = `
-        <div style="position:relative;width:100%;max-width:1100px;height:90vh;background:#1a1a1a;border-radius:8px;overflow:hidden;display:flex;flex-direction:column;">
-            <div style="display:flex;align-items:center;gap:6px;padding:8px 14px;background:#2a2a2a;flex-shrink:0;">
-                <button id="att-modal-prev" style="background:none;border:none;color:#eee;font-size:18px;cursor:pointer;line-height:1;padding:0 4px;">‹</button>
-                <span id="att-modal-counter" style="color:#aaa;font-size:12px;font-family:sans-serif;white-space:nowrap;"></span>
-                <button id="att-modal-next" style="background:none;border:none;color:#eee;font-size:18px;cursor:pointer;line-height:1;padding:0 4px;">›</button>
-                <span id="att-modal-title" style="display:flex;align-items:center;flex:1;min-width:0;margin-left:4px;overflow:hidden;">
-                    <input id="att-modal-name-input" title="Click to rename (extension is read-only)" style="background:transparent;border:none;border-bottom:1px solid transparent;color:#eee;font-size:13px;font-family:sans-serif;outline:none;flex:1;min-width:0;padding:0;cursor:text;" />
-                    <span id="att-modal-name-ext" style="color:#888;font-size:13px;font-family:sans-serif;white-space:nowrap;flex-shrink:0;"></span>
-                </span>
-                <button id="att-modal-ocr-btn" title="Recognize text (OCR)" style="display:none;background:none;border:1px solid #555;color:#aaa;font-size:12px;cursor:pointer;line-height:1;padding:2px 8px;border-radius:3px;flex-shrink:0;">🔤 OCR</button>
-                <button id="att-modal-edit-btn" title="Edit image" style="display:none;background:none;border:1px solid #555;color:#aaa;font-size:12px;cursor:pointer;line-height:1;padding:2px 8px;border-radius:3px;flex-shrink:0;">✏ Edit</button>
-                <button id="att-modal-pages-btn" title="Reorder, add, or delete PDF pages" style="display:none;background:none;border:1px solid #555;color:#aaa;font-size:12px;cursor:pointer;line-height:1;padding:2px 8px;border-radius:3px;flex-shrink:0;">📄 Pages</button>
-                <button id="att-modal-convert-btn" title="Convert PDF pages to PNG/JPG images" style="display:none;background:none;border:1px solid #555;color:#aaa;font-size:12px;cursor:pointer;line-height:1;padding:2px 8px;border-radius:3px;flex-shrink:0;">🖼 → Images</button>
-                <button id="att-modal-comment-btn" title="Comment" style="background:none;border:1px solid #555;color:#aaa;font-size:12px;cursor:pointer;line-height:1;padding:2px 8px;border-radius:3px;flex-shrink:0;">💬</button>
-                <button id="att-modal-close" style="background:none;border:none;color:#eee;font-size:20px;cursor:pointer;line-height:1;padding:0 4px;margin-left:4px;flex-shrink:0;">✕</button>
-            </div>
-            <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:0;">
-                <div id="att-modal-preview" style="flex:1;overflow:hidden;min-height:0;"></div>
-                <div id="att-modal-comment-panel" style="display:none;flex-shrink:0;border-top:1px solid #333;background:#1e1e1e;padding:8px;max-height:200px;box-sizing:border-box;"></div>
-            </div>
-        </div>`;
-    document.body.appendChild(_modalEl);
-    _modalEl.querySelector('#att-modal-close').addEventListener('click', _closeModal);
-    _modalEl.querySelector('#att-modal-prev').addEventListener('click', () => _carouselStep(-1));
-    _modalEl.querySelector('#att-modal-next').addEventListener('click', () => _carouselStep(+1));
-    _modalEl.querySelector('#att-modal-comment-btn').addEventListener('click', () => _toggleCommentPanel(_carouselList[_carouselIndex]));
-    _modalEl.querySelector('#att-modal-ocr-btn').addEventListener('click', () => {
-        const att = _carouselList[_carouselIndex];
-        if (att) _runOcrOnModalAttachment(att);
-    });
-    _modalEl.querySelector('#att-modal-edit-btn').addEventListener('click', () => {
-        const att = _carouselList[_carouselIndex];
-        if (!att) return;
-        if (att.mimeType === 'application/pdf') _editPdf(att);
-        else _editAttachment(att);
-    });
-    _modalEl.querySelector('#att-modal-pages-btn').addEventListener('click', () => {
-        const att = _carouselList[_carouselIndex];
-        if (att) _managePdfPages(att);
-    });
-    _modalEl.querySelector('#att-modal-convert-btn').addEventListener('click', () => {
-        const att = _carouselList[_carouselIndex];
-        if (att) _convertPdfToImages(att);
-    });
-
-    const nameInput = _modalEl.querySelector('#att-modal-name-input');
-    nameInput.addEventListener('focus', () => { nameInput.style.borderBottomColor = '#888'; });
-    nameInput.addEventListener('blur', () => { nameInput.style.borderBottomColor = 'transparent'; _saveCurrentName(); });
-    nameInput.addEventListener('keydown', e => {
-        if (e.key === 'Enter') { e.preventDefault(); nameInput.blur(); }
-        if (e.key === 'Escape') {
-            const att = _carouselList[_carouselIndex];
-            if (att) {
-                const lastDot = att.name.lastIndexOf('.');
-                nameInput.value = lastDot >= 0 ? att.name.slice(0, lastDot) : att.name;
-            }
-            nameInput.blur();
-        }
-    });
-
-    // Keyboard navigation
-    document.addEventListener('keydown', e => {
-        if (!_modalEl || _modalEl.style.display === 'none') return;
-        if (e.key === 'ArrowLeft')  _carouselStep(-1);
-        if (e.key === 'ArrowRight') _carouselStep(+1);
-        if (e.key === 'Escape')     _closeModal();
-    });
-}
-
-function _carouselStep(dir) {
-    const next = _carouselIndex + dir;
-    if (next < 0 || next >= _carouselList.length) return;
-    _saveCurrentComment(); // save before index changes
-    _saveCurrentName();
-    _carouselIndex = next;
-    _renderModal(_carouselList[_carouselIndex]);
-}
-
-function _closeModal() {
-    _saveCurrentComment();
-    _saveCurrentName();
-    if (_modalEl) _modalEl.style.display = 'none';
-    refreshAttachmentsGui();
-}
-
-function _saveCurrentComment() {
-    if (!_commentEditorContent) return;
-    const att = _carouselList[_carouselIndex];
-    if (!att) return;
-    const html = _commentEditorContent.innerHTML;
-    att.comment = (html && html !== '<br>') ? html : '';
-}
-
-function _saveCurrentName() {
-    if (!_modalEl) return;
-    const att = _carouselList[_carouselIndex];
-    if (!att) return;
-    const input = _modalEl.querySelector('#att-modal-name-input');
-    const extSpan = _modalEl.querySelector('#att-modal-name-ext');
-    if (!input || !extSpan) return;
-    const newBase = input.value.trim();
-    if (!newBase) {
-        // restore if left empty
-        const lastDot = att.name.lastIndexOf('.');
-        input.value = lastDot >= 0 ? att.name.slice(0, lastDot) : att.name;
-        return;
-    }
-    att.name = newBase + extSpan.textContent;
-}
-
-function _buildCommentEditor(att) {
-    const panel = _modalEl.querySelector('#att-modal-comment-panel');
-    panel.innerHTML = '';
-    _commentEditorContent = null;
-    const { wrap, content } = buildWysiwygEditor(att.comment || '');
-    wrap.style.cssText += ';height:100%;box-sizing:border-box;';
-    panel.appendChild(wrap);
-    _commentEditorContent = content;
-    // Auto-save on input
-    content.addEventListener('input', () => {
-        const html = content.innerHTML;
-        att.comment = (html && html !== '<br>') ? html : '';
-    });
-}
-
-function _toggleCommentPanel(att) {
-    _commentPanelOpen = !_commentPanelOpen;
-    const panel = _modalEl.querySelector('#att-modal-comment-panel');
-    if (_commentPanelOpen) {
-        panel.style.display = 'block';
-        _buildCommentEditor(att);
-    } else {
-        _saveCurrentComment();
-        panel.style.display = 'none';
-        _commentEditorContent = null;
-    }
-    _updateCommentBtn();
-}
-
-function _updateCommentBtn() {
-    const btn = _modalEl && _modalEl.querySelector('#att-modal-comment-btn');
-    if (!btn) return;
-    btn.style.background = _commentPanelOpen ? '#3a5a3a' : 'none';
-    btn.style.borderColor = _commentPanelOpen ? '#6a6' : '#555';
-    btn.style.color = _commentPanelOpen ? '#fff' : '#aaa';
+function _openAttachment(att) {
+    openFilePreview(att, _previewHandlers);
 }
 
 function _attachmentToOcrCanvas(att) {
@@ -378,10 +254,9 @@ function _attachmentToOcrCanvas(att) {
     });
 }
 
-async function _runOcrOnModalAttachment(att) {
+async function _runOcrOnPreviewAttachment(att, ocrBtn) {
     if (!att?.mimeType?.startsWith('image/')) return;
 
-    const ocrBtn = _modalEl?.querySelector('#att-modal-ocr-btn');
     if (ocrBtn) ocrBtn.disabled = true;
 
     try {
@@ -413,245 +288,6 @@ async function _runOcrOnModalAttachment(att) {
     } finally {
         if (ocrBtn) ocrBtn.disabled = false;
     }
-}
-
-function _mountImagePreview(container, blobUrl) {
-    const vp = document.createElement('div');
-    vp.style.cssText = 'width:100%;height:100%;overflow:hidden;position:relative;cursor:grab;touch-action:none;';
-
-    const img = document.createElement('img');
-    img.src = blobUrl;
-    img.draggable = false;
-    img.style.cssText = 'position:absolute;left:0;top:0;transform-origin:0 0;user-select:none;-webkit-user-drag:none;';
-
-    const state = {
-        zoom: 1,
-        panX: 0,
-        panY: 0,
-        isPanning: false,
-        panStart: { x: 0, y: 0 },
-        pinchDist0: null,
-        touchMoved: false,
-        lastTap: 0,
-    };
-
-    function applyTransform() {
-        img.style.transform = `translate(${state.panX}px, ${state.panY}px) scale(${state.zoom})`;
-    }
-
-    function fitToView() {
-        const vpW = vp.clientWidth || 800;
-        const vpH = vp.clientHeight || 600;
-        const iw = img.naturalWidth;
-        const ih = img.naturalHeight;
-        if (!iw || !ih) return;
-        state.zoom = Math.min(vpW / iw, vpH / ih, 1) * 0.95;
-        state.panX = (vpW - iw * state.zoom) / 2;
-        state.panY = (vpH - ih * state.zoom) / 2;
-        applyTransform();
-    }
-
-    function zoomAt(mx, my, delta) {
-        const newZoom = Math.min(Math.max(state.zoom * delta, 0.05), 20);
-        state.panX = mx - (mx - state.panX) * (newZoom / state.zoom);
-        state.panY = my - (my - state.panY) * (newZoom / state.zoom);
-        state.zoom = newZoom;
-        applyTransform();
-    }
-
-    img.onload = fitToView;
-
-    vp.addEventListener('wheel', e => {
-        e.preventDefault();
-        const rect = vp.getBoundingClientRect();
-        zoomAt(e.clientX - rect.left, e.clientY - rect.top, e.deltaY < 0 ? 1.12 : 1 / 1.12);
-    }, { passive: false });
-
-    function onMouseMove(e) {
-        if (!state.isPanning) return;
-        state.panX = e.clientX - state.panStart.x;
-        state.panY = e.clientY - state.panStart.y;
-        applyTransform();
-    }
-
-    function onMouseUp() {
-        if (!state.isPanning) return;
-        state.isPanning = false;
-        vp.style.cursor = 'grab';
-        document.removeEventListener('mousemove', onMouseMove);
-        document.removeEventListener('mouseup', onMouseUp);
-    }
-
-    vp.addEventListener('mousedown', e => {
-        if (e.button !== 0) return;
-        state.isPanning = true;
-        state.panStart = { x: e.clientX - state.panX, y: e.clientY - state.panY };
-        vp.style.cursor = 'grabbing';
-        document.addEventListener('mousemove', onMouseMove);
-        document.addEventListener('mouseup', onMouseUp);
-    });
-
-    vp.addEventListener('dblclick', fitToView);
-
-    vp.addEventListener('touchstart', e => {
-        if (e.touches.length === 2) {
-            const dx = e.touches[1].clientX - e.touches[0].clientX;
-            const dy = e.touches[1].clientY - e.touches[0].clientY;
-            state.pinchDist0 = Math.sqrt(dx * dx + dy * dy);
-            state.isPanning = false;
-            e.preventDefault();
-            return;
-        }
-        state.pinchDist0 = null;
-        if (e.touches.length !== 1) return;
-        e.preventDefault();
-        state.touchMoved = false;
-        state.isPanning = true;
-        state.panStart = { x: e.touches[0].clientX - state.panX, y: e.touches[0].clientY - state.panY };
-    }, { passive: false });
-
-    vp.addEventListener('touchmove', e => {
-        if (e.touches.length === 2 && state.pinchDist0 !== null) {
-            e.preventDefault();
-            const dx = e.touches[1].clientX - e.touches[0].clientX;
-            const dy = e.touches[1].clientY - e.touches[0].clientY;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            const rect = vp.getBoundingClientRect();
-            const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left;
-            const my = (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top;
-            const delta = dist / state.pinchDist0;
-            state.pinchDist0 = dist;
-            zoomAt(mx, my, delta);
-            return;
-        }
-        if (e.touches.length !== 1 || !state.isPanning) return;
-        e.preventDefault();
-        state.touchMoved = true;
-        state.panX = e.touches[0].clientX - state.panStart.x;
-        state.panY = e.touches[0].clientY - state.panStart.y;
-        applyTransform();
-    }, { passive: false });
-
-    vp.addEventListener('touchend', e => {
-        state.pinchDist0 = null;
-        state.isPanning = false;
-        if (e.changedTouches.length === 1 && !state.touchMoved) {
-            const now = Date.now();
-            if (now - state.lastTap < 300) {
-                fitToView();
-                state.lastTap = 0;
-            } else {
-                state.lastTap = now;
-            }
-        }
-        state.touchMoved = false;
-    }, { passive: false });
-
-    vp.addEventListener('touchcancel', () => {
-        state.pinchDist0 = null;
-        state.isPanning = false;
-        state.touchMoved = false;
-    });
-
-    new ResizeObserver(() => fitToView()).observe(vp);
-
-    vp.appendChild(img);
-    container.appendChild(vp);
-}
-
-function _openAttachment(att) {
-    _carouselList = attachmentsStore.filter(a => _canOpenInBrowser(a.mimeType));
-    _carouselIndex = _carouselList.findIndex(a => a.id === att.id);
-    if (_carouselIndex < 0) _carouselIndex = 0;
-    _buildModal();
-    _renderModal(att);
-    _modalEl.style.display = 'flex';
-}
-
-function _renderModal(att) {
-    if (_activeBlobUrl) setTimeout(() => URL.revokeObjectURL(_activeBlobUrl), 10000);
-
-    const binary = atob(att.data);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    const blob = new Blob([bytes], { type: att.mimeType });
-    _activeBlobUrl = URL.createObjectURL(blob);
-
-    // Update title and counter
-    const lastDot = att.name.lastIndexOf('.');
-    const _nameBase = lastDot >= 0 ? att.name.slice(0, lastDot) : att.name;
-    const _nameExt  = lastDot >= 0 ? att.name.slice(lastDot) : '';
-    _modalEl.querySelector('#att-modal-name-input').value = _nameBase;
-    _modalEl.querySelector('#att-modal-name-ext').textContent = _nameExt;
-    const total = _carouselList.length;
-    _modalEl.querySelector('#att-modal-counter').textContent = total > 1 ? `${_carouselIndex + 1} / ${total}` : '';
-
-    // Update arrow state
-    const prevBtn = _modalEl.querySelector('#att-modal-prev');
-    const nextBtn = _modalEl.querySelector('#att-modal-next');
-    const disabledStyle = 'opacity:0.25;cursor:default;';
-    const enabledStyle  = 'opacity:1;cursor:pointer;';
-    prevBtn.style.cssText = prevBtn.style.cssText.replace(/opacity:[^;]+;cursor:[^;]+;/g, '');
-    nextBtn.style.cssText = nextBtn.style.cssText.replace(/opacity:[^;]+;cursor:[^;]+;/g, '');
-    prevBtn.disabled = (_carouselIndex === 0 || total <= 1);
-    nextBtn.disabled = (_carouselIndex === total - 1 || total <= 1);
-    prevBtn.style.opacity = prevBtn.disabled ? '0.25' : '1';
-    prevBtn.style.cursor  = prevBtn.disabled ? 'default' : 'pointer';
-    nextBtn.style.opacity = nextBtn.disabled ? '0.25' : '1';
-    nextBtn.style.cursor  = nextBtn.disabled ? 'default' : 'pointer';
-
-    // Render file preview
-    const content = _modalEl.querySelector('#att-modal-preview');
-    content.innerHTML = '';
-    const mime = att.mimeType || '';
-
-    // Light background for text so it stays readable; dark for everything else
-    content.style.background = mime.startsWith('text/') ? '#f5f5f5' : '#1a1a1a';
-
-    if (mime.startsWith('image/')) {
-        _mountImagePreview(content, _activeBlobUrl);
-    } else if (mime.startsWith('video/')) {
-        const v = document.createElement('video');
-        v.src = _activeBlobUrl;
-        v.controls = true;
-        v.style.cssText = 'width:100%;height:100%;display:block;background:#000;';
-        content.appendChild(v);
-    } else if (mime.startsWith('audio/')) {
-        const wrap = document.createElement('div');
-        wrap.style.cssText = 'width:100%;height:100%;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;';
-        const a = document.createElement('audio');
-        a.src = _activeBlobUrl;
-        a.controls = true;
-        a.style.width = '100%';
-        wrap.appendChild(a);
-        content.appendChild(wrap);
-    } else {
-        const iframe = document.createElement('iframe');
-        iframe.src = _activeBlobUrl;
-        iframe.style.cssText = 'width:100%;height:100%;border:none;display:block;';
-        content.appendChild(iframe);
-    }
-
-    // Show/hide edit / convert buttons depending on attachment type
-    const ocrBtn = _modalEl.querySelector('#att-modal-ocr-btn');
-    if (ocrBtn) ocrBtn.style.display = mime.startsWith('image/') ? '' : 'none';
-
-    const editBtn = _modalEl.querySelector('#att-modal-edit-btn');
-    if (editBtn) {
-        const canEdit = mime.startsWith('image/') || mime === 'application/pdf';
-        editBtn.style.display = canEdit ? '' : 'none';
-        editBtn.textContent = mime === 'application/pdf' ? '✏ Edit PDF' : '✏ Edit';
-        editBtn.title = mime === 'application/pdf' ? 'Edit PDF pages' : 'Edit image';
-    }
-    const pagesBtn = _modalEl.querySelector('#att-modal-pages-btn');
-    if (pagesBtn) pagesBtn.style.display = (mime === 'application/pdf') ? '' : 'none';
-    const convertBtn = _modalEl.querySelector('#att-modal-convert-btn');
-    if (convertBtn) convertBtn.style.display = (mime === 'application/pdf') ? '' : 'none';
-    _updateConvertBtnState(_pdfConverting);
-
-    // Rebuild comment editor if panel is open
-    if (_commentPanelOpen) _buildCommentEditor(att);
-    _updateCommentBtn();
 }
 
 function _newImage() {
@@ -722,8 +358,7 @@ function _newImage() {
 }
 
 function _editAttachment(att) {
-    // Close modal viewer first, then open editor
-    if (_modalEl) _modalEl.style.display = 'none';
+    closeFilePreviewForAttachment(att);
 
     openImageEditor(
         att,
@@ -959,7 +594,8 @@ async function _managePdfPages(att) {
         alert('Another PDF operation is in progress. Please wait.');
         return;
     }
-    if (_modalEl) _modalEl.style.display = 'none';
+    const hadPreview = isFilePreviewOpenForAttachment(att);
+    closeFilePreviewForAttachment(att);
 
     await openPdfPageManager(att, {
         attToUint8Array: _attToUint8Array,
@@ -970,13 +606,16 @@ async function _managePdfPages(att) {
         getImageAttachments: () => attachmentsStore.filter(a => a.mimeType && a.mimeType.startsWith('image/')),
         commitPdfAttachment: _commitPdfAttachment,
         onOpen: () => { _pdfPageManaging = true; },
-        onClose: () => { _pdfPageManaging = false; },
+        onClose: () => {
+            _pdfPageManaging = false;
+            if (hadPreview) _openAttachment(att);
+        },
     });
 }
 
 async function _editPdf(att) {
     if (_isPdfBusy()) return;
-    if (_modalEl) _modalEl.style.display = 'none';
+    closeFilePreviewForAttachment(att);
 
     _pdfEditing = true;
     try {
@@ -1162,13 +801,7 @@ function _askPdfConvertOptions() {
 }
 
 function _updateConvertBtnState(busy) {
-    if (!_modalEl) return;
-    const btn = _modalEl.querySelector('#att-modal-convert-btn');
-    if (!btn || btn.style.display === 'none') return;
-    btn.disabled = busy;
-    btn.textContent = busy ? 'Converting…' : '🖼 → Images';
-    btn.style.opacity = busy ? '0.5' : '1';
-    btn.style.cursor = busy ? 'default' : 'pointer';
+    updateFilePreviewConvertState(busy);
 }
 
 async function _convertPdfToImages(att, options) {
