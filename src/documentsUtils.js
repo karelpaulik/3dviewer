@@ -412,6 +412,99 @@ function _prepareReadOnlyContent(html) {
     return div.innerHTML;
 }
 
+function _getSelectedImageSrc(state) {
+    const { selection } = state;
+    if (!selection.node) return null;
+    const name = selection.node.type.name;
+    if (name !== 'imageResize' && name !== 'image') return null;
+    return selection.node.attrs.src || null;
+}
+
+function _dataUrlToBlob(dataUrl) {
+    const [header, b64] = dataUrl.split(',');
+    const mimeMatch = header.match(/:(.*?);/);
+    const mime = mimeMatch ? mimeMatch[1] : 'image/png';
+    const bin = atob(b64);
+    const arr = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    return new Blob([arr], { type: mime });
+}
+
+function _writeImageSrcToSystemClipboard(src) {
+    if (!navigator.clipboard?.write) return;
+    const writeBlob = (blob) => {
+        const type = blob.type?.startsWith('image/') ? blob.type : 'image/png';
+        navigator.clipboard.write([new ClipboardItem({ [type]: blob })]).catch(() => {});
+    };
+    if (src.startsWith('data:')) {
+        writeBlob(_dataUrlToBlob(src));
+        return;
+    }
+    fetch(src).then(r => r.blob()).then(writeBlob).catch(() => {});
+}
+
+function _copySelectedImageToClipboard(event) {
+    if (!isDocumentEditorOpen()) return false;
+    const src = _getSelectedImageSrc(_editor.state);
+    if (!src) return false;
+    if (event) event.preventDefault();
+    _writeImageSrcToSystemClipboard(src);
+    return true;
+}
+
+function _cutSelectedImageToClipboard(event) {
+    if (!isDocumentEditorOpen()) return false;
+    const src = _getSelectedImageSrc(_editor.state);
+    if (!src) return false;
+    if (event) event.preventDefault();
+    _writeImageSrcToSystemClipboard(src);
+    _editor.chain().focus().deleteSelection().run();
+    return true;
+}
+
+function _onDocumentCopy(e) {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    _copySelectedImageToClipboard(e);
+}
+
+function _onDocumentCut(e) {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    _cutSelectedImageToClipboard(e);
+}
+
+function _onDocumentCopyKeydown(e) {
+    if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'c' || e.shiftKey) return;
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    _copySelectedImageToClipboard(e);
+}
+
+function _onDocumentCutKeydown(e) {
+    if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'x') return;
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    _cutSelectedImageToClipboard(e);
+}
+
+function _pasteImageFromClipboardEvent(event) {
+    const items = Array.from(event.clipboardData?.items || []);
+    const imageItem = items.find(item => item.type.startsWith('image/'));
+    if (!imageItem) return false;
+    const file = imageItem.getAsFile();
+    if (!file) return false;
+    event.preventDefault();
+    showImageInsertDialog(file, dataUrl => {
+        _editor.chain().focus().setImage({ src: dataUrl }).run();
+    });
+    return true;
+}
+
+function _onDocumentPaste(e) {
+    if (!isDocumentEditorOpen()) return;
+    if (_editor.isFocused) return;
+    const tag = e.target.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    _pasteImageFromClipboardEvent(e);
+}
+
 function _createEditor(el, content, readOnly) {
     const editor = new Editor({
         element: el,
@@ -446,16 +539,11 @@ function _createEditor(el, content, readOnly) {
                 return false;
             },
             handlePaste(view, event) {
-                const items = Array.from(event.clipboardData?.items || []);
-                const imageItem = items.find(item => item.type.startsWith('image/'));
-                if (!imageItem) return false;
-                const file = imageItem.getAsFile();
-                if (!file) return false;
-                event.preventDefault();
-                showImageInsertDialog(file, dataUrl => {
-                    _editor.chain().focus().setImage({ src: dataUrl }).run();
-                });
-                return true;
+                return _pasteImageFromClipboardEvent(event);
+            },
+            handleDOMEvents: {
+                copy: (view, event) => _copySelectedImageToClipboard(event),
+                cut: (view, event) => _cutSelectedImageToClipboard(event),
             },
         },
     });
@@ -1121,6 +1209,12 @@ function _buildEditorOverlay() {
             btnNav3d.style.pointerEvents = 'auto';
         }
     });
+
+    document.addEventListener('paste', _onDocumentPaste);
+    document.addEventListener('copy', _onDocumentCopy);
+    document.addEventListener('cut', _onDocumentCut);
+    document.addEventListener('keydown', _onDocumentCopyKeydown);
+    document.addEventListener('keydown', _onDocumentCutKeydown);
 
     const btnToc = document.createElement('button');
     btnToc.className = 'doc-btn doc-btn-toc';
