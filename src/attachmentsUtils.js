@@ -615,8 +615,11 @@ async function _managePdfPages(att) {
 
 async function _editPdf(att) {
     if (_isPdfBusy()) return;
+
+    const hadPreview = isFilePreviewOpenForAttachment(att);
     closeFilePreviewForAttachment(att);
 
+    let editorsOpened = false;
     _pdfEditing = true;
     try {
         const bytes = _attToUint8Array(att);
@@ -680,11 +683,22 @@ async function _editPdf(att) {
             pageAtts.push(pageAtt);
         }
 
+        let editorsRemaining = pageAtts.length;
+        const onEditorClose = () => {
+            editorsRemaining--;
+            if (editorsRemaining <= 0) {
+                _pdfEditSession = null;
+                if (hadPreview) _openAttachment(att);
+            }
+        };
+
         pageAtts.forEach(pageAtt => {
             const pageNum = pageAtt._pdfEditPageNum;
             const cbs = _makePdfPageEditCallbacks(session, pageNum);
-            openImageEditor(pageAtt, cbs.onSaveOverwrite, cbs.onSaveNew);
+            openImageEditor(pageAtt, cbs.onSaveOverwrite, cbs.onSaveNew, onEditorClose);
         });
+
+        editorsOpened = true;
 
         if (pageAtts.length > 1) {
             setTimeout(() => {
@@ -699,6 +713,7 @@ async function _editPdf(att) {
         _pdfEditSession = null;
     } finally {
         _pdfEditing = false;
+        if (!editorsOpened && hadPreview) _openAttachment(att);
     }
 }
 

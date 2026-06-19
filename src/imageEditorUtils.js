@@ -23,9 +23,10 @@ import {
  * @param {object} att  – attachment object { id, name, mimeType, data (base64) }
  * @param {Function} onSaveOverwrite  – cb(newBase64, newSize) → overwrite original
  * @param {Function} onSaveNew       – cb(newBase64, newSize, suggestedName) → save as new attachment
+ * @param {Function} [onClose]       – cb() when this editor window is closed
  */
-export function openImageEditor(att, onSaveOverwrite, onSaveNew) {
-    _launch(att, onSaveOverwrite, onSaveNew);
+export function openImageEditor(att, onSaveOverwrite, onSaveNew, onClose) {
+    _launch(att, onSaveOverwrite, onSaveNew, onClose);
 }
 
 // ── Shared toolbar state (global) ─────────────────────────────────────────────
@@ -58,11 +59,12 @@ let _showWinChrome = true;    // when false, titlebar & statusbar of all windows
 
 // ── Instance factory ──────────────────────────────────────────────────────────
 
-function _createInstance(att, onSaveOverwrite, onSaveNew) {
+function _createInstance(att, onSaveOverwrite, onSaveNew, onClose) {
     return {
         att,
         onSaveOverwrite,
         onSaveNew,
+        onClose: onClose || null,
         // per-instance DOM
         winEl:    null,
         canvas:   null,
@@ -118,12 +120,12 @@ function _createInstance(att, onSaveOverwrite, onSaveNew) {
 
 // ── Launch ────────────────────────────────────────────────────────────────────
 
-function _launch(att, onSaveOverwrite, onSaveNew) {
+function _launch(att, onSaveOverwrite, onSaveNew, onClose) {
     // If the same attachment is already open, just focus it
     const existing = _instances.find(i => i.att === att || (att.id && i.att.id === att.id));
     if (existing) { _focusInstance(existing); return; }
 
-    const inst = _createInstance(att, onSaveOverwrite, onSaveNew);
+    const inst = _createInstance(att, onSaveOverwrite, onSaveNew, onClose);
     _instances.push(inst);
 
     _ensureToolbar();
@@ -1860,6 +1862,8 @@ function _close(inst) {
         _toolbarEl.remove();
         _toolbarEl = null;
     }
+
+    inst.onClose?.();
 }
 
 // ── Selection helpers ─────────────────────────────────────────────────────────
