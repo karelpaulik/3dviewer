@@ -396,7 +396,7 @@ fileNameInput.title = 'File name (default name for export)';
 guiToolbar.insertBefore(fileNameInput, outlinerBtn.nextSibling);
 
 // Pre-create all toolbar buttons in desired order: Selected, File, Edit, View, Tools, Assembly, Docs, Help
-['Selected', 'File', 'Edit', 'View', 'Assembly', 'Docs', 'Files', 'Call - Jitsi', 'Call - PeerJS', 'Help'].forEach(name => {
+['Selected', 'File', 'Edit', 'View', 'Assembly', 'Docs', 'Files', 'Call', 'Help'].forEach(name => {
     const btn = document.createElement('button');
     btn.className = 'gui-toolbar-btn';
     btn.textContent = name;
@@ -8349,16 +8349,14 @@ function addHelpGui() {
     registerGuiPanel('Help', helpGui);
 }
 
-function addJitsiCallGui() {
-    const callGui = new GUI({ container: guiContainer, title: 'Call - Jitsi' });
-
+function populateJitsiCallFolder(folder) {
     const jitsiGuiState = {
         serverPreset: getJitsiServerPreset(),
         customDomain: getJitsiCustomDomain(),
     };
 
     const presetOptions = [...JITSI_SERVER_PRESETS, JITSI_CUSTOM_PRESET];
-    const presetCtrl = callGui.add(jitsiGuiState, 'serverPreset', presetOptions)
+    const presetCtrl = folder.add(jitsiGuiState, 'serverPreset', presetOptions)
         .name('Jitsi server')
         .onChange((preset) => {
             updateJitsiCustomCtrl();
@@ -8370,7 +8368,7 @@ function addJitsiCallGui() {
             }
         });
 
-    const customCtrl = callGui.add(jitsiGuiState, 'customDomain')
+    const customCtrl = folder.add(jitsiGuiState, 'customDomain')
         .name('Custom server')
         .onChange((value) => {
             if (jitsiGuiState.serverPreset !== JITSI_CUSTOM_PRESET) return;
@@ -8389,22 +8387,19 @@ function addJitsiCallGui() {
     }
     updateJitsiCustomCtrl();
 
-    callGui.add({ fn: () => startJitsiCall() }, 'fn').name('Start / join call');
-    callGui.add({ fn: () => copyJitsiInviteLink() }, 'fn').name('Copy invite link');
-    callGui.add({ fn: () => leaveJitsiCall() }, 'fn').name('Leave call');
-    registerGuiPanel('Call - Jitsi', callGui);
+    folder.add({ fn: () => startJitsiCall() }, 'fn').name('Start / join call');
+    folder.add({ fn: () => copyJitsiInviteLink() }, 'fn').name('Copy invite link');
+    folder.add({ fn: () => leaveJitsiCall() }, 'fn').name('Leave call');
 }
 
-function addPeerCallGui() {
-    const callGui = new GUI({ container: guiContainer, title: 'Call - PeerJS' });
-
+function populatePeerCallFolder(folder) {
     const peerGuiState = {
         serverPreset: getPeerServerPreset(),
         customDomain: getPeerCustomDomain(),
     };
 
     const presetOptions = [...PEER_SERVER_PRESETS, PEER_CUSTOM_PRESET];
-    const presetCtrl = callGui.add(peerGuiState, 'serverPreset', presetOptions)
+    const presetCtrl = folder.add(peerGuiState, 'serverPreset', presetOptions)
         .name('PeerJS server')
         .onChange((preset) => {
             updatePeerCustomCtrl();
@@ -8416,7 +8411,7 @@ function addPeerCallGui() {
             }
         });
 
-    const customCtrl = callGui.add(peerGuiState, 'customDomain')
+    const customCtrl = folder.add(peerGuiState, 'customDomain')
         .name('Custom server')
         .onChange((value) => {
             if (peerGuiState.serverPreset !== PEER_CUSTOM_PRESET) return;
@@ -8435,10 +8430,9 @@ function addPeerCallGui() {
     }
     updatePeerCustomCtrl();
 
-    callGui.add({ fn: () => startPeerCall() }, 'fn').name('Start / join call');
-    callGui.add({ fn: () => copyPeerInviteLink() }, 'fn').name('Copy invite link');
-    callGui.add({ fn: () => leavePeerCall() }, 'fn').name('Leave call');
-    registerGuiPanel('Call - PeerJS', callGui);
+    folder.add({ fn: () => startPeerCall() }, 'fn').name('Start / join call');
+    folder.add({ fn: () => copyPeerInviteLink() }, 'fn').name('Copy invite link');
+    folder.add({ fn: () => leavePeerCall() }, 'fn').name('Leave call');
 }
 
 function addCallGui() {
@@ -8446,8 +8440,15 @@ function addCallGui() {
     initPeerCall();
     initJitsiDomainFromStorageAndUrl();
     initPeerServerFromStorageAndUrl();
-    addJitsiCallGui();
-    addPeerCallGui();
+
+    const callGui = new GUI({ container: guiContainer, title: 'Call' });
+    const jitsiFolder = callGui.addFolder('jitsi');
+    const peerFolder = callGui.addFolder('peerjs');
+    populateJitsiCallFolder(jitsiFolder);
+    populatePeerCallFolder(peerFolder);
+    jitsiFolder.close();
+    peerFolder.close();
+    registerGuiPanel('Call', callGui);
 
     const params = new URLSearchParams(window.location.search);
     const roomFromUrl = params.get('room');
