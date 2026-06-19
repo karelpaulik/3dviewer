@@ -2059,7 +2059,7 @@ a, button, input, select {
     position: fixed;
     inset: 0;
     background: rgba(0,0,0,0.55);
-    z-index: 10000;
+    z-index: 250000;
     display: flex;
     align-items: center;
     justify-content: center;

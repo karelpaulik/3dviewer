@@ -1,7 +1,14 @@
 // imageEditorUtils.js
 // Canvas-based image editor: Crop, Rotate, Flip, Pen, Text, Undo/Redo, Resize, Zoom+Pan
 // Multi-instance (floating windows) with a single shared toolbar.
-// No external dependencies — pure Canvas API.
+
+import {
+    imageDataToFile,
+    pickImageFromDisk,
+    pickImageFromFiles,
+    readImageFileFromClipboard,
+    showImageInsertDialog,
+} from './imageInsertUtils.js';
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
@@ -80,6 +87,9 @@ function _createInstance(att, onSaveOverwrite, onSaveNew) {
         selStart:     null,
         isMovingSel:  false,
         selMoveOff:   null,
+        isResizingSel:  false,
+        selResizeHandle: null,
+        selResizeStart:  null,
         selImageData: null,
         selHoleSnapshot: null,
         // text tool
@@ -141,6 +151,11 @@ function _ensureToolbar() {
             <button class="img-ed-tool-btn" id="img-ed-tool-pan"    title="Pan">✋</button>
             <button class="img-ed-tool-btn" id="img-ed-tool-crop"   title="Crop">⛶</button>
             <button class="img-ed-tool-btn" id="img-ed-tool-select" title="Select — drag rectangle">⬚</button>
+            <div class="img-ed-sep"></div>
+            <span class="img-ed-group-label">Insert</span>
+            <button class="img-ed-tool-btn" id="img-ed-insert-disk" title="Insert image from disk">🖼</button>
+            <button class="img-ed-tool-btn" id="img-ed-insert-files" title="Insert image from Files">📎🖼</button>
+            <button class="img-ed-tool-btn" id="img-ed-insert-clip" title="Insert image from clipboard">📋</button>
             <div class="img-ed-sep"></div>
             <span class="img-ed-group-label">Draw</span>
             <button class="img-ed-tool-btn" id="img-ed-tool-pen"       title="Freehand pen">✎</button>
@@ -232,6 +247,15 @@ function _ensureToolbar() {
     _toolbarEl.querySelector('#img-ed-fontsize').addEventListener('input', e => { _fontSize = +e.target.value; });
 
     _toolbarEl.querySelector('#img-ed-arrange').addEventListener('click',   () => _autoArrange());
+    _toolbarEl.querySelector('#img-ed-insert-disk').addEventListener('click', () => {
+        if (_activeInst) _insertImageFromDisk(_activeInst);
+    });
+    _toolbarEl.querySelector('#img-ed-insert-files').addEventListener('click', () => {
+        if (_activeInst) _insertImageFromFiles(_activeInst);
+    });
+    _toolbarEl.querySelector('#img-ed-insert-clip').addEventListener('click', () => {
+        if (_activeInst) _insertImageFromClipboard(_activeInst);
+    });
     _toolbarEl.querySelector('#img-ed-save-all').addEventListener('click',    () => [..._instances].forEach(inst => _saveOverwrite(inst)));
     _toolbarEl.querySelector('#img-ed-resize-all').addEventListener('click',   () => _resizeAll());
     _toolbarEl.querySelector('#img-ed-fit-all').addEventListener('click',       () => _instances.forEach(inst => _fitToView(inst)));
@@ -273,6 +297,10 @@ function _buildInstanceUI(inst) {
                 <button class="img-ed-btn" id="img-ed-undo"       title="Undo (Ctrl+Z)">↩</button>
                 <button class="img-ed-btn" id="img-ed-redo"       title="Redo (Ctrl+Y)">↪</button>
                 <button class="img-ed-btn" id="img-ed-goto-begin" title="Show original image (undo/redo stack preserved)">⏮</button>
+                <div class="img-ed-sep"></div>
+                <button class="img-ed-btn img-ed-win-insert-disk"  title="Insert image from disk">🖼</button>
+                <button class="img-ed-btn img-ed-win-insert-files" title="Insert image from Files">📎</button>
+                <button class="img-ed-btn img-ed-win-insert-clip"  title="Insert image from clipboard">📋</button>
                 <div class="img-ed-sep"></div>
                 <button class="img-ed-btn" id="img-ed-rotate-cw"  title="Rotate 90° CW">↻</button>
                 <button class="img-ed-btn" id="img-ed-rotate-ccw" title="Rotate 90° CCW">↺</button>
@@ -335,6 +363,9 @@ function _buildInstanceUI(inst) {
     win.querySelector('#img-ed-undo').addEventListener('click',       () => _undo(inst));
     win.querySelector('#img-ed-redo').addEventListener('click',       () => _redo(inst));
     win.querySelector('#img-ed-goto-begin').addEventListener('click', () => _gotoBegin(inst));
+    win.querySelector('.img-ed-win-insert-disk').addEventListener('click',  () => _insertImageFromDisk(inst));
+    win.querySelector('.img-ed-win-insert-files').addEventListener('click', () => _insertImageFromFiles(inst));
+    win.querySelector('.img-ed-win-insert-clip').addEventListener('click',  () => _insertImageFromClipboard(inst));
     win.querySelector('#img-ed-rotate-cw').addEventListener('click',  () => _rotate(inst, 90));
     win.querySelector('#img-ed-rotate-ccw').addEventListener('click', () => _rotate(inst, -90));
     win.querySelector('#img-ed-flip-h').addEventListener('click',     () => _flip(inst, 'h'));
@@ -445,6 +476,10 @@ function _buildInstanceUI(inst) {
     const keyHandler = e => _onKeyDown(inst, e);
     document.addEventListener('keydown', keyHandler);
     win._keyHandler = keyHandler;
+
+    const pasteHandler = e => _onPaste(inst, e);
+    document.addEventListener('paste', pasteHandler);
+    win._pasteHandler = pasteHandler;
 
     const ro = new ResizeObserver(() => {
         ovCanvas.width  = vp.clientWidth;
@@ -561,7 +596,7 @@ function _updateHint(inst) {
         eraser:    'Drag to erase to transparent | Size controls width',
         callout:   'Click to place numbered callout | ↺① resets counter',
         blur:      'Drag to select area to pixelate | Size = block size',
-        select:    'Drag to select rectangle | drag inside to move | Delete to erase',
+        select:    'Drag to select | drag inside to move | drag handles to resize | Shift = keep aspect | Delete to erase',
     };
     const el = inst.winEl && inst.winEl.querySelector('.img-ed-hint');
     if (el) el.textContent = hints[_activeTool] || '';
@@ -715,16 +750,28 @@ function _onMouseDown(inst, e) {
 
     if (_activeTool === 'select' && !e.ctrlKey) {
         const pt = _vpToImg(inst, e.clientX, e.clientY);
-        if (inst.selRect && _ptInRect(pt, inst.selRect)) {
-            if (!inst.selImageData) _liftSelection(inst);
-            inst.isMovingSel = true;
-            inst.selMoveOff  = { dx: pt.x - inst.selRect.x, dy: pt.y - inst.selRect.y };
-        } else {
-            _clearSelection(inst);
-            inst.isSelectingRect = true;
-            inst.selStart = pt;
-            inst.selRect  = null;
+        if (inst.selRect) {
+            const handle = _hitTestSelHandle(inst, pt);
+            if (handle) {
+                if (!inst.selImageData) _liftSelection(inst);
+                if (inst.selImageData) {
+                    inst.isResizingSel   = true;
+                    inst.selResizeHandle = handle;
+                    inst.selResizeStart  = { ...inst.selRect };
+                    return;
+                }
+            }
+            if (_ptInRect(pt, inst.selRect)) {
+                if (!inst.selImageData) _liftSelection(inst);
+                inst.isMovingSel = true;
+                inst.selMoveOff  = { dx: pt.x - inst.selRect.x, dy: pt.y - inst.selRect.y };
+                return;
+            }
         }
+        _clearSelection(inst);
+        inst.isSelectingRect = true;
+        inst.selStart = pt;
+        inst.selRect  = null;
         return;
     }
 
@@ -807,10 +854,15 @@ function _onMouseMove(inst, e, ovCanvas, ovCtx) {
         if (vp) vp.style.cursor = inBox ? 'move' : 'text';
     }
 
-    if (_activeTool === 'select' && inst.selRect && !inst.isSelectingRect && !inst.isMovingSel) {
+    if (_activeTool === 'select' && inst.selRect && !inst.isSelectingRect && !inst.isMovingSel && !inst.isResizingSel) {
         const selPt = _vpToImg(inst, e.clientX, e.clientY);
         const vpEl  = inst.winEl && inst.winEl.querySelector('.img-editor-viewport');
-        if (vpEl) vpEl.style.cursor = _ptInRect(selPt, inst.selRect) ? 'move' : 'crosshair';
+        if (vpEl) {
+            const handle = _hitTestSelHandle(inst, selPt);
+            if (handle) vpEl.style.cursor = _cursorForSelHandle(handle);
+            else if (_ptInRect(selPt, inst.selRect)) vpEl.style.cursor = 'move';
+            else vpEl.style.cursor = 'crosshair';
+        }
     }
 
     if (inst.isPanning) {
@@ -842,6 +894,15 @@ function _onMouseMove(inst, e, ovCanvas, ovCtx) {
         inst.selRect = { x: newX, y: newY, w: inst.selRect.w, h: inst.selRect.h };
         inst.ctx.putImageData(inst.selHoleSnapshot, 0, 0);
         _drawFloatedAt(inst, newX, newY);
+        _redrawOverlay(inst, ovCanvas, ovCtx);
+        return;
+    }
+
+    if (inst.isResizingSel && inst.selImageData && inst.selResizeStart) {
+        const pt = _vpToImg(inst, e.clientX, e.clientY);
+        inst.selRect = _computeResizeRect(inst.selResizeStart, inst.selResizeHandle, pt, e.shiftKey);
+        inst.ctx.putImageData(inst.selHoleSnapshot, 0, 0);
+        _drawFloatedAt(inst, inst.selRect.x, inst.selRect.y);
         _redrawOverlay(inst, ovCanvas, ovCtx);
         return;
     }
@@ -940,6 +1001,19 @@ function _onMouseUp(inst, e, ovCanvas, ovCtx) {
         return;
     }
 
+    if (inst.isResizingSel) {
+        inst.isResizingSel   = false;
+        inst.selResizeHandle = null;
+        inst.selResizeStart  = null;
+        if (inst.selImageData) {
+            inst.selImageData    = null;
+            inst.selHoleSnapshot = null;
+            _pushUndo(inst);
+        }
+        _updateCursor(inst);
+        return;
+    }
+
     if (inst.isPanning) { inst.isPanning = false; _updateCursor(inst); return; }
     if (inst.isCropping) { inst.isCropping = false; return; }
 
@@ -997,6 +1071,13 @@ function _onMouseLeave(inst, ovCanvas, ovCtx) {
         }
         _updateCursor(inst);
     }
+    if (inst.isResizingSel) {
+        inst.isResizingSel = false; inst.selResizeHandle = null; inst.selResizeStart = null;
+        if (inst.selImageData) {
+            inst.selImageData = null; inst.selHoleSnapshot = null; _pushUndo(inst);
+        }
+        _updateCursor(inst);
+    }
 }
 
 function _onKeyDown(inst, e) {
@@ -1009,11 +1090,32 @@ function _onKeyDown(inst, e) {
         if (_activeTool === 'select' && inst.selRect) { e.preventDefault(); _copySelection(inst); }
         return;
     }
-    if ((e.ctrlKey || e.metaKey) && e.key === 'v') { e.preventDefault(); _pasteClipboard(inst); return; }
     if (e.key === 'f' || e.key === 'F') { _fitToView(inst); return; }
     if (e.key === 'Escape') { _cancelCrop(inst); if (_activeTool === 'select') _clearSelection(inst); _setTool(inst, 'pan'); return; }
     if ((e.key === 'Delete' || e.key === 'Backspace') && _activeTool === 'select' && inst.selRect) {
         e.preventDefault(); _deleteSelection(inst); return;
+    }
+}
+
+function _onPaste(inst, e) {
+    if (inst !== _activeInst) return;
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+    const items = Array.from(e.clipboardData?.items || []);
+    const imageItem = items.find(item => item.type.startsWith('image/'));
+    if (imageItem) {
+        e.preventDefault();
+        const file = imageItem.getAsFile();
+        if (!file) return;
+        showImageInsertDialog(file, dataUrl => _insertImageFromDataUrl(inst, dataUrl));
+        return;
+    }
+
+    if (_clipboardData) {
+        e.preventDefault();
+        imageDataToFile(_clipboardData, 'paste.png').then(file => {
+            showImageInsertDialog(file, dataUrl => _insertImageFromDataUrl(inst, dataUrl));
+        });
     }
 }
 
@@ -1672,6 +1774,7 @@ function _toggleMaximize(inst) {
 function _close(inst) {
     _closeTextDialog(inst);
     document.removeEventListener('keydown', inst.winEl._keyHandler);
+    if (inst.winEl._pasteHandler) document.removeEventListener('paste', inst.winEl._pasteHandler);
     if (inst.winEl._ro) inst.winEl._ro.disconnect();
     inst.winEl.remove();
     _instances = _instances.filter(i => i !== inst);
@@ -1715,7 +1818,93 @@ function _drawFloatedAt(inst, x, y) {
     tmp.width  = inst.selImageData.width;
     tmp.height = inst.selImageData.height;
     tmp.getContext('2d').putImageData(inst.selImageData, 0, 0);
-    inst.ctx.drawImage(tmp, Math.round(x), Math.round(y));
+    const dw = inst.selRect ? inst.selRect.w : inst.selImageData.width;
+    const dh = inst.selRect ? inst.selRect.h : inst.selImageData.height;
+    inst.ctx.drawImage(tmp, Math.round(x), Math.round(y), Math.round(dw), Math.round(dh));
+}
+
+const _SEL_HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
+const _MIN_SEL_SIZE = 2;
+
+function _selHandlePositions(r) {
+    const { x, y, w, h } = r;
+    return {
+        nw: { x, y },
+        n:  { x: x + w / 2, y },
+        ne: { x: x + w, y },
+        e:  { x: x + w, y: y + h / 2 },
+        se: { x: x + w, y: y + h },
+        s:  { x: x + w / 2, y: y + h },
+        sw: { x, y: y + h },
+        w:  { x, y: y + h / 2 },
+    };
+}
+
+function _hitTestSelHandle(inst, pt) {
+    if (!inst.selRect) return null;
+    const tol = 8 / inst.zoom;
+    const handles = _selHandlePositions(inst.selRect);
+    for (const id of _SEL_HANDLES) {
+        const h = handles[id];
+        if (Math.abs(pt.x - h.x) <= tol && Math.abs(pt.y - h.y) <= tol) return id;
+    }
+    return null;
+}
+
+function _cursorForSelHandle(id) {
+    return {
+        nw: 'nwse-resize', se: 'nwse-resize',
+        ne: 'nesw-resize', sw: 'nesw-resize',
+        n: 'ns-resize', s: 'ns-resize',
+        e: 'ew-resize', w: 'ew-resize',
+    }[id] || 'default';
+}
+
+function _computeResizeRect(start, handle, pt, keepAspect) {
+    const L = start.x, T = start.y, R = start.x + start.w, B = start.y + start.h;
+    const ar = start.w / start.h || 1;
+
+    let x, y, w, h;
+
+    const box = (x1, y1, x2, y2) => {
+        x = Math.min(x1, x2);
+        y = Math.min(y1, y2);
+        w = Math.max(_MIN_SEL_SIZE, Math.abs(x2 - x1));
+        h = Math.max(_MIN_SEL_SIZE, Math.abs(y2 - y1));
+    };
+
+    switch (handle) {
+        case 'se': box(L, T, pt.x, pt.y); break;
+        case 'nw': box(pt.x, pt.y, R, B); break;
+        case 'ne': box(L, pt.y, pt.x, B); break;
+        case 'sw': box(pt.x, T, R, pt.y); break;
+        case 'e':  box(L, T, pt.x, B); break;
+        case 'w':  box(pt.x, T, R, B); break;
+        case 's':  box(L, T, R, pt.y); break;
+        case 'n':  box(L, pt.y, R, B); break;
+        default:   return { ...start };
+    }
+
+    if (keepAspect) {
+        if (handle === 'e' || handle === 'w') {
+            h = w / ar;
+            y = T;
+            x = handle === 'w' ? R - w : L;
+        } else if (handle === 'n' || handle === 's') {
+            w = h * ar;
+            x = L;
+            y = handle === 'n' ? B - h : T;
+        } else {
+            if (w / h > ar) h = w / ar;
+            else w = h * ar;
+            if (handle === 'se')      { x = L; y = T; }
+            else if (handle === 'nw') { x = R - w; y = B - h; }
+            else if (handle === 'ne') { x = L; y = B - h; }
+            else if (handle === 'sw') { x = R - w; y = T; }
+        }
+    }
+
+    return { x, y, w, h };
 }
 
 function _clearSelection(inst) {
@@ -1726,6 +1915,7 @@ function _clearSelection(inst) {
     }
     inst.selRect = null; inst.selStart = null; inst.isSelectingRect = false;
     inst.isMovingSel = false; inst.selMoveOff = null;
+    inst.isResizingSel = false; inst.selResizeHandle = null; inst.selResizeStart = null;
     inst.selImageData = null; inst.selHoleSnapshot = null;
     const ov = inst.winEl && inst.winEl.querySelector('.img-editor-overlay-canvas');
     if (ov) _redrawOverlay(inst, ov, ov.getContext('2d'));
@@ -1749,6 +1939,7 @@ function _deleteSelection(inst) {
     }
     inst.selImageData = null; inst.selHoleSnapshot = null; inst.selRect = null;
     inst.isMovingSel = false; inst.isSelectingRect = false;
+    inst.isResizingSel = false; inst.selResizeHandle = null; inst.selResizeStart = null;
     _pushUndo(inst);
     const ov = inst.winEl && inst.winEl.querySelector('.img-editor-overlay-canvas');
     if (ov) _redrawOverlay(inst, ov, ov.getContext('2d'));
@@ -1776,44 +1967,50 @@ function _copySelection(inst) {
     }
 }
 
-async function _pasteClipboard(inst) {
-    let imageData = null;
-    if (navigator.clipboard && navigator.clipboard.read) {
-        try {
-            const items = await navigator.clipboard.read();
-            for (const item of items) {
-                const imageType = item.types.find(t => t.startsWith('image/'));
-                if (imageType) {
-                    const blob = await item.getType(imageType);
-                    const bmp  = await createImageBitmap(blob);
-                    const tmp  = document.createElement('canvas');
-                    tmp.width  = bmp.width; tmp.height = bmp.height;
-                    const tc   = tmp.getContext('2d');
-                    tc.drawImage(bmp, 0, 0);
-                    imageData = tc.getImageData(0, 0, bmp.width, bmp.height);
-                    bmp.close(); break;
-                }
-            }
-        } catch (_) { /* Permission denied or no image — fall through */ }
+function _insertImageFromDisk(inst) {
+    pickImageFromDisk(dataUrl => _insertImageFromDataUrl(inst, dataUrl));
+}
+
+function _insertImageFromFiles(inst) {
+    pickImageFromFiles(dataUrl => _insertImageFromDataUrl(inst, dataUrl));
+}
+
+async function _insertImageFromClipboard(inst) {
+    const file = await readImageFileFromClipboard();
+    if (!file) {
+        alert('No image in clipboard.');
+        return;
     }
-    if (!imageData) imageData = _clipboardData;
-    if (!imageData) return;
+    showImageInsertDialog(file, dataUrl => _insertImageFromDataUrl(inst, dataUrl));
+}
 
-    _clipboardData = imageData;
-    _clearSelection(inst);
+function _insertImageFromDataUrl(inst, dataUrl) {
+    const img = new Image();
+    img.onload = () => {
+        const tmp = document.createElement('canvas');
+        tmp.width = img.naturalWidth;
+        tmp.height = img.naturalHeight;
+        tmp.getContext('2d').drawImage(img, 0, 0);
+        const imageData = tmp.getContext('2d').getImageData(0, 0, tmp.width, tmp.height);
 
-    const pasteX = Math.min(16, inst.canvas.width  - imageData.width);
-    const pasteY = Math.min(16, inst.canvas.height - imageData.height);
+        _clipboardData = imageData;
+        _clearSelection(inst);
 
-    inst.selRect         = { x: pasteX, y: pasteY, w: imageData.width, h: imageData.height };
-    inst.selImageData    = new ImageData(new Uint8ClampedArray(imageData.data), imageData.width, imageData.height);
-    inst.selHoleSnapshot = inst.ctx.getImageData(0, 0, inst.canvas.width, inst.canvas.height);
-    _drawFloatedAt(inst, pasteX, pasteY);
+        const pasteX = Math.min(16, Math.max(0, inst.canvas.width  - imageData.width));
+        const pasteY = Math.min(16, Math.max(0, inst.canvas.height - imageData.height));
 
-    if (_activeTool !== 'select') _setTool(inst, 'select');
+        inst.selRect         = { x: pasteX, y: pasteY, w: imageData.width, h: imageData.height };
+        inst.selImageData    = new ImageData(new Uint8ClampedArray(imageData.data), imageData.width, imageData.height);
+        inst.selHoleSnapshot = inst.ctx.getImageData(0, 0, inst.canvas.width, inst.canvas.height);
+        _drawFloatedAt(inst, pasteX, pasteY);
 
-    const ov = inst.winEl && inst.winEl.querySelector('.img-editor-overlay-canvas');
-    if (ov) _redrawOverlay(inst, ov, ov.getContext('2d'));
+        if (_activeTool !== 'select') _setTool(inst, 'select');
+
+        const ov = inst.winEl && inst.winEl.querySelector('.img-editor-overlay-canvas');
+        if (ov) _redrawOverlay(inst, ov, ov.getContext('2d'));
+    };
+    img.onerror = () => alert('Failed to load image.');
+    img.src = dataUrl;
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
