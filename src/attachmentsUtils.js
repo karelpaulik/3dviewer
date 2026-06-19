@@ -9,6 +9,7 @@ import * as pdfjsLib from 'pdfjs-dist';
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { buildWysiwygEditor } from './annotationUtils.js';
 import { openImageEditor, autoArrangeImageEditors } from './imageEditorUtils.js';
+import { runOcr, runOcrWithProgress, showOcrResultDialog } from './ocrUtils.js';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
@@ -221,6 +222,7 @@ function _buildModal() {
                     <input id="att-modal-name-input" title="Click to rename (extension is read-only)" style="background:transparent;border:none;border-bottom:1px solid transparent;color:#eee;font-size:13px;font-family:sans-serif;outline:none;flex:1;min-width:0;padding:0;cursor:text;" />
                     <span id="att-modal-name-ext" style="color:#888;font-size:13px;font-family:sans-serif;white-space:nowrap;flex-shrink:0;"></span>
                 </span>
+                <button id="att-modal-ocr-btn" title="Recognize text (OCR)" style="display:none;background:none;border:1px solid #555;color:#aaa;font-size:12px;cursor:pointer;line-height:1;padding:2px 8px;border-radius:3px;flex-shrink:0;">🔤 OCR</button>
                 <button id="att-modal-edit-btn" title="Edit image" style="display:none;background:none;border:1px solid #555;color:#aaa;font-size:12px;cursor:pointer;line-height:1;padding:2px 8px;border-radius:3px;flex-shrink:0;">✏ Edit</button>
                 <button id="att-modal-convert-btn" title="Convert PDF pages to PNG/JPG images" style="display:none;background:none;border:1px solid #555;color:#aaa;font-size:12px;cursor:pointer;line-height:1;padding:2px 8px;border-radius:3px;flex-shrink:0;">🖼 → Images</button>
                 <button id="att-modal-comment-btn" title="Comment" style="background:none;border:1px solid #555;color:#aaa;font-size:12px;cursor:pointer;line-height:1;padding:2px 8px;border-radius:3px;flex-shrink:0;">💬</button>
@@ -236,6 +238,10 @@ function _buildModal() {
     _modalEl.querySelector('#att-modal-prev').addEventListener('click', () => _carouselStep(-1));
     _modalEl.querySelector('#att-modal-next').addEventListener('click', () => _carouselStep(+1));
     _modalEl.querySelector('#att-modal-comment-btn').addEventListener('click', () => _toggleCommentPanel(_carouselList[_carouselIndex]));
+    _modalEl.querySelector('#att-modal-ocr-btn').addEventListener('click', () => {
+        const att = _carouselList[_carouselIndex];
+        if (att) _runOcrOnModalAttachment(att);
+    });
     _modalEl.querySelector('#att-modal-edit-btn').addEventListener('click', () => {
         const att = _carouselList[_carouselIndex];
         if (!att) return;
@@ -347,6 +353,58 @@ function _updateCommentBtn() {
     btn.style.background = _commentPanelOpen ? '#3a5a3a' : 'none';
     btn.style.borderColor = _commentPanelOpen ? '#6a6' : '#555';
     btn.style.color = _commentPanelOpen ? '#fff' : '#aaa';
+}
+
+function _attachmentToOcrCanvas(att) {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = img.naturalWidth;
+            canvas.height = img.naturalHeight;
+            canvas.getContext('2d').drawImage(img, 0, 0);
+            resolve(canvas);
+        };
+        img.onerror = () => reject(new Error('Nepodařilo se načíst obrázek'));
+        img.src = `data:${att.mimeType};base64,${att.data}`;
+    });
+}
+
+async function _runOcrOnModalAttachment(att) {
+    if (!att?.mimeType?.startsWith('image/')) return;
+
+    const ocrBtn = _modalEl?.querySelector('#att-modal-ocr-btn');
+    if (ocrBtn) ocrBtn.disabled = true;
+
+    try {
+        const canvas = await _attachmentToOcrCanvas(att);
+        const text = await runOcrWithProgress(onProgress =>
+            runOcr(canvas, { onProgress })
+        );
+
+        if (text === null) return;
+
+        if (!text) {
+            alert('Na obrázku nebyl rozpoznán žádný text.');
+            return;
+        }
+
+        const { insertTextIntoActiveDocument, isDocumentEditorOpen } = await import('./documentsUtils.js');
+
+        showOcrResultDialog(text, {
+            canInsertToDoc: isDocumentEditorOpen(),
+            onInsertToDoc: val => {
+                if (!insertTextIntoActiveDocument(val)) {
+                    alert('Otevřete dokument v režimu úprav pro vložení textu.');
+                }
+            },
+        });
+    } catch (err) {
+        console.error(err);
+        alert(`OCR selhalo: ${err.message || err}`);
+    } finally {
+        if (ocrBtn) ocrBtn.disabled = false;
+    }
 }
 
 function _mountImagePreview(container, blobUrl) {
@@ -567,6 +625,9 @@ function _renderModal(att) {
     }
 
     // Show/hide edit / convert buttons depending on attachment type
+    const ocrBtn = _modalEl.querySelector('#att-modal-ocr-btn');
+    if (ocrBtn) ocrBtn.style.display = mime.startsWith('image/') ? '' : 'none';
+
     const editBtn = _modalEl.querySelector('#att-modal-edit-btn');
     if (editBtn) {
         const canEdit = mime.startsWith('image/') || mime === 'application/pdf';

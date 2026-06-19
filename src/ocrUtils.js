@@ -27,6 +27,19 @@ function _resetIdleTimer() {
     _idleTimer = setTimeout(() => terminateOcrWorker(), IDLE_TIMEOUT_MS);
 }
 
+function _isOcrEngineReady() {
+    return _worker !== null;
+}
+
+const _OCR_LOADING_STATUSES = new Set([
+    'loading tesseract core',
+    'initializing tesseract',
+    'loading language traineddata',
+]);
+
+const OCR_ENGINE_HINT_TEXT =
+    'Načítám OCR engine (~5 MB). Při dalším použití obvykle z cache.';
+
 function _statusLabel(status) {
     switch (status) {
         case 'loading tesseract core': return 'Načítám OCR engine…';
@@ -110,26 +123,40 @@ export async function runOcrWithProgress(runFn) {
     panel.className = 'ocr-progress-panel';
     panel.innerHTML = `
         <div class="ocr-progress-title">Rozpoznávání textu</div>
-        <div class="ocr-progress-hint">Poprvé se stahuje OCR engine (~5 MB). Stane se jen jednou.</div>
-        <div class="ocr-progress-status">Připravuji…</div>
+        <div class="ocr-progress-hint" style="display:none"></div>
+        <div class="ocr-progress-status"></div>
         <div class="ocr-progress-bar-wrap"><div class="ocr-progress-bar"></div></div>
         <button type="button" class="ocr-progress-cancel img-dialog-btn">Zrušit</button>`;
 
     backdrop.appendChild(panel);
     document.body.appendChild(backdrop);
 
+    const hintEl = panel.querySelector('.ocr-progress-hint');
     const statusEl = panel.querySelector('.ocr-progress-status');
     const barEl = panel.querySelector('.ocr-progress-bar');
     let cancelled = false;
+
+    const engineReady = _isOcrEngineReady();
+    statusEl.textContent = engineReady ? 'Rozpoznávám text…' : 'Připravuji…';
 
     const close = () => backdrop.remove();
     const cancelBtn = panel.querySelector('.ocr-progress-cancel');
     cancelBtn.addEventListener('click', () => { cancelled = true; close(); });
 
-    const onProgress = ({ label, progress }) => {
+    const onProgress = ({ status, label, progress }) => {
         statusEl.textContent = label;
         const pct = Math.round((progress || 0) * 100);
         barEl.style.width = `${pct}%`;
+
+        if (_OCR_LOADING_STATUSES.has(status)) {
+            hintEl.textContent = OCR_ENGINE_HINT_TEXT;
+            hintEl.style.display = '';
+        } else if (
+            status === 'initialized tesseract' ||
+            status === 'recognizing text'
+        ) {
+            hintEl.style.display = 'none';
+        }
     };
 
     try {
@@ -189,6 +216,7 @@ export function showOcrResultDialog(text, callbacks = {}) {
     const btnPlace = document.createElement('button');
     btnPlace.className = 'img-dialog-btn img-dialog-btn-primary';
     btnPlace.textContent = 'Vložit na obrázek';
+    if (!callbacks.onPlaceOnImage) btnPlace.style.display = 'none';
     btnPlace.addEventListener('click', () => {
         const val = textarea.value.trim();
         if (!val) return;
@@ -213,7 +241,7 @@ export function showOcrResultDialog(text, callbacks = {}) {
     btnClose.addEventListener('click', () => backdrop.remove());
 
     btnRow.appendChild(btnCopy);
-    btnRow.appendChild(btnPlace);
+    if (callbacks.onPlaceOnImage) btnRow.appendChild(btnPlace);
     if (callbacks.canInsertToDoc) btnRow.appendChild(btnDoc);
     btnRow.appendChild(btnClose);
     dialog.appendChild(btnRow);
