@@ -191,6 +191,28 @@ export function isDocOverlayBlockingInput() {
     return _overlayEl !== null && _overlayEl.style.display !== 'none' && (_isEditMode || !_nav3d);
 }
 
+/** True when a document is open in edit mode (TipTap active). */
+export function isDocumentEditorOpen() {
+    return _overlayEl !== null && _overlayEl.style.display !== 'none' && _isEditMode && _editor !== null;
+}
+
+/** Insert plain text into the active document editor. Returns false if no editor is open. */
+export function insertTextIntoActiveDocument(text) {
+    if (!_editor || !_isEditMode) return false;
+    const trimmed = String(text || '').trim();
+    if (!trimmed) return false;
+    const escaped = trimmed
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    const html = escaped
+        .split(/\n{2,}/)
+        .map(block => `<p>${block.replace(/\n/g, '<br>')}</p>`)
+        .join('');
+    _editor.chain().focus().insertContent(html).run();
+    return true;
+}
+
 // Call before export to flush any unsaved editor content
 export function flushDocumentEdits() {
     if (_editor && _currentDocId && _isEditMode) {

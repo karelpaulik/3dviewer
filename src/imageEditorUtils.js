@@ -9,6 +9,12 @@ import {
     readImageFileFromClipboard,
     showImageInsertDialog,
 } from './imageInsertUtils.js';
+import {
+    canvasRegionToCanvas,
+    runOcr,
+    runOcrWithProgress,
+    showOcrResultDialog,
+} from './ocrUtils.js';
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
@@ -163,6 +169,7 @@ function _ensureToolbar() {
             <button class="img-ed-tool-btn" id="img-ed-tool-eraser"    title="Eraser — erase drawing">🩹</button>
             <button class="img-ed-btn" id="img-ed-eraser-shape" title="Toggle eraser shape: circle / square">○</button>
             <button class="img-ed-tool-btn" id="img-ed-tool-text"      title="Text (click on image)">T</button>
+            <button class="img-ed-btn" id="img-ed-ocr" title="Recognize text (OCR) — selection or whole image">🔤</button>
             <div class="img-ed-sep"></div>
             <span class="img-ed-group-label">Shapes</span>
             <button class="img-ed-tool-btn" id="img-ed-tool-rect"    title="Rectangle">▭</button>
@@ -255,6 +262,9 @@ function _ensureToolbar() {
     });
     _toolbarEl.querySelector('#img-ed-insert-clip').addEventListener('click', () => {
         if (_activeInst) _insertImageFromClipboard(_activeInst);
+    });
+    _toolbarEl.querySelector('#img-ed-ocr').addEventListener('click', () => {
+        if (_activeInst) _runOcrOnImage(_activeInst);
     });
     _toolbarEl.querySelector('#img-ed-save-all').addEventListener('click',    () => [..._instances].forEach(inst => _saveOverwrite(inst)));
     _toolbarEl.querySelector('#img-ed-resize-all').addEventListener('click',   () => _resizeAll());
@@ -1361,6 +1371,68 @@ function _closeTextDialog(inst) {
 function _cancelTextDialog(inst) {
     if (inst.textSnapshot && inst.canvas) inst.ctx.putImageData(inst.textSnapshot, 0, 0);
     _closeTextDialog(inst);
+}
+
+// ── OCR ───────────────────────────────────────────────────────────────────────
+
+function _placeRecognizedTextOnCanvas(inst, text, origin = { x: 20, y: 20 }) {
+    const trimmed = String(text || '').trim();
+    if (!trimmed) return;
+    _pushUndo(inst);
+    inst.ctx.font = `${_fontSize}px ${_fontFamily}`;
+    inst.ctx.fillStyle = _textColor;
+    inst.ctx.textBaseline = 'top';
+    const lineHeight = _fontSize * 1.25;
+    const lines = trimmed.split('\n');
+    lines.forEach((line, i) => inst.ctx.fillText(line, origin.x, origin.y + i * lineHeight));
+}
+
+async function _runOcrOnImage(inst) {
+    if (!inst.canvas) return;
+
+    const sel = inst.selRect;
+    const useSelection = sel && sel.w >= 4 && sel.h >= 4;
+    const imageSource = useSelection ? canvasRegionToCanvas(inst.canvas, sel) : inst.canvas;
+    const rectangle = useSelection
+        ? { left: 0, top: 0, width: imageSource.width, height: imageSource.height }
+        : undefined;
+
+    const ocrBtn = _toolbarEl?.querySelector('#img-ed-ocr');
+    if (ocrBtn) ocrBtn.disabled = true;
+
+    try {
+        const text = await runOcrWithProgress(onProgress =>
+            runOcr(imageSource, { onProgress, rectangle })
+        );
+
+        if (text === null) return;
+
+        if (!text) {
+            alert('Na obrázku nebyl rozpoznán žádný text.');
+            return;
+        }
+
+        const origin = useSelection
+            ? { x: Math.round(sel.x), y: Math.round(sel.y) }
+            : { x: 20, y: 20 };
+
+        const { insertTextIntoActiveDocument, isDocumentEditorOpen } = await import('./documentsUtils.js');
+
+        showOcrResultDialog(text, {
+            canInsertToDoc: isDocumentEditorOpen(),
+            onPlaceOnImage: val => _placeRecognizedTextOnCanvas(inst, val, origin),
+            onInsertToDoc: val => {
+                if (!insertTextIntoActiveDocument(val)) {
+                    alert('Otevřete dokument v režimu úprav pro vložení textu.');
+                }
+            },
+        });
+    } catch (err) {
+        console.error(err);
+        alert(`OCR selhalo: ${err.message || err}`);
+    } finally {
+        if (ocrBtn) ocrBtn.disabled = false;
+    }
 }
 
 // ── Canvas Size dialog ────────────────────────────────────────────────────────
