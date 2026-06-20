@@ -103,8 +103,6 @@ function _createInstance(att, onSaveOverwrite, onSaveNew, onClose) {
         selResizeStart:  null,
         selImageData: null,
         selHoleSnapshot: null,
-        selBaseSnapshot: null,
-        selDragOrigin: null,
         // text tool
         textDialogEl:   null,
         textSnapshot:   null,
@@ -829,7 +827,6 @@ function _onMouseDown(inst, e) {
             if (handle) {
                 if (!inst.selImageData) _liftSelection(inst);
                 if (inst.selImageData) {
-                    inst.selDragOrigin   = { ...inst.selRect };
                     inst.isResizingSel   = true;
                     inst.selResizeHandle = handle;
                     inst.selResizeStart  = { ...inst.selRect };
@@ -838,7 +835,6 @@ function _onMouseDown(inst, e) {
             }
             if (_ptInRect(pt, inst.selRect)) {
                 if (!inst.selImageData) _liftSelection(inst);
-                inst.selDragOrigin = { ...inst.selRect };
                 inst.isMovingSel = true;
                 inst.selMoveOff  = { dx: pt.x - inst.selRect.x, dy: pt.y - inst.selRect.y };
                 return;
@@ -968,6 +964,8 @@ function _onMouseMove(inst, e, ovCanvas, ovCtx) {
         const newX = pt.x - inst.selMoveOff.dx;
         const newY = pt.y - inst.selMoveOff.dy;
         inst.selRect = { x: newX, y: newY, w: inst.selRect.w, h: inst.selRect.h };
+        inst.ctx.putImageData(inst.selHoleSnapshot, 0, 0);
+        _drawFloatedAt(inst, newX, newY);
         _redrawOverlay(inst, ovCanvas, ovCtx);
         return;
     }
@@ -975,6 +973,8 @@ function _onMouseMove(inst, e, ovCanvas, ovCtx) {
     if (inst.isResizingSel && inst.selImageData && inst.selResizeStart) {
         const pt = _vpToImg(inst, e.clientX, e.clientY);
         inst.selRect = _computeResizeRect(inst.selResizeStart, inst.selResizeHandle, pt, e.shiftKey);
+        inst.ctx.putImageData(inst.selHoleSnapshot, 0, 0);
+        _drawFloatedAt(inst, inst.selRect.x, inst.selRect.y);
         _redrawOverlay(inst, ovCanvas, ovCtx);
         return;
     }
@@ -1064,7 +1064,11 @@ function _onMouseUp(inst, e, ovCanvas, ovCtx) {
     if (inst.isMovingSel) {
         inst.isMovingSel = false;
         inst.selMoveOff  = null;
-        _commitFloatedSelection(inst);
+        if (inst.selImageData) {
+            inst.selImageData    = null;
+            inst.selHoleSnapshot = null;
+            _pushUndo(inst);
+        }
         _updateCursor(inst);
         return;
     }
@@ -1073,7 +1077,11 @@ function _onMouseUp(inst, e, ovCanvas, ovCtx) {
         inst.isResizingSel   = false;
         inst.selResizeHandle = null;
         inst.selResizeStart  = null;
-        _commitFloatedSelection(inst);
+        if (inst.selImageData) {
+            inst.selImageData    = null;
+            inst.selHoleSnapshot = null;
+            _pushUndo(inst);
+        }
         _updateCursor(inst);
         return;
     }
@@ -1130,12 +1138,16 @@ function _onMouseLeave(inst, ovCanvas, ovCtx) {
     }
     if (inst.isMovingSel) {
         inst.isMovingSel = false; inst.selMoveOff = null;
-        _commitFloatedSelection(inst);
+        if (inst.selImageData) {
+            inst.selImageData = null; inst.selHoleSnapshot = null; _pushUndo(inst);
+        }
         _updateCursor(inst);
     }
     if (inst.isResizingSel) {
         inst.isResizingSel = false; inst.selResizeHandle = null; inst.selResizeStart = null;
-        _commitFloatedSelection(inst);
+        if (inst.selImageData) {
+            inst.selImageData = null; inst.selHoleSnapshot = null; _pushUndo(inst);
+        }
         _updateCursor(inst);
     }
 }
@@ -1151,12 +1163,7 @@ function _onKeyDown(inst, e) {
         return;
     }
     if (e.key === 'f' || e.key === 'F') { _fitToView(inst); return; }
-    if (e.key === 'Escape') {
-        _cancelCrop(inst);
-        if (_activeTool === 'select') _cancelInsertedSelection(inst);
-        _setTool(inst, 'pan');
-        return;
-    }
+    if (e.key === 'Escape') { _cancelCrop(inst); if (_activeTool === 'select') _clearSelection(inst); _setTool(inst, 'pan'); return; }
     if ((e.key === 'Delete' || e.key === 'Backspace') && _activeTool === 'select' && inst.selRect) {
         e.preventDefault(); _deleteSelection(inst); return;
     }
@@ -1198,10 +1205,6 @@ function _redrawOverlay(inst, ov, ovCtx) {
         ovCtx.fillStyle = 'rgba(80,160,255,0.85)'; ovCtx.fillRect(rx - 1, ry - 16, 20, 16);
         ovCtx.fillStyle = '#fff'; ovCtx.font = '11px sans-serif'; ovCtx.textBaseline = 'middle';
         ovCtx.fillText('\u2725', rx + 2, ry - 8);
-    }
-
-    if (inst.selImageData && inst.selRect) {
-        _drawFloatedOnOverlay(inst, ovCtx, inst.selRect.x, inst.selRect.y);
     }
 
     if (_activeTool === 'select' && inst.selRect) {
@@ -1925,37 +1928,6 @@ function _close(inst) {
 
 // ── Selection helpers ─────────────────────────────────────────────────────────
 
-function _cloneImageData(imgData) {
-    return new ImageData(new Uint8ClampedArray(imgData.data), imgData.width, imgData.height);
-}
-
-function _blitRect(ctx, srcImageData, rect) {
-    const cx = Math.round(Math.max(0, rect.x));
-    const cy = Math.round(Math.max(0, rect.y));
-    const cw = Math.round(Math.min(srcImageData.width  - cx, rect.w));
-    const ch = Math.round(Math.min(srcImageData.height - cy, rect.h));
-    if (cw < 1 || ch < 1) return;
-    const patch = new ImageData(cw, ch);
-    const s = srcImageData.data;
-    const d = patch.data;
-    for (let row = 0; row < ch; row++) {
-        d.set(s.subarray(((cy + row) * srcImageData.width + cx) * 4, ((cy + row) * srcImageData.width + cx + cw) * 4), row * cw * 4);
-    }
-    ctx.putImageData(patch, cx, cy);
-}
-
-function _fillSelRectBg(inst, rect) {
-    const cx = Math.round(Math.max(0, rect.x));
-    const cy = Math.round(Math.max(0, rect.y));
-    const cw = Math.round(Math.min(inst.canvas.width  - cx, rect.w));
-    const ch = Math.round(Math.min(inst.canvas.height - cy, rect.h));
-    if (cw < 1 || ch < 1) return;
-    inst.ctx.save();
-    if (_bgColor) { inst.ctx.fillStyle = _bgColor; inst.ctx.fillRect(cx, cy, cw, ch); }
-    else          { inst.ctx.clearRect(cx, cy, cw, ch); }
-    inst.ctx.restore();
-}
-
 function _ptInRect(pt, r) {
     return pt.x >= r.x && pt.x <= r.x + r.w && pt.y >= r.y && pt.y <= r.y + r.h;
 }
@@ -1967,12 +1939,12 @@ function _liftSelection(inst) {
     const cw = Math.round(Math.min(inst.canvas.width  - cx, inst.selRect.w));
     const ch = Math.round(Math.min(inst.canvas.height - cy, inst.selRect.h));
     if (cw < 1 || ch < 1) return;
-    if (!inst.selHoleSnapshot) {
-        inst.selHoleSnapshot = _cloneImageData(inst.ctx.getImageData(0, 0, inst.canvas.width, inst.canvas.height));
-    }
-    if (!inst.selImageData) {
-        inst.selImageData = _cloneImageData(inst.ctx.getImageData(cx, cy, cw, ch));
-    }
+    inst.selImageData = inst.ctx.getImageData(cx, cy, cw, ch);
+    inst.ctx.save();
+    if (_bgColor) { inst.ctx.fillStyle = _bgColor; inst.ctx.fillRect(cx, cy, cw, ch); }
+    else          { inst.ctx.clearRect(cx, cy, cw, ch); }
+    inst.ctx.restore();
+    inst.selHoleSnapshot = inst.ctx.getImageData(0, 0, inst.canvas.width, inst.canvas.height);
     inst.selRect = { x: cx, y: cy, w: cw, h: ch };
 }
 
@@ -1985,74 +1957,6 @@ function _drawFloatedAt(inst, x, y) {
     const dw = inst.selRect ? inst.selRect.w : inst.selImageData.width;
     const dh = inst.selRect ? inst.selRect.h : inst.selImageData.height;
     inst.ctx.drawImage(tmp, Math.round(x), Math.round(y), Math.round(dw), Math.round(dh));
-}
-
-function _drawFloatedOnOverlay(inst, ovCtx, x, y) {
-    if (!inst.selImageData) return;
-    const dw = inst.selRect ? inst.selRect.w : inst.selImageData.width;
-    const dh = inst.selRect ? inst.selRect.h : inst.selImageData.height;
-    const tl = _canvasToVp(inst, x, y);
-    const br = _canvasToVp(inst, x + dw, y + dh);
-    const tmp = document.createElement('canvas');
-    tmp.width  = inst.selImageData.width;
-    tmp.height = inst.selImageData.height;
-    tmp.getContext('2d').putImageData(inst.selImageData, 0, 0);
-    ovCtx.drawImage(tmp, tl.x, tl.y, br.x - tl.x, br.y - tl.y);
-}
-
-function _commitFloatedSelection(inst) {
-    if (!inst.selImageData || !inst.selRect || !inst.selHoleSnapshot) return;
-    const final  = inst.selRect;
-    const origin = inst.selDragOrigin;
-    inst.ctx.putImageData(inst.selHoleSnapshot, 0, 0);
-    if (origin &&
-        (Math.round(origin.x) !== Math.round(final.x) || Math.round(origin.y) !== Math.round(final.y))) {
-        if (inst.selBaseSnapshot) _blitRect(inst.ctx, inst.selBaseSnapshot, origin);
-        else                      _fillSelRectBg(inst, origin);
-    }
-    _drawFloatedAt(inst, final.x, final.y);
-    inst.selImageData    = null;
-    inst.selHoleSnapshot = null;
-    inst.selDragOrigin   = null;
-    _pushUndo(inst);
-}
-
-function _cancelFloatedSelection(inst) {
-    if (inst.selHoleSnapshot) inst.ctx.putImageData(inst.selHoleSnapshot, 0, 0);
-    inst.selImageData    = null;
-    inst.selHoleSnapshot = null;
-    inst.selDragOrigin   = null;
-    inst.selBaseSnapshot = null;
-}
-
-function _removeInsertedImageAtSelRect(inst) {
-    if (!inst.selRect || !inst.selBaseSnapshot) return;
-    _blitRect(inst.ctx, inst.selBaseSnapshot, inst.selRect);
-}
-
-function _cancelInsertedSelection(inst) {
-    if (inst.selImageData && inst.selHoleSnapshot) {
-        _cancelFloatedSelection(inst);
-        _resetSelectionState(inst);
-        return;
-    }
-    if (inst.selRect && inst.selBaseSnapshot) {
-        _removeInsertedImageAtSelRect(inst);
-        _resetSelectionState(inst);
-        _pushUndo(inst);
-        return;
-    }
-    _resetSelectionState(inst);
-}
-
-function _resetSelectionState(inst) {
-    inst.selRect = null; inst.selStart = null; inst.isSelectingRect = false;
-    inst.isMovingSel = false; inst.selMoveOff = null;
-    inst.isResizingSel = false; inst.selResizeHandle = null; inst.selResizeStart = null;
-    inst.selImageData = null; inst.selHoleSnapshot = null;
-    inst.selDragOrigin = null; inst.selBaseSnapshot = null;
-    const ov = inst.winEl && inst.winEl.querySelector('.img-editor-overlay-canvas');
-    if (ov) _redrawOverlay(inst, ov, ov.getContext('2d'));
 }
 
 const _SEL_HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
@@ -2141,26 +2045,40 @@ function _computeResizeRect(start, handle, pt, keepAspect) {
 
 function _clearSelection(inst) {
     if (inst.selImageData && inst.selHoleSnapshot && inst.selRect) {
-        _commitFloatedSelection(inst);
+        inst.ctx.putImageData(inst.selHoleSnapshot, 0, 0);
+        _drawFloatedAt(inst, inst.selRect.x, inst.selRect.y);
+        _pushUndo(inst);
     }
-    _resetSelectionState(inst);
+    inst.selRect = null; inst.selStart = null; inst.isSelectingRect = false;
+    inst.isMovingSel = false; inst.selMoveOff = null;
+    inst.isResizingSel = false; inst.selResizeHandle = null; inst.selResizeStart = null;
+    inst.selImageData = null; inst.selHoleSnapshot = null;
+    const ov = inst.winEl && inst.winEl.querySelector('.img-editor-overlay-canvas');
+    if (ov) _redrawOverlay(inst, ov, ov.getContext('2d'));
 }
 
 function _deleteSelection(inst) {
     if (!inst.selRect) return;
     if (inst.selImageData && inst.selHoleSnapshot) {
         inst.ctx.putImageData(inst.selHoleSnapshot, 0, 0);
-    } else if (inst.selBaseSnapshot) {
-        _removeInsertedImageAtSelRect(inst);
     } else {
         const cx = Math.round(Math.max(0, inst.selRect.x));
         const cy = Math.round(Math.max(0, inst.selRect.y));
         const cw = Math.round(Math.min(inst.canvas.width  - cx, inst.selRect.w));
         const ch = Math.round(Math.min(inst.canvas.height - cy, inst.selRect.h));
-        if (cw >= 1 && ch >= 1) _fillSelRectBg(inst, { x: cx, y: cy, w: cw, h: ch });
+        if (cw >= 1 && ch >= 1) {
+            inst.ctx.save();
+            if (_bgColor) { inst.ctx.fillStyle = _bgColor; inst.ctx.fillRect(cx, cy, cw, ch); }
+            else          { inst.ctx.clearRect(cx, cy, cw, ch); }
+            inst.ctx.restore();
+        }
     }
-    _resetSelectionState(inst);
+    inst.selImageData = null; inst.selHoleSnapshot = null; inst.selRect = null;
+    inst.isMovingSel = false; inst.isSelectingRect = false;
+    inst.isResizingSel = false; inst.selResizeHandle = null; inst.selResizeStart = null;
     _pushUndo(inst);
+    const ov = inst.winEl && inst.winEl.querySelector('.img-editor-overlay-canvas');
+    if (ov) _redrawOverlay(inst, ov, ov.getContext('2d'));
 }
 
 function _copySelection(inst) {
@@ -2218,10 +2136,9 @@ function _insertImageFromDataUrl(inst, dataUrl) {
         const pasteY = Math.min(16, Math.max(0, inst.canvas.height - imageData.height));
 
         inst.selRect         = { x: pasteX, y: pasteY, w: imageData.width, h: imageData.height };
-        inst.selImageData    = _cloneImageData(imageData);
-        inst.selBaseSnapshot = _cloneImageData(inst.ctx.getImageData(0, 0, inst.canvas.width, inst.canvas.height));
-        inst.selHoleSnapshot = _cloneImageData(inst.selBaseSnapshot);
-        inst.selDragOrigin   = null;
+        inst.selImageData    = new ImageData(new Uint8ClampedArray(imageData.data), imageData.width, imageData.height);
+        inst.selHoleSnapshot = inst.ctx.getImageData(0, 0, inst.canvas.width, inst.canvas.height);
+        _drawFloatedAt(inst, pasteX, pasteY);
 
         if (_activeTool !== 'select') _setTool(inst, 'select');
 
