@@ -1322,10 +1322,10 @@ function _cancelCrop(inst) {
 
 // ── Text placement ────────────────────────────────────────────────────────────
 
-function _placeText(inst, e) {
+function _openTextDialog(inst, { screenX, screenY, initialText = '' }) {
     if (inst.textDialogEl) return;
     _cancelTextDialog(inst);
-    inst.textPos = _vpToImg(inst, e.clientX, e.clientY);
+    inst.textPos = _vpToImg(inst, screenX, screenY);
     inst.textSnapshot = inst.ctx.getImageData(0, 0, inst.canvas.width, inst.canvas.height);
 
     const bgChecked = _bgColor ? 'checked' : '';
@@ -1334,8 +1334,8 @@ function _placeText(inst, e) {
 
     const dlg = document.createElement('div');
     dlg.className = 'img-ed-text-dialog';
-    dlg.style.left = (e.clientX + 14) + 'px';
-    dlg.style.top  = (e.clientY + 14) + 'px';
+    dlg.style.left = (screenX + 14) + 'px';
+    dlg.style.top  = (screenY + 14) + 'px';
     dlg.innerHTML = `
         <div class="img-ed-txt-drag-handle" title="Drag to move">✎ Insert text</div>
         <textarea class="img-ed-txt-input" placeholder="Enter text… (Enter = new line, Ctrl+Enter = confirm)" autocomplete="off" spellcheck="false" rows="3"></textarea>
@@ -1434,7 +1434,16 @@ function _placeText(inst, e) {
         if ((ev.ctrlKey || ev.metaKey) && ev.key === 'Enter') { ev.preventDefault(); _confirm(); }
         if (ev.key === 'Escape') { ev.preventDefault(); _cancel(); }
     });
+
+    if (initialText) {
+        textInput.value = initialText;
+        _preview();
+    }
     textInput.focus();
+}
+
+function _placeText(inst, e) {
+    _openTextDialog(inst, { screenX: e.clientX, screenY: e.clientY });
 }
 
 function _closeTextDialog(inst) {
@@ -1452,16 +1461,14 @@ function _cancelTextDialog(inst) {
 
 // ── OCR ───────────────────────────────────────────────────────────────────────
 
-function _placeRecognizedTextOnCanvas(inst, text, origin = { x: 20, y: 20 }) {
+function _openTextDialogFromOcr(inst, text, origin) {
     const trimmed = String(text || '').trim();
     if (!trimmed) return;
-    _pushUndo(inst);
-    inst.ctx.font = `${_fontSize}px ${_fontFamily}`;
-    inst.ctx.fillStyle = _textColor;
-    inst.ctx.textBaseline = 'top';
-    const lineHeight = _fontSize * 1.25;
-    const lines = trimmed.split('\n');
-    lines.forEach((line, i) => inst.ctx.fillText(line, origin.x, origin.y + i * lineHeight));
+    const vp = inst.winEl.querySelector('.img-editor-viewport');
+    const rect = vp.getBoundingClientRect();
+    const screenX = rect.left + inst.panX + origin.x * inst.zoom;
+    const screenY = rect.top + inst.panY + origin.y * inst.zoom;
+    _openTextDialog(inst, { screenX, screenY, initialText: trimmed });
 }
 
 async function _runOcrOnImage(inst) {
@@ -1497,7 +1504,7 @@ async function _runOcrOnImage(inst) {
 
         showOcrResultDialog(text, {
             canInsertToDoc: isDocumentEditorOpen(),
-            onPlaceOnImage: val => _placeRecognizedTextOnCanvas(inst, val, origin),
+            onPlaceOnImage: val => _openTextDialogFromOcr(inst, val, origin),
             onInsertToDoc: val => {
                 if (!insertTextIntoActiveDocument(val)) {
                     alert('Otevřete dokument v režimu úprav pro vložení textu.');
