@@ -2973,6 +2973,42 @@ a, button, input, select {
 .img-ed-text-dialog > .img-ed-txt-input  { margin-top: 8px; }
 .img-ed-text-dialog > .img-ed-text-opts  { margin-top: 6px; }
 .img-ed-text-dialog > .img-ed-text-btns  { margin-top: 6px; margin-bottom: 10px; }
+/* ── Floating layer order popup ──────────────────────────────────────────── */
+.img-ed-layer-order-popup {
+    position: absolute;
+    z-index: 50;
+    display: none;
+    flex-direction: row;
+    gap: 2px;
+    padding: 2px;
+    background: rgba(30, 30, 30, 0.92);
+    border: 1px solid #555;
+    border-radius: 4px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+    pointer-events: auto;
+    user-select: none;
+}
+.img-ed-layer-order-btn {
+    min-width: 22px;
+    height: 22px;
+    padding: 0 4px;
+    border: 1px solid #555;
+    border-radius: 3px;
+    background: #383838;
+    color: #ddd;
+    font-size: 11px;
+    line-height: 1;
+    cursor: pointer;
+}
+.img-ed-layer-order-btn:hover:not(:disabled) {
+    background: #4a4a4a;
+    border-color: #0078d7;
+    color: #fff;
+}
+.img-ed-layer-order-btn:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
 .img-ed-txt-input {
     background: #1a1a1a;
     border: 1px solid #666;

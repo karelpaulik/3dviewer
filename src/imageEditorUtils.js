@@ -114,6 +114,7 @@ function _createInstance(att, onSaveOverwrite, onSaveNew, onClose) {
         layerResizeHandle: null,
         layerResizeStart:  null,
         editingLayerId:   null,
+        layerOrderPopupEl: null,
         // text tool
         textDialogEl:   null,
         textPos:        null,
@@ -429,6 +430,7 @@ function _buildInstanceUI(inst) {
         inst.panY = cy - (cy - inst.panY) * (newZoom / inst.zoom);
         inst.zoom = newZoom;
         _applyTransform(inst);
+        _syncLayerOrderPopup(inst);
     };
     zoomInp.addEventListener('keydown', ev => {
         if (ev.key === 'Enter') { ev.preventDefault(); _applyZoomInput(); zoomInp.blur(); }
@@ -534,10 +536,12 @@ function _buildInstanceUI(inst) {
         ovCanvas.width  = vp.clientWidth;
         ovCanvas.height = vp.clientHeight;
         _redrawOverlay(inst, ovCanvas, ovCtx);
+        _syncLayerOrderPopup(inst);
     });
     ro.observe(vp);
     win._ro = ro;
 
+    _ensureLayerOrderPopup(inst);
     _setTool(inst, 'pan');
 }
 
@@ -603,6 +607,7 @@ function _focusInstance(inst) {
     _syncCropButtons(inst);
     _updateCursor(inst);
     _updateHint(inst);
+    _instances.forEach(i => _syncLayerOrderPopup(i));
 }
 
 function _syncCropButtons(inst) {
@@ -632,6 +637,7 @@ function _setTool(inst, tool) {
     }
     _updateHint(inst);
     _updateCursor(inst);
+    _syncLayerOrderPopup(inst);
 }
 
 function _updateHint(inst) {
@@ -649,7 +655,7 @@ function _updateHint(inst) {
         eraser:    'Drag to erase to transparent | Size controls width' + panHint,
         callout:   'Click to place numbered callout | ↺① resets counter' + panHint,
         blur:      'Drag to select area to pixelate | Size = block size' + panHint,
-        select:    'Click inserted text/image to move | double-click text to edit | Delete removes layer | Light border = unsaved | merged on save' + panHint,
+        select:    'Click inserted text/image to move | double-click text to edit | layer order panel on selection | Light border = unsaved | merged on save' + panHint,
     };
     const el = inst.winEl && inst.winEl.querySelector('.img-ed-hint');
     if (el) el.textContent = hints[_activeTool] || '';
@@ -800,6 +806,7 @@ function _restoreUndoState(inst, state) {
     _updateSizeLabel(inst);
     const ov = inst.winEl && inst.winEl.querySelector('.img-editor-overlay-canvas');
     if (ov) _redrawOverlay(inst, ov, ov.getContext('2d'));
+    _syncLayerOrderPopup(inst);
 }
 
 function _pushUndo(inst) {
@@ -841,6 +848,7 @@ function _fitToView(inst) {
     inst.panX = (vpW - inst.canvas.width  * inst.zoom) / 2;
     inst.panY = (vpH - inst.canvas.height * inst.zoom) / 2;
     _applyTransform(inst);
+    _syncLayerOrderPopup(inst);
 }
 
 function _applyTransform(inst) {
@@ -865,6 +873,7 @@ function _onWheel(inst, e, ovCanvas, ovCtx) {
     _applyTransform(inst);
     _updateCursor(inst);
     _redrawOverlay(inst, ovCanvas, ovCtx);
+    _syncLayerOrderPopup(inst);
 }
 
 // ── Mouse events ──────────────────────────────────────────────────────────────
@@ -912,6 +921,7 @@ function _onMouseDown(inst, e) {
             inst.layerMoveOff = { dx: pt.x - hitLayer.x, dy: pt.y - hitLayer.y };
             const ov = inst.winEl && inst.winEl.querySelector('.img-editor-overlay-canvas');
             if (ov) _redrawOverlay(inst, ov, ov.getContext('2d'));
+            _syncLayerOrderPopup(inst);
             return;
         }
 
@@ -1049,6 +1059,7 @@ function _onMouseMove(inst, e, ovCanvas, ovCtx) {
             layer.x = pt.x - inst.layerMoveOff.dx;
             layer.y = pt.y - inst.layerMoveOff.dy;
             _redrawOverlay(inst, ovCanvas, ovCtx);
+            _positionLayerOrderPopup(inst);
         }
         return;
     }
@@ -1063,6 +1074,7 @@ function _onMouseMove(inst, e, ovCanvas, ovCtx) {
             layer.w = r.w;
             layer.h = r.h;
             _redrawOverlay(inst, ovCanvas, ovCtx);
+            _positionLayerOrderPopup(inst);
         }
         return;
     }
@@ -1072,6 +1084,7 @@ function _onMouseMove(inst, e, ovCanvas, ovCtx) {
         inst.panY = e.clientY - inst.panStart.y;
         _applyTransform(inst);
         _redrawOverlay(inst, ovCanvas, ovCtx);
+        _positionLayerOrderPopup(inst);
         return;
     }
 
@@ -1197,6 +1210,7 @@ function _onMouseUp(inst, e, ovCanvas, ovCtx) {
         inst.pendingLayerId = null;
         _pushUndo(inst);
         _updateCursor(inst);
+        _syncLayerOrderPopup(inst);
         return;
     }
 
@@ -1207,6 +1221,7 @@ function _onMouseUp(inst, e, ovCanvas, ovCtx) {
         inst.pendingLayerId = null;
         _pushUndo(inst);
         _updateCursor(inst);
+        _syncLayerOrderPopup(inst);
         return;
     }
 
@@ -1291,6 +1306,7 @@ function _onMouseLeave(inst, ovCanvas, ovCtx) {
         inst.pendingLayerId = null;
         _pushUndo(inst);
         _updateCursor(inst);
+        _syncLayerOrderPopup(inst);
     }
     if (inst.isResizingLayer) {
         inst.isResizingLayer = false;
@@ -1299,6 +1315,7 @@ function _onMouseLeave(inst, ovCanvas, ovCtx) {
         inst.pendingLayerId = null;
         _pushUndo(inst);
         _updateCursor(inst);
+        _syncLayerOrderPopup(inst);
     }
     if (inst.isMovingSel) {
         inst.isMovingSel = false; inst.selMoveOff = null;
@@ -1553,6 +1570,7 @@ function _openTextDialog(inst, { screenX, screenY, initialText = '', layerId = n
 
     inst.winEl.appendChild(dlg);
     inst.textDialogEl = dlg;
+    _syncLayerOrderPopup(inst);
 
     const dr = dlg.getBoundingClientRect();
     if (dr.right  > window.innerWidth  - 8) dlg.style.left = (window.innerWidth  - dr.width  - 8) + 'px';
@@ -1677,6 +1695,7 @@ function _closeTextDialog(inst) {
     inst.textPreviewFn = null; inst.isDraggingText = false; inst.textDragOff = null;
     const ov = inst.winEl && inst.winEl.querySelector('.img-editor-overlay-canvas');
     if (ov) _redrawOverlay(inst, ov, ov.getContext('2d'));
+    _syncLayerOrderPopup(inst);
 }
 
 function _cancelTextDialog(inst) {
@@ -1868,6 +1887,7 @@ function _canvasToBase64(inst) {
         _pushUndo(inst);
         const ov = inst.winEl && inst.winEl.querySelector('.img-editor-overlay-canvas');
         if (ov) _redrawOverlay(inst, ov, ov.getContext('2d'));
+        _syncLayerOrderPopup(inst);
     }
     const { mime } = _getOutputMimeAndExt(inst);
     const quality  = (mime === 'image/jpeg' || mime === 'image/webp') ? 0.92 : undefined;
@@ -2208,6 +2228,142 @@ function _getLayerById(inst, id) {
     return inst.floatingLayers.find(l => l.id === id) || null;
 }
 
+function _getLayerIndex(inst, id) {
+    return inst.floatingLayers.findIndex(l => l.id === id);
+}
+
+function _canMoveLayerForward(inst, id) {
+    const i = _getLayerIndex(inst, id);
+    return i >= 0 && i < inst.floatingLayers.length - 1;
+}
+
+function _canMoveLayerBackward(inst, id) {
+    return _getLayerIndex(inst, id) > 0;
+}
+
+function _moveLayerToIndex(inst, id, targetIndex) {
+    const i = _getLayerIndex(inst, id);
+    if (i < 0) return false;
+    const clamped = Math.max(0, Math.min(inst.floatingLayers.length - 1, targetIndex));
+    if (i === clamped) return false;
+    const [layer] = inst.floatingLayers.splice(i, 1);
+    inst.floatingLayers.splice(clamped, 0, layer);
+    return true;
+}
+
+function _moveLayerForward(inst, id) {
+    return _moveLayerToIndex(inst, id, _getLayerIndex(inst, id) + 1);
+}
+
+function _moveLayerBackward(inst, id) {
+    return _moveLayerToIndex(inst, id, _getLayerIndex(inst, id) - 1);
+}
+
+function _moveLayerToFront(inst, id) {
+    return _moveLayerToIndex(inst, id, inst.floatingLayers.length - 1);
+}
+
+function _moveLayerToBack(inst, id) {
+    return _moveLayerToIndex(inst, id, 0);
+}
+
+function _applyLayerOrderAction(inst, moveFn) {
+    const id = inst.activeLayerId;
+    if (id == null || !moveFn(inst, id)) return;
+    _pushUndo(inst);
+    const ov = inst.winEl && inst.winEl.querySelector('.img-editor-overlay-canvas');
+    if (ov) _redrawOverlay(inst, ov, ov.getContext('2d'));
+    _syncLayerOrderPopup(inst);
+}
+
+function _ensureLayerOrderPopup(inst) {
+    if (inst.layerOrderPopupEl || !inst.winEl) return;
+    const vp = inst.winEl.querySelector('.img-editor-viewport');
+    if (!vp) return;
+
+    const popup = document.createElement('div');
+    popup.className = 'img-ed-layer-order-popup';
+    popup.style.display = 'none';
+
+    const actions = [
+        { id: 'back',  label: '\u21E7\u2193', title: 'Send to back' },
+        { id: 'down',  label: '\u2193',       title: 'Send backward' },
+        { id: 'up',    label: '\u2191',       title: 'Bring forward' },
+        { id: 'front', label: '\u21E7\u2191', title: 'Bring to front' },
+    ];
+
+    for (const a of actions) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'img-ed-layer-order-btn';
+        btn.dataset.action = a.id;
+        btn.textContent = a.label;
+        btn.title = a.title;
+        btn.addEventListener('mousedown', e => e.stopPropagation());
+        btn.addEventListener('click', e => {
+            e.stopPropagation();
+            const fn = {
+                back:  _moveLayerToBack,
+                down:  _moveLayerBackward,
+                up:    _moveLayerForward,
+                front: _moveLayerToFront,
+            }[a.id];
+            if (fn) _applyLayerOrderAction(inst, fn);
+        });
+        popup.appendChild(btn);
+    }
+
+    popup.addEventListener('mousedown', e => e.stopPropagation());
+    vp.appendChild(popup);
+    inst.layerOrderPopupEl = popup;
+}
+
+function _positionLayerOrderPopup(inst) {
+    const popup = inst.layerOrderPopupEl;
+    const layer = _getActiveLayer(inst);
+    if (!popup || !layer || popup.style.display === 'none') return;
+
+    const br = _canvasToVp(inst, layer.x + layer.w, layer.y);
+    const vp = inst.winEl.querySelector('.img-editor-viewport');
+    popup.style.display = 'flex';
+    const popupW = popup.offsetWidth || 88;
+    const popupH = popup.offsetHeight || 24;
+    let left = br.x - popupW;
+    let top  = br.y - popupH - 4;
+    const vpW = vp.clientWidth;
+    const vpH = vp.clientHeight;
+    left = Math.max(4, Math.min(left, vpW - popupW - 4));
+    top  = Math.max(4, Math.min(top, vpH - popupH - 4));
+    popup.style.left = left + 'px';
+    popup.style.top  = top + 'px';
+}
+
+function _syncLayerOrderPopup(inst) {
+    if (!inst.winEl) return;
+    _ensureLayerOrderPopup(inst);
+    const popup = inst.layerOrderPopupEl;
+    if (!popup) return;
+
+    const show = inst === _activeInst && _activeTool === 'select' && inst.activeLayerId != null &&
+                 inst.floatingLayers.length >= 2 && !inst.textDialogEl;
+
+    if (!show) {
+        popup.style.display = 'none';
+        return;
+    }
+
+    popup.style.display = 'flex';
+    const id = inst.activeLayerId;
+    popup.querySelectorAll('.img-ed-layer-order-btn').forEach(btn => {
+        const action = btn.dataset.action;
+        let enabled = true;
+        if (action === 'up' || action === 'front') enabled = _canMoveLayerForward(inst, id);
+        if (action === 'down' || action === 'back') enabled = _canMoveLayerBackward(inst, id);
+        btn.disabled = !enabled;
+    });
+    _positionLayerOrderPopup(inst);
+}
+
 function _addImageLayer(inst, imageData, x, y) {
     const id = inst.nextLayerId++;
     const layer = {
@@ -2264,6 +2420,7 @@ function _removeLayer(inst, id) {
     if (inst.activeLayerId === id) inst.activeLayerId = null;
     if (inst.pendingLayerId === id) inst.pendingLayerId = null;
     if (inst.editingLayerId === id) inst.editingLayerId = null;
+    _syncLayerOrderPopup(inst);
 }
 
 function _deselectFloatingLayer(inst) {
@@ -2271,6 +2428,7 @@ function _deselectFloatingLayer(inst) {
     inst.pendingLayerId = null;
     const ov = inst.winEl && inst.winEl.querySelector('.img-editor-overlay-canvas');
     if (ov) _redrawOverlay(inst, ov, ov.getContext('2d'));
+    _syncLayerOrderPopup(inst);
 }
 
 function _hitTestFloatingLayer(inst, pt) {
@@ -2762,6 +2920,7 @@ function _insertImageFromDataUrl(inst, dataUrl) {
 
         const ov = inst.winEl && inst.winEl.querySelector('.img-editor-overlay-canvas');
         if (ov) _redrawOverlay(inst, ov, ov.getContext('2d'));
+        _syncLayerOrderPopup(inst);
     };
     img.onerror = () => alert('Failed to load image.');
     img.src = dataUrl;
