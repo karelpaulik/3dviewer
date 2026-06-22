@@ -1811,6 +1811,10 @@ a, button, input, select {
     background: #a0a0a0;
     color: #000;
 }
+.doc-btn:disabled {
+    opacity: 0.5;
+    cursor: wait;
+}
 .doc-btn-delete {
     border-color: #c66;
     color: #c00;

@@ -1,6 +1,9 @@
 ﻿// documentsUtils.js
 import { Editor, Extension, Mark } from '@tiptap/core';
 import { pickImageFromDisk, pickImageFromFiles, showImageInsertDialog } from './imageInsertUtils.js';
+import { addPdfAttachmentFromBytes } from './attachmentsUtils.js';
+import { PDFDocument } from 'pdf-lib';
+import html2canvas from 'html2canvas';
 import StarterKit from '@tiptap/starter-kit';
 import ImageResize from 'tiptap-extension-resize-image';
 import TextAlign from '@tiptap/extension-text-align';
@@ -158,6 +161,13 @@ const _TABLE_BORDER_OPTIONS = [
     { label: '4px',    value: '4px solid #666' },
 ];
 const _DEFAULT_TABLE_BORDER = '1px solid #ccc';
+const _PDF_A4_W_PT = 595.28;
+const _PDF_A4_H_PT = 841.89;
+const _PDF_MARGIN_MM = 20;
+const _PDF_MARGIN_PT = (_PDF_MARGIN_MM / 25.4) * 72;
+const _PDF_CONTENT_W_PT = _PDF_A4_W_PT - 2 * _PDF_MARGIN_PT;
+const _PDF_CONTENT_H_PT = _PDF_A4_H_PT - 2 * _PDF_MARGIN_PT;
+const _PDF_RENDER_SCALE = 2;
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
@@ -172,6 +182,8 @@ let _nav3d = false;        // true = pointer-events off on overlay → 3D naviga
 let _tocScrollHandler = null; // scroll spy handler for TOC
 let _showLastEditDate = true;  // show (le. ...) in document button label
 let _showImportDate = false;    // show (imp. ...) in document button label
+let _pdfExporting = false;
+let _btnExportPdf = null;
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
@@ -666,34 +678,44 @@ function _buildToc(htmlContent) {
     contentEl.addEventListener('scroll', _tocScrollHandler, { passive: true });
 }
 
-function _printDocument() {
-    if (!_editor) return;
-    const doc = _currentDocId ? documentsStore.find(d => d.id === _currentDocId) : null;
-    const title = doc ? doc.title : 'Document';
-    const content = _editor.getHTML();
-    const fontFamily = (doc && doc.font) ? doc.font : _DEFAULT_FONT;
-    const lineHeight = (doc && doc.lineHeight) ? doc.lineHeight : _DEFAULT_LINE_HEIGHT;
-    const paraSpacing = (doc && doc.paraSpacing) ? doc.paraSpacing : _DEFAULT_PARA_SPACING;
+function _parseDocWidthPx(doc) {
+    const raw = (doc && doc.docWidth) || _DEFAULT_DOC_WIDTH;
+    if (typeof raw === 'string' && raw.endsWith('px')) {
+        const n = parseInt(raw, 10);
+        if (Number.isFinite(n) && n > 0) return n;
+    }
+    return 794;
+}
 
-    const win = window.open('', '_blank');
-    win.document.write(`<!DOCTYPE html>
-<html><head>
-<meta charset="utf-8">
-<title>${title}</title>
-<style>
+function _getDocumentPrintMeta(doc) {
+    return {
+        title: doc ? (doc.title || 'Document') : 'Document',
+        fontFamily: (doc && doc.font) ? doc.font : _DEFAULT_FONT,
+        lineHeight: (doc && doc.lineHeight) ? doc.lineHeight : _DEFAULT_LINE_HEIGHT,
+        paraSpacing: (doc && doc.paraSpacing) ? doc.paraSpacing : _DEFAULT_PARA_SPACING,
+        tableBorder: (doc && doc.tableBorder) ? doc.tableBorder : _DEFAULT_TABLE_BORDER,
+        docWidthPx: _parseDocWidthPx(doc),
+    };
+}
+
+function _buildDocumentPrintStyles(meta) {
+    return `
   @page { size: A4; margin: 2cm; }
   body {
-    font-family: ${fontFamily};
+    font-family: ${meta.fontFamily};
     font-size: 15px;
-    line-height: ${lineHeight};
+    line-height: ${meta.lineHeight};
     color: #111;
     margin: 0;
     padding: 0;
+    background: #fff;
+    width: ${meta.docWidthPx}px;
+    box-sizing: border-box;
   }
   h1 { font-size: 2em; margin: 0.6em 0 0.3em; }
   h2 { font-size: 1.5em; margin: 0.6em 0 0.3em; }
   h3 { font-size: 1.2em; margin: 0.6em 0 0.3em; }
-  p  { margin: 0 0 ${paraSpacing}; }
+  p  { margin: 0 0 ${meta.paraSpacing}; }
   ul, ol { padding-left: 2em; margin: 0 0 0.8em; }
   blockquote {
     border-left: 4px solid #ccc;
@@ -705,10 +727,152 @@ function _printDocument() {
   img[data-image-align="center"] { display: block !important; margin: 0 auto; }
   img[data-image-align="right"]  { display: block !important; margin-left: auto; margin-right: 0; }
   table { border-collapse: collapse; width: 100%; margin: 1em 0; table-layout: fixed; }
-  td, th { border: 1px solid #ccc; padding: 6px 10px; vertical-align: top; box-sizing: border-box; }
-  th { background: #f0f0f0; font-weight: 600; text-align: left; }
+  td, th { border: ${meta.tableBorder}; padding: 6px 10px; vertical-align: top; box-sizing: border-box; }
+  th { background: #f0f0f0; font-weight: 600; text-align: left; }`;
+}
+
+function _buildDocumentPrintHtml(doc, contentHtml) {
+    const meta = _getDocumentPrintMeta(doc);
+    const styles = _buildDocumentPrintStyles(meta);
+    return `<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<title>${meta.title}</title>
+<style>${styles}
 </style>
-</head><body>${content}</body></html>`);
+</head><body>${contentHtml}</body></html>`;
+}
+
+function _waitForImages(root) {
+    const imgs = Array.from(root.querySelectorAll('img'));
+    if (imgs.length === 0) return Promise.resolve();
+    return Promise.all(imgs.map(img => {
+        if (img.complete) return Promise.resolve();
+        return new Promise(resolve => {
+            img.onload = resolve;
+            img.onerror = resolve;
+        });
+    }));
+}
+
+function _canvasToPngBytes(canvas) {
+    return new Promise((resolve, reject) => {
+        canvas.toBlob(blob => {
+            if (!blob) {
+                reject(new Error('Canvas toBlob failed'));
+                return;
+            }
+            blob.arrayBuffer().then(buf => resolve(new Uint8Array(buf))).catch(reject);
+        }, 'image/png');
+    });
+}
+
+async function _htmlBodyToPdfBytes(body, contentWidthPx) {
+    const canvas = await html2canvas(body, {
+        scale: _PDF_RENDER_SCALE,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff',
+        width: contentWidthPx,
+        windowWidth: contentWidthPx,
+    });
+
+    const pdfDoc = await PDFDocument.create();
+    const pageSliceHeightPx = Math.max(
+        1,
+        Math.floor(canvas.width * (_PDF_CONTENT_H_PT / _PDF_CONTENT_W_PT))
+    );
+
+    let yOffset = 0;
+    while (yOffset < canvas.height) {
+        const sliceHeight = Math.min(pageSliceHeightPx, canvas.height - yOffset);
+        const sliceCanvas = document.createElement('canvas');
+        sliceCanvas.width = canvas.width;
+        sliceCanvas.height = sliceHeight;
+        const ctx = sliceCanvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
+        ctx.drawImage(canvas, 0, yOffset, canvas.width, sliceHeight, 0, 0, canvas.width, sliceHeight);
+
+        const pngBytes = await _canvasToPngBytes(sliceCanvas);
+        const image = await pdfDoc.embedPng(pngBytes);
+        const drawHeightPt = _PDF_CONTENT_W_PT * (sliceHeight / canvas.width);
+
+        const page = pdfDoc.addPage([_PDF_A4_W_PT, _PDF_A4_H_PT]);
+        page.drawImage(image, {
+            x: _PDF_MARGIN_PT,
+            y: _PDF_A4_H_PT - _PDF_MARGIN_PT - drawHeightPt,
+            width: _PDF_CONTENT_W_PT,
+            height: drawHeightPt,
+        });
+
+        yOffset += sliceHeight;
+    }
+
+    if (pdfDoc.getPageCount() === 0) {
+        pdfDoc.addPage([_PDF_A4_W_PT, _PDF_A4_H_PT]);
+    }
+
+    return pdfDoc.save();
+}
+
+async function _createPrintIframe(doc, contentHtml) {
+    const windowWidth = _parseDocWidthPx(doc);
+    const html = _buildDocumentPrintHtml(doc, contentHtml);
+
+    const iframe = document.createElement('iframe');
+    iframe.setAttribute('aria-hidden', 'true');
+    iframe.style.cssText = [
+        'position:fixed',
+        'left:-10000px',
+        'top:0',
+        `width:${windowWidth}px`,
+        'height:800px',
+        'border:none',
+        'visibility:hidden',
+        'pointer-events:none',
+    ].join(';');
+    document.body.appendChild(iframe);
+
+    const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+    iframeDoc.open();
+    iframeDoc.write(html);
+    iframeDoc.close();
+
+    const body = iframeDoc.body;
+    body.style.width = `${windowWidth}px`;
+    body.style.boxSizing = 'border-box';
+
+    await _waitForImages(body);
+    const contentHeight = Math.max(body.scrollHeight, body.offsetHeight, 1);
+    iframe.style.height = `${contentHeight}px`;
+    void body.offsetWidth;
+
+    return {
+        iframe,
+        body,
+        windowWidth,
+        cleanup() {
+            if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+        },
+    };
+}
+
+function _setPdfExportBusy(busy) {
+    _pdfExporting = busy;
+    if (!_btnExportPdf) return;
+    _btnExportPdf.disabled = busy;
+    _btnExportPdf.textContent = busy ? '… PDF' : '📕 PDF';
+}
+
+function _printDocument() {
+    if (!_editor) return;
+    const doc = _currentDocId ? documentsStore.find(d => d.id === _currentDocId) : null;
+    const content = _editor.getHTML();
+    const html = _buildDocumentPrintHtml(doc, content);
+
+    const win = window.open('', '_blank');
+    win.document.write(html);
     win.document.close();
     win.focus();
     const imgs = Array.from(win.document.images);
@@ -716,16 +880,35 @@ function _printDocument() {
         win.print();
         win.close();
     } else {
-        Promise.all(imgs.map(img => {
-            if (img.complete) return Promise.resolve();
-            return new Promise(resolve => {
-                img.onload = resolve;
-                img.onerror = resolve;
-            });
-        })).then(() => {
+        _waitForImages(win.document.body).then(() => {
             win.print();
             win.close();
         });
+    }
+}
+
+async function _exportCurrentDocPdf() {
+    if (!_currentDocId || !_editor || _pdfExporting) return;
+    if (_isEditMode && _editor) _saveCurrentDocument();
+    const doc = documentsStore.find(d => d.id === _currentDocId);
+    if (!doc) return;
+
+    const content = _editor.getHTML();
+    let printFrame = null;
+
+    _setPdfExportBusy(true);
+    try {
+        printFrame = await _createPrintIframe(doc, content);
+        const bytes = await _htmlBodyToPdfBytes(printFrame.body, printFrame.windowWidth);
+        const safeName = (doc.title || 'document').replace(/[^a-z0-9_\-]/gi, '_').toLowerCase();
+        const name = addPdfAttachmentFromBytes(bytes, `${safeName}.pdf`);
+        alert(`Added "${name}" to Files.`);
+    } catch (err) {
+        console.error(err);
+        alert('Failed to export PDF: ' + (err.message || err));
+    } finally {
+        if (printFrame) printFrame.cleanup();
+        _setPdfExportBusy(false);
     }
 }
 
@@ -1145,6 +1328,13 @@ function _buildEditorOverlay() {
     btnPrint.title = 'Print document';
     btnPrint.addEventListener('click', _printDocument);
 
+    const btnExportPdf = document.createElement('button');
+    btnExportPdf.className = 'doc-btn doc-btn-export-pdf';
+    btnExportPdf.textContent = '📕 PDF';
+    btnExportPdf.title = 'Export document to PDF (saved to Files panel)';
+    btnExportPdf.addEventListener('click', () => { _exportCurrentDocPdf(); });
+    _btnExportPdf = btnExportPdf;
+
     const btnExportJson = document.createElement('button');
     btnExportJson.className = 'doc-btn doc-btn-export-json';
     btnExportJson.textContent = '⬇ JSON';
@@ -1365,6 +1555,7 @@ function _buildEditorOverlay() {
     header.appendChild(btnEdit);
     header.appendChild(btnSave);
     header.appendChild(btnPrint);
+    header.appendChild(btnExportPdf);
     header.appendChild(btnExportJson);
     header.appendChild(btnExportHtml);
     header.appendChild(btnDelete);

@@ -79,6 +79,23 @@ export async function addImageAttachmentFromBlob(blob, suggestedName) {
     return name;
 }
 
+/** Add a PDF attachment from raw bytes (e.g. document export). */
+export function addPdfAttachmentFromBytes(pdfBytes, suggestedName) {
+    const pdfName = _uniqueAttachmentName(
+        suggestedName.endsWith('.pdf') ? suggestedName : `${suggestedName}.pdf`
+    );
+    attachmentsStore.push({
+        id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+        name: pdfName,
+        mimeType: 'application/pdf',
+        data: _uint8ArrayToBase64(pdfBytes),
+        size: pdfBytes.length,
+        addedAt: new Date().toISOString(),
+    });
+    refreshAttachmentsGui();
+    return pdfName;
+}
+
 /** Rebuild the attachment list in the lil-gui panel. */
 export function refreshAttachmentsGui() {
     if (!_guiRef) return;
