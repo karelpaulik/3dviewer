@@ -1032,7 +1032,10 @@ function init() {
     //renderer
     renderer = new THREE.WebGLRenderer( { antialias: true, stencil: true } );
     renderer.setPixelRatio( window.devicePixelRatio );
-    renderer.setSize( window.innerWidth, window.innerHeight );
+    {
+        const { width, height } = getViewportSize();
+        renderer.setSize(width, height);
+    }
     //renderer.outputEncoding = THREE.sRGBEncoding;	Toto bylo pro starší threejs
     //renderer.shadowMap.enabled = true;
     renderer.localClippingEnabled = false;
@@ -1052,7 +1055,10 @@ function init() {
 
     // CSS2DRenderer for measurement labels
     css2DRenderer = new CSS2DRenderer();
-    css2DRenderer.setSize(window.innerWidth, window.innerHeight);
+    {
+        const { width, height } = getViewportSize();
+        css2DRenderer.setSize(width, height);
+    }
     css2DRenderer.domElement.style.position = 'absolute';
     css2DRenderer.domElement.style.top = '0px';
     css2DRenderer.domElement.style.pointerEvents = 'none';
@@ -1060,7 +1066,10 @@ function init() {
 
     // CSS3DRenderer for 3D-oriented annotation labels
     css3DRenderer = new CSS3DRenderer();
-    css3DRenderer.setSize(window.innerWidth, window.innerHeight);
+    {
+        const { width, height } = getViewportSize();
+        css3DRenderer.setSize(width, height);
+    }
     css3DRenderer.domElement.style.position = 'absolute';
     css3DRenderer.domElement.style.top = '0px';
     css3DRenderer.domElement.style.pointerEvents = 'none';
@@ -1068,7 +1077,8 @@ function init() {
     container.appendChild(css3DRenderer.domElement);
     
     //currentCamera
-    const aspect = window.innerWidth / window.innerHeight;
+    const { width: vpW, height: vpH } = getViewportSize();
+    const aspect = vpW / vpH;
     cameraPersp = new THREE.PerspectiveCamera( 20, aspect, 250, 20000 );
     cameraOrtho = new THREE.OrthographicCamera(
         -orthoHalfSize * aspect, orthoHalfSize * aspect,
@@ -1279,7 +1289,7 @@ function init() {
     selectionHelper.visible = false;
     scene.add(selectionHelper);
     
-    window.addEventListener( 'resize', onWindowResize, false );
+    setupViewportListeners();
     window.addEventListener( 'mousemove', onMouseMove, false );
     window.addEventListener( 'beforeunload', function ( event ) {
         event.preventDefault();
@@ -1630,7 +1640,7 @@ function recalibrateOrthoCamera() {
 
     orthoHalfSize = maxDim * 1.5; // 50% rezerva kolem modelu
 
-    const aspect = window.innerWidth / window.innerHeight;
+    const aspect = getViewportSize().width / getViewportSize().height;
     cameraOrtho.left   = -orthoHalfSize * aspect;
     cameraOrtho.right  =  orthoHalfSize * aspect;
     cameraOrtho.top    =  orthoHalfSize;
@@ -1982,6 +1992,7 @@ function addMainGui() {
         viewProp.fullscreen = !!document.fullscreenElement;
         if (!document.fullscreenElement && navigator.keyboard && navigator.keyboard.unlock) navigator.keyboard.unlock();
         fsBtn.classList.toggle('active', viewProp.fullscreen);
+        scheduleViewportUpdateAfterOrientation();
     });
 
     registerGuiPanel('View', folderProp);
@@ -3663,7 +3674,8 @@ function fitView() {
             // Pixel-based výpočet (pixels/frameSize) je špatně – používáme poloměr ohraničující koule,
             // aby model vždy vyplnil pohled i z isometrického směru.
             const sphereRadius = Math.sqrt(size.x * size.x + size.y * size.y + size.z * size.z) / 2;
-            const aspect = window.innerWidth / window.innerHeight;
+            const { width, height } = getViewportSize();
+            const aspect = width / height;
             currentCamera.zoom = Math.min(
                 orthoHalfSize * aspect / (sphereRadius * 1.05),
                 orthoHalfSize           / (sphereRadius * 1.05)
@@ -5060,8 +5072,75 @@ function separateGroups( bufGeom ) {
     return outGeometries;
 }
 
+function getViewportSize() {
+    const vv = window.visualViewport;
+    if (vv) {
+        return {
+            width: Math.round(vv.width),
+            height: Math.round(vv.height),
+            offsetLeft: vv.offsetLeft,
+            offsetTop: vv.offsetTop,
+        };
+    }
+    return {
+        width: document.documentElement.clientWidth || window.innerWidth,
+        height: document.documentElement.clientHeight || window.innerHeight,
+        offsetLeft: 0,
+        offsetTop: 0,
+    };
+}
+
+function clientToNDC(clientX, clientY) {
+    const { width, height, offsetLeft, offsetTop } = getViewportSize();
+    return {
+        x: ((clientX - offsetLeft) / width) * 2 - 1,
+        y: -((clientY - offsetTop) / height) * 2 + 1,
+    };
+}
+
+function ndcToClient(ndcX, ndcY) {
+    const { width, height, offsetLeft, offsetTop } = getViewportSize();
+    return {
+        x: ndcX * width / 2 + width / 2 + offsetLeft,
+        y: -ndcY * height / 2 + height / 2 + offsetTop,
+    };
+}
+
+let _viewportUpdateTimer = null;
+let _viewportOrientationTimers = [];
+
+function scheduleViewportUpdate() {
+    if (_viewportUpdateTimer) clearTimeout(_viewportUpdateTimer);
+    _viewportUpdateTimer = setTimeout(() => {
+        _viewportUpdateTimer = null;
+        void document.body.offsetHeight;
+        onWindowResize();
+    }, 50);
+}
+
+function scheduleViewportUpdateAfterOrientation() {
+    scheduleViewportUpdate();
+    _viewportOrientationTimers.forEach(t => clearTimeout(t));
+    _viewportOrientationTimers = [100, 300].map(ms =>
+        setTimeout(() => {
+            void document.body.offsetHeight;
+            onWindowResize();
+        }, ms)
+    );
+}
+
+function setupViewportListeners() {
+    window.addEventListener('resize', scheduleViewportUpdate, false);
+    window.addEventListener('orientationchange', scheduleViewportUpdateAfterOrientation, false);
+    if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', scheduleViewportUpdate);
+        window.visualViewport.addEventListener('scroll', scheduleViewportUpdate);
+    }
+}
+
 function onWindowResize() {
-    const aspect = window.innerWidth / window.innerHeight;
+    const { width, height } = getViewportSize();
+    const aspect = width / height;
 
     if (currentCamera == cameraPersp) {
         currentCamera.aspect = aspect;
@@ -5075,9 +5154,10 @@ function onWindowResize() {
     }
     
     currentCamera.updateProjectionMatrix();
-    renderer.setSize( window.innerWidth, window.innerHeight );
-    if (css2DRenderer) css2DRenderer.setSize(window.innerWidth, window.innerHeight);
-    if (css3DRenderer) css3DRenderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(width, height);
+    if (css2DRenderer) css2DRenderer.setSize(width, height);
+    if (css3DRenderer) css3DRenderer.setSize(width, height);
     render();
 }
 
@@ -5322,8 +5402,8 @@ function render() {
     updateModeIndicator();
     //console.log("viewProp.isSelectAllowed: ", viewProp.isSelectAllowed);
     // isMouseOverGui - pokud kurzor nad GUI a současně nad objektem, pak má přednost GUI.
-    const _guiHitEl = document.elementFromPoint(mouse.x * window.innerWidth / 2 + window.innerWidth / 2,
-                                                -mouse.y * window.innerHeight / 2 + window.innerHeight / 2);
+    const _client = ndcToClient(mouse.x, mouse.y);
+    const _guiHitEl = document.elementFromPoint(_client.x, _client.y);
     const isMouseOverGui = _guiHitEl && (guiWrapper.contains(_guiHitEl) || _guiHitEl.closest('.lil-gui') || _guiHitEl.closest('.ctx-menu'));
     
     // Nezvýrazňujeme objekty při dragování (rotaci/posouvání) nebo při transformaci
@@ -5631,8 +5711,9 @@ function onMouseMove( event ) {
     event.preventDefault();			
     // calculate mouse position in normalized device coordinates
     // (-1 to +1) for both components				
-    mouse.x = ( event.clientX / window.innerWidth ) * 2 - 1;
-    mouse.y = - ( event.clientY / window.innerHeight ) * 2 + 1;				
+    const ndc = clientToNDC(event.clientX, event.clientY);
+    mouse.x = ndc.x;
+    mouse.y = ndc.y;				
     render();
 }
 
@@ -6352,8 +6433,9 @@ function onTouchStart( event ) {
         touchStartPos.x = touch.clientX;
         touchStartPos.y = touch.clientY;
         isTouchDragging = false;
-        mouse.x = ( touch.clientX / window.innerWidth ) * 2 - 1;
-        mouse.y = - ( touch.clientY / window.innerHeight ) * 2 + 1;
+        const ndc = clientToNDC(touch.clientX, touch.clientY);
+        mouse.x = ndc.x;
+        mouse.y = ndc.y;
 
         // Edit Labels touch drag
         if (viewProp.selectDimensionMode && isSelectDimActive()) {
@@ -6376,8 +6458,9 @@ function onTouchMove( event ) {
             isTouchDragging = true;
         }
         
-        mouse.x = ( touch.clientX / window.innerWidth ) * 2 - 1;
-        mouse.y = - ( touch.clientY / window.innerHeight ) * 2 + 1;
+        const ndc = clientToNDC(touch.clientX, touch.clientY);
+        mouse.x = ndc.x;
+        mouse.y = ndc.y;
 
         // Edit Labels touch drag
         if (viewProp.selectDimensionMode && isSelectDimActive()) {
@@ -9843,8 +9926,9 @@ function assemblyMoveStepDown() {
         activeMenu = menu;
         // keep inside viewport
         const r = menu.getBoundingClientRect();
-        if (r.right  > window.innerWidth)  menu.style.left = (x - r.width)  + 'px';
-        if (r.bottom > window.innerHeight) menu.style.top  = (y - r.height) + 'px';
+        const vp = getViewportSize();
+        if (r.right  > vp.offsetLeft + vp.width)  menu.style.left = (x - r.width)  + 'px';
+        if (r.bottom > vp.offsetTop + vp.height) menu.style.top  = (y - r.height) + 'px';
     }
 
     function refreshObjectInputs(obj) {

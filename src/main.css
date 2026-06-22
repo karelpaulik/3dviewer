@@ -1,5 +1,6 @@
 html {
 	height: 100%;
+	height: 100dvh;
 	overflow: hidden;
 }
 
@@ -46,6 +47,7 @@ html {
 body {
 	margin: 0;
 	height: 100%;
+	height: 100dvh;
 	background-color: #000;
 	color: #fff;
 	font-family: Monospace;
@@ -53,6 +55,8 @@ body {
 	line-height: 24px;
 	overflow: hidden;
 	overscroll-behavior: none;
+	-webkit-text-size-adjust: 100%;
+	text-size-adjust: 100%;
 }
 
 a {
