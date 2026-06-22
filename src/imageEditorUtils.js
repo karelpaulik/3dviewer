@@ -437,6 +437,7 @@ function _buildInstanceUI(inst) {
     vp.addEventListener('click', e => {
         if (_activeTool === 'text') {
             if (inst.textDragJustEnded) { inst.textDragJustEnded = false; return; }
+            if (inst.textDialogEl) return;
             _placeText(inst, e);
         }
     });
@@ -492,6 +493,7 @@ function _buildInstanceUI(inst) {
         _onMouseUp(inst, _touchToMouse(touch), ovCanvas, ovCtx);
         if (_activeTool === 'text' && e.changedTouches.length === 1) {
             if (inst.textDragJustEnded) { inst.textDragJustEnded = false; return; }
+            if (inst.textDialogEl) return;
             _placeText(inst, _touchToMouse(touch));
         }
     }, { passive: false });
@@ -1321,6 +1323,7 @@ function _cancelCrop(inst) {
 // ── Text placement ────────────────────────────────────────────────────────────
 
 function _placeText(inst, e) {
+    if (inst.textDialogEl) return;
     _cancelTextDialog(inst);
     inst.textPos = _vpToImg(inst, e.clientX, e.clientY);
     inst.textSnapshot = inst.ctx.getImageData(0, 0, inst.canvas.width, inst.canvas.height);
