@@ -82,6 +82,13 @@ export async function addImageAttachmentFromBlob(blob, suggestedName) {
 export function refreshAttachmentsGui() {
     if (!_guiRef) return;
 
+    const openFolderIds = new Set(
+        [..._guiRef.folders]
+            .filter(f => f._attachmentId && f._closed === false)
+            .map(f => f._attachmentId)
+            .filter(id => attachmentsStore.some(a => a.id === id))
+    );
+
     // Remove all existing controllers and child folders
     [..._guiRef.controllers].forEach(c => c.destroy());
     [..._guiRef.folders].forEach(f => f.destroy());
@@ -133,10 +140,17 @@ export function refreshAttachmentsGui() {
     }
 
     // One folder per attachment with download + delete buttons inside
-    attachmentsStore.forEach(att => {
+    const canReorder = attachmentsStore.length > 1;
+    attachmentsStore.forEach((att, index) => {
         const sizeStr = _formatSize(att.size);
         const prefix = att.comment ? '💬 ' : '';
         const folder = _guiRef.addFolder(`${prefix}${att.name}  (${sizeStr})`);
+        if (canReorder && index > 0) {
+            folder.add({ fn: () => _moveAttachment(att.id, -1) }, 'fn').name('↑  Move up');
+        }
+        if (canReorder && index < attachmentsStore.length - 1) {
+            folder.add({ fn: () => _moveAttachment(att.id, 1) }, 'fn').name('↓  Move down');
+        }
         if (_canOpenInBrowser(att.mimeType)) {
             folder.add({ fn: () => _openAttachment(att) }, 'fn').name('↗  Open');
         }
@@ -150,7 +164,9 @@ export function refreshAttachmentsGui() {
         }
         folder.add({ fn: () => _downloadAttachment(att) }, 'fn').name('⬇  Download');
         folder.add({ fn: () => _deleteAttachment(att.id) }, 'fn').name('✕  Delete');
-        folder.close();
+        folder._attachmentId = att.id;
+        if (openFolderIds.has(att.id)) folder.open();
+        else folder.close();
     });
 }
 
@@ -894,6 +910,16 @@ function _deleteAttachment(id) {
     if (!att) return;
     if (!window.confirm(`Remove attachment "${att.name}"?`)) return;
     attachmentsStore = attachmentsStore.filter(a => a.id !== id);
+    refreshAttachmentsGui();
+}
+
+function _moveAttachment(id, delta) {
+    if (attachmentsStore.length < 2) return;
+    const index = attachmentsStore.findIndex(a => a.id === id);
+    if (index < 0) return;
+    const target = index + delta;
+    if (target < 0 || target >= attachmentsStore.length) return;
+    [attachmentsStore[index], attachmentsStore[target]] = [attachmentsStore[target], attachmentsStore[index]];
     refreshAttachmentsGui();
 }
 
