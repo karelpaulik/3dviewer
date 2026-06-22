@@ -1574,6 +1574,36 @@ function _cancelCrop(inst) {
 
 // ── Text placement ────────────────────────────────────────────────────────────
 
+const _NUM_STEPPER_ARROWS = `
+    <span class="img-ed-num-arrows">
+        <button type="button" class="img-ed-num-step" data-d="1" tabindex="-1" aria-label="Increase">▲</button>
+        <button type="button" class="img-ed-num-step" data-d="-1" tabindex="-1" aria-label="Decrease">▼</button>
+    </span>`;
+
+function _bindNumberStepper(stepperEl, input, { min, max, fallback, onValue }) {
+    const _clamp = raw => {
+        const n = +raw;
+        if (!Number.isFinite(n)) return fallback;
+        return Math.max(min, Math.min(max, n));
+    };
+    const _apply = (raw, forceWrite) => {
+        const v = _clamp(raw);
+        if (forceWrite || +input.value !== v) input.value = v;
+        onValue(v);
+    };
+    stepperEl.querySelectorAll('.img-ed-num-step').forEach(btn => {
+        btn.addEventListener('mousedown', ev => ev.preventDefault());
+        btn.addEventListener('click', ev => {
+            ev.preventDefault();
+            const delta = +btn.dataset.d;
+            _apply(_clamp(+input.value || fallback) + delta, true);
+        });
+    });
+    input.addEventListener('input', () => _apply(input.value, true));
+    input.addEventListener('blur', () => _apply(input.value, true));
+    input.addEventListener('change', () => _apply(input.value, true));
+}
+
 function _openTextDialog(inst, { screenX, screenY, initialText = '', layerId = null, initialColor, initialSize, initialBg, initialBorder, initialBorderWidth, textPos = null }) {
     if (inst.textDialogEl) return;
     _cancelTextDialog(inst);
@@ -1607,14 +1637,14 @@ function _openTextDialog(inst, { screenX, screenY, initialText = '', layerId = n
         <textarea class="img-ed-txt-input" placeholder="Enter text… (Enter = new line, Ctrl+Enter = confirm)" autocomplete="off" spellcheck="false" rows="3"></textarea>
         <div class="img-ed-text-opts">
             <label title="Text color">Color <input type="color" class="img-ed-txt-color" value="${startColor}"></label>
-            <label title="Font size (px)">Size <input type="number" class="img-ed-txt-size" min="6" max="400" value="${startSize}" style="width:52px"></label>
+            <label title="Font size (px)">Size <span class="img-ed-num-stepper"><input type="number" class="img-ed-txt-size" min="6" max="400" value="${startSize}" style="width:52px">${_NUM_STEPPER_ARROWS}</span></label>
             <label title="Text background color">
                 <input type="checkbox" class="img-ed-txt-bg-en" ${bgChecked}>
                 BG <input type="color" class="img-ed-txt-bg-col" value="${bgVal}" style="opacity:${bgOpacity}">
             </label>
             <label title="Text border">
                 <input type="checkbox" class="img-ed-txt-border-en" ${borderChecked}>
-                Border <input type="number" class="img-ed-txt-border-w" min="1" max="50" value="${startBorderWidth}" style="width:40px">
+                Border <span class="img-ed-num-stepper"><input type="number" class="img-ed-txt-border-w" min="1" max="50" value="${startBorderWidth}" style="width:40px">${_NUM_STEPPER_ARROWS}</span>
                 <input type="color" class="img-ed-txt-border-col" value="${borderVal}" style="opacity:${borderOpacity}">
             </label>
         </div>
@@ -1702,7 +1732,10 @@ function _openTextDialog(inst, { screenX, screenY, initialText = '', layerId = n
     inst.textPreviewFn = _preview;
     textInput.addEventListener('input', _preview);
     colorInp.addEventListener('input', () => { localColor = colorInp.value; _textColor = localColor; _preview(); });
-    sizeInp.addEventListener('input', () => { localSize = Math.max(6, Math.min(400, +sizeInp.value || localSize)); _fontSize = localSize; _preview(); });
+    _bindNumberStepper(sizeInp.closest('.img-ed-num-stepper'), sizeInp, {
+        min: 6, max: 400, fallback: localSize,
+        onValue: v => { localSize = v; _fontSize = v; _preview(); },
+    });
     bgEnCb.addEventListener('change', () => { localBg = bgEnCb.checked ? bgColInp.value : null; bgColInp.style.opacity = bgEnCb.checked ? '1' : '0.4'; _preview(); });
     bgColInp.addEventListener('input', () => { if (bgEnCb.checked) { localBg = bgColInp.value; _preview(); } });
     borderEnCb.addEventListener('change', () => {
@@ -1711,10 +1744,9 @@ function _openTextDialog(inst, { screenX, screenY, initialText = '', layerId = n
         _preview();
     });
     borderColInp.addEventListener('input', () => { if (borderEnCb.checked) { localBorder = borderColInp.value; _preview(); } });
-    borderWInp.addEventListener('input', () => {
-        localBorderWidth = Math.max(1, Math.min(50, +borderWInp.value || localBorderWidth));
-        borderWInp.value = localBorderWidth;
-        _preview();
+    _bindNumberStepper(borderWInp.closest('.img-ed-num-stepper'), borderWInp, {
+        min: 1, max: 50, fallback: localBorderWidth,
+        onValue: v => { localBorderWidth = v; _preview(); },
     });
 
     const _confirm = () => {

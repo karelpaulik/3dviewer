@@ -3043,6 +3043,54 @@ a, button, input, select {
     color: #ddd;
     padding: 2px 4px;
     font-size: 12px;
+    -moz-appearance: textfield;
+}
+.img-ed-text-opts input[type="number"]::-webkit-inner-spin-button,
+.img-ed-text-opts input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+}
+.img-ed-num-stepper {
+    display: inline-flex;
+    align-items: stretch;
+    vertical-align: middle;
+}
+.img-ed-num-stepper input[type="number"] {
+    border-radius: 3px 0 0 3px;
+    border-right: none;
+}
+.img-ed-num-arrows {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid #555;
+    border-radius: 0 3px 3px 0;
+    overflow: hidden;
+}
+.img-ed-num-step {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    min-height: 0;
+    flex: 1;
+    padding: 0;
+    margin: 0;
+    border: none;
+    border-bottom: 1px solid #444;
+    background: #2a2a2a;
+    color: #bbb;
+    font-size: 8px;
+    line-height: 1;
+    cursor: pointer;
+}
+.img-ed-num-step:last-child {
+    border-bottom: none;
+}
+.img-ed-num-step:hover {
+    background: #3a3a3a;
+    color: #fff;
+}
+.img-ed-num-step:active {
+    background: #4a4a4a;
 }
 .img-ed-text-btns {
     display: flex;
