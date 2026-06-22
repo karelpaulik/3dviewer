@@ -603,6 +603,26 @@ canvas {
 	display: block;
 }
 
+#viewer-container {
+	position: fixed;
+	inset: 0;
+	overflow: hidden;
+	z-index: 0;
+}
+
+#viewer-container canvas {
+	width: 100%;
+	height: 100%;
+}
+
+#viewer-container > div {
+	position: absolute;
+	inset: 0;
+	width: 100% !important;
+	height: 100% !important;
+	pointer-events: none;
+}
+
 /* Assembly step overlay – top-center of viewport */
 #assembly-step-overlay {
     display: none;

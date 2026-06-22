@@ -1027,6 +1027,7 @@ function showGuiPanel(name) {
 function init() {   
     //container
     container = document.createElement( 'div' );
+    container.id = 'viewer-container';
     document.body.appendChild( container );
 
     //renderer
@@ -1034,7 +1035,7 @@ function init() {
     renderer.setPixelRatio( window.devicePixelRatio );
     {
         const { width, height } = getViewportSize();
-        renderer.setSize(width, height);
+        renderer.setSize(width, height, false);
     }
     //renderer.outputEncoding = THREE.sRGBEncoding;	Toto bylo pro starší threejs
     //renderer.shadowMap.enabled = true;
@@ -1057,22 +1058,16 @@ function init() {
     css2DRenderer = new CSS2DRenderer();
     {
         const { width, height } = getViewportSize();
-        css2DRenderer.setSize(width, height);
+        applyOverlayRendererSize(css2DRenderer, width, height);
     }
-    css2DRenderer.domElement.style.position = 'absolute';
-    css2DRenderer.domElement.style.top = '0px';
-    css2DRenderer.domElement.style.pointerEvents = 'none';
     container.appendChild(css2DRenderer.domElement);
 
     // CSS3DRenderer for 3D-oriented annotation labels
     css3DRenderer = new CSS3DRenderer();
     {
         const { width, height } = getViewportSize();
-        css3DRenderer.setSize(width, height);
+        applyOverlayRendererSize(css3DRenderer, width, height);
     }
-    css3DRenderer.domElement.style.position = 'absolute';
-    css3DRenderer.domElement.style.top = '0px';
-    css3DRenderer.domElement.style.pointerEvents = 'none';
     css3DRenderer.domElement.id = 'css3d-root';
     container.appendChild(css3DRenderer.domElement);
     
@@ -5072,22 +5067,71 @@ function separateGroups( bufGeom ) {
     return outGeometries;
 }
 
-function getViewportSize() {
-    const vv = window.visualViewport;
-    if (vv) {
-        return {
-            width: Math.round(vv.width),
-            height: Math.round(vv.height),
-            offsetLeft: vv.offsetLeft,
-            offsetTop: vv.offsetTop,
-        };
+function fixOrientationDimensions(width, height) {
+    const isPortrait = window.matchMedia('(orientation: portrait)').matches;
+    if (isPortrait && width > height) {
+        return { width: height, height: width };
     }
+    if (!isPortrait && height > width) {
+        return { width: height, height: width };
+    }
+    return { width, height };
+}
+
+function dimensionsMatchOrientation(width, height) {
+    if (width < 1 || height < 1) return false;
+    const isPortrait = window.matchMedia('(orientation: portrait)').matches;
+    return isPortrait ? width <= height : width >= height;
+}
+
+function getViewportSize() {
+    void document.body.offsetHeight;
+
+    let width, height, offsetLeft = 0, offsetTop = 0;
+
+    if (container) {
+        const rect = container.getBoundingClientRect();
+        width = Math.round(rect.width);
+        height = Math.round(rect.height);
+        offsetLeft = rect.left;
+        offsetTop = rect.top;
+    } else {
+        width = document.documentElement.clientWidth || window.innerWidth;
+        height = document.documentElement.clientHeight || window.innerHeight;
+    }
+
+    if (width < 1 || height < 1) {
+        width = document.documentElement.clientWidth || window.innerWidth;
+        height = document.documentElement.clientHeight || window.innerHeight;
+        offsetLeft = 0;
+        offsetTop = 0;
+    }
+
+    const fixed = fixOrientationDimensions(width, height);
     return {
-        width: document.documentElement.clientWidth || window.innerWidth,
-        height: document.documentElement.clientHeight || window.innerHeight,
-        offsetLeft: 0,
-        offsetTop: 0,
+        width: fixed.width,
+        height: fixed.height,
+        offsetLeft,
+        offsetTop,
     };
+}
+
+function applyOverlayRendererSize(cssRenderer, width, height) {
+    cssRenderer.setSize(width, height);
+    const el = cssRenderer.domElement;
+    el.style.position = 'absolute';
+    el.style.inset = '0';
+    el.style.width = '100%';
+    el.style.height = '100%';
+    el.style.pointerEvents = 'none';
+}
+
+function resetViewportMeta() {
+    const meta = document.querySelector('meta[name=viewport]');
+    if (!meta) return;
+    const content = meta.getAttribute('content');
+    meta.setAttribute('content', 'width=device-width');
+    meta.setAttribute('content', content);
 }
 
 function clientToNDC(clientX, clientY) {
@@ -5107,7 +5151,8 @@ function ndcToClient(ndcX, ndcY) {
 }
 
 let _viewportUpdateTimer = null;
-let _viewportOrientationTimers = [];
+let _viewportOrientationRaf = 0;
+let _viewportOrientationFallback = null;
 
 function scheduleViewportUpdate() {
     if (_viewportUpdateTimer) clearTimeout(_viewportUpdateTimer);
@@ -5119,14 +5164,54 @@ function scheduleViewportUpdate() {
 }
 
 function scheduleViewportUpdateAfterOrientation() {
-    scheduleViewportUpdate();
-    _viewportOrientationTimers.forEach(t => clearTimeout(t));
-    _viewportOrientationTimers = [100, 300].map(ms =>
-        setTimeout(() => {
-            void document.body.offsetHeight;
+    if (_viewportOrientationRaf) cancelAnimationFrame(_viewportOrientationRaf);
+    if (_viewportOrientationFallback) clearTimeout(_viewportOrientationFallback);
+
+    window.scrollTo(0, 0);
+    resetViewportMeta();
+
+    let lastW = -1;
+    let lastH = -1;
+    let stableCount = 0;
+    let frameCount = 0;
+
+    const tick = () => {
+        frameCount++;
+        void document.body.offsetHeight;
+        const { width, height } = getViewportSize();
+
+        if (width === lastW && height === lastH && dimensionsMatchOrientation(width, height)) {
+            stableCount++;
+        } else {
+            stableCount = 0;
+            lastW = width;
+            lastH = height;
+        }
+
+        if (stableCount >= 2) {
+            _viewportOrientationRaf = 0;
             onWindowResize();
-        }, ms)
-    );
+            return;
+        }
+
+        if (frameCount >= 20) {
+            _viewportOrientationRaf = 0;
+            onWindowResize();
+            return;
+        }
+
+        _viewportOrientationRaf = requestAnimationFrame(tick);
+    };
+
+    _viewportOrientationRaf = requestAnimationFrame(tick);
+    _viewportOrientationFallback = setTimeout(() => {
+        _viewportOrientationFallback = null;
+        if (_viewportOrientationRaf) {
+            cancelAnimationFrame(_viewportOrientationRaf);
+            _viewportOrientationRaf = 0;
+        }
+        onWindowResize();
+    }, 500);
 }
 
 function setupViewportListeners() {
@@ -5140,6 +5225,8 @@ function setupViewportListeners() {
 
 function onWindowResize() {
     const { width, height } = getViewportSize();
+    if (width < 1 || height < 1) return;
+
     const aspect = width / height;
 
     if (currentCamera == cameraPersp) {
@@ -5155,9 +5242,9 @@ function onWindowResize() {
     
     currentCamera.updateProjectionMatrix();
     renderer.setPixelRatio(window.devicePixelRatio);
-    renderer.setSize(width, height);
-    if (css2DRenderer) css2DRenderer.setSize(width, height);
-    if (css3DRenderer) css3DRenderer.setSize(width, height);
+    renderer.setSize(width, height, false);
+    if (css2DRenderer) applyOverlayRendererSize(css2DRenderer, width, height);
+    if (css3DRenderer) applyOverlayRendererSize(css3DRenderer, width, height);
     render();
 }
 
