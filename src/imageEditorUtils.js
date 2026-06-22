@@ -986,12 +986,11 @@ function _onMouseDown(inst, e) {
         }
     }
 
-    if (_activeTool === 'select' && !e.ctrlKey) {
-        const activeLayer = _getActiveLayer(inst);
-        if (activeLayer) {
-            _deselectFloatingLayer(inst);
-        }
+    if (inst.activeLayerId != null) {
+        _deselectFloatingLayer(inst);
+    }
 
+    if (_activeTool === 'select' && !e.ctrlKey) {
         if (inst.selRect) {
             const handle = _hitTestSelHandle(inst, pt);
             if (handle) {
