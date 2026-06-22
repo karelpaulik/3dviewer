@@ -1464,6 +1464,7 @@ function _cancelTextDialog(inst) {
 function _openTextDialogFromOcr(inst, text, origin) {
     const trimmed = String(text || '').trim();
     if (!trimmed) return;
+    _clearSelection(inst);
     const vp = inst.winEl.querySelector('.img-editor-viewport');
     const rect = vp.getBoundingClientRect();
     const screenX = rect.left + inst.panX + origin.x * inst.zoom;
