@@ -1574,7 +1574,7 @@ function _cancelCrop(inst) {
 
 // ── Text placement ────────────────────────────────────────────────────────────
 
-function _openTextDialog(inst, { screenX, screenY, initialText = '', layerId = null, initialColor, initialSize, initialBg, textPos = null }) {
+function _openTextDialog(inst, { screenX, screenY, initialText = '', layerId = null, initialColor, initialSize, initialBg, initialBorder, initialBorderWidth, textPos = null }) {
     if (inst.textDialogEl) return;
     _cancelTextDialog(inst);
 
@@ -1588,10 +1588,15 @@ function _openTextDialog(inst, { screenX, screenY, initialText = '', layerId = n
     const startColor = initialColor ?? _textColor;
     const startSize  = initialSize ?? _fontSize;
     const startBg    = initialBg !== undefined ? initialBg : _bgColor;
+    const startBorder = initialBorder !== undefined ? initialBorder : null;
+    const startBorderWidth = initialBorderWidth ?? 2;
 
     const bgChecked = startBg ? 'checked' : '';
     const bgVal     = startBg || '#ffffff';
     const bgOpacity = startBg ? '1' : '0.4';
+    const borderChecked = startBorder ? 'checked' : '';
+    const borderVal     = startBorder || '#000000';
+    const borderOpacity = startBorder ? '1' : '0.4';
 
     const dlg = document.createElement('div');
     dlg.className = 'img-ed-text-dialog';
@@ -1606,6 +1611,11 @@ function _openTextDialog(inst, { screenX, screenY, initialText = '', layerId = n
             <label title="Text background color">
                 <input type="checkbox" class="img-ed-txt-bg-en" ${bgChecked}>
                 BG <input type="color" class="img-ed-txt-bg-col" value="${bgVal}" style="opacity:${bgOpacity}">
+            </label>
+            <label title="Text border">
+                <input type="checkbox" class="img-ed-txt-border-en" ${borderChecked}>
+                Border <input type="number" class="img-ed-txt-border-w" min="1" max="50" value="${startBorderWidth}" style="width:40px">
+                <input type="color" class="img-ed-txt-border-col" value="${borderVal}" style="opacity:${borderOpacity}">
             </label>
         </div>
         <div class="img-ed-text-btns">
@@ -1626,9 +1636,14 @@ function _openTextDialog(inst, { screenX, screenY, initialText = '', layerId = n
     const sizeInp   = dlg.querySelector('.img-ed-txt-size');
     const bgEnCb    = dlg.querySelector('.img-ed-txt-bg-en');
     const bgColInp  = dlg.querySelector('.img-ed-txt-bg-col');
+    const borderEnCb   = dlg.querySelector('.img-ed-txt-border-en');
+    const borderWInp   = dlg.querySelector('.img-ed-txt-border-w');
+    const borderColInp = dlg.querySelector('.img-ed-txt-border-col');
     let localBg    = startBg;
     let localColor = startColor;
     let localSize  = startSize;
+    let localBorder = startBorder;
+    let localBorderWidth = startBorderWidth;
 
     const handle = dlg.querySelector('.img-ed-txt-drag-handle');
     handle.addEventListener('mousedown', ev => {
@@ -1659,19 +1674,22 @@ function _openTextDialog(inst, { screenX, screenY, initialText = '', layerId = n
             return;
         }
         const metrics = _measureTextLayer(txt, localSize, _fontFamily);
-        const bx = inst.textPos.x - metrics.pad;
-        const by = inst.textPos.y - metrics.pad;
-        inst.textBBox = { x: bx, y: by, w: metrics.w, h: metrics.h };
+        const bw = _textBorderMargin(localBorder, localBorderWidth);
+        const contentX = inst.textPos.x - metrics.pad;
+        const contentY = inst.textPos.y - metrics.pad;
+        inst.textBBox = { x: contentX - bw, y: contentY - bw, w: metrics.w + 2 * bw, h: metrics.h + 2 * bw };
         inst.textPreviewState = {
             text: txt,
-            x: bx,
-            y: by,
-            w: metrics.w,
-            h: metrics.h,
+            x: contentX - bw,
+            y: contentY - bw,
+            w: metrics.w + 2 * bw,
+            h: metrics.h + 2 * bw,
             color: localColor,
             fontSize: localSize,
             fontFamily: _fontFamily,
             bgColor: localBg,
+            borderColor: localBorder,
+            borderWidth: localBorderWidth,
         };
     };
 
@@ -1687,6 +1705,17 @@ function _openTextDialog(inst, { screenX, screenY, initialText = '', layerId = n
     sizeInp.addEventListener('input', () => { localSize = Math.max(6, Math.min(400, +sizeInp.value || localSize)); _fontSize = localSize; _preview(); });
     bgEnCb.addEventListener('change', () => { localBg = bgEnCb.checked ? bgColInp.value : null; bgColInp.style.opacity = bgEnCb.checked ? '1' : '0.4'; _preview(); });
     bgColInp.addEventListener('input', () => { if (bgEnCb.checked) { localBg = bgColInp.value; _preview(); } });
+    borderEnCb.addEventListener('change', () => {
+        localBorder = borderEnCb.checked ? borderColInp.value : null;
+        borderColInp.style.opacity = borderEnCb.checked ? '1' : '0.4';
+        _preview();
+    });
+    borderColInp.addEventListener('input', () => { if (borderEnCb.checked) { localBorder = borderColInp.value; _preview(); } });
+    borderWInp.addEventListener('input', () => {
+        localBorderWidth = Math.max(1, Math.min(50, +borderWInp.value || localBorderWidth));
+        borderWInp.value = localBorderWidth;
+        _preview();
+    });
 
     const _confirm = () => {
         const txt = textInput.value.trim();
@@ -1702,6 +1731,8 @@ function _openTextDialog(inst, { screenX, screenY, initialText = '', layerId = n
                 fontSize: localSize,
                 fontFamily: _fontFamily,
                 bgColor: localBg,
+                borderColor: localBorder,
+                borderWidth: localBorderWidth,
                 layerId,
             });
             _pushUndo(inst);
@@ -2264,6 +2295,10 @@ function _measureTextLayer(text, fontSize, fontFamily) {
     };
 }
 
+function _textBorderMargin(borderColor, borderWidth) {
+    return (borderColor && borderWidth > 0) ? borderWidth : 0;
+}
+
 function _getActiveLayer(inst) {
     return inst.floatingLayers.find(l => l.id === inst.activeLayerId) || null;
 }
@@ -2425,20 +2460,27 @@ function _addImageLayer(inst, imageData, x, y) {
     return layer;
 }
 
-function _addOrUpdateTextLayer(inst, { text, x, y, color, fontSize, fontFamily, bgColor, layerId = null }) {
+function _addOrUpdateTextLayer(inst, { text, x, y, color, fontSize, fontFamily, bgColor, borderColor, borderWidth, layerId = null }) {
     const metrics = _measureTextLayer(text, fontSize, fontFamily);
+    const bw = _textBorderMargin(borderColor, borderWidth);
+    const layerX = x - bw;
+    const layerY = y - bw;
+    const layerW = metrics.w + 2 * bw;
+    const layerH = metrics.h + 2 * bw;
     if (layerId != null) {
         const layer = _getLayerById(inst, layerId);
         if (layer && layer.type === 'text') {
             layer.text = text;
-            layer.x = x;
-            layer.y = y;
-            layer.w = metrics.w;
-            layer.h = metrics.h;
+            layer.x = layerX;
+            layer.y = layerY;
+            layer.w = layerW;
+            layer.h = layerH;
             layer.color = color;
             layer.fontSize = fontSize;
             layer.fontFamily = fontFamily;
             layer.bgColor = bgColor;
+            layer.borderColor = borderColor;
+            layer.borderWidth = borderWidth;
             inst.activeLayerId = layer.id;
             return layer;
         }
@@ -2447,13 +2489,17 @@ function _addOrUpdateTextLayer(inst, { text, x, y, color, fontSize, fontFamily, 
     const layer = {
         id,
         type: 'text',
-        text, x, y,
-        w: metrics.w,
-        h: metrics.h,
+        text,
+        x: layerX,
+        y: layerY,
+        w: layerW,
+        h: layerH,
         color,
         fontSize,
         fontFamily: fontFamily || _fontFamily,
         bgColor,
+        borderColor,
+        borderWidth,
     };
     inst.floatingLayers.push(layer);
     inst.activeLayerId = id;
@@ -2498,18 +2544,40 @@ function _hitTestLayerHandle(inst, pt, layer) {
     return null;
 }
 
+function _paintTextBox(ctx, x, y, w, h, { bgColor, borderColor, borderWidth, pad, lineHeight, lines, color, fontSize, fontFamily }) {
+    const bw = _textBorderMargin(borderColor, borderWidth);
+    const innerX = x + bw;
+    const innerY = y + bw;
+    const innerW = w - 2 * bw;
+    const innerH = h - 2 * bw;
+    ctx.font = `${fontSize}px ${fontFamily || _fontFamily}`;
+    ctx.textBaseline = 'top';
+    if (bgColor) {
+        ctx.fillStyle = bgColor;
+        ctx.fillRect(innerX, innerY, innerW, innerH);
+    }
+    if (bw > 0) {
+        ctx.strokeStyle = borderColor;
+        ctx.lineWidth = bw;
+        ctx.strokeRect(x + bw / 2, y + bw / 2, w - bw, h - bw);
+    }
+    ctx.fillStyle = color;
+    const textX = innerX + pad;
+    const textY = innerY + pad;
+    lines.forEach((line, i) => ctx.fillText(line, textX, textY + i * lineHeight));
+}
+
 function _drawTextLayerToCtx(ctx, layer) {
     const { pad, lineHeight, lines } = _measureTextLayer(layer.text, layer.fontSize, layer.fontFamily);
-    ctx.font = `${layer.fontSize}px ${layer.fontFamily || _fontFamily}`;
-    ctx.textBaseline = 'top';
-    const textX = layer.x + pad;
-    const textY = layer.y + pad;
-    if (layer.bgColor) {
-        ctx.fillStyle = layer.bgColor;
-        ctx.fillRect(layer.x, layer.y, layer.w, layer.h);
-    }
-    ctx.fillStyle = layer.color;
-    lines.forEach((line, i) => ctx.fillText(line, textX, textY + i * lineHeight));
+    _paintTextBox(ctx, layer.x, layer.y, layer.w, layer.h, {
+        bgColor: layer.bgColor,
+        borderColor: layer.borderColor,
+        borderWidth: layer.borderWidth,
+        pad, lineHeight, lines,
+        color: layer.color,
+        fontSize: layer.fontSize,
+        fontFamily: layer.fontFamily,
+    });
 }
 
 function _drawImageLayerToCtx(ctx, layer) {
@@ -2530,14 +2598,15 @@ function _drawFloatingLayersToCtx(inst, ctx) {
 function _drawTextPreviewToCtx(ctx, preview) {
     if (!preview || !preview.text) return;
     const { pad, lineHeight, lines } = _measureTextLayer(preview.text, preview.fontSize, preview.fontFamily);
-    ctx.font = `${preview.fontSize}px ${preview.fontFamily || _fontFamily}`;
-    ctx.textBaseline = 'top';
-    if (preview.bgColor) {
-        ctx.fillStyle = preview.bgColor;
-        ctx.fillRect(0, 0, preview.w, preview.h);
-    }
-    ctx.fillStyle = preview.color;
-    lines.forEach((line, i) => ctx.fillText(line, pad, pad + i * lineHeight));
+    _paintTextBox(ctx, 0, 0, preview.w, preview.h, {
+        bgColor: preview.bgColor,
+        borderColor: preview.borderColor,
+        borderWidth: preview.borderWidth,
+        pad, lineHeight, lines,
+        color: preview.color,
+        fontSize: preview.fontSize,
+        fontFamily: preview.fontFamily,
+    });
 }
 
 function _drawLayerOnOverlay(inst, ovCtx, layer) {
@@ -2551,14 +2620,15 @@ function _drawLayerOnOverlay(inst, ovCtx, layer) {
     const tc = tmp.getContext('2d');
     if (layer.type === 'text') {
         const { pad, lineHeight, lines } = _measureTextLayer(layer.text, layer.fontSize, layer.fontFamily);
-        tc.font = `${layer.fontSize}px ${layer.fontFamily || _fontFamily}`;
-        tc.textBaseline = 'top';
-        if (layer.bgColor) {
-            tc.fillStyle = layer.bgColor;
-            tc.fillRect(0, 0, tmp.width, tmp.height);
-        }
-        tc.fillStyle = layer.color;
-        lines.forEach((line, i) => tc.fillText(line, pad, pad + i * lineHeight));
+        _paintTextBox(tc, 0, 0, tmp.width, tmp.height, {
+            bgColor: layer.bgColor,
+            borderColor: layer.borderColor,
+            borderWidth: layer.borderWidth,
+            pad, lineHeight, lines,
+            color: layer.color,
+            fontSize: layer.fontSize,
+            fontFamily: layer.fontFamily,
+        });
     } else {
         const ic = document.createElement('canvas');
         ic.width = layer.imageData.width;
@@ -2703,8 +2773,9 @@ function _transformFloatingLayersRotate(inst, deg, oldW, oldH) {
             layer.imageData = _rotateImageData90(layer.imageData, cw ? 90 : -90);
         } else if (layer.type === 'text') {
             const m = _measureTextLayer(layer.text, layer.fontSize, layer.fontFamily);
-            layer.w = m.w;
-            layer.h = m.h;
+            const bw = _textBorderMargin(layer.borderColor, layer.borderWidth);
+            layer.w = m.w + 2 * bw;
+            layer.h = m.h + 2 * bw;
         }
     }
 }
@@ -2735,8 +2806,9 @@ function _openTextLayerEditor(inst, layer) {
     const vp = inst.winEl.querySelector('.img-editor-viewport');
     const rect = vp.getBoundingClientRect();
     const pad = Math.max(2, Math.round(layer.fontSize * 0.15));
-    const textX = layer.x + pad;
-    const textY = layer.y + pad;
+    const bw = _textBorderMargin(layer.borderColor, layer.borderWidth);
+    const textX = layer.x + bw + pad;
+    const textY = layer.y + bw + pad;
     const screenX = rect.left + inst.panX + textX * inst.zoom;
     const screenY = rect.top + inst.panY + textY * inst.zoom;
     inst.editingLayerId = layer.id;
@@ -2747,6 +2819,8 @@ function _openTextLayerEditor(inst, layer) {
         initialColor: layer.color,
         initialSize: layer.fontSize,
         initialBg: layer.bgColor,
+        initialBorder: layer.borderColor,
+        initialBorderWidth: layer.borderWidth ?? 2,
         textPos: { x: textX, y: textY },
     });
 }
