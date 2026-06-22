@@ -434,6 +434,7 @@ function _buildInstanceUI(inst) {
     vp.addEventListener('mousemove', e => _onMouseMove(inst, e, ovCanvas, ovCtx));
     vp.addEventListener('mouseup',   e => _onMouseUp(inst, e, ovCanvas, ovCtx));
     vp.addEventListener('mouseleave', () => _onMouseLeave(inst, ovCanvas, ovCtx));
+    vp.addEventListener('contextmenu', e => { e.preventDefault(); e.stopPropagation(); });
     vp.addEventListener('click', e => {
         if (_activeTool === 'text') {
             if (inst.textDragJustEnded) { inst.textDragJustEnded = false; return; }
@@ -612,20 +613,21 @@ function _setTool(inst, tool) {
 }
 
 function _updateHint(inst) {
+    const panHint = ' | Right-drag = pan';
     const hints = {
         pan:       'Fit: F',
-        crop:      'Drag to select crop region | Apply / Cancel',
-        pen:       'Drag to draw freehand | Size = stroke width',
-        text:      'Click on image to place text',
-        rect:      'Drag to draw rectangle | Fill/Outline: toolbar toggle',
-        ellipse:   'Drag to draw ellipse | Fill/Outline: toolbar toggle',
-        line:      'Drag to draw straight line',
-        arrow:     'Drag to draw arrow (start → tip)',
-        highlight: 'Drag to highlight | semi-transparent | Size = brush width',
-        eraser:    'Drag to erase to transparent | Size controls width',
-        callout:   'Click to place numbered callout | ↺① resets counter',
-        blur:      'Drag to select area to pixelate | Size = block size',
-        select:    'Drag to select | drag inside to move | drag handles to resize | Shift = keep aspect | Delete to erase',
+        crop:      'Drag to select crop region | Apply / Cancel' + panHint,
+        pen:       'Drag to draw freehand | Size = stroke width' + panHint,
+        text:      'Click on image to place text' + panHint,
+        rect:      'Drag to draw rectangle | Fill/Outline: toolbar toggle' + panHint,
+        ellipse:   'Drag to draw ellipse | Fill/Outline: toolbar toggle' + panHint,
+        line:      'Drag to draw straight line' + panHint,
+        arrow:     'Drag to draw arrow (start → tip)' + panHint,
+        highlight: 'Drag to highlight | semi-transparent | Size = brush width' + panHint,
+        eraser:    'Drag to erase to transparent | Size controls width' + panHint,
+        callout:   'Click to place numbered callout | ↺① resets counter' + panHint,
+        blur:      'Drag to select area to pixelate | Size = block size' + panHint,
+        select:    'Drag to select | drag inside to move | drag handles to resize | Shift = keep aspect | Delete to erase' + panHint,
     };
     const el = inst.winEl && inst.winEl.querySelector('.img-ed-hint');
     if (el) el.textContent = hints[_activeTool] || '';
@@ -811,7 +813,15 @@ function _onWheel(inst, e, ovCanvas, ovCtx) {
 
 // ── Mouse events ──────────────────────────────────────────────────────────────
 
+function _startPan(inst, e) {
+    inst.isPanning = true;
+    inst.panStart  = { x: e.clientX - inst.panX, y: e.clientY - inst.panY };
+    const vp = inst.winEl.querySelector('.img-editor-viewport');
+    vp.style.cursor = 'grabbing';
+}
+
 function _onMouseDown(inst, e) {
+    if (e.button === 2) { _startPan(inst, e); return; }
     if (e.button !== 0) return;
 
     if (inst.textDialogEl && inst.textBBox) {
@@ -851,13 +861,7 @@ function _onMouseDown(inst, e) {
         return;
     }
 
-    if (_activeTool === 'pan' || e.ctrlKey) {
-        inst.isPanning = true;
-        inst.panStart  = { x: e.clientX - inst.panX, y: e.clientY - inst.panY };
-        const vp = inst.winEl.querySelector('.img-editor-viewport');
-        vp.style.cursor = 'grabbing';
-        return;
-    }
+    if (_activeTool === 'pan' || e.ctrlKey) { _startPan(inst, e); return; }
 
     if (_activeTool === 'crop') {
         const pt = _vpToImg(inst, e.clientX, e.clientY);
