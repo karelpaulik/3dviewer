@@ -176,7 +176,7 @@ function _ensureToolbar() {
             <button class="img-ed-tool-btn" id="img-ed-tool-eraser"    title="Eraser — erase drawing">🩹</button>
             <button class="img-ed-btn" id="img-ed-eraser-shape" title="Toggle eraser shape: circle / square">○</button>
             <button class="img-ed-tool-btn" id="img-ed-tool-text"      title="Text (click on image)">T</button>
-            <button class="img-ed-btn" id="img-ed-ocr" title="Recognize text (OCR) — selection or whole image">🔤</button>
+            <button class="img-ed-btn img-ed-btn-text" id="img-ed-ocr" title="Recognize text (OCR) — selection or whole image">OCR</button>
             <div class="img-ed-sep"></div>
             <span class="img-ed-group-label">Shapes</span>
             <button class="img-ed-tool-btn" id="img-ed-tool-rect"    title="Rectangle">▭</button>
