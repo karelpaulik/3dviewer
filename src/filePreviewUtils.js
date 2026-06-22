@@ -69,11 +69,18 @@ export function autoArrangeFilePreviews() {
 
 export function updateFilePreviewConvertState(busy) {
     _instances.forEach(inst => {
-        if (inst.att.mimeType !== 'application/pdf') return;
+        const mime = inst.att.mimeType;
+        const isPdf = mime === 'application/pdf';
+        const isImage = mime?.startsWith('image/');
+        if (!isPdf && !isImage) return;
         const btn = inst.winEl?.querySelector('.fp-convert-btn');
         if (!btn) return;
         btn.disabled = busy;
-        btn.textContent = busy ? 'Converting…' : '🖼 → Images';
+        if (isPdf) {
+            btn.textContent = busy ? 'Converting…' : '🖼 → Images';
+        } else {
+            btn.textContent = busy ? 'Converting…' : '📕 → PDF';
+        }
         btn.style.opacity = busy ? '0.5' : '1';
         btn.style.cursor = busy ? 'default' : 'pointer';
     });
@@ -180,7 +187,8 @@ function _wireInstanceEvents(inst) {
         _globalHandlers?.onManagePages?.(att);
     });
     win.querySelector('.fp-convert-btn').addEventListener('click', () => {
-        _globalHandlers?.onConvertPdf?.(att);
+        if (att.mimeType === 'application/pdf') _globalHandlers?.onConvertPdf?.(att);
+        else if (att.mimeType?.startsWith('image/')) _globalHandlers?.onConvertImage?.(att);
     });
     win.querySelector('.fp-comment-btn').addEventListener('click', () => _toggleCommentPanel(inst));
 
@@ -352,8 +360,17 @@ function _renderPreview(inst) {
 
     inst.winEl.querySelector('.fp-pages-btn').style.display =
         mime === 'application/pdf' ? '' : 'none';
-    inst.winEl.querySelector('.fp-convert-btn').style.display =
-        mime === 'application/pdf' ? '' : 'none';
+
+    const convertBtn = inst.winEl.querySelector('.fp-convert-btn');
+    const canConvert = mime === 'application/pdf' || mime.startsWith('image/');
+    convertBtn.style.display = canConvert ? '' : 'none';
+    if (mime === 'application/pdf') {
+        convertBtn.title = 'Convert PDF pages to PNG/JPG images';
+        convertBtn.textContent = '🖼 → Images';
+    } else if (mime.startsWith('image/')) {
+        convertBtn.title = 'Convert image to PDF';
+        convertBtn.textContent = '📕 → PDF';
+    }
 
     if (inst.commentPanelOpen) _buildCommentEditor(inst);
     _updateCommentBtn(inst);

@@ -23,6 +23,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 let attachmentsStore = []; // [{ id, name, mimeType, data (base64 string), size, addedAt }]
 let _guiRef = null;
 let _pdfConverting = false;
+let _imageConverting = false;
 let _pdfEditing = false;
 let _pdfPageManaging = false;
 /** @type {{ sourceAtt: object, originalBytes: Uint8Array, numPages: number, scale: number, pageSizes: Map<number, { widthPt: number, heightPt: number }>, editedPages: Map<number, { base64: string, mimeType: string, size: number }> } | null} */
@@ -156,6 +157,7 @@ export function refreshAttachmentsGui() {
         }
         if (att.mimeType && att.mimeType.startsWith('image/')) {
             folder.add({ fn: () => _editAttachment(att) }, 'fn').name('✏  Edit');
+            folder.add({ fn: () => _convertImageToPdf(att) }, 'fn').name('📕 Convert to PDF…');
         }
         if (att.mimeType === 'application/pdf') {
             folder.add({ fn: () => _editPdf(att) }, 'fn').name('✏  Edit PDF…');
@@ -246,9 +248,10 @@ const _previewHandlers = {
     onEditPdf: att => _editPdf(att),
     onManagePages: att => _managePdfPages(att),
     onConvertPdf: att => _convertPdfToImages(att),
+    onConvertImage: att => _convertImageToPdf(att),
     onNameChanged: () => refreshAttachmentsGui(),
     onClose: () => refreshAttachmentsGui(),
-    onAfterRender: () => _updateConvertBtnState(_pdfConverting),
+    onAfterRender: () => _updateConvertBtnState(_pdfConverting || _imageConverting),
 };
 
 function _openAttachment(att) {
@@ -520,8 +523,8 @@ function _offerPdfExport(session) {
     _exportPdfWithEdits(session, overwrite ? 'overwrite' : 'new');
 }
 
-function _isPdfBusy() {
-    return _pdfEditing || _pdfConverting || _pdfPageManaging;
+function _isAttachmentBusy() {
+    return _pdfEditing || _pdfConverting || _imageConverting || _pdfPageManaging;
 }
 
 function _commitPdfAttachment(att, pdfBytes, mode) {
@@ -606,7 +609,7 @@ async function _exportPdfWithEdits(session, mode) {
 }
 
 async function _managePdfPages(att) {
-    if (_isPdfBusy()) {
+    if (_isAttachmentBusy()) {
         alert('Another PDF operation is in progress. Please wait.');
         return;
     }
@@ -630,7 +633,7 @@ async function _managePdfPages(att) {
 }
 
 async function _editPdf(att) {
-    if (_isPdfBusy()) return;
+    if (_isAttachmentBusy()) return;
 
     const hadPreview = isFilePreviewOpenForAttachment(att);
     closeFilePreviewForAttachment(att);
@@ -835,8 +838,69 @@ function _updateConvertBtnState(busy) {
     updateFilePreviewConvertState(busy);
 }
 
+function _decodeImageToPngBase64(base64, mimeType) {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = img.naturalWidth;
+            canvas.height = img.naturalHeight;
+            canvas.getContext('2d').drawImage(img, 0, 0);
+            const dataUrl = canvas.toDataURL('image/png');
+            resolve({ base64: dataUrl.replace(/^data:image\/png;base64,/, '') });
+        };
+        img.onerror = () => reject(new Error('Image decode failed'));
+        img.src = `data:${mimeType};base64,${base64}`;
+    });
+}
+
+async function _convertImageToPdf(att) {
+    if (_isAttachmentBusy()) return;
+
+    _imageConverting = true;
+    _updateConvertBtnState(true);
+
+    try {
+        let mime = att.mimeType === 'image/jpg' ? 'image/jpeg' : att.mimeType;
+        let base64 = att.data;
+        if (mime !== 'image/jpeg' && mime !== 'image/png') {
+            const converted = await _decodeImageToPngBase64(base64, att.mimeType);
+            base64 = converted.base64;
+            mime = 'image/png';
+        }
+
+        const imgBytes = _attToUint8Array({ data: base64 });
+        const pdfDoc = await PDFDocument.create();
+        const image = mime === 'image/jpeg'
+            ? await pdfDoc.embedJpg(imgBytes)
+            : await pdfDoc.embedPng(imgBytes);
+        const { width, height } = image.scale(1);
+        const page = pdfDoc.addPage([width, height]);
+        page.drawImage(image, { x: 0, y: 0, width, height });
+
+        const pdfBytes = await pdfDoc.save();
+        const pdfName = _uniqueAttachmentName(`${_pdfBaseName(att.name)}.pdf`);
+        attachmentsStore.push({
+            id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+            name: pdfName,
+            mimeType: 'application/pdf',
+            data: _uint8ArrayToBase64(pdfBytes),
+            size: pdfBytes.length,
+            addedAt: new Date().toISOString(),
+        });
+        alert(`Added "${pdfName}".`);
+        refreshAttachmentsGui();
+    } catch (err) {
+        console.error(err);
+        alert('Cannot convert this image to PDF.');
+    } finally {
+        _imageConverting = false;
+        _updateConvertBtnState(false);
+    }
+}
+
 async function _convertPdfToImages(att, options) {
-    if (_isPdfBusy()) return;
+    if (_isAttachmentBusy()) return;
     if (!options) {
         options = _askPdfConvertOptions();
         if (!options) return;
