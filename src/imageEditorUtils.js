@@ -103,13 +103,22 @@ function _createInstance(att, onSaveOverwrite, onSaveNew, onClose) {
         selResizeStart:  null,
         selImageData: null,
         selHoleSnapshot: null,
-        pendingInsertSnapshot: null,
-        pendingInsertUndoIndex: null,
+        // floating insert layers (text + image, merged on save)
+        floatingLayers:   [],
+        activeLayerId:    null,
+        nextLayerId:      1,
+        pendingLayerId:   null,
+        isMovingLayer:    false,
+        isResizingLayer:  false,
+        layerMoveOff:     null,
+        layerResizeHandle: null,
+        layerResizeStart:  null,
+        editingLayerId:   null,
         // text tool
         textDialogEl:   null,
-        textSnapshot:   null,
         textPos:        null,
         textBBox:       null,
+        textPreviewState: null,
         isDraggingText: false,
         textDragOff:    null,
         textDragJustEnded: false,
@@ -442,7 +451,17 @@ function _buildInstanceUI(inst) {
             _placeText(inst, e);
         }
     });
-    vp.addEventListener('dblclick', e => { if (_activeTool === 'text') e.stopPropagation(); });
+    vp.addEventListener('dblclick', e => {
+        if (_activeTool === 'text') { e.stopPropagation(); return; }
+        if (_activeTool !== 'select') return;
+        const pt = _vpToImg(inst, e.clientX, e.clientY);
+        const layer = _hitTestFloatingLayer(inst, pt);
+        if (layer && layer.type === 'text') {
+            e.preventDefault();
+            e.stopPropagation();
+            _openTextLayerEditor(inst, layer);
+        }
+    });
 
     let _pinchDist0 = null;
     const _touchToMouse = touch => ({
@@ -598,7 +617,10 @@ function _syncCropButtons(inst) {
 
 function _setTool(inst, tool) {
     _cancelTextDialog(inst);
-    if (_activeTool === 'select' && tool !== 'select') _clearSelection(inst);
+    if (_activeTool === 'select' && tool !== 'select') {
+        _clearSelection(inst);
+        _deselectFloatingLayer(inst);
+    }
     _activeTool = tool;
     _syncToolbarActiveState();
     _instances.forEach(i => _syncCropButtons(i));
@@ -627,7 +649,7 @@ function _updateHint(inst) {
         eraser:    'Drag to erase to transparent | Size controls width' + panHint,
         callout:   'Click to place numbered callout | ↺① resets counter' + panHint,
         blur:      'Drag to select area to pixelate | Size = block size' + panHint,
-        select:    'Drag to select | drag inside to move | drag handles to resize | Shift = keep aspect | Delete to erase' + panHint,
+        select:    'Click inserted text/image to move | double-click text to edit | Delete removes layer | Light border = unsaved | merged on save' + panHint,
     };
     const el = inst.winEl && inst.winEl.querySelector('.img-ed-hint');
     if (el) el.textContent = hints[_activeTool] || '';
@@ -735,9 +757,54 @@ function _canvasToVp(inst, ix, iy) {
 
 // ── Undo / Redo ───────────────────────────────────────────────────────────────
 
+function _cloneImageData(id) {
+    return new ImageData(new Uint8ClampedArray(id.data), id.width, id.height);
+}
+
+function _cloneLayer(layer) {
+    if (layer.type === 'image') {
+        return { ...layer, imageData: _cloneImageData(layer.imageData) };
+    }
+    return { ...layer };
+}
+
+function _cloneLayers(layers) {
+    return layers.map(_cloneLayer);
+}
+
+function _captureUndoState(inst) {
+    return {
+        pixels: inst.ctx.getImageData(0, 0, inst.canvas.width, inst.canvas.height),
+        layers: _cloneLayers(inst.floatingLayers),
+        nextLayerId: inst.nextLayerId,
+        activeLayerId: inst.activeLayerId,
+    };
+}
+
+function _restoreUndoState(inst, state) {
+    const pixels = state.pixels || state;
+    inst.canvas.width  = pixels.width;
+    inst.canvas.height = pixels.height;
+    inst.ctx.putImageData(pixels, 0, 0);
+    if (state.layers) {
+        inst.floatingLayers   = _cloneLayers(state.layers);
+        inst.nextLayerId      = state.nextLayerId ?? inst.nextLayerId;
+        inst.activeLayerId    = state.activeLayerId ?? null;
+    } else {
+        inst.floatingLayers = [];
+        inst.activeLayerId  = null;
+    }
+    inst.pendingLayerId = null;
+    inst.isMovingLayer = inst.isResizingLayer = false;
+    inst.layerMoveOff = inst.layerResizeHandle = inst.layerResizeStart = null;
+    _updateSizeLabel(inst);
+    const ov = inst.winEl && inst.winEl.querySelector('.img-editor-overlay-canvas');
+    if (ov) _redrawOverlay(inst, ov, ov.getContext('2d'));
+}
+
 function _pushUndo(inst) {
     if (inst.canvas.width === 0 || inst.canvas.height === 0) return;
-    inst.undoStack.push(inst.ctx.getImageData(0, 0, inst.canvas.width, inst.canvas.height));
+    inst.undoStack.push(_captureUndoState(inst));
     if (inst.undoStack.length > MAX_UNDO) inst.undoStack.shift();
     inst.redoStack = [];
     _updateSizeLabel(inst);
@@ -746,31 +813,20 @@ function _pushUndo(inst) {
 function _undo(inst) {
     if (inst.undoStack.length <= 1) return;
     inst.redoStack.push(inst.undoStack.pop());
-    const state = inst.undoStack[inst.undoStack.length - 1];
-    inst.canvas.width  = state.width;
-    inst.canvas.height = state.height;
-    inst.ctx.putImageData(state, 0, 0);
-    _updateSizeLabel(inst);
+    _restoreUndoState(inst, inst.undoStack[inst.undoStack.length - 1]);
 }
 
 function _redo(inst) {
     if (!inst.redoStack.length) return;
     const state = inst.redoStack.pop();
     inst.undoStack.push(state);
-    inst.canvas.width  = state.width;
-    inst.canvas.height = state.height;
-    inst.ctx.putImageData(state, 0, 0);
-    _updateSizeLabel(inst);
+    _restoreUndoState(inst, state);
 }
 
 function _gotoBegin(inst) {
     if (inst.undoStack.length < 1) return;
-    const original = inst.undoStack[0];
-    inst.canvas.width  = original.width;
-    inst.canvas.height = original.height;
-    inst.ctx.putImageData(original, 0, 0);
+    _restoreUndoState(inst, inst.undoStack[0]);
     _fitToView(inst);
-    _updateSizeLabel(inst);
 }
 
 // ── Zoom & Pan ────────────────────────────────────────────────────────────────
@@ -836,6 +892,33 @@ function _onMouseDown(inst, e) {
 
     if (_activeTool === 'select' && !e.ctrlKey) {
         const pt = _vpToImg(inst, e.clientX, e.clientY);
+        const activeLayer = _getActiveLayer(inst);
+
+        if (activeLayer) {
+            const handle = _hitTestLayerHandle(inst, pt, activeLayer);
+            if (handle) {
+                inst.isResizingLayer = true;
+                inst.layerResizeHandle = handle;
+                inst.layerResizeStart = { x: activeLayer.x, y: activeLayer.y, w: activeLayer.w, h: activeLayer.h };
+                return;
+            }
+        }
+
+        const hitLayer = _hitTestFloatingLayer(inst, pt);
+        if (hitLayer) {
+            inst.activeLayerId = hitLayer.id;
+            inst.pendingLayerId = null;
+            inst.isMovingLayer = true;
+            inst.layerMoveOff = { dx: pt.x - hitLayer.x, dy: pt.y - hitLayer.y };
+            const ov = inst.winEl && inst.winEl.querySelector('.img-editor-overlay-canvas');
+            if (ov) _redrawOverlay(inst, ov, ov.getContext('2d'));
+            return;
+        }
+
+        if (activeLayer) {
+            _deselectFloatingLayer(inst);
+        }
+
         if (inst.selRect) {
             const handle = _hitTestSelHandle(inst, pt);
             if (handle) {
@@ -934,15 +1017,54 @@ function _onMouseMove(inst, e, ovCanvas, ovCtx) {
         if (vp) vp.style.cursor = inBox ? 'move' : _getTextCursorCss();
     }
 
-    if (_activeTool === 'select' && inst.selRect && !inst.isSelectingRect && !inst.isMovingSel && !inst.isResizingSel) {
+    if (_activeTool === 'select') {
         const selPt = _vpToImg(inst, e.clientX, e.clientY);
         const vpEl  = inst.winEl && inst.winEl.querySelector('.img-editor-viewport');
-        if (vpEl) {
-            const handle = _hitTestSelHandle(inst, selPt);
-            if (handle) vpEl.style.cursor = _cursorForSelHandle(handle);
-            else if (_ptInRect(selPt, inst.selRect)) vpEl.style.cursor = 'move';
-            else vpEl.style.cursor = _getCrosshairCursorCss();
+        if (vpEl && !inst.isSelectingRect && !inst.isMovingSel && !inst.isResizingSel &&
+            !inst.isMovingLayer && !inst.isResizingLayer) {
+            const activeLayer = _getActiveLayer(inst);
+            if (activeLayer) {
+                const handle = _hitTestLayerHandle(inst, selPt, activeLayer);
+                if (handle) vpEl.style.cursor = _cursorForSelHandle(handle);
+                else if (_ptInRect(selPt, { x: activeLayer.x, y: activeLayer.y, w: activeLayer.w, h: activeLayer.h })) vpEl.style.cursor = 'move';
+                else if (inst.selRect) {
+                    const handle = _hitTestSelHandle(inst, selPt);
+                    if (handle) vpEl.style.cursor = _cursorForSelHandle(handle);
+                    else if (_ptInRect(selPt, inst.selRect)) vpEl.style.cursor = 'move';
+                    else vpEl.style.cursor = _getCrosshairCursorCss();
+                } else vpEl.style.cursor = _getCrosshairCursorCss();
+            } else if (inst.selRect) {
+                const handle = _hitTestSelHandle(inst, selPt);
+                if (handle) vpEl.style.cursor = _cursorForSelHandle(handle);
+                else if (_ptInRect(selPt, inst.selRect)) vpEl.style.cursor = 'move';
+                else vpEl.style.cursor = _getCrosshairCursorCss();
+            }
         }
+    }
+
+    if (inst.isMovingLayer) {
+        const layer = _getActiveLayer(inst);
+        if (layer) {
+            const pt = _vpToImg(inst, e.clientX, e.clientY);
+            layer.x = pt.x - inst.layerMoveOff.dx;
+            layer.y = pt.y - inst.layerMoveOff.dy;
+            _redrawOverlay(inst, ovCanvas, ovCtx);
+        }
+        return;
+    }
+
+    if (inst.isResizingLayer) {
+        const layer = _getActiveLayer(inst);
+        if (layer && inst.layerResizeStart) {
+            const pt = _vpToImg(inst, e.clientX, e.clientY);
+            const r = _computeResizeRect(inst.layerResizeStart, inst.layerResizeHandle, pt, e.shiftKey);
+            layer.x = r.x;
+            layer.y = r.y;
+            layer.w = r.w;
+            layer.h = r.h;
+            _redrawOverlay(inst, ovCanvas, ovCtx);
+        }
+        return;
     }
 
     if (inst.isPanning) {
@@ -1069,6 +1191,25 @@ function _onMouseUp(inst, e, ovCanvas, ovCtx) {
         return;
     }
 
+    if (inst.isMovingLayer) {
+        inst.isMovingLayer = false;
+        inst.layerMoveOff  = null;
+        inst.pendingLayerId = null;
+        _pushUndo(inst);
+        _updateCursor(inst);
+        return;
+    }
+
+    if (inst.isResizingLayer) {
+        inst.isResizingLayer   = false;
+        inst.layerResizeHandle = null;
+        inst.layerResizeStart  = null;
+        inst.pendingLayerId = null;
+        _pushUndo(inst);
+        _updateCursor(inst);
+        return;
+    }
+
     if (inst.isMovingSel) {
         inst.isMovingSel = false;
         inst.selMoveOff  = null;
@@ -1144,6 +1285,21 @@ function _onMouseLeave(inst, ovCanvas, ovCtx) {
         inst.isSelectingRect = false;
         if (!inst.selRect || inst.selRect.w < 2 || inst.selRect.h < 2) inst.selRect = null;
     }
+    if (inst.isMovingLayer) {
+        inst.isMovingLayer = false;
+        inst.layerMoveOff  = null;
+        inst.pendingLayerId = null;
+        _pushUndo(inst);
+        _updateCursor(inst);
+    }
+    if (inst.isResizingLayer) {
+        inst.isResizingLayer = false;
+        inst.layerResizeHandle = null;
+        inst.layerResizeStart  = null;
+        inst.pendingLayerId = null;
+        _pushUndo(inst);
+        _updateCursor(inst);
+    }
     if (inst.isMovingSel) {
         inst.isMovingSel = false; inst.selMoveOff = null;
         if (inst.selImageData) {
@@ -1173,17 +1329,33 @@ function _onKeyDown(inst, e) {
     if (e.key === 'f' || e.key === 'F') { _fitToView(inst); return; }
     if (e.key === 'Escape') {
         _cancelCrop(inst);
-        if (inst.pendingInsertSnapshot) {
-            _cancelPendingInsert(inst);
+        if (inst.pendingLayerId != null) {
+            _removeLayer(inst, inst.pendingLayerId);
+            _pushUndo(inst);
+            const ov = inst.winEl && inst.winEl.querySelector('.img-editor-overlay-canvas');
+            if (ov) _redrawOverlay(inst, ov, ov.getContext('2d'));
             _setTool(inst, 'pan');
             return;
         }
-        if (_activeTool === 'select') _clearSelection(inst);
+        if (_activeTool === 'select') {
+            _clearSelection(inst);
+            _deselectFloatingLayer(inst);
+        }
         _setTool(inst, 'pan');
         return;
     }
-    if ((e.key === 'Delete' || e.key === 'Backspace') && _activeTool === 'select' && inst.selRect) {
-        e.preventDefault(); _deleteSelection(inst); return;
+    if ((e.key === 'Delete' || e.key === 'Backspace') && _activeTool === 'select') {
+        if (inst.activeLayerId != null) {
+            e.preventDefault();
+            _removeLayer(inst, inst.activeLayerId);
+            _pushUndo(inst);
+            const ov = inst.winEl && inst.winEl.querySelector('.img-editor-overlay-canvas');
+            if (ov) _redrawOverlay(inst, ov, ov.getContext('2d'));
+            return;
+        }
+        if (inst.selRect) {
+            e.preventDefault(); _deleteSelection(inst); return;
+        }
     }
 }
 
@@ -1214,7 +1386,10 @@ function _onPaste(inst, e) {
 function _redrawOverlay(inst, ov, ovCtx) {
     ovCtx.clearRect(0, 0, ov.width, ov.height);
 
-    if (inst.textBBox) {
+    _drawAllFloatingLayers(inst, ovCtx);
+    _drawFloatingLayerOutlines(inst, ovCtx);
+
+    if (inst.textBBox && inst.textDialogEl) {
         const tl = _canvasToVp(inst, inst.textBBox.x, inst.textBBox.y);
         const br = _canvasToVp(inst, inst.textBBox.x + inst.textBBox.w, inst.textBBox.y + inst.textBBox.h);
         const rx = tl.x, ry = tl.y, rw = br.x - tl.x, rh = br.y - tl.y;
@@ -1225,7 +1400,9 @@ function _redrawOverlay(inst, ov, ovCtx) {
         ovCtx.fillText('\u2725', rx + 2, ry - 8);
     }
 
-    if (_activeTool === 'select' && inst.selRect) {
+    _drawActiveLayerHandles(inst, ovCtx);
+
+    if (_activeTool === 'select' && inst.selRect && !inst.activeLayerId) {
         const { x, y, w, h } = inst.selRect;
         const tl = _canvasToVp(inst, x, y);
         const br = _canvasToVp(inst, x + w, y + h);
@@ -1287,7 +1464,10 @@ function _rotate(inst, deg) {
     tc.drawImage(inst.canvas, 0, 0);
     inst.canvas.width = tmp.width; inst.canvas.height = tmp.height;
     inst.ctx.drawImage(tmp, 0, 0);
+    _transformFloatingLayersRotate(inst, deg, w, h);
     _fitToView(inst); _pushUndo(inst);
+    const ov = inst.winEl && inst.winEl.querySelector('.img-editor-overlay-canvas');
+    if (ov) _redrawOverlay(inst, ov, ov.getContext('2d'));
 }
 
 function _flip(inst, dir) {
@@ -1300,7 +1480,10 @@ function _flip(inst, dir) {
     tc.drawImage(inst.canvas, 0, 0);
     inst.ctx.clearRect(0, 0, w, h);
     inst.ctx.drawImage(tmp, 0, 0);
+    _transformFloatingLayersFlip(inst, dir, w, h);
     _pushUndo(inst);
+    const ov = inst.winEl && inst.winEl.querySelector('.img-editor-overlay-canvas');
+    if (ov) _redrawOverlay(inst, ov, ov.getContext('2d'));
 }
 
 function _applyCrop(inst) {
@@ -1314,38 +1497,50 @@ function _applyCrop(inst) {
     const id = inst.ctx.getImageData(cx, cy, cw, ch);
     inst.canvas.width  = cw; inst.canvas.height = ch;
     inst.ctx.putImageData(id, 0, 0);
+    _transformFloatingLayersCrop(inst, cx, cy, cw, ch);
     _cancelCrop(inst); _fitToView(inst); _pushUndo(inst);
+    const ov = inst.winEl && inst.winEl.querySelector('.img-editor-overlay-canvas');
+    if (ov) _redrawOverlay(inst, ov, ov.getContext('2d'));
 }
 
 function _cancelCrop(inst) {
     inst.cropRect  = null; inst.cropStart = null; inst.isCropping = false;
     const ov = inst.winEl && inst.winEl.querySelector('.img-editor-overlay-canvas');
-    if (ov) { const c = ov.getContext('2d'); c.clearRect(0, 0, ov.width, ov.height); }
+    if (ov) _redrawOverlay(inst, ov, ov.getContext('2d'));
     if (_activeTool === 'crop') _setTool(inst, 'pan');
 }
 
 // ── Text placement ────────────────────────────────────────────────────────────
 
-function _openTextDialog(inst, { screenX, screenY, initialText = '' }) {
+function _openTextDialog(inst, { screenX, screenY, initialText = '', layerId = null, initialColor, initialSize, initialBg, textPos = null }) {
     if (inst.textDialogEl) return;
     _cancelTextDialog(inst);
-    inst.textPos = _vpToImg(inst, screenX, screenY);
-    inst.textSnapshot = inst.ctx.getImageData(0, 0, inst.canvas.width, inst.canvas.height);
 
-    const bgChecked = _bgColor ? 'checked' : '';
-    const bgVal     = _bgColor || '#ffffff';
-    const bgOpacity = _bgColor ? '1' : '0.4';
+    if (textPos) {
+        inst.textPos = { ...textPos };
+    } else {
+        inst.textPos = _vpToImg(inst, screenX, screenY);
+    }
+    inst.editingLayerId = layerId;
+
+    const startColor = initialColor ?? _textColor;
+    const startSize  = initialSize ?? _fontSize;
+    const startBg    = initialBg !== undefined ? initialBg : _bgColor;
+
+    const bgChecked = startBg ? 'checked' : '';
+    const bgVal     = startBg || '#ffffff';
+    const bgOpacity = startBg ? '1' : '0.4';
 
     const dlg = document.createElement('div');
     dlg.className = 'img-ed-text-dialog';
     dlg.style.left = (screenX + 14) + 'px';
     dlg.style.top  = (screenY + 14) + 'px';
     dlg.innerHTML = `
-        <div class="img-ed-txt-drag-handle" title="Drag to move">✎ Insert text</div>
+        <div class="img-ed-txt-drag-handle" title="Drag to move">${layerId != null ? '✎ Edit text' : '✎ Insert text'}</div>
         <textarea class="img-ed-txt-input" placeholder="Enter text… (Enter = new line, Ctrl+Enter = confirm)" autocomplete="off" spellcheck="false" rows="3"></textarea>
         <div class="img-ed-text-opts">
-            <label title="Text color">Color <input type="color" class="img-ed-txt-color" value="${_textColor}"></label>
-            <label title="Font size (px)">Size <input type="number" class="img-ed-txt-size" min="6" max="400" value="${_fontSize}" style="width:52px"></label>
+            <label title="Text color">Color <input type="color" class="img-ed-txt-color" value="${startColor}"></label>
+            <label title="Font size (px)">Size <input type="number" class="img-ed-txt-size" min="6" max="400" value="${startSize}" style="width:52px"></label>
             <label title="Text background color">
                 <input type="checkbox" class="img-ed-txt-bg-en" ${bgChecked}>
                 BG <input type="color" class="img-ed-txt-bg-col" value="${bgVal}" style="opacity:${bgOpacity}">
@@ -1368,9 +1563,9 @@ function _openTextDialog(inst, { screenX, screenY, initialText = '' }) {
     const sizeInp   = dlg.querySelector('.img-ed-txt-size');
     const bgEnCb    = dlg.querySelector('.img-ed-txt-bg-en');
     const bgColInp  = dlg.querySelector('.img-ed-txt-bg-col');
-    let localBg    = _bgColor;
-    let localColor = _textColor;
-    let localSize  = _fontSize;
+    let localBg    = startBg;
+    let localColor = startColor;
+    let localSize  = startSize;
 
     const handle = dlg.querySelector('.img-ed-txt-drag-handle');
     handle.addEventListener('mousedown', ev => {
@@ -1394,23 +1589,31 @@ function _openTextDialog(inst, { screenX, screenY, initialText = '' }) {
 
     const _getOvCanvas = () => inst.winEl && inst.winEl.querySelector('.img-editor-overlay-canvas');
 
-    const _drawMultiline = txt => {
-        const lineHeight = localSize * 1.25;
-        const lines = txt.split('\n');
-        const pad   = Math.max(2, Math.round(localSize * 0.15));
-        inst.ctx.font = `${localSize}px ${_fontFamily}`; inst.ctx.textBaseline = 'top';
-        const maxW   = lines.reduce((m, l) => Math.max(m, inst.ctx.measureText(l).width), 0);
-        const totalH = lines.length * lineHeight;
-        inst.textBBox = { x: inst.textPos.x - pad, y: inst.textPos.y - pad, w: Math.max(maxW + pad * 2, 20), h: totalH + pad * 2 };
-        if (localBg) { inst.ctx.fillStyle = localBg; inst.ctx.fillRect(inst.textPos.x - pad, inst.textPos.y - pad, maxW + pad * 2, totalH + pad * 2); }
-        inst.ctx.fillStyle = localColor;
-        lines.forEach((line, i) => inst.ctx.fillText(line, inst.textPos.x, inst.textPos.y + i * lineHeight));
+    const _updatePreviewState = txt => {
+        if (!txt) {
+            inst.textBBox = null;
+            inst.textPreviewState = null;
+            return;
+        }
+        const metrics = _measureTextLayer(txt, localSize, _fontFamily);
+        const bx = inst.textPos.x - metrics.pad;
+        const by = inst.textPos.y - metrics.pad;
+        inst.textBBox = { x: bx, y: by, w: metrics.w, h: metrics.h };
+        inst.textPreviewState = {
+            text: txt,
+            x: bx,
+            y: by,
+            w: metrics.w,
+            h: metrics.h,
+            color: localColor,
+            fontSize: localSize,
+            fontFamily: _fontFamily,
+            bgColor: localBg,
+        };
     };
 
     const _preview = () => {
-        inst.ctx.putImageData(inst.textSnapshot, 0, 0);
-        const txt = textInput.value;
-        if (!txt) inst.textBBox = null; else _drawMultiline(txt);
+        _updatePreviewState(textInput.value);
         const ov = _getOvCanvas();
         if (ov) _redrawOverlay(inst, ov, ov.getContext('2d'));
     };
@@ -1423,12 +1626,29 @@ function _openTextDialog(inst, { screenX, screenY, initialText = '' }) {
     bgColInp.addEventListener('input', () => { if (bgEnCb.checked) { localBg = bgColInp.value; _preview(); } });
 
     const _confirm = () => {
-        const txt = textInput.value;
-        if (txt) { _preview(); _pushUndo(inst); } else { inst.ctx.putImageData(inst.textSnapshot, 0, 0); }
+        const txt = textInput.value.trim();
+        if (txt) {
+            const metrics = _measureTextLayer(txt, localSize, _fontFamily);
+            const bx = inst.textPos.x - metrics.pad;
+            const by = inst.textPos.y - metrics.pad;
+            _addOrUpdateTextLayer(inst, {
+                text: txt,
+                x: bx,
+                y: by,
+                color: localColor,
+                fontSize: localSize,
+                fontFamily: _fontFamily,
+                bgColor: localBg,
+                layerId,
+            });
+            _pushUndo(inst);
+            if (_activeTool !== 'select') _setTool(inst, 'select');
+        }
+        inst.editingLayerId = null;
         _closeTextDialog(inst);
     };
     const _cancel = () => {
-        if (inst.textSnapshot) inst.ctx.putImageData(inst.textSnapshot, 0, 0);
+        inst.editingLayerId = null;
         _closeTextDialog(inst);
     };
 
@@ -1452,14 +1672,14 @@ function _placeText(inst, e) {
 
 function _closeTextDialog(inst) {
     if (inst.textDialogEl) { inst.textDialogEl.remove(); inst.textDialogEl = null; }
-    inst.textSnapshot = null; inst.textBBox = null; inst.textPos = null;
+    inst.textBBox = null; inst.textPos = null;
+    inst.textPreviewState = null;
     inst.textPreviewFn = null; inst.isDraggingText = false; inst.textDragOff = null;
     const ov = inst.winEl && inst.winEl.querySelector('.img-editor-overlay-canvas');
     if (ov) _redrawOverlay(inst, ov, ov.getContext('2d'));
 }
 
 function _cancelTextDialog(inst) {
-    if (inst.textSnapshot && inst.canvas) inst.ctx.putImageData(inst.textSnapshot, 0, 0);
     _closeTextDialog(inst);
 }
 
@@ -1481,7 +1701,8 @@ async function _runOcrOnImage(inst) {
 
     const sel = inst.selRect;
     const useSelection = sel && sel.w >= 4 && sel.h >= 4;
-    const imageSource = useSelection ? canvasRegionToCanvas(inst.canvas, sel) : inst.canvas;
+    const composite = _compositeCanvasWithLayers(inst);
+    const imageSource = useSelection ? canvasRegionToCanvas(composite, sel) : composite;
     const rectangle = useSelection
         ? { left: 0, top: 0, width: imageSource.width, height: imageSource.height }
         : undefined;
@@ -1642,6 +1863,12 @@ function _getOutputMimeAndExt(inst) {
 }
 
 function _canvasToBase64(inst) {
+    if (inst.floatingLayers.length) {
+        _flattenFloatingLayers(inst);
+        _pushUndo(inst);
+        const ov = inst.winEl && inst.winEl.querySelector('.img-editor-overlay-canvas');
+        if (ov) _redrawOverlay(inst, ov, ov.getContext('2d'));
+    }
     const { mime } = _getOutputMimeAndExt(inst);
     const quality  = (mime === 'image/jpeg' || mime === 'image/webp') ? 0.92 : undefined;
     const dataUrl  = quality !== undefined ? inst.canvas.toDataURL(mime, quality) : inst.canvas.toDataURL(mime);
@@ -1953,6 +2180,371 @@ function _close(inst) {
     inst.onClose?.();
 }
 
+// ── Floating layers ───────────────────────────────────────────────────────────
+
+function _measureTextLayer(text, fontSize, fontFamily) {
+    const lineHeight = fontSize * 1.25;
+    const lines = text.split('\n');
+    const pad   = Math.max(2, Math.round(fontSize * 0.15));
+    const tmp   = document.createElement('canvas');
+    const tc    = tmp.getContext('2d');
+    tc.font = `${fontSize}px ${fontFamily || _fontFamily}`;
+    const maxW   = lines.reduce((m, l) => Math.max(m, tc.measureText(l).width), 0);
+    const totalH = lines.length * lineHeight;
+    return {
+        w: Math.max(maxW + pad * 2, 20),
+        h: totalH + pad * 2,
+        pad,
+        lineHeight,
+        lines,
+    };
+}
+
+function _getActiveLayer(inst) {
+    return inst.floatingLayers.find(l => l.id === inst.activeLayerId) || null;
+}
+
+function _getLayerById(inst, id) {
+    return inst.floatingLayers.find(l => l.id === id) || null;
+}
+
+function _addImageLayer(inst, imageData, x, y) {
+    const id = inst.nextLayerId++;
+    const layer = {
+        id,
+        type: 'image',
+        x, y,
+        w: imageData.width,
+        h: imageData.height,
+        imageData: _cloneImageData(imageData),
+    };
+    inst.floatingLayers.push(layer);
+    inst.activeLayerId = id;
+    inst.pendingLayerId = id;
+    return layer;
+}
+
+function _addOrUpdateTextLayer(inst, { text, x, y, color, fontSize, fontFamily, bgColor, layerId = null }) {
+    const metrics = _measureTextLayer(text, fontSize, fontFamily);
+    if (layerId != null) {
+        const layer = _getLayerById(inst, layerId);
+        if (layer && layer.type === 'text') {
+            layer.text = text;
+            layer.x = x;
+            layer.y = y;
+            layer.w = metrics.w;
+            layer.h = metrics.h;
+            layer.color = color;
+            layer.fontSize = fontSize;
+            layer.fontFamily = fontFamily;
+            layer.bgColor = bgColor;
+            inst.activeLayerId = layer.id;
+            return layer;
+        }
+    }
+    const id = inst.nextLayerId++;
+    const layer = {
+        id,
+        type: 'text',
+        text, x, y,
+        w: metrics.w,
+        h: metrics.h,
+        color,
+        fontSize,
+        fontFamily: fontFamily || _fontFamily,
+        bgColor,
+    };
+    inst.floatingLayers.push(layer);
+    inst.activeLayerId = id;
+    return layer;
+}
+
+function _removeLayer(inst, id) {
+    inst.floatingLayers = inst.floatingLayers.filter(l => l.id !== id);
+    if (inst.activeLayerId === id) inst.activeLayerId = null;
+    if (inst.pendingLayerId === id) inst.pendingLayerId = null;
+    if (inst.editingLayerId === id) inst.editingLayerId = null;
+}
+
+function _deselectFloatingLayer(inst) {
+    inst.activeLayerId = null;
+    inst.pendingLayerId = null;
+    const ov = inst.winEl && inst.winEl.querySelector('.img-editor-overlay-canvas');
+    if (ov) _redrawOverlay(inst, ov, ov.getContext('2d'));
+}
+
+function _hitTestFloatingLayer(inst, pt) {
+    for (let i = inst.floatingLayers.length - 1; i >= 0; i--) {
+        const layer = inst.floatingLayers[i];
+        if (inst.editingLayerId === layer.id) continue;
+        if (_ptInRect(pt, { x: layer.x, y: layer.y, w: layer.w, h: layer.h })) return layer;
+    }
+    return null;
+}
+
+function _hitTestLayerHandle(inst, pt, layer) {
+    if (!layer || layer.type === 'text') return null;
+    const tol = 8 / inst.zoom;
+    const handles = _selHandlePositions({ x: layer.x, y: layer.y, w: layer.w, h: layer.h });
+    for (const id of _SEL_HANDLES) {
+        const h = handles[id];
+        if (Math.abs(pt.x - h.x) <= tol && Math.abs(pt.y - h.y) <= tol) return id;
+    }
+    return null;
+}
+
+function _drawTextLayerToCtx(ctx, layer) {
+    const { pad, lineHeight, lines } = _measureTextLayer(layer.text, layer.fontSize, layer.fontFamily);
+    ctx.font = `${layer.fontSize}px ${layer.fontFamily || _fontFamily}`;
+    ctx.textBaseline = 'top';
+    const textX = layer.x + pad;
+    const textY = layer.y + pad;
+    if (layer.bgColor) {
+        ctx.fillStyle = layer.bgColor;
+        ctx.fillRect(layer.x, layer.y, layer.w, layer.h);
+    }
+    ctx.fillStyle = layer.color;
+    lines.forEach((line, i) => ctx.fillText(line, textX, textY + i * lineHeight));
+}
+
+function _drawImageLayerToCtx(ctx, layer) {
+    const tmp = document.createElement('canvas');
+    tmp.width  = layer.imageData.width;
+    tmp.height = layer.imageData.height;
+    tmp.getContext('2d').putImageData(layer.imageData, 0, 0);
+    ctx.drawImage(tmp, Math.round(layer.x), Math.round(layer.y), Math.round(layer.w), Math.round(layer.h));
+}
+
+function _drawFloatingLayersToCtx(inst, ctx) {
+    for (const layer of inst.floatingLayers) {
+        if (layer.type === 'text') _drawTextLayerToCtx(ctx, layer);
+        else if (layer.type === 'image') _drawImageLayerToCtx(ctx, layer);
+    }
+}
+
+function _drawTextPreviewToCtx(ctx, preview) {
+    if (!preview || !preview.text) return;
+    const { pad, lineHeight, lines } = _measureTextLayer(preview.text, preview.fontSize, preview.fontFamily);
+    ctx.font = `${preview.fontSize}px ${preview.fontFamily || _fontFamily}`;
+    ctx.textBaseline = 'top';
+    if (preview.bgColor) {
+        ctx.fillStyle = preview.bgColor;
+        ctx.fillRect(0, 0, preview.w, preview.h);
+    }
+    ctx.fillStyle = preview.color;
+    lines.forEach((line, i) => ctx.fillText(line, pad, pad + i * lineHeight));
+}
+
+function _drawLayerOnOverlay(inst, ovCtx, layer) {
+    const tl = _canvasToVp(inst, layer.x, layer.y);
+    const br = _canvasToVp(inst, layer.x + layer.w, layer.y + layer.h);
+    const rw = br.x - tl.x;
+    const rh = br.y - tl.y;
+    const tmp = document.createElement('canvas');
+    tmp.width  = Math.max(1, Math.round(layer.w));
+    tmp.height = Math.max(1, Math.round(layer.h));
+    const tc = tmp.getContext('2d');
+    if (layer.type === 'text') {
+        const { pad, lineHeight, lines } = _measureTextLayer(layer.text, layer.fontSize, layer.fontFamily);
+        tc.font = `${layer.fontSize}px ${layer.fontFamily || _fontFamily}`;
+        tc.textBaseline = 'top';
+        if (layer.bgColor) {
+            tc.fillStyle = layer.bgColor;
+            tc.fillRect(0, 0, tmp.width, tmp.height);
+        }
+        tc.fillStyle = layer.color;
+        lines.forEach((line, i) => tc.fillText(line, pad, pad + i * lineHeight));
+    } else {
+        const ic = document.createElement('canvas');
+        ic.width = layer.imageData.width;
+        ic.height = layer.imageData.height;
+        ic.getContext('2d').putImageData(layer.imageData, 0, 0);
+        tc.drawImage(ic, 0, 0, tmp.width, tmp.height);
+    }
+    ovCtx.drawImage(tmp, 0, 0, tmp.width, tmp.height, tl.x, tl.y, rw, rh);
+}
+
+function _drawAllFloatingLayers(inst, ovCtx) {
+    for (const layer of inst.floatingLayers) {
+        if (inst.editingLayerId === layer.id) continue;
+        _drawLayerOnOverlay(inst, ovCtx, layer);
+    }
+    if (inst.textPreviewState) {
+        const p = inst.textPreviewState;
+        const tmp = document.createElement('canvas');
+        tmp.width  = Math.max(1, Math.round(p.w));
+        tmp.height = Math.max(1, Math.round(p.h));
+        _drawTextPreviewToCtx(tmp.getContext('2d'), { ...p, x: 0, y: 0 });
+        const tl = _canvasToVp(inst, p.x, p.y);
+        const br = _canvasToVp(inst, p.x + p.w, p.y + p.h);
+        ovCtx.drawImage(tmp, 0, 0, tmp.width, tmp.height, tl.x, tl.y, br.x - tl.x, br.y - tl.y);
+    }
+}
+
+function _drawFloatingLayerOutlines(inst, ovCtx) {
+    if (!inst.floatingLayers.length) return;
+    for (const layer of inst.floatingLayers) {
+        if (inst.editingLayerId === layer.id) continue;
+        if (_activeTool === 'select' && layer.id === inst.activeLayerId) continue;
+        const { x, y, w, h } = layer;
+        const tl = _canvasToVp(inst, x, y);
+        const br = _canvasToVp(inst, x + w, y + h);
+        ovCtx.strokeStyle = 'rgba(0,120,215,0.45)';
+        ovCtx.lineWidth = 1.5;
+        ovCtx.setLineDash([5, 3]);
+        ovCtx.strokeRect(tl.x, tl.y, br.x - tl.x, br.y - tl.y);
+        ovCtx.setLineDash([]);
+    }
+}
+
+function _drawActiveLayerHandles(inst, ovCtx) {
+    const layer = _getActiveLayer(inst);
+    if (!layer || _activeTool !== 'select') return;
+    const { x, y, w, h } = layer;
+    const tl = _canvasToVp(inst, x, y);
+    const br = _canvasToVp(inst, x + w, y + h);
+    const rx = tl.x, ry = tl.y, rw = br.x - tl.x, rh = br.y - tl.y;
+    ovCtx.strokeStyle = '#0078d7'; ovCtx.lineWidth = 1.5;
+    ovCtx.setLineDash([5, 3]); ovCtx.strokeRect(rx, ry, rw, rh); ovCtx.setLineDash([]);
+    if (layer.type === 'image') {
+        const hs = 6;
+        [[rx, ry], [rx + rw / 2, ry], [rx + rw, ry],
+         [rx, ry + rh / 2],            [rx + rw, ry + rh / 2],
+         [rx, ry + rh], [rx + rw / 2, ry + rh], [rx + rw, ry + rh]].forEach(([hx, hy]) => {
+            ovCtx.fillStyle = '#fff'; ovCtx.fillRect(hx - hs / 2, hy - hs / 2, hs, hs);
+            ovCtx.strokeStyle = '#0078d7'; ovCtx.lineWidth = 1; ovCtx.strokeRect(hx - hs / 2, hy - hs / 2, hs, hs);
+        });
+    }
+    const lbl = layer.type === 'text' ? 'Text' : `${Math.round(w)} \u00d7 ${Math.round(h)}`;
+    const lblW = lbl.length * 6 + 10;
+    ovCtx.fillStyle = 'rgba(0,120,215,0.85)'; ovCtx.fillRect(rx, ry - 18, lblW, 16);
+    ovCtx.fillStyle = '#fff'; ovCtx.font = '10px sans-serif'; ovCtx.textBaseline = 'middle';
+    ovCtx.fillText(lbl, rx + 4, ry - 10);
+}
+
+function _flattenFloatingLayers(inst) {
+    if (!inst.floatingLayers.length) return;
+    _drawFloatingLayersToCtx(inst, inst.ctx);
+    inst.floatingLayers = [];
+    inst.activeLayerId = null;
+    inst.pendingLayerId = null;
+    inst.editingLayerId = null;
+}
+
+function _compositeCanvasWithLayers(inst) {
+    const tmp = document.createElement('canvas');
+    tmp.width  = inst.canvas.width;
+    tmp.height = inst.canvas.height;
+    const tc = tmp.getContext('2d');
+    tc.drawImage(inst.canvas, 0, 0);
+    _drawFloatingLayersToCtx(inst, tc);
+    return tmp;
+}
+
+function _rotateImageData90(imageData, dir) {
+    const w = imageData.width;
+    const h = imageData.height;
+    const src = imageData.data;
+    const out = new ImageData(h, w);
+    const dst = out.data;
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            const si = (y * w + x) * 4;
+            let dx, dy;
+            if (dir === 90) { dx = y; dy = w - 1 - x; }
+            else            { dx = h - 1 - y; dy = x; }
+            const di = (dy * h + dx) * 4;
+            dst[di] = src[si]; dst[di + 1] = src[si + 1]; dst[di + 2] = src[si + 2]; dst[di + 3] = src[si + 3];
+        }
+    }
+    return out;
+}
+
+function _flipImageData(imageData, dir) {
+    const w = imageData.width;
+    const h = imageData.height;
+    const src = imageData.data;
+    const out = new ImageData(w, h);
+    const dst = out.data;
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            const si = (y * w + x) * 4;
+            const dx = dir === 'h' ? w - 1 - x : x;
+            const dy = dir === 'v' ? h - 1 - y : y;
+            const di = (dy * w + dx) * 4;
+            dst[di] = src[si]; dst[di + 1] = src[si + 1]; dst[di + 2] = src[si + 2]; dst[di + 3] = src[si + 3];
+        }
+    }
+    return out;
+}
+
+function _transformFloatingLayersRotate(inst, deg, oldW, oldH) {
+    const cw = deg === 90 || deg === -270;
+    for (const layer of inst.floatingLayers) {
+        const { x, y, w, h } = layer;
+        if (cw) {
+            layer.x = y;
+            layer.y = oldW - x - w;
+            layer.w = h;
+            layer.h = w;
+        } else {
+            layer.x = oldH - y - h;
+            layer.y = x;
+            layer.w = h;
+            layer.h = w;
+        }
+        if (layer.type === 'image') {
+            layer.imageData = _rotateImageData90(layer.imageData, cw ? 90 : -90);
+        } else if (layer.type === 'text') {
+            const m = _measureTextLayer(layer.text, layer.fontSize, layer.fontFamily);
+            layer.w = m.w;
+            layer.h = m.h;
+        }
+    }
+}
+
+function _transformFloatingLayersFlip(inst, dir, canvasW, canvasH) {
+    for (const layer of inst.floatingLayers) {
+        if (dir === 'h') {
+            layer.x = canvasW - layer.x - layer.w;
+        } else {
+            layer.y = canvasH - layer.y - layer.h;
+        }
+        if (layer.type === 'image') {
+            layer.imageData = _flipImageData(layer.imageData, dir);
+        }
+    }
+}
+
+function _transformFloatingLayersCrop(inst, cx, cy, cw, ch) {
+    inst.floatingLayers = inst.floatingLayers.filter(layer => {
+        layer.x -= cx;
+        layer.y -= cy;
+        const inside = layer.x + layer.w > 0 && layer.y + layer.h > 0 && layer.x < cw && layer.y < ch;
+        return inside;
+    });
+}
+
+function _openTextLayerEditor(inst, layer) {
+    const vp = inst.winEl.querySelector('.img-editor-viewport');
+    const rect = vp.getBoundingClientRect();
+    const pad = Math.max(2, Math.round(layer.fontSize * 0.15));
+    const textX = layer.x + pad;
+    const textY = layer.y + pad;
+    const screenX = rect.left + inst.panX + textX * inst.zoom;
+    const screenY = rect.top + inst.panY + textY * inst.zoom;
+    inst.editingLayerId = layer.id;
+    _openTextDialog(inst, {
+        screenX, screenY,
+        initialText: layer.text,
+        layerId: layer.id,
+        initialColor: layer.color,
+        initialSize: layer.fontSize,
+        initialBg: layer.bgColor,
+        textPos: { x: textX, y: textY },
+    });
+}
+
 // ── Selection helpers ─────────────────────────────────────────────────────────
 
 function _ptInRect(pt, r) {
@@ -1971,33 +2563,8 @@ function _liftSelection(inst) {
     if (_bgColor) { inst.ctx.fillStyle = _bgColor; inst.ctx.fillRect(cx, cy, cw, ch); }
     else          { inst.ctx.clearRect(cx, cy, cw, ch); }
     inst.ctx.restore();
-    if (inst.pendingInsertSnapshot) {
-        inst.selHoleSnapshot = inst.pendingInsertSnapshot;
-    } else {
-        inst.selHoleSnapshot = inst.ctx.getImageData(0, 0, inst.canvas.width, inst.canvas.height);
-    }
+    inst.selHoleSnapshot = inst.ctx.getImageData(0, 0, inst.canvas.width, inst.canvas.height);
     inst.selRect = { x: cx, y: cy, w: cw, h: ch };
-}
-
-function _acceptPendingInsert(inst) {
-    inst.pendingInsertSnapshot = null;
-    inst.pendingInsertUndoIndex = null;
-}
-
-function _cancelPendingInsert(inst) {
-    if (!inst.pendingInsertSnapshot) return;
-    inst.ctx.putImageData(inst.pendingInsertSnapshot, 0, 0);
-    if (inst.pendingInsertUndoIndex != null) {
-        inst.undoStack.length = inst.pendingInsertUndoIndex;
-    }
-    inst.redoStack = [];
-    _acceptPendingInsert(inst);
-    inst.selRect = null; inst.selStart = null; inst.isSelectingRect = false;
-    inst.isMovingSel = false; inst.selMoveOff = null;
-    inst.isResizingSel = false; inst.selResizeHandle = null; inst.selResizeStart = null;
-    inst.selImageData = null; inst.selHoleSnapshot = null;
-    const ov = inst.winEl && inst.winEl.querySelector('.img-editor-overlay-canvas');
-    if (ov) _redrawOverlay(inst, ov, ov.getContext('2d'));
 }
 
 function _drawFloatedAt(inst, x, y) {
@@ -2105,7 +2672,6 @@ function _clearSelection(inst) {
     inst.isMovingSel = false; inst.selMoveOff = null;
     inst.isResizingSel = false; inst.selResizeHandle = null; inst.selResizeStart = null;
     inst.selImageData = null; inst.selHoleSnapshot = null;
-    _acceptPendingInsert(inst);
     const ov = inst.winEl && inst.winEl.querySelector('.img-editor-overlay-canvas');
     if (ov) _redrawOverlay(inst, ov, ov.getContext('2d'));
 }
@@ -2129,7 +2695,6 @@ function _deleteSelection(inst) {
     inst.selImageData = null; inst.selHoleSnapshot = null; inst.selRect = null;
     inst.isMovingSel = false; inst.isSelectingRect = false;
     inst.isResizingSel = false; inst.selResizeHandle = null; inst.selResizeStart = null;
-    _acceptPendingInsert(inst);
     _pushUndo(inst);
     const ov = inst.winEl && inst.winEl.querySelector('.img-editor-overlay-canvas');
     if (ov) _redrawOverlay(inst, ov, ov.getContext('2d'));
@@ -2185,16 +2750,13 @@ function _insertImageFromDataUrl(inst, dataUrl) {
 
         _clipboardData = imageData;
         _clearSelection(inst);
+        _deselectFloatingLayer(inst);
 
         const pasteX = Math.min(16, Math.max(0, inst.canvas.width  - imageData.width));
         const pasteY = Math.min(16, Math.max(0, inst.canvas.height - imageData.height));
 
-        inst.pendingInsertSnapshot  = inst.ctx.getImageData(0, 0, inst.canvas.width, inst.canvas.height);
-        inst.pendingInsertUndoIndex = inst.undoStack.length;
-        inst.selRect         = { x: pasteX, y: pasteY, w: imageData.width, h: imageData.height };
-        inst.selImageData    = new ImageData(new Uint8ClampedArray(imageData.data), imageData.width, imageData.height);
-        inst.selHoleSnapshot = inst.pendingInsertSnapshot;
-        _drawFloatedAt(inst, pasteX, pasteY);
+        _addImageLayer(inst, imageData, pasteX, pasteY);
+        _pushUndo(inst);
 
         if (_activeTool !== 'select') _setTool(inst, 'select');
 
