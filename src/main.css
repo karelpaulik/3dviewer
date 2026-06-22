@@ -2339,6 +2339,17 @@ a, button, input, select {
     border-radius: 4px;
     transition: width 0.2s ease;
 }
+.ocr-result-dialog {
+    position: fixed;
+    margin: 0;
+}
+.ocr-result-dialog .img-dialog-title {
+    cursor: grab;
+    user-select: none;
+}
+.ocr-result-dialog .img-dialog-title:active {
+    cursor: grabbing;
+}
 .ocr-result-text {
     width: 100%;
     min-height: 180px;

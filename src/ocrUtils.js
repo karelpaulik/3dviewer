@@ -170,6 +170,52 @@ export async function runOcrWithProgress(runFn) {
     }
 }
 
+function _centerOcrDialog(dialog) {
+    const r = dialog.getBoundingClientRect();
+    dialog.style.left = Math.max(8, (window.innerWidth - r.width) / 2) + 'px';
+    dialog.style.top = Math.max(8, (window.innerHeight - r.height) / 2) + 'px';
+}
+
+function _makeOcrDialogDraggable(dialog, handle) {
+    handle.addEventListener('mousedown', ev => {
+        if (ev.button !== 0) return;
+        ev.preventDefault();
+        const r = dialog.getBoundingClientRect();
+        const dragOff = { x: ev.clientX - r.left, y: ev.clientY - r.top };
+        const onMove = mv => {
+            dialog.style.left = (mv.clientX - dragOff.x) + 'px';
+            dialog.style.top = (mv.clientY - dragOff.y) + 'px';
+        };
+        const onUp = () => {
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+        };
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+    });
+    handle.addEventListener('touchstart', ev => {
+        if (ev.touches.length !== 1) return;
+        ev.preventDefault();
+        const touch = ev.touches[0];
+        const r = dialog.getBoundingClientRect();
+        const dragOff = { x: touch.clientX - r.left, y: touch.clientY - r.top };
+        const onMove = mv => {
+            if (mv.touches.length !== 1) return;
+            const t = mv.touches[0];
+            dialog.style.left = (t.clientX - dragOff.x) + 'px';
+            dialog.style.top = (t.clientY - dragOff.y) + 'px';
+        };
+        const onEnd = () => {
+            document.removeEventListener('touchmove', onMove);
+            document.removeEventListener('touchend', onEnd);
+            document.removeEventListener('touchcancel', onEnd);
+        };
+        document.addEventListener('touchmove', onMove, { passive: false });
+        document.addEventListener('touchend', onEnd);
+        document.addEventListener('touchcancel', onEnd);
+    }, { passive: false });
+}
+
 /**
  * Show editable OCR result dialog.
  * @param {string} text
@@ -187,7 +233,7 @@ export function showOcrResultDialog(text, callbacks = {}) {
 
     const title = document.createElement('div');
     title.className = 'img-dialog-title';
-    title.textContent = 'Rozpoznaný text';
+    title.textContent = 'Recognized text';
     dialog.appendChild(title);
 
     const textarea = document.createElement('textarea');
@@ -201,21 +247,21 @@ export function showOcrResultDialog(text, callbacks = {}) {
 
     const btnCopy = document.createElement('button');
     btnCopy.className = 'img-dialog-btn';
-    btnCopy.textContent = 'Kopírovat';
+    btnCopy.textContent = 'Copy';
     btnCopy.addEventListener('click', async () => {
         try {
             await navigator.clipboard.writeText(textarea.value);
-            btnCopy.textContent = 'Zkopírováno ✓';
-            setTimeout(() => { btnCopy.textContent = 'Kopírovat'; }, 1500);
+            btnCopy.textContent = 'Copied ✓';
+            setTimeout(() => { btnCopy.textContent = 'Copy'; }, 1500);
             callbacks.onCopy?.();
         } catch {
-            alert('Kopírování se nezdařilo.');
+            alert('Copy failed.');
         }
     });
 
     const btnPlace = document.createElement('button');
     btnPlace.className = 'img-dialog-btn img-dialog-btn-primary';
-    btnPlace.textContent = 'Vložit na obrázek';
+    btnPlace.textContent = 'Place on image';
     if (!callbacks.onPlaceOnImage) btnPlace.style.display = 'none';
     btnPlace.addEventListener('click', () => {
         const val = textarea.value.trim();
@@ -226,7 +272,7 @@ export function showOcrResultDialog(text, callbacks = {}) {
 
     const btnDoc = document.createElement('button');
     btnDoc.className = 'img-dialog-btn';
-    btnDoc.textContent = 'Vložit do dokumentu';
+    btnDoc.textContent = 'Insert into document';
     btnDoc.style.display = callbacks.canInsertToDoc ? '' : 'none';
     btnDoc.addEventListener('click', () => {
         const val = textarea.value.trim();
@@ -237,7 +283,7 @@ export function showOcrResultDialog(text, callbacks = {}) {
 
     const btnClose = document.createElement('button');
     btnClose.className = 'img-dialog-btn';
-    btnClose.textContent = 'Zavřít';
+    btnClose.textContent = 'Close';
     btnClose.addEventListener('click', () => backdrop.remove());
 
     btnRow.appendChild(btnCopy);
@@ -249,6 +295,8 @@ export function showOcrResultDialog(text, callbacks = {}) {
     backdrop.appendChild(dialog);
     backdrop.addEventListener('click', e => { if (e.target === backdrop) backdrop.remove(); });
     document.body.appendChild(backdrop);
+    _centerOcrDialog(dialog);
+    _makeOcrDialogDraggable(dialog, title);
     textarea.focus();
     textarea.select();
 }
