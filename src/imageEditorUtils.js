@@ -645,7 +645,7 @@ function _setTool(inst, tool) {
 
 function _updateHint(inst) {
     const panHint = ' | Right-drag = pan';
-    const layerHint = ' | Unsaved objects: click to move/resize | dbl-click text to edit | Delete removes selection | merged on save';
+    const layerHint = ' | Unsaved objects: click to move/resize | dbl-click text to edit | Ctrl+C copies | Delete removes selection | merged on save';
     const hints = {
         pan:       'Fit: F',
         crop:      'Drag to select crop region | Apply / Cancel' + panHint,
@@ -1382,7 +1382,15 @@ function _onKeyDown(inst, e) {
     if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); _undo(inst); return; }
     if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'z'))) { e.preventDefault(); _redo(inst); return; }
     if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
-        if (_activeTool === 'select' && inst.selRect) { e.preventDefault(); _copySelection(inst); }
+        if (inst.activeLayerId != null) {
+            e.preventDefault();
+            _copyActiveLayer(inst);
+            return;
+        }
+        if (_activeTool === 'select' && inst.selRect) {
+            e.preventDefault();
+            _copySelection(inst);
+        }
         return;
     }
     if (e.key === 'f' || e.key === 'F') { _fitToView(inst); return; }
@@ -3012,26 +3020,71 @@ function _deleteSelection(inst) {
     if (ov) _redrawOverlay(inst, ov, ov.getContext('2d'));
 }
 
+function _writeImageDataToClipboard(imageData) {
+    _clipboardData = imageData;
+    if (navigator.clipboard?.write) {
+        const tmp = document.createElement('canvas');
+        tmp.width  = imageData.width;
+        tmp.height = imageData.height;
+        tmp.getContext('2d').putImageData(imageData, 0, 0);
+        tmp.toBlob(blob => {
+            navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]).catch(() => {});
+        }, 'image/png');
+    }
+}
+
+function _layerToImageData(layer) {
+    const w = Math.max(1, Math.round(layer.w));
+    const h = Math.max(1, Math.round(layer.h));
+    const tmp = document.createElement('canvas');
+    tmp.width = w;
+    tmp.height = h;
+    const tc = tmp.getContext('2d');
+    if (layer.type === 'text') {
+        const { pad, lineHeight, lines } = _measureTextLayer(layer.text, layer.fontSize, layer.fontFamily);
+        _paintTextBox(tc, 0, 0, w, h, {
+            bgColor: layer.bgColor,
+            borderColor: layer.borderColor,
+            borderWidth: layer.borderWidth,
+            pad, lineHeight, lines,
+            color: layer.color,
+            fontSize: layer.fontSize,
+            fontFamily: layer.fontFamily,
+        });
+    } else if (layer.type === 'image') {
+        const ic = document.createElement('canvas');
+        ic.width = layer.imageData.width;
+        ic.height = layer.imageData.height;
+        ic.getContext('2d').putImageData(layer.imageData, 0, 0);
+        tc.drawImage(ic, 0, 0, w, h);
+    } else {
+        return null;
+    }
+    return tc.getImageData(0, 0, w, h);
+}
+
+function _copyActiveLayer(inst) {
+    const layer = _getActiveLayer(inst);
+    if (!layer) return;
+    const imageData = _layerToImageData(layer);
+    if (!imageData) return;
+    _writeImageDataToClipboard(imageData);
+}
+
 function _copySelection(inst) {
     if (!inst.selRect) return;
+    let imageData;
     if (inst.selImageData) {
-        _clipboardData = new ImageData(new Uint8ClampedArray(inst.selImageData.data), inst.selImageData.width, inst.selImageData.height);
+        imageData = new ImageData(new Uint8ClampedArray(inst.selImageData.data), inst.selImageData.width, inst.selImageData.height);
     } else {
         const cx = Math.round(Math.max(0, inst.selRect.x));
         const cy = Math.round(Math.max(0, inst.selRect.y));
         const cw = Math.round(Math.min(inst.canvas.width  - cx, inst.selRect.w));
         const ch = Math.round(Math.min(inst.canvas.height - cy, inst.selRect.h));
         if (cw < 1 || ch < 1) return;
-        _clipboardData = inst.ctx.getImageData(cx, cy, cw, ch);
+        imageData = inst.ctx.getImageData(cx, cy, cw, ch);
     }
-    if (navigator.clipboard && navigator.clipboard.write) {
-        const tmp = document.createElement('canvas');
-        tmp.width  = _clipboardData.width; tmp.height = _clipboardData.height;
-        tmp.getContext('2d').putImageData(_clipboardData, 0, 0);
-        tmp.toBlob(blob => {
-            navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]).catch(() => {});
-        }, 'image/png');
-    }
+    _writeImageDataToClipboard(imageData);
 }
 
 function _insertImageFromDisk(inst) {
