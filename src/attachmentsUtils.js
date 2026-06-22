@@ -623,6 +623,9 @@ async function _managePdfPages(att) {
         pdfBaseName: _pdfBaseName,
         uniqueAttachmentName: _uniqueAttachmentName,
         getImageAttachments: () => attachmentsStore.filter(a => a.mimeType && a.mimeType.startsWith('image/')),
+        getPdfAttachments: () => attachmentsStore.filter(
+            a => a.mimeType === 'application/pdf' && a.id !== att.id
+        ),
         commitPdfAttachment: _commitPdfAttachment,
         onOpen: () => { _pdfPageManaging = true; },
         onClose: () => {

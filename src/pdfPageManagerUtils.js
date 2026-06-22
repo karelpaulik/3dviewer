@@ -20,6 +20,7 @@ let _session = null;
  * @param {(name: string) => string} helpers.pdfBaseName
  * @param {(name: string) => string} helpers.uniqueAttachmentName
  * @param {() => object[]} helpers.getImageAttachments
+ * @param {() => object[]} helpers.getPdfAttachments
  * @param {(att: object, pdfBytes: Uint8Array, mode: 'overwrite' | 'new') => void} helpers.commitPdfAttachment
  * @param {() => void} [helpers.onOpen]
  * @param {() => void} [helpers.onClose]
@@ -125,9 +126,10 @@ function _ensureModal() {
             </div>
             <div style="display:flex;align-items:center;gap:6px;padding:8px 14px;background:#252525;flex-shrink:0;flex-wrap:wrap;">
                 <button id="pdf-pm-add-blank" style="font-size:12px;padding:4px 10px;cursor:pointer;border:1px solid #555;background:#333;color:#ddd;border-radius:3px;">+ Blank page</button>
-                <button id="pdf-pm-add-file" style="font-size:12px;padding:4px 10px;cursor:pointer;border:1px solid #555;background:#333;color:#ddd;border-radius:3px;">+ Image file</button>
-                <button id="pdf-pm-add-att" style="font-size:12px;padding:4px 10px;cursor:pointer;border:1px solid #555;background:#333;color:#ddd;border-radius:3px;">+ From Files</button>
-                <button id="pdf-pm-add-pdf" style="font-size:12px;padding:4px 10px;cursor:pointer;border:1px solid #555;background:#333;color:#ddd;border-radius:3px;">+ From PDF</button>
+                <button id="pdf-pm-add-file" style="font-size:12px;padding:4px 10px;cursor:pointer;border:1px solid #555;background:#333;color:#ddd;border-radius:3px;">+ Image from disc</button>
+                <button id="pdf-pm-add-att" style="font-size:12px;padding:4px 10px;cursor:pointer;border:1px solid #555;background:#333;color:#ddd;border-radius:3px;">+ Image from Files</button>
+                <button id="pdf-pm-add-pdf" style="font-size:12px;padding:4px 10px;cursor:pointer;border:1px solid #555;background:#333;color:#ddd;border-radius:3px;">+ PDF from disc</button>
+                <button id="pdf-pm-add-pdf-att" style="font-size:12px;padding:4px 10px;cursor:pointer;border:1px solid #555;background:#333;color:#ddd;border-radius:3px;">+ PDF from Files</button>
                 <span style="flex:1;"></span>
                 <button id="pdf-pm-save" style="font-size:12px;padding:4px 14px;cursor:pointer;border:1px solid #4a7;background:#2d5a3d;color:#efe;border-radius:3px;">Save</button>
                 <button id="pdf-pm-cancel" style="font-size:12px;padding:4px 14px;cursor:pointer;border:1px solid #555;background:#333;color:#ddd;border-radius:3px;">Cancel</button>
@@ -147,6 +149,7 @@ function _ensureModal() {
     _modalEl.querySelector('#pdf-pm-add-file').addEventListener('click', () => _addImageFromFile());
     _modalEl.querySelector('#pdf-pm-add-att').addEventListener('click', () => _addImageFromAttachment());
     _modalEl.querySelector('#pdf-pm-add-pdf').addEventListener('click', () => _addPagesFromPdf());
+    _modalEl.querySelector('#pdf-pm-add-pdf-att').addEventListener('click', () => _addPagesFromPdfAttachment());
 
     document.addEventListener('keydown', e => {
         if (!_modalEl || _modalEl.style.display === 'none') return;
@@ -440,34 +443,69 @@ function _addPagesFromPdf() {
         if (!file) return;
         try {
             const bytes = new Uint8Array(await file.arrayBuffer());
-            const pdf = await pdfjsLib.getDocument({ data: bytes.slice() }).promise;
-            const numPages = pdf.numPages;
-
-            const pageInput = window.prompt(
-                `Pages to add (${numPages} in "${file.name}").\n` +
-                'Examples: all   or   1   or   1, 3-5',
-                'all'
-            );
-            if (pageInput == null) return;
-
-            const selected = _session.helpers.parsePageSelection(pageInput, numPages);
-            if (!selected) {
-                alert('Invalid page selection.');
-                return;
-            }
-
-            const refs = selected.map(pageNum => ({
-                type: 'external',
-                bytes,
-                srcIndex: pageNum - 1,
-            }));
-            _insertRefs(refs);
+            await _insertPagesFromExternalPdf(bytes, file.name);
         } catch (err) {
             console.error(err);
             alert('Cannot load PDF: ' + (err.message || err));
         }
     };
     input.click();
+}
+
+async function _addPagesFromPdfAttachment() {
+    if (!_session) return;
+    const pdfs = _session.helpers.getPdfAttachments();
+    if (pdfs.length === 0) {
+        alert('No other PDF attachments in Files panel.');
+        return;
+    }
+
+    const list = pdfs.map((a, i) => `${i + 1}. ${a.name}`).join('\n');
+    const pick = window.prompt(
+        `Select PDF attachment (1–${pdfs.length}):\n\n${list}`,
+        '1'
+    );
+    if (pick == null) return;
+    const idx = parseInt(pick.trim(), 10) - 1;
+    if (!Number.isFinite(idx) || idx < 0 || idx >= pdfs.length) {
+        alert('Invalid selection.');
+        return;
+    }
+
+    const att = pdfs[idx];
+    try {
+        const bytes = _session.helpers.attToUint8Array(att);
+        await _insertPagesFromExternalPdf(bytes, att.name);
+    } catch (err) {
+        console.error(err);
+        alert('Cannot load PDF: ' + (err.message || err));
+    }
+}
+
+async function _insertPagesFromExternalPdf(bytes, sourceLabel) {
+    if (!_session) return;
+    const pdf = await pdfjsLib.getDocument({ data: bytes.slice() }).promise;
+    const numPages = pdf.numPages;
+
+    const pageInput = window.prompt(
+        `Pages to add (${numPages} in "${sourceLabel}").\n` +
+        'Examples: all   or   1   or   1, 3-5',
+        'all'
+    );
+    if (pageInput == null) return;
+
+    const selected = _session.helpers.parsePageSelection(pageInput, numPages);
+    if (!selected) {
+        alert('Invalid page selection.');
+        return;
+    }
+
+    const refs = selected.map(pageNum => ({
+        type: 'external',
+        bytes,
+        srcIndex: pageNum - 1,
+    }));
+    _insertRefs(refs);
 }
 
 async function _makeImagePageRef(base64, mimeType, pageSize) {
