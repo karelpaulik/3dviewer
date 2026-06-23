@@ -260,6 +260,156 @@ function extractGeometryGroups(bufGeom) {
     return outGeometries;
 }
 
+function _ufFind(parent, i) {
+    while (parent[i] !== i) {
+        parent[i] = parent[parent[i]];
+        i = parent[i];
+    }
+    return i;
+}
+
+function _ufUnion(parent, rank, a, b) {
+    const ra = _ufFind(parent, a);
+    const rb = _ufFind(parent, b);
+    if (ra === rb) return;
+    if (rank[ra] < rank[rb]) {
+        parent[ra] = rb;
+    } else if (rank[ra] > rank[rb]) {
+        parent[rb] = ra;
+    } else {
+        parent[rb] = ra;
+        rank[ra]++;
+    }
+}
+
+/**
+ * Build one non-indexed BufferGeometry from a list of triangle indices.
+ * @param {number[]} triangleIndices
+ * @param {THREE.BufferAttribute} posAttr
+ * @param {THREE.BufferAttribute|null} normAttr
+ * @param {THREE.BufferAttribute|null} uvAttr
+ * @param {(triIdx: number, corner: number) => number} getVertexIndex
+ * @returns {THREE.BufferGeometry}
+ */
+function _buildGeometryFromTriangles(triangleIndices, posAttr, normAttr, uvAttr, getVertexIndex) {
+    const destNumVerts = triangleIndices.length * 3;
+    const newPositions = new Float32Array(destNumVerts * 3);
+    const newNormals = normAttr ? new Float32Array(destNumVerts * 3) : null;
+    const newUvs = uvAttr ? new Float32Array(destNumVerts * 2) : null;
+
+    let destVert = 0;
+    for (let ti = 0, nt = triangleIndices.length; ti < nt; ti++) {
+        const triIdx = triangleIndices[ti];
+        for (let corner = 0; corner < 3; corner++) {
+            const vi = getVertexIndex(triIdx, corner);
+            const indexDest = 3 * destVert;
+            newPositions[indexDest + 0] = posAttr.getX(vi);
+            newPositions[indexDest + 1] = posAttr.getY(vi);
+            newPositions[indexDest + 2] = posAttr.getZ(vi);
+            if (newNormals) {
+                newNormals[indexDest + 0] = normAttr.getX(vi);
+                newNormals[indexDest + 1] = normAttr.getY(vi);
+                newNormals[indexDest + 2] = normAttr.getZ(vi);
+            }
+            if (newUvs) {
+                newUvs[destVert * 2] = uvAttr.getX(vi);
+                newUvs[destVert * 2 + 1] = uvAttr.getY(vi);
+            }
+            destVert++;
+        }
+    }
+
+    const newBufGeom = new THREE.BufferGeometry();
+    newBufGeom.setAttribute('position', new THREE.BufferAttribute(newPositions, 3));
+    if (newNormals) {
+        newBufGeom.setAttribute('normal', new THREE.BufferAttribute(newNormals, 3));
+    } else {
+        newBufGeom.computeVertexNormals();
+    }
+    if (newUvs) {
+        newBufGeom.setAttribute('uv', new THREE.BufferAttribute(newUvs, 2));
+    }
+    newBufGeom.addGroup(0, destNumVerts, 0);
+    return newBufGeom;
+}
+
+/**
+ * Split a BufferGeometry into one geometry per connected component (shared vertices).
+ * mergeVertices is applied first so STL/non-indexed meshes with duplicated corner
+ * vertices are treated as one surface per solid.
+ * @param {THREE.BufferGeometry} bufGeom
+ * @returns {THREE.BufferGeometry[]}
+ */
+export function separateConnectedComponents(bufGeom) {
+    const posAttr = bufGeom.getAttribute('position');
+    if (!posAttr || posAttr.count < 3) return [];
+
+    const working = mergeVertices(bufGeom.clone());
+    const workPos = working.getAttribute('position');
+    if (!workPos || workPos.count < 3) {
+        working.dispose();
+        return [];
+    }
+
+    const normAttr = working.getAttribute('normal');
+    const uvAttr = working.getAttribute('uv');
+    const index = working.getIndex();
+    const numTriangles = index ? index.count / 3 : workPos.count / 3;
+    if (numTriangles < 1) {
+        working.dispose();
+        return [];
+    }
+
+    const parent = new Int32Array(numTriangles);
+    const rank = new Uint8Array(numTriangles);
+    for (let i = 0; i < numTriangles; i++) parent[i] = i;
+
+    const getVertexIndex = index
+        ? (triIdx, corner) => index.getX(triIdx * 3 + corner)
+        : (triIdx, corner) => triIdx * 3 + corner;
+
+    const vertexToTriangles = new Map();
+    for (let t = 0; t < numTriangles; t++) {
+        for (let c = 0; c < 3; c++) {
+            const vi = getVertexIndex(t, c);
+            let list = vertexToTriangles.get(vi);
+            if (!list) {
+                list = [];
+                vertexToTriangles.set(vi, list);
+            }
+            list.push(t);
+        }
+    }
+
+    for (const tris of vertexToTriangles.values()) {
+        if (tris.length < 2) continue;
+        const first = tris[0];
+        for (let i = 1, n = tris.length; i < n; i++) {
+            _ufUnion(parent, rank, first, tris[i]);
+        }
+    }
+
+    const componentTriangles = new Map();
+    for (let t = 0; t < numTriangles; t++) {
+        const root = _ufFind(parent, t);
+        let list = componentTriangles.get(root);
+        if (!list) {
+            list = [];
+            componentTriangles.set(root, list);
+        }
+        list.push(t);
+    }
+
+    const outGeometries = [];
+    for (const triangleIndices of componentTriangles.values()) {
+        outGeometries.push(_buildGeometryFromTriangles(
+            triangleIndices, workPos, normAttr, uvAttr, getVertexIndex
+        ));
+    }
+    working.dispose();
+    return outGeometries;
+}
+
 /** @param {THREE.BufferGeometry[]} geometries */
 function harmonizeMergeGeometryAttributes(geometries) {
     const optionalAttrs = ['uv', 'color'];

@@ -71,6 +71,7 @@ import {
     pickMaterialFromObject,
     collectDescendantMeshes,
     mergeDescendantMeshes,
+    separateConnectedComponents,
     BOOLEAN_OPERATION_LABELS,
     ADDITION,
     SUBTRACTION,
@@ -2067,6 +2068,27 @@ function addMainGui() {
         if (!confirm(confirmMsg)) return;
         separateMesh(mesh);
     } }, 'fn').name('Separate Mesh (split groups)');
+    editGui.add({ fn() {
+        const mesh = lastSelectedObject;
+        if (!mesh?.geometry) { alert('No mesh selected.'); return; }
+
+        const geometries = separateConnectedComponents(mesh.geometry);
+        if (geometries.length === 0) {
+            alert('Selected mesh has no geometry to separate.');
+            return;
+        }
+        if (geometries.length === 1) {
+            alert('Selected mesh has only one connected part – nothing to separate.');
+            geometries[0].dispose();
+            return;
+        }
+        const confirmMsg = `Separate "${mesh.name || 'mesh'}" into ${geometries.length} loose parts?`;
+        if (!confirm(confirmMsg)) {
+            geometries.forEach(g => g.dispose());
+            return;
+        }
+        separateMesh(mesh, { geometries });
+    } }, 'fn').name('Separate Mesh (split loose parts)');
     editGui.add({ fn() {
         const obj = lastSelectedObject;
         if (!obj) { alert('No object selected.'); return; }
@@ -8330,12 +8352,12 @@ function insertChildAtIndex(parent, child, index) {
     children.splice(index, 0, child);
 }
 
-function separateMesh(meshToSeparate) {
+function separateMesh(meshToSeparate, { geometries } = {}) {
     if (!meshToSeparate || !meshToSeparate.geometry) return;
 
     // 1. Získání nových geometrií
-    const geometries = separateGroups(meshToSeparate.geometry);
-    if (geometries.length === 0) return;
+    const parts = geometries ?? separateGroups(meshToSeparate.geometry);
+    if (parts.length === 0) return;
 
     meshToSeparate.updateWorldMatrix(true, true);
     const worldMatrix = meshToSeparate.matrixWorld.clone();
@@ -8392,7 +8414,7 @@ function separateMesh(meshToSeparate) {
     group.userData.initScale = group.scale.clone();
 
     // Nové díly jako potomci skupiny — v lokálních souřadnicích skupiny (origin = 0)
-    geometries.forEach((geom, i) => {
+    parts.forEach((geom, i) => {
         const mat = Array.isArray(origMaterial) ? origMaterial[i] : origMaterial.clone();
         const newMesh = new THREE.Mesh(geom, mat);
         newMesh.name = `Part_${i}_${origName}`;
