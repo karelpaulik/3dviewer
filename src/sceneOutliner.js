@@ -720,7 +720,8 @@ export function isOutlinerOpen() {
 export function rebuildTree(loadedModels, preserveExpanded = false) {
     lastLoadedModels = loadedModels;
     if (!treeEl) return;
-    // Optionally save expanded state before destroying DOM
+    // Optionally save expanded state and scroll before destroying DOM
+    const scrollTop = preserveExpanded ? treeEl.scrollTop : 0;
     const expandedUUIDs = preserveExpanded ? collectExpandedUUIDs() : null;
     // Reset search input when rebuilding from outside (new model loaded)
     if (!preserveExpanded && searchInputEl && searchInputEl.value) {
@@ -740,13 +741,18 @@ export function rebuildTree(loadedModels, preserveExpanded = false) {
     if (expandedUUIDs && expandedUUIDs.size > 0) {
         restoreExpandedUUIDs(expandedUUIDs);
     }
+    if (preserveExpanded) {
+        treeEl.scrollTop = scrollTop;
+    }
 }
 
 /**
  * Highlight a node in the tree that matches the given Object3D.
  * @param {import('three').Object3D|null} object
+ * @param {{ scroll?: boolean }} [options]
  */
-export function highlightObject(object) {
+export function highlightObject(object, options = {}) {
+    const scroll = options.scroll !== false;
     if (activeTreeNode) {
         activeTreeNode.classList.remove('outliner-selected');
     }
@@ -780,7 +786,9 @@ export function highlightObject(object) {
     if (targetLi) {
         targetLi.classList.add('outliner-selected');
         activeTreeNode = targetLi;
-        targetLi.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        if (scroll) {
+            targetLi.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
     }
 }
 

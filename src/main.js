@@ -5382,7 +5382,7 @@ function clearHighlight() {
     }
 }
 
-function selectObject(object) {
+function selectObject(object, options = {}) {
     if (lastSelectedObject) {// Pokud už je něco vybraného, nejdřív to "uklidíme"
         deselectObject();
     }
@@ -5416,7 +5416,7 @@ function selectObject(object) {
             // Pohyb pivotu se v change eventu aplikuje jako delta matice na objekt.
             transformControls.attach(singleSelectPivot);// Připojíme TransformControls na pivot
         }
-        outlinerHighlight(object);// Zvýraznění uzlu v scene outlineru   
+        outlinerHighlight(object, { scroll: options.outlinerScroll !== false });// Zvýraznění uzlu v scene outlineru   
              
         selectionHistory.push(object); // Přidáme do historie vybraných objektů
         if (selectionHistory.length > 30) { // Omezíme velikost historie (např. 30 záznamů), aby nezabírala paměť
@@ -8314,6 +8314,15 @@ async function exportSelectedObjectDraco() {
     }, { binary: true, onlyVisible: false });
 }
 
+function insertChildAtIndex(parent, child, index) {
+    if (!parent || index < 0) return;
+    const children = parent.children;
+    const currentIdx = children.indexOf(child);
+    if (currentIdx === -1 || currentIdx === index) return;
+    children.splice(currentIdx, 1);
+    children.splice(index, 0, child);
+}
+
 function separateMesh(meshToSeparate) {
     if (!meshToSeparate || !meshToSeparate.geometry) return;
 
@@ -8326,6 +8335,9 @@ function separateMesh(meshToSeparate) {
     const origName = meshToSeparate.name || 'sep';
     const origMaterial = meshToSeparate.material;
     const origParent = meshToSeparate.parent;
+    const siblingIndex = origParent
+        ? origParent.children.indexOf(meshToSeparate)
+        : scene.children.indexOf(meshToSeparate);
     const lmIdx = loadedModels.indexOf(meshToSeparate);
     const wasRoot = lmIdx !== -1;
 
@@ -8353,11 +8365,9 @@ function separateMesh(meshToSeparate) {
     const group = new THREE.Group();
     group.name = origName;
 
-    if (origParent) {
-        origParent.add(group);
-    } else {
-        scene.add(group);
-    }
+    const replaceParent = origParent || scene;
+    replaceParent.add(group);
+    insertChildAtIndex(replaceParent, group, siblingIndex);
 
     // Preserve world transform relative to parent (same approach as mergeChildMeshes)
     if (origParent) {
@@ -8390,8 +8400,9 @@ function separateMesh(meshToSeparate) {
         loadedModels.splice(lmIdx, 1, group);
     }
 
-    rebuildTree(loadedModels);
+    rebuildTree(loadedModels, true);
     if (_assemblyFolderRef) updateAssemblyGuiInfo();
+    selectObject(group, { outlinerScroll: false });
     render();
 }
 
@@ -8408,6 +8419,9 @@ function mergeChildMeshes(containerObject) {
     const worldMatrix = containerObject.matrixWorld.clone();
     const origName = containerObject.name || 'merged';
     const origParent = containerObject.parent;
+    const siblingIndex = origParent
+        ? origParent.children.indexOf(containerObject)
+        : scene.children.indexOf(containerObject);
     const lmIdx = loadedModels.indexOf(containerObject);
     const wasRoot = lmIdx !== -1;
 
@@ -8446,11 +8460,9 @@ function mergeChildMeshes(containerObject) {
     const newMesh = new THREE.Mesh(geometry, resultMaterial);
     newMesh.name = origName;
 
-    if (origParent) {
-        origParent.add(newMesh);
-    } else {
-        scene.add(newMesh);
-    }
+    const replaceParent = origParent || scene;
+    replaceParent.add(newMesh);
+    insertChildAtIndex(replaceParent, newMesh, siblingIndex);
 
     // Preserve world transform relative to parent (same approach as flattenHierarchy / attach)
     if (origParent) {
@@ -8472,9 +8484,9 @@ function mergeChildMeshes(containerObject) {
         loadedModels.splice(lmIdx, 1, newMesh);
     }
 
-    rebuildTree(loadedModels);
+    rebuildTree(loadedModels, true);
     if (_assemblyFolderRef) updateAssemblyGuiInfo();
-    selectObject(newMesh);
+    selectObject(newMesh, { outlinerScroll: false });
     render();
 }
 
