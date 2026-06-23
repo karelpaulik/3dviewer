@@ -166,19 +166,35 @@ export function performBooleanOperation(objectA, objectB, operation) {
 }
 
 /**
- * Merge direct child meshes of a container into one BufferGeometry with material groups.
- * With one child, flattens the wrapper into a single mesh. Inverse of separateMesh / separateGroups.
+ * Collect all mesh descendants of a container (excludes the container itself and section meshes).
+ * @param {THREE.Object3D} container
+ * @returns {THREE.Mesh[]}
+ */
+export function collectDescendantMeshes(container) {
+    const meshes = [];
+    container.traverse(obj => {
+        if (obj === container) return;
+        if (obj.isMesh && obj.geometry && !obj.isSectionMesh) {
+            meshes.push(obj);
+        }
+    });
+    return meshes;
+}
+
+/**
+ * Merge all descendant meshes of a container into one BufferGeometry with material groups.
+ * With one descendant, flattens the wrapper into a single mesh. Inverse of separateMesh / separateGroups.
  * @param {THREE.Object3D} container
  * @returns {{ geometry: THREE.BufferGeometry|null, materials: THREE.Material[], error: string|null }}
  */
-export function mergeDirectChildMeshes(container) {
+export function mergeDescendantMeshes(container) {
     if (!container) {
         return { geometry: null, materials: [], error: 'No object selected.' };
     }
 
-    const childMeshes = container.children.filter(c => c.isMesh && c.geometry);
+    const childMeshes = collectDescendantMeshes(container);
     if (childMeshes.length < 1) {
-        return { geometry: null, materials: [], error: 'Selected object has no direct child meshes – nothing to merge.' };
+        return { geometry: null, materials: [], error: 'Selected object has no descendant meshes – nothing to merge.' };
     }
 
     for (const mesh of childMeshes) {
@@ -221,7 +237,7 @@ export function mergeDirectChildMeshes(container) {
         return { geometry: merged, materials, error: null };
     } catch (err) {
         geometries.forEach(g => g.dispose());
-        console.error('mergeDirectChildMeshes failed:', err);
+        console.error('mergeDescendantMeshes failed:', err);
         return {
             geometry: null,
             materials: [],
@@ -229,6 +245,9 @@ export function mergeDirectChildMeshes(container) {
         };
     }
 }
+
+/** @deprecated Use mergeDescendantMeshes */
+export const mergeDirectChildMeshes = mergeDescendantMeshes;
 
 /**
  * @param {THREE.Object3D} object3d

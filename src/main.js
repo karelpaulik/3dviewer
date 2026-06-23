@@ -69,7 +69,8 @@ import {
 import {
     performBooleanOperation,
     pickMaterialFromObject,
-    mergeDirectChildMeshes,
+    collectDescendantMeshes,
+    mergeDescendantMeshes,
     BOOLEAN_OPERATION_LABELS,
     ADDITION,
     SUBTRACTION,
@@ -2069,14 +2070,14 @@ function addMainGui() {
     editGui.add({ fn() {
         const obj = lastSelectedObject;
         if (!obj) { alert('No object selected.'); return; }
-        const childMeshes = obj.children.filter(c => c.isMesh && c.geometry);
-        if (childMeshes.length < 1) { alert('Selected object has no direct child meshes – nothing to merge.'); return; }
+        const childMeshes = collectDescendantMeshes(obj);
+        if (childMeshes.length < 1) { alert('Selected object has no descendant meshes – nothing to merge.'); return; }
         const confirmMsg = childMeshes.length === 1
-            ? `Flatten 1 child mesh of "${obj.name || 'object'}" into a single mesh?`
-            : `Merge ${childMeshes.length} child meshes of "${obj.name || 'object'}" into one mesh?`;
+            ? `Flatten 1 descendant mesh of "${obj.name || 'object'}" into a single mesh?`
+            : `Merge ${childMeshes.length} descendant meshes of "${obj.name || 'object'}" into one mesh?`;
         if (!confirm(confirmMsg)) return;
         mergeChildMeshes(obj);
-    } }, 'fn').name('Merge Mesh (join children)');
+    } }, 'fn').name('Merge Mesh (join descendants)');
     editGui.add({ fn() {
         const toRename = [];
         loadedModels.forEach(root => root.traverse(obj => {
@@ -8415,7 +8416,7 @@ function separateMesh(meshToSeparate) {
 function mergeChildMeshes(containerObject) {
     if (!containerObject) return;
 
-    const { geometry, materials, error } = mergeDirectChildMeshes(containerObject);
+    const { geometry, materials, error } = mergeDescendantMeshes(containerObject);
     if (error || !geometry) {
         alert(error || 'Failed to merge child meshes.');
         return;
