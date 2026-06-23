@@ -182,6 +182,119 @@ export function collectDescendantMeshes(container) {
 }
 
 /**
+ * Split a BufferGeometry into one geometry per material group.
+ * @param {THREE.BufferGeometry} bufGeom
+ * @returns {THREE.BufferGeometry[]}
+ */
+function extractGeometryGroups(bufGeom) {
+    const outGeometries = [];
+    const groups = bufGeom.groups;
+    const posAttr = bufGeom.getAttribute('position');
+    const normAttr = bufGeom.getAttribute('normal');
+    const uvAttr = bufGeom.getAttribute('uv');
+    const index = bufGeom.getIndex();
+
+    for (let ig = 0, ng = groups.length; ig < ng; ig++) {
+        const group = groups[ig];
+        if (group.count <= 0) continue;
+
+        const destNumVerts = group.count;
+        const newBufGeom = new THREE.BufferGeometry();
+        const newPositions = new Float32Array(destNumVerts * 3);
+        const newNormals = normAttr ? new Float32Array(destNumVerts * 3) : null;
+        const newUvs = uvAttr ? new Float32Array(destNumVerts * 2) : null;
+
+        if (index) {
+            for (let iv = 0; iv < destNumVerts; iv++) {
+                const vi = index.getX(group.start + iv);
+                const indexDest = 3 * iv;
+                newPositions[indexDest + 0] = posAttr.getX(vi);
+                newPositions[indexDest + 1] = posAttr.getY(vi);
+                newPositions[indexDest + 2] = posAttr.getZ(vi);
+                if (newNormals) {
+                    newNormals[indexDest + 0] = normAttr.getX(vi);
+                    newNormals[indexDest + 1] = normAttr.getY(vi);
+                    newNormals[indexDest + 2] = normAttr.getZ(vi);
+                }
+                if (newUvs) {
+                    newUvs[iv * 2] = uvAttr.getX(vi);
+                    newUvs[iv * 2 + 1] = uvAttr.getY(vi);
+                }
+            }
+        } else {
+            const origPositions = posAttr.array;
+            const origNormals = normAttr ? normAttr.array : null;
+            const origUvs = uvAttr ? uvAttr.array : null;
+            for (let iv = 0; iv < destNumVerts; iv++) {
+                const indexOrig = 3 * (group.start + iv);
+                const indexDest = 3 * iv;
+                newPositions[indexDest + 0] = origPositions[indexOrig + 0];
+                newPositions[indexDest + 1] = origPositions[indexOrig + 1];
+                newPositions[indexDest + 2] = origPositions[indexOrig + 2];
+                if (newNormals && origNormals) {
+                    newNormals[indexDest + 0] = origNormals[indexOrig + 0];
+                    newNormals[indexDest + 1] = origNormals[indexOrig + 1];
+                    newNormals[indexDest + 2] = origNormals[indexOrig + 2];
+                }
+                if (newUvs && origUvs) {
+                    const uvOrig = 2 * (group.start + iv);
+                    newUvs[iv * 2] = origUvs[uvOrig];
+                    newUvs[iv * 2 + 1] = origUvs[uvOrig + 1];
+                }
+            }
+        }
+
+        newBufGeom.setAttribute('position', new THREE.BufferAttribute(newPositions, 3));
+        if (newNormals) {
+            newBufGeom.setAttribute('normal', new THREE.BufferAttribute(newNormals, 3));
+        } else {
+            newBufGeom.computeVertexNormals();
+        }
+        if (newUvs) {
+            newBufGeom.setAttribute('uv', new THREE.BufferAttribute(newUvs, 2));
+        }
+
+        outGeometries.push(newBufGeom);
+    }
+
+    return outGeometries;
+}
+
+/** @param {THREE.BufferGeometry[]} geometries */
+function harmonizeMergeGeometryAttributes(geometries) {
+    const optionalAttrs = ['uv', 'color'];
+    for (const attrName of optionalAttrs) {
+        const allHave = geometries.every(g => g.getAttribute(attrName));
+        if (!allHave) {
+            geometries.forEach(g => g.deleteAttribute(attrName));
+        }
+    }
+}
+
+/**
+ * @param {THREE.BufferGeometry} geom
+ * @param {THREE.Matrix4} meshMatrixWorld
+ * @param {THREE.Matrix4} containerInv
+ * @param {number} materialIndex
+ * @returns {THREE.BufferGeometry}
+ */
+function prepareGeometryForMergePiece(geom, meshMatrixWorld, containerInv, materialIndex) {
+    let piece = geom;
+    if (piece.index) {
+        piece = piece.toNonIndexed();
+        if (piece !== geom) geom.dispose();
+    }
+
+    piece.applyMatrix4(meshMatrixWorld);
+    piece.applyMatrix4(containerInv);
+
+    const posCount = piece.getAttribute('position').count;
+    piece.clearGroups();
+    piece.addGroup(0, posCount, materialIndex);
+    return piece;
+}
+
+/**
  * Merge all descendant meshes of a container into one BufferGeometry with material groups.
  * With one descendant, flattens the wrapper into a single mesh. Inverse of separateMesh / separateGroups.
  * @param {THREE.Object3D} container
@@ -198,9 +311,6 @@ export function mergeDescendantMeshes(container) {
     }
 
     for (const mesh of childMeshes) {
-        if (Array.isArray(mesh.material)) {
-            return { geometry: null, materials: [], error: `Child mesh "${mesh.name || 'mesh'}" has multiple materials – merge supports single-material children only.` };
-        }
         if (!mesh.geometry.getAttribute('position')) {
             return { geometry: null, materials: [], error: `Child mesh "${mesh.name || 'mesh'}" has no valid geometry.` };
         }
@@ -213,19 +323,49 @@ export function mergeDescendantMeshes(container) {
     const materials = [];
 
     try {
-        for (let i = 0; i < childMeshes.length; i++) {
-            const mesh = childMeshes[i];
-            const geom = mesh.geometry.clone();
-            geom.applyMatrix4(mesh.matrixWorld);
-            geom.applyMatrix4(containerInv);
+        for (const mesh of childMeshes) {
+            const meshName = mesh.name || 'mesh';
+            const meshMaterials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+            const groups = mesh.geometry.groups;
 
-            const posCount = geom.getAttribute('position').count;
-            geom.clearGroups();
-            geom.addGroup(0, posCount, i);
+            if (Array.isArray(mesh.material) && groups.length > 0) {
+                const subGeoms = extractGeometryGroups(mesh.geometry);
+                if (subGeoms.length === 0) {
+                    return { geometry: null, materials: [], error: `Child mesh "${meshName}" has no valid geometry groups.` };
+                }
 
-            materials.push(mesh.material.clone());
-            geometries.push(geom);
+                for (let g = 0, subGeomIdx = 0; g < groups.length; g++) {
+                    const group = groups[g];
+                    if (group.count <= 0) continue;
+
+                    const subGeom = subGeoms[subGeomIdx++];
+                    if (!subGeom || !subGeom.getAttribute('position')) continue;
+
+                    const srcMatIdx = group.materialIndex >= 0 && group.materialIndex < meshMaterials.length
+                        ? group.materialIndex
+                        : 0;
+                    const matIndex = materials.length;
+
+                    const piece = prepareGeometryForMergePiece(subGeom, mesh.matrixWorld, containerInv, matIndex);
+                    materials.push(meshMaterials[srcMatIdx].clone());
+                    geometries.push(piece);
+                }
+            } else if (Array.isArray(mesh.material)) {
+                const piece = prepareGeometryForMergePiece(mesh.geometry.clone(), mesh.matrixWorld, containerInv, materials.length);
+                materials.push(meshMaterials[0].clone());
+                geometries.push(piece);
+            } else {
+                const piece = prepareGeometryForMergePiece(mesh.geometry.clone(), mesh.matrixWorld, containerInv, materials.length);
+                materials.push(mesh.material.clone());
+                geometries.push(piece);
+            }
         }
+
+        if (geometries.length === 0) {
+            return { geometry: null, materials: [], error: 'No valid geometry to merge.' };
+        }
+
+        harmonizeMergeGeometryAttributes(geometries);
 
         const merged = mergeGeometries(geometries, true);
         geometries.forEach(g => g.dispose());
