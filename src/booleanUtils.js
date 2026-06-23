@@ -333,26 +333,86 @@ function _buildGeometryFromTriangles(triangleIndices, posAttr, normAttr, uvAttr,
     return newBufGeom;
 }
 
+const SPLIT_LOOSE_PARTS_TOLERANCE_FACTOR = 1e-5;
+const SPLIT_LOOSE_PARTS_MIN_TOLERANCE = 1e-9;
+const SPLIT_LOOSE_PARTS_DEFAULT_TOLERANCE = 1e-4;
+
+const _bboxForTolerance = new THREE.Box3();
+const _sizeForTolerance = new THREE.Vector3();
+
+/**
+ * @param {THREE.BufferGeometry} bufGeom
+ * @param {number} [factor]
+ * @returns {number}
+ */
+function _computeMergeTolerance(bufGeom, factor = SPLIT_LOOSE_PARTS_TOLERANCE_FACTOR) {
+    const posAttr = bufGeom.getAttribute('position');
+    if (!posAttr) return SPLIT_LOOSE_PARTS_DEFAULT_TOLERANCE;
+
+    _bboxForTolerance.setFromBufferAttribute(posAttr);
+    if (_bboxForTolerance.isEmpty()) return SPLIT_LOOSE_PARTS_DEFAULT_TOLERANCE;
+
+    const diagonal = _bboxForTolerance.getSize(_sizeForTolerance).length();
+    if (diagonal === 0) return SPLIT_LOOSE_PARTS_DEFAULT_TOLERANCE;
+
+    return Math.max(
+        diagonal * factor,
+        SPLIT_LOOSE_PARTS_MIN_TOLERANCE
+    );
+}
+
+/**
+ * @param {THREE.BufferGeometry} bufGeom
+ * @param {{ mode?: 'auto'|'manual', multiplier?: number, manualTolerance?: number }} [options]
+ * @returns {number}
+ */
+export function computeSplitLoosePartsTolerance(bufGeom, options = {}) {
+    const mode = options.mode ?? 'auto';
+    if (mode === 'manual') {
+        const t = options.manualTolerance ?? SPLIT_LOOSE_PARTS_DEFAULT_TOLERANCE;
+        return Math.max(t, SPLIT_LOOSE_PARTS_MIN_TOLERANCE);
+    }
+    const multiplier = options.multiplier ?? 1;
+    const factor = SPLIT_LOOSE_PARTS_TOLERANCE_FACTOR * multiplier;
+    return _computeMergeTolerance(bufGeom, factor);
+}
+
+/**
+ * Position-only vertex weld for connected-component detection.
+ * @param {THREE.BufferGeometry} bufGeom
+ * @param {number} tolerance
+ * @returns {THREE.BufferGeometry}
+ */
+function _prepareForComponentDetection(bufGeom, tolerance) {
+    const working = bufGeom.clone();
+    for (const attr of ['normal', 'uv', 'color']) {
+        if (working.getAttribute(attr)) working.deleteAttribute(attr);
+    }
+    return mergeVertices(working, tolerance);
+}
+
 /**
  * Split a BufferGeometry into one geometry per connected component (shared vertices).
- * mergeVertices is applied first so STL/non-indexed meshes with duplicated corner
- * vertices are treated as one surface per solid.
+ * Position-only mergeVertices with model-relative tolerance is applied first so
+ * STL/non-indexed meshes and multi-shell solids (e.g. cylinder caps + side) weld
+ * at seams before component detection.
  * @param {THREE.BufferGeometry} bufGeom
+ * @param {{ tolerance?: number, mode?: 'auto'|'manual', multiplier?: number, manualTolerance?: number }} [options]
  * @returns {THREE.BufferGeometry[]}
  */
-export function separateConnectedComponents(bufGeom) {
+export function separateConnectedComponents(bufGeom, options = {}) {
     const posAttr = bufGeom.getAttribute('position');
     if (!posAttr || posAttr.count < 3) return [];
 
-    const working = mergeVertices(bufGeom.clone());
+    const tolerance = options.tolerance
+        ?? computeSplitLoosePartsTolerance(bufGeom, options);
+    const working = _prepareForComponentDetection(bufGeom, tolerance);
     const workPos = working.getAttribute('position');
     if (!workPos || workPos.count < 3) {
         working.dispose();
         return [];
     }
 
-    const normAttr = working.getAttribute('normal');
-    const uvAttr = working.getAttribute('uv');
     const index = working.getIndex();
     const numTriangles = index ? index.count / 3 : workPos.count / 3;
     if (numTriangles < 1) {
@@ -400,10 +460,17 @@ export function separateConnectedComponents(bufGeom) {
         list.push(t);
     }
 
+    const origNorm = bufGeom.getAttribute('normal');
+    const origUv = bufGeom.getAttribute('uv');
+    const origIndex = bufGeom.getIndex();
+    const getOrigVertexIndex = origIndex
+        ? (triIdx, corner) => origIndex.getX(triIdx * 3 + corner)
+        : (triIdx, corner) => triIdx * 3 + corner;
+
     const outGeometries = [];
     for (const triangleIndices of componentTriangles.values()) {
         outGeometries.push(_buildGeometryFromTriangles(
-            triangleIndices, workPos, normAttr, uvAttr, getVertexIndex
+            triangleIndices, posAttr, origNorm, origUv, getOrigVertexIndex
         ));
     }
     working.dispose();

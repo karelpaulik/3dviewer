@@ -72,6 +72,7 @@ import {
     collectDescendantMeshes,
     mergeDescendantMeshes,
     separateConnectedComponents,
+    computeSplitLoosePartsTolerance,
     BOOLEAN_OPERATION_LABELS,
     ADDITION,
     SUBTRACTION,
@@ -622,6 +623,9 @@ const viewProp = {
     showBehindModel: false, // Zobrazit kóty/poznámky i za modelem (depthTest off)
     xrayOnSelect: false, // X-ray efekt při výběru objektu (depthTest off)
     orientedSelectionBox: 'local',
+    splitLoosePartsToleranceMode: 'auto', // 'auto' | 'manual'
+    splitLoosePartsToleranceMultiplier: 1, // Auto: multiplier on default bbox factor
+    splitLoosePartsToleranceManual: 1e-4, // Manual: absolute weld tolerance in model units
 };
 
 const toolbarDefaults = {
@@ -2058,49 +2062,6 @@ function addMainGui() {
     editGui.add({ fn: resetWholeModel }, 'fn').name('Reset whole model');
     editGui.add({ fn: cleanupModel }, 'fn').name('Cleanup (flatten unnamed nodes)');
     editGui.add({ fn() {
-        const mesh = lastSelectedObject;
-        if (!mesh || !mesh.geometry) { alert('No mesh selected.'); return; }
-        const groups = mesh.geometry.groups;
-        if (!groups || groups.length < 1) { alert('Selected mesh has no geometry groups – nothing to separate.'); return; }
-        const confirmMsg = groups.length === 1
-            ? `Wrap "${mesh.name || 'mesh'}" into a group with 1 child mesh?`
-            : `Separate "${mesh.name || 'mesh'}" into ${groups.length} parts?`;
-        if (!confirm(confirmMsg)) return;
-        separateMesh(mesh);
-    } }, 'fn').name('Separate Mesh (split groups)');
-    editGui.add({ fn() {
-        const mesh = lastSelectedObject;
-        if (!mesh?.geometry) { alert('No mesh selected.'); return; }
-
-        const geometries = separateConnectedComponents(mesh.geometry);
-        if (geometries.length === 0) {
-            alert('Selected mesh has no geometry to separate.');
-            return;
-        }
-        if (geometries.length === 1) {
-            alert('Selected mesh has only one connected part – nothing to separate.');
-            geometries[0].dispose();
-            return;
-        }
-        const confirmMsg = `Separate "${mesh.name || 'mesh'}" into ${geometries.length} loose parts?`;
-        if (!confirm(confirmMsg)) {
-            geometries.forEach(g => g.dispose());
-            return;
-        }
-        separateMesh(mesh, { geometries });
-    } }, 'fn').name('Separate Mesh (split loose parts)');
-    editGui.add({ fn() {
-        const obj = lastSelectedObject;
-        if (!obj) { alert('No object selected.'); return; }
-        const childMeshes = collectDescendantMeshes(obj);
-        if (childMeshes.length < 1) { alert('Selected object has no descendant meshes – nothing to merge.'); return; }
-        const confirmMsg = childMeshes.length === 1
-            ? `Flatten 1 descendant mesh of "${obj.name || 'object'}" into a single mesh?`
-            : `Merge ${childMeshes.length} descendant meshes of "${obj.name || 'object'}" into one mesh?`;
-        if (!confirm(confirmMsg)) return;
-        mergeChildMeshes(obj);
-    } }, 'fn').name('Merge Mesh (join descendants)');
-    editGui.add({ fn() {
         const toRename = [];
         loadedModels.forEach(root => root.traverse(obj => {
             if (obj.name && /_\d+$/.test(obj.name)) toRename.push(obj);
@@ -2137,6 +2098,69 @@ function addMainGui() {
     editGui.add(viewProp, 'transformSpace').name('Transform: World space').onChange(function(value) {
         transformControls.setSpace( value ? 'world' : 'local' );
     }).listen();
+    const meshOpsFolder = editGui.addFolder('Mesh operations');
+    meshOpsFolder.add({ fn() {
+        const mesh = lastSelectedObject;
+        if (!mesh || !mesh.geometry) { alert('No mesh selected.'); return; }
+        const groups = mesh.geometry.groups;
+        if (!groups || groups.length < 1) { alert('Selected mesh has no geometry groups – nothing to separate.'); return; }
+        const confirmMsg = groups.length === 1
+            ? `Wrap "${mesh.name || 'mesh'}" into a group with 1 child mesh?`
+            : `Separate "${mesh.name || 'mesh'}" into ${groups.length} parts?`;
+        if (!confirm(confirmMsg)) return;
+        separateMesh(mesh);
+    } }, 'fn').name('Separate Mesh (split groups)');
+    meshOpsFolder.add({ fn() {
+        const obj = lastSelectedObject;
+        if (!obj) { alert('No object selected.'); return; }
+        const childMeshes = collectDescendantMeshes(obj);
+        if (childMeshes.length < 1) { alert('Selected object has no descendant meshes – nothing to merge.'); return; }
+        const confirmMsg = childMeshes.length === 1
+            ? `Flatten 1 descendant mesh of "${obj.name || 'object'}" into a single mesh?`
+            : `Merge ${childMeshes.length} descendant meshes of "${obj.name || 'object'}" into one mesh?`;
+        if (!confirm(confirmMsg)) return;
+        mergeChildMeshes(obj);
+    } }, 'fn').name('Merge Mesh (join descendants)');
+    const splitLooseFolder = meshOpsFolder.addFolder('Split loose parts');
+    const splitLooseModeCtrl = splitLooseFolder.add(viewProp, 'splitLoosePartsToleranceMode', { Auto: 'auto', Manual: 'manual' }).name('Tolerance mode');
+    const splitLooseMultCtrl = splitLooseFolder.add(viewProp, 'splitLoosePartsToleranceMultiplier', 0.1, 100, 0.1).name('Auto multiplier');
+    const splitLooseManualCtrl = splitLooseFolder.add(viewProp, 'splitLoosePartsToleranceManual', 1e-9, 10, 0.0001).name('Manual tolerance');
+    function updateSplitLooseToleranceGui() {
+        const isAuto = viewProp.splitLoosePartsToleranceMode === 'auto';
+        splitLooseMultCtrl.show(isAuto);
+        splitLooseManualCtrl.show(!isAuto);
+    }
+    splitLooseModeCtrl.onChange(updateSplitLooseToleranceGui);
+    updateSplitLooseToleranceGui();
+    splitLooseFolder.add({ fn() {
+        const mesh = lastSelectedObject;
+        if (!mesh?.geometry) { alert('No mesh selected.'); return; }
+
+        const toleranceOpts = {
+            mode: viewProp.splitLoosePartsToleranceMode,
+            multiplier: viewProp.splitLoosePartsToleranceMultiplier,
+            manualTolerance: viewProp.splitLoosePartsToleranceManual,
+        };
+        const tolerance = computeSplitLoosePartsTolerance(mesh.geometry, toleranceOpts);
+        const geometries = separateConnectedComponents(mesh.geometry, { tolerance });
+        if (geometries.length === 0) {
+            alert('Selected mesh has no geometry to separate.');
+            return;
+        }
+        if (geometries.length === 1) {
+            alert('Selected mesh has only one connected part – nothing to separate.');
+            geometries[0].dispose();
+            return;
+        }
+        const confirmMsg = `Separate "${mesh.name || 'mesh'}" into ${geometries.length} loose parts?\n(weld tolerance: ${tolerance.toExponential(2)})`;
+        if (!confirm(confirmMsg)) {
+            geometries.forEach(g => g.dispose());
+            return;
+        }
+        separateMesh(mesh, { geometries });
+    } }, 'fn').name('Separate Mesh (split loose parts)');
+    splitLooseFolder.close();
+    meshOpsFolder.close();
     function tryStartBoolean(operation) {
         if (booleanMode) {
             alert('Boolean režim je již aktivní. Dokončete výběr nebo zrušte (Cancel / ESC).');
