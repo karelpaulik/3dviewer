@@ -69,6 +69,7 @@ import {
 import {
     performBooleanOperation,
     pickMaterialFromObject,
+    mergeDirectChildMeshes,
     BOOLEAN_OPERATION_LABELS,
     ADDITION,
     SUBTRACTION,
@@ -2062,6 +2063,14 @@ function addMainGui() {
         if (!confirm(`Separate "${mesh.name || 'mesh'}" into ${groups.length} parts?`)) return;
         separateMesh(mesh);
     } }, 'fn').name('Separate Mesh (split groups)');
+    editGui.add({ fn() {
+        const obj = lastSelectedObject;
+        if (!obj) { alert('No object selected.'); return; }
+        const childMeshes = obj.children.filter(c => c.isMesh && c.geometry);
+        if (childMeshes.length < 2) { alert('Selected object has fewer than 2 direct child meshes – nothing to merge.'); return; }
+        if (!confirm(`Merge ${childMeshes.length} child meshes of "${obj.name || 'object'}" into one mesh?`)) return;
+        mergeChildMeshes(obj);
+    } }, 'fn').name('Merge Mesh (join children)');
     editGui.add({ fn() {
         const toRename = [];
         loadedModels.forEach(root => root.traverse(obj => {
@@ -5038,29 +5047,57 @@ function toggleHiddenObjects() {
 
 function separateGroups( bufGeom ) {
     const outGeometries = [];
-    const groups = bufGeom.groups;                    
-    const origPositions = bufGeom.getAttribute( 'position' ).array;
-    const origNormals = bufGeom.getAttribute( 'normal' ).array;
-    
-    for ( let ig = 0, ng = groups.length; ig < ng; ig ++ ) {                
+    const groups = bufGeom.groups;
+    const posAttr = bufGeom.getAttribute( 'position' );
+    const normAttr = bufGeom.getAttribute( 'normal' );
+    const index = bufGeom.getIndex();
+
+    for ( let ig = 0, ng = groups.length; ig < ng; ig ++ ) {
         const group = groups[ ig ];
         const destNumVerts = group.count;
         const newBufGeom = new THREE.BufferGeometry();
         const newPositions = new Float32Array( destNumVerts * 3 );
-        const newNormals = new Float32Array( destNumVerts * 3 );
-        for ( let iv = 0; iv < destNumVerts; iv ++ ) {                    
-            const indexOrig = 3 * ( group.start + iv );
-            const indexDest = 3 * iv;                        
-            newPositions[ indexDest + 0 ] = origPositions[ indexOrig + 0 ];
-            newPositions[ indexDest + 1 ] = origPositions[ indexOrig + 1 ];
-            newPositions[ indexDest + 2 ] = origPositions[ indexOrig + 2 ];
-            newNormals[ indexDest + 0 ] = origNormals[ indexOrig + 0 ];
-            newNormals[ indexDest + 1 ] = origNormals[ indexOrig + 1 ];
-            newNormals[ indexDest + 2 ] = origNormals[ indexOrig + 2 ];                
-        }                        
+        const newNormals = normAttr ? new Float32Array( destNumVerts * 3 ) : null;
+
+        if ( index ) {
+            // Indexed geometry (typical GLB): group.start/count refer to the index buffer
+            for ( let iv = 0; iv < destNumVerts; iv ++ ) {
+                const vi = index.getX( group.start + iv );
+                const indexDest = 3 * iv;
+                newPositions[ indexDest + 0 ] = posAttr.getX( vi );
+                newPositions[ indexDest + 1 ] = posAttr.getY( vi );
+                newPositions[ indexDest + 2 ] = posAttr.getZ( vi );
+                if ( newNormals ) {
+                    newNormals[ indexDest + 0 ] = normAttr.getX( vi );
+                    newNormals[ indexDest + 1 ] = normAttr.getY( vi );
+                    newNormals[ indexDest + 2 ] = normAttr.getZ( vi );
+                }
+            }
+        } else {
+            // Non-indexed geometry (typical STL): group.start/count refer to position vertices
+            const origPositions = posAttr.array;
+            const origNormals = normAttr ? normAttr.array : null;
+            for ( let iv = 0; iv < destNumVerts; iv ++ ) {
+                const indexOrig = 3 * ( group.start + iv );
+                const indexDest = 3 * iv;
+                newPositions[ indexDest + 0 ] = origPositions[ indexOrig + 0 ];
+                newPositions[ indexDest + 1 ] = origPositions[ indexOrig + 1 ];
+                newPositions[ indexDest + 2 ] = origPositions[ indexOrig + 2 ];
+                if ( newNormals && origNormals ) {
+                    newNormals[ indexDest + 0 ] = origNormals[ indexOrig + 0 ];
+                    newNormals[ indexDest + 1 ] = origNormals[ indexOrig + 1 ];
+                    newNormals[ indexDest + 2 ] = origNormals[ indexOrig + 2 ];
+                }
+            }
+        }
+
         newBufGeom.setAttribute( 'position', new THREE.BufferAttribute( newPositions, 3 ) );
-        newBufGeom.setAttribute( 'normal', new THREE.BufferAttribute( newNormals, 3 ) );
-        newBufGeom.addGroup(0, destNumVerts, 0);
+        if ( newNormals ) {
+            newBufGeom.setAttribute( 'normal', new THREE.BufferAttribute( newNormals, 3 ) );
+        } else {
+            newBufGeom.computeVertexNormals();
+        }
+        newBufGeom.addGroup( 0, destNumVerts, 0 );
 
         outGeometries.push( newBufGeom );
     }
@@ -8284,12 +8321,13 @@ function separateMesh(meshToSeparate) {
     const geometries = separateGroups(meshToSeparate.geometry);
     if (geometries.length === 0) return;
 
-    // Uložení potřebných dat před odstraněním meshe
-    const origName     = meshToSeparate.name || 'sep';
+    meshToSeparate.updateWorldMatrix(true, true);
+    const worldMatrix = meshToSeparate.matrixWorld.clone();
+    const origName = meshToSeparate.name || 'sep';
     const origMaterial = meshToSeparate.material;
-    const origPosition = meshToSeparate.position.clone();
-    const origRotation = meshToSeparate.rotation.clone();
-    const origScale    = meshToSeparate.scale.clone();
+    const origParent = meshToSeparate.parent;
+    const lmIdx = loadedModels.indexOf(meshToSeparate);
+    const wasRoot = lmIdx !== -1;
 
     // 2. Odstranění původního meshe bez vlastního confirm dialogu removeModel()
     deselectObject();
@@ -8305,26 +8343,36 @@ function separateMesh(meshToSeparate) {
         if (hi !== -1) hiddenObjects.splice(hi, 1);
     });
 
-    if (meshToSeparate.parent) {
-        meshToSeparate.parent.remove(meshToSeparate);
+    if (origParent) {
+        origParent.remove(meshToSeparate);
     } else {
         scene.remove(meshToSeparate);
     }
 
-    const lmIdx = loadedModels.indexOf(meshToSeparate);
-    if (lmIdx !== -1) loadedModels.splice(lmIdx, 1);
-
     // 3. Vytvoření skupiny se stejným názvem jako původní mesh — nahradí ho v hierarchii
     const group = new THREE.Group();
     group.name = origName;
-    group.position.copy(origPosition);
-    group.rotation.copy(origRotation);
-    group.scale.copy(origScale);
-    group.userData.initPosition = origPosition.clone();
-    group.userData.initRotation = origRotation.clone();
-    group.userData.initScale    = origScale.clone();
 
-    scene.add(group);
+    if (origParent) {
+        origParent.add(group);
+    } else {
+        scene.add(group);
+    }
+
+    // Preserve world transform relative to parent (same approach as mergeChildMeshes)
+    if (origParent) {
+        origParent.updateWorldMatrix(true, false);
+        const parentInv = new THREE.Matrix4().copy(origParent.matrixWorld).invert();
+        const localMatrix = new THREE.Matrix4().multiplyMatrices(parentInv, worldMatrix);
+        localMatrix.decompose(group.position, group.quaternion, group.scale);
+    } else {
+        worldMatrix.decompose(group.position, group.quaternion, group.scale);
+    }
+    group.updateMatrix();
+
+    group.userData.initPosition = group.position.clone();
+    group.userData.initRotation = group.rotation.clone();
+    group.userData.initScale = group.scale.clone();
 
     // Nové díly jako potomci skupiny — v lokálních souřadnicích skupiny (origin = 0)
     geometries.forEach((geom, i) => {
@@ -8338,10 +8386,95 @@ function separateMesh(meshToSeparate) {
         meshObjects.push(newMesh);
     });
 
-    loadedModels.push(group);
+    if (wasRoot) {
+        loadedModels.splice(lmIdx, 1, group);
+    }
 
     rebuildTree(loadedModels);
     if (_assemblyFolderRef) updateAssemblyGuiInfo();
+    render();
+}
+
+function mergeChildMeshes(containerObject) {
+    if (!containerObject) return;
+
+    const { geometry, materials, error } = mergeDirectChildMeshes(containerObject);
+    if (error || !geometry) {
+        alert(error || 'Failed to merge child meshes.');
+        return;
+    }
+
+    containerObject.updateWorldMatrix(true, true);
+    const worldMatrix = containerObject.matrixWorld.clone();
+    const origName = containerObject.name || 'merged';
+    const origParent = containerObject.parent;
+    const lmIdx = loadedModels.indexOf(containerObject);
+    const wasRoot = lmIdx !== -1;
+
+    deselectObject();
+    removeMeasurementsForOwner(containerObject);
+    removeAnnotationsForOwner(containerObject);
+    removeAnnotations3dForOwner(containerObject);
+    removeCadDim3dMeasurementsForOwner(containerObject);
+    containerObject.traverse(obj => {
+        removeMeasurementsForOwner(obj);
+        removeAnnotationsForOwner(obj);
+        removeAnnotations3dForOwner(obj);
+        removeCadDim3dMeasurementsForOwner(obj);
+    });
+
+    containerObject.traverse(obj => {
+        const mi = meshObjects.indexOf(obj);
+        if (mi !== -1) meshObjects.splice(mi, 1);
+        const hi = hiddenObjects.indexOf(obj);
+        if (hi !== -1) hiddenObjects.splice(hi, 1);
+    });
+
+    if (origParent) {
+        origParent.remove(containerObject);
+    } else {
+        scene.remove(containerObject);
+    }
+
+    const resultMaterial = materials.length === 1 ? materials[0] : materials;
+    if (Array.isArray(resultMaterial)) {
+        resultMaterial.forEach(mat => applyMeshMaterialDefaults(mat, clipPlanes));
+    } else {
+        applyMeshMaterialDefaults(resultMaterial, clipPlanes);
+    }
+
+    const newMesh = new THREE.Mesh(geometry, resultMaterial);
+    newMesh.name = origName;
+
+    if (origParent) {
+        origParent.add(newMesh);
+    } else {
+        scene.add(newMesh);
+    }
+
+    // Preserve world transform relative to parent (same approach as flattenHierarchy / attach)
+    if (origParent) {
+        origParent.updateWorldMatrix(true, false);
+        const parentInv = new THREE.Matrix4().copy(origParent.matrixWorld).invert();
+        const localMatrix = new THREE.Matrix4().multiplyMatrices(parentInv, worldMatrix);
+        localMatrix.decompose(newMesh.position, newMesh.quaternion, newMesh.scale);
+    } else {
+        worldMatrix.decompose(newMesh.position, newMesh.quaternion, newMesh.scale);
+    }
+    newMesh.updateMatrix();
+
+    newMesh.userData.initPosition = newMesh.position.clone();
+    newMesh.userData.initRotation = newMesh.rotation.clone();
+    newMesh.userData.initScale = newMesh.scale.clone();
+
+    meshObjects.push(newMesh);
+    if (wasRoot) {
+        loadedModels.splice(lmIdx, 1, newMesh);
+    }
+
+    rebuildTree(loadedModels);
+    if (_assemblyFolderRef) updateAssemblyGuiInfo();
+    selectObject(newMesh);
     render();
 }
 

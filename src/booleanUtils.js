@@ -166,6 +166,71 @@ export function performBooleanOperation(objectA, objectB, operation) {
 }
 
 /**
+ * Merge direct child meshes of a container into one BufferGeometry with material groups.
+ * Inverse of separateMesh / separateGroups.
+ * @param {THREE.Object3D} container
+ * @returns {{ geometry: THREE.BufferGeometry|null, materials: THREE.Material[], error: string|null }}
+ */
+export function mergeDirectChildMeshes(container) {
+    if (!container) {
+        return { geometry: null, materials: [], error: 'No object selected.' };
+    }
+
+    const childMeshes = container.children.filter(c => c.isMesh && c.geometry);
+    if (childMeshes.length < 2) {
+        return { geometry: null, materials: [], error: 'Selected object has fewer than 2 direct child meshes – nothing to merge.' };
+    }
+
+    for (const mesh of childMeshes) {
+        if (Array.isArray(mesh.material)) {
+            return { geometry: null, materials: [], error: `Child mesh "${mesh.name || 'mesh'}" has multiple materials – merge supports single-material children only.` };
+        }
+        if (!mesh.geometry.getAttribute('position')) {
+            return { geometry: null, materials: [], error: `Child mesh "${mesh.name || 'mesh'}" has no valid geometry.` };
+        }
+    }
+
+    container.updateWorldMatrix(true, true);
+    const containerInv = new THREE.Matrix4().copy(container.matrixWorld).invert();
+
+    const geometries = [];
+    const materials = [];
+
+    try {
+        for (let i = 0; i < childMeshes.length; i++) {
+            const mesh = childMeshes[i];
+            const geom = mesh.geometry.clone();
+            geom.applyMatrix4(mesh.matrixWorld);
+            geom.applyMatrix4(containerInv);
+
+            const posCount = geom.getAttribute('position').count;
+            geom.clearGroups();
+            geom.addGroup(0, posCount, i);
+
+            materials.push(mesh.material.clone());
+            geometries.push(geom);
+        }
+
+        const merged = mergeGeometries(geometries, true);
+        geometries.forEach(g => g.dispose());
+
+        if (!merged) {
+            return { geometry: null, materials: [], error: 'Failed to merge geometries.' };
+        }
+
+        return { geometry: merged, materials, error: null };
+    } catch (err) {
+        geometries.forEach(g => g.dispose());
+        console.error('mergeDirectChildMeshes failed:', err);
+        return {
+            geometry: null,
+            materials: [],
+            error: err?.message || 'Failed to merge child meshes.'
+        };
+    }
+}
+
+/**
  * @param {THREE.Object3D} object3d
  * @returns {THREE.Material}
  */
