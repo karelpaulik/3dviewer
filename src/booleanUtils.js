@@ -167,7 +167,7 @@ export function performBooleanOperation(objectA, objectB, operation) {
 
 /**
  * Merge direct child meshes of a container into one BufferGeometry with material groups.
- * Inverse of separateMesh / separateGroups.
+ * With one child, flattens the wrapper into a single mesh. Inverse of separateMesh / separateGroups.
  * @param {THREE.Object3D} container
  * @returns {{ geometry: THREE.BufferGeometry|null, materials: THREE.Material[], error: string|null }}
  */
@@ -177,8 +177,8 @@ export function mergeDirectChildMeshes(container) {
     }
 
     const childMeshes = container.children.filter(c => c.isMesh && c.geometry);
-    if (childMeshes.length < 2) {
-        return { geometry: null, materials: [], error: 'Selected object has fewer than 2 direct child meshes – nothing to merge.' };
+    if (childMeshes.length < 1) {
+        return { geometry: null, materials: [], error: 'Selected object has no direct child meshes – nothing to merge.' };
     }
 
     for (const mesh of childMeshes) {

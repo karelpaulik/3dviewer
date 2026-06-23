@@ -2059,16 +2059,22 @@ function addMainGui() {
         const mesh = lastSelectedObject;
         if (!mesh || !mesh.geometry) { alert('No mesh selected.'); return; }
         const groups = mesh.geometry.groups;
-        if (!groups || groups.length < 2) { alert('Selected mesh has no multiple groups – nothing to separate.'); return; }
-        if (!confirm(`Separate "${mesh.name || 'mesh'}" into ${groups.length} parts?`)) return;
+        if (!groups || groups.length < 1) { alert('Selected mesh has no geometry groups – nothing to separate.'); return; }
+        const confirmMsg = groups.length === 1
+            ? `Wrap "${mesh.name || 'mesh'}" into a group with 1 child mesh?`
+            : `Separate "${mesh.name || 'mesh'}" into ${groups.length} parts?`;
+        if (!confirm(confirmMsg)) return;
         separateMesh(mesh);
     } }, 'fn').name('Separate Mesh (split groups)');
     editGui.add({ fn() {
         const obj = lastSelectedObject;
         if (!obj) { alert('No object selected.'); return; }
         const childMeshes = obj.children.filter(c => c.isMesh && c.geometry);
-        if (childMeshes.length < 2) { alert('Selected object has fewer than 2 direct child meshes – nothing to merge.'); return; }
-        if (!confirm(`Merge ${childMeshes.length} child meshes of "${obj.name || 'object'}" into one mesh?`)) return;
+        if (childMeshes.length < 1) { alert('Selected object has no direct child meshes – nothing to merge.'); return; }
+        const confirmMsg = childMeshes.length === 1
+            ? `Flatten 1 child mesh of "${obj.name || 'object'}" into a single mesh?`
+            : `Merge ${childMeshes.length} child meshes of "${obj.name || 'object'}" into one mesh?`;
+        if (!confirm(confirmMsg)) return;
         mergeChildMeshes(obj);
     } }, 'fn').name('Merge Mesh (join children)');
     editGui.add({ fn() {
