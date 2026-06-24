@@ -14,6 +14,8 @@ let onToggleSelectable = null;
 let onGroupAdd = null;
 let onReparent = null;
 let onRemove = null;
+let onRemoveGroup = null;
+let onGetGroupSelection = null;
 let onGroupRemove = null;
 let onHideOthers = null;
 let onShowAll = null;
@@ -445,8 +447,16 @@ function showCtxMenu(x, y, obj, li) {
             const isMulti = groupHighlightNodes.size > 1 && groupHighlightNodes.has(li);
             if (isMulti) {
                 const selectedObjs = Array.from(groupHighlightNodes).map(selLi => domToObject.get(selLi)).filter(Boolean);
+                const groupObjs = onGetGroupSelection ? onGetGroupSelection() : [];
+                const isFullGroup = groupObjs.length > 0
+                    && selectedObjs.length === groupObjs.length
+                    && selectedObjs.every(o => groupObjs.includes(o));
                 if (!confirm(`Do you really want to permanently remove ${selectedObjs.length} objects?`)) return;
-                selectedObjs.forEach(selObj => onRemove(selObj, true));
+                if (isFullGroup && onRemoveGroup) {
+                    onRemoveGroup();
+                } else {
+                    selectedObjs.forEach(selObj => onRemove(selObj, true));
+                }
             } else {
                 onRemove(obj);
             }
@@ -586,7 +596,7 @@ let currentMatchSet = new Set();
  * @param {{ onSelect: Function, onToggleVisibility: Function }} callbacks
  * @returns {HTMLDivElement} the panel element (for guiWrapper hit-testing)
  */
-export function initOutliner({ onSelect, onToggleVisibility: onVis, onToggleSelectable: onSel, onGroupAdd: onGroupAddCb, onGroupRemove: onGroupRemoveCb, onHideOthers: onHideOthersCb, onShowAll: onShowAllCb, onReparent: onReparentCb, onRemove: onRemoveCb, onSortChildren: onSortChildrenCb, onCloneObject: onCloneObjectCb, onAddObject3D: onAddObject3DCb, onAddPrimitive: onAddPrimitiveCb, onPromoteToRoot: onPromoteToRootCb }) {
+export function initOutliner({ onSelect, onToggleVisibility: onVis, onToggleSelectable: onSel, onGroupAdd: onGroupAddCb, onGroupRemove: onGroupRemoveCb, onHideOthers: onHideOthersCb, onShowAll: onShowAllCb, onReparent: onReparentCb, onRemove: onRemoveCb, onRemoveGroup: onRemoveGroupCb, onGetGroupSelection: onGetGroupSelectionCb, onSortChildren: onSortChildrenCb, onCloneObject: onCloneObjectCb, onAddObject3D: onAddObject3DCb, onAddPrimitive: onAddPrimitiveCb, onPromoteToRoot: onPromoteToRootCb }) {
     onSelectObject = onSelect;
     onToggleVisibility = onVis;
     onToggleSelectable = onSel || null;
@@ -596,6 +606,8 @@ export function initOutliner({ onSelect, onToggleVisibility: onVis, onToggleSele
     onShowAll = onShowAllCb || null;
     onReparent = onReparentCb || null;
     onRemove = onRemoveCb || null;
+    onRemoveGroup = onRemoveGroupCb || null;
+    onGetGroupSelection = onGetGroupSelectionCb || null;
     onSortChildren = onSortChildrenCb || null;
     onCloneObject = onCloneObjectCb || null;
     onAddObject3D = onAddObject3DCb || null;

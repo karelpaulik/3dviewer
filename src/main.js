@@ -857,6 +857,8 @@ outlinerPanelEl = initOutliner({
         showHiddenObjects();
     },
     onRemove: (obj, skipConfirm) => removeModel(obj, skipConfirm),
+    onRemoveGroup: () => removeSelectedGroup(true),
+    onGetGroupSelection: () => selectedObjects,
     onPromoteToRoot: (obj) => promoteToRoot(obj),
     onReparent: (draggedObjs, targetObj, position) => {
         const objsToMove = Array.isArray(draggedObjs) ? draggedObjs : [draggedObjs];
@@ -1415,6 +1417,8 @@ function init() {
             case 'Delete':
                 if (viewProp.selectDimensionMode && isSelectDimActive()) {
                     deleteSelectedDimension(render);
+                } else if (selectedObjects.length > 0) {
+                    removeSelectedGroup();
                 } else if (lastSelectedObject) {
                     removeModel(lastSelectedObject);
                 }
@@ -2751,6 +2755,8 @@ function refreshGroupGui() {
         });
         render();
     } }, 'fn').name('Hide all');
+
+    selectedFolder.add({ fn() { removeSelectedGroup(); } }, 'fn').name('Remove all');
 
     selectedFolder.add({ fn() {
         selectedObjects.forEach(obj => {
@@ -4412,7 +4418,59 @@ function clearMultiSelect() {
     render();
 }
 
+// Trvale odstraní všechny objekty aktuální group selection (jeden confirm dialog).
+function removeSelectedGroup(skipConfirm = false) {
+    if (selectedObjects.length === 0) return;
+    const n = selectedObjects.length;
+    if (!skipConfirm && !confirm(`Do you really want to permanently remove ${n} objects?`)) return;
+    try {
+        const toRemove = [...selectedObjects];
+        clearMultiSelect();
+        toRemove.forEach(obj => removeModel(obj, true, { skipSceneRebuild: true }));
+        if (_assemblyFolderRef) updateAssemblyGuiInfo();
+        if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) {
+            updateCrossSectionLines();
+        }
+        if (viewProp.sectionCrossLines) {
+            updateSectionCrossLines();
+        }
+        if (viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render);
+        rebuildTree(loadedModels, true);
+        render();
+    } catch (err) {
+        console.log('Error: removeSelectedGroup ' + err.message);
+    }
+}
+
 // --- Group History ---
+
+// Odebere smazaný objekt ze všech group-history snapshotů.
+function purgeObjectFromGroupHistory(objectRef) {
+    const previewWasActive = groupHistoryPreviewHelpers.length > 0;
+    for (let i = groupHistory.length - 1; i >= 0; i--) {
+        groupHistory[i].objects = groupHistory[i].objects.filter(o => o !== objectRef);
+        if (groupHistory[i].objects.length === 0) {
+            groupHistory.splice(i, 1);
+            if (groupHistoryIndex >= i) groupHistoryIndex--;
+        }
+    }
+    if (groupHistoryIndex >= groupHistory.length) {
+        groupHistoryIndex = groupHistory.length - 1;
+    }
+    updateHistoryInfo();
+    if (previewWasActive) {
+        groupHistoryPreviewHelpers.forEach(h => scene.remove(h));
+        groupHistoryPreviewHelpers.length = 0;
+        if (groupHistoryIndex >= 0) {
+            groupHistory[groupHistoryIndex].objects.forEach(obj => {
+                if (!obj || !obj.parent) return;
+                const h = new PaddedBoxHelper(obj, 0xff8800, viewProp.multiSelectBoxPadding);
+                scene.add(h);
+                groupHistoryPreviewHelpers.push(h);
+            });
+        }
+    }
+}
 
 // Uloží aktuální selectedObjects do groupHistory jako pojmenovaný snapshot.
 function addCurrentGroupToHistory() {
@@ -5107,7 +5165,7 @@ function clearSceneKeepDocs() {
     }
 }
 
-function removeModel(part, skipConfirm = false) {
+function removeModel(part, skipConfirm = false, options = {}) {
     if (!skipConfirm && !confirm('Do you really want to permanently remove object?')) return;
     try {				
         deselectObject();
@@ -5183,11 +5241,19 @@ function removeModel(part, skipConfirm = false) {
             }
             if (selectedObjects.length === 0) {
                 clearMultiSelect();
+            } else if (viewProp.isGroupTransformActive) {
+                refreshGroupGui();
+            } else {
+                highlightGroupObjects(selectedObjects);
             }
         }
 
+        purgeObjectFromGroupHistory(part);
+
         // Aktualizujeme GUI assembly po vyčištění dat
-        if (_assemblyFolderRef) updateAssemblyGuiInfo();
+        if (!options.skipSceneRebuild && _assemblyFolderRef) updateAssemblyGuiInfo();
+
+        if (options.skipSceneRebuild) return;
 
         // Aktualizace průřezových čar
         if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) {
