@@ -669,14 +669,28 @@ const extent = {
     pn: -1000,
     pp: +1000,
     pStep: 0.1,
-    rn: -3.1416,
-    rp: 3.1416,
-    rStep: Math.PI / 6,
+    rn: -180,
+    rp: 180,
+    rStep: 30,
     sn: 0,
     sp: 10,
     sStep: 0.1
 }
-    
+
+/** GUI proxy for THREE.Euler – displays/edits rotation in degrees, stores radians. */
+function makeEulerDegProxy(euler) {
+    const proxy = {};
+    for (const axis of ['x', 'y', 'z']) {
+        Object.defineProperty(proxy, axis, {
+            get: () => THREE.MathUtils.radToDeg(euler[axis]),
+            set: (v) => { euler[axis] = THREE.MathUtils.degToRad(v); },
+            enumerable: true,
+            configurable: true,
+        });
+    }
+    return proxy;
+}
+
 const part = {
     color: "#888888",
     bbSize: "",
@@ -2605,19 +2619,20 @@ function refreshSelectedObjGui(obj) {
             .onChange(function(value){obj.position.z=value; render(); })
             .onFinishChange(_onGuiLocationFinish)
             .listen();
-        folder2.add(obj.rotation, 'x', extent.rn, extent.rp, extent.rStep)
+        const rotDeg = makeEulerDegProxy(obj.rotation);
+        folder2.add(rotDeg, 'x', extent.rn, extent.rp, extent.rStep)
             .name('Rx')
-            .onChange(function(value){obj.rotation.x=value; if (!viewProp.transformSpace) syncTransformPivotOrientation(); render(); })
+            .onChange(function(){ if (!viewProp.transformSpace) syncTransformPivotOrientation(); render(); })
             .onFinishChange(_onGuiLocationFinish)
             .listen();
-        folder2.add(obj.rotation, 'y', extent.rn, extent.rp, extent.rStep)
+        folder2.add(rotDeg, 'y', extent.rn, extent.rp, extent.rStep)
             .name('Ry')
-            .onChange(function(value){obj.rotation.y=value; if (!viewProp.transformSpace) syncTransformPivotOrientation(); render(); })
+            .onChange(function(){ if (!viewProp.transformSpace) syncTransformPivotOrientation(); render(); })
             .onFinishChange(_onGuiLocationFinish)
             .listen();
-        folder2.add(obj.rotation, 'z', extent.rn, extent.rp, extent.rStep)
+        folder2.add(rotDeg, 'z', extent.rn, extent.rp, extent.rStep)
             .name('Rz')
-            .onChange(function(value){obj.rotation.z=value; if (!viewProp.transformSpace) syncTransformPivotOrientation(); render(); })
+            .onChange(function(){ if (!viewProp.transformSpace) syncTransformPivotOrientation(); render(); })
             .onFinishChange(_onGuiLocationFinish)
             .listen();
         folder2.add(obj.scale, 'x', extent.sn, extent.sp, extent.sStep)
@@ -2784,11 +2799,12 @@ function refreshGroupGui() {
             .name('Py').onChange(() => render()).onFinishChange(_onGroupGuiLocationFinish).listen();
         folder2.add(pivotObject.position, 'z', extent.pn, extent.pp, extent.pStep)
             .name('Pz').onChange(() => render()).onFinishChange(_onGroupGuiLocationFinish).listen();
-        folder2.add(pivotObject.rotation, 'x', extent.rn, extent.rp, extent.rStep)
+        const pivotRotDeg = makeEulerDegProxy(pivotObject.rotation);
+        folder2.add(pivotRotDeg, 'x', extent.rn, extent.rp, extent.rStep)
             .name('Rx').onChange(() => render()).onFinishChange(_onGroupGuiLocationFinish).listen();
-        folder2.add(pivotObject.rotation, 'y', extent.rn, extent.rp, extent.rStep)
+        folder2.add(pivotRotDeg, 'y', extent.rn, extent.rp, extent.rStep)
             .name('Ry').onChange(() => render()).onFinishChange(_onGroupGuiLocationFinish).listen();
-        folder2.add(pivotObject.rotation, 'z', extent.rn, extent.rp, extent.rStep)
+        folder2.add(pivotRotDeg, 'z', extent.rn, extent.rp, extent.rStep)
             .name('Rz').onChange(() => render()).onFinishChange(_onGroupGuiLocationFinish).listen();
         folder2.add(pivotObject.scale, 'x', extent.sn, extent.sp, extent.sStep)
             .name('Scale').onChange(function(value) { pivotObject.scale.set(value, value, value); render(); })
@@ -10110,9 +10126,9 @@ function assemblyMoveStepDown() {
             { id: 'ctx-px', label: 'Px',    step: extent.pStep, get: () => lastSelectedObject?.position.x,  set: v => { if (lastSelectedObject) { lastSelectedObject.position.x = v; render(); } } },
             { id: 'ctx-py', label: 'Py',    step: extent.pStep, get: () => lastSelectedObject?.position.y,  set: v => { if (lastSelectedObject) { lastSelectedObject.position.y = v; render(); } } },
             { id: 'ctx-pz', label: 'Pz',    step: extent.pStep, get: () => lastSelectedObject?.position.z,  set: v => { if (lastSelectedObject) { lastSelectedObject.position.z = v; render(); } } },
-            { id: 'ctx-rx', label: 'Rx',    step: extent.rStep, get: () => lastSelectedObject?.rotation.x,  set: v => { if (lastSelectedObject) { lastSelectedObject.rotation.x = v; render(); } } },
-            { id: 'ctx-ry', label: 'Ry',    step: extent.rStep, get: () => lastSelectedObject?.rotation.y,  set: v => { if (lastSelectedObject) { lastSelectedObject.rotation.y = v; render(); } } },
-            { id: 'ctx-rz', label: 'Rz',    step: extent.rStep, get: () => lastSelectedObject?.rotation.z,  set: v => { if (lastSelectedObject) { lastSelectedObject.rotation.z = v; render(); } } },
+            { id: 'ctx-rx', label: 'Rx',    step: extent.rStep, get: () => lastSelectedObject ? THREE.MathUtils.radToDeg(lastSelectedObject.rotation.x) : undefined, set: v => { if (lastSelectedObject) { lastSelectedObject.rotation.x = THREE.MathUtils.degToRad(v); render(); } } },
+            { id: 'ctx-ry', label: 'Ry',    step: extent.rStep, get: () => lastSelectedObject ? THREE.MathUtils.radToDeg(lastSelectedObject.rotation.y) : undefined, set: v => { if (lastSelectedObject) { lastSelectedObject.rotation.y = THREE.MathUtils.degToRad(v); render(); } } },
+            { id: 'ctx-rz', label: 'Rz',    step: extent.rStep, get: () => lastSelectedObject ? THREE.MathUtils.radToDeg(lastSelectedObject.rotation.z) : undefined, set: v => { if (lastSelectedObject) { lastSelectedObject.rotation.z = THREE.MathUtils.degToRad(v); render(); } } },
             { id: 'ctx-sc', label: 'Scale', step: extent.sStep, get: () => lastSelectedObject?.scale.x,     set: v => { if (lastSelectedObject) { lastSelectedObject.scale.set(v, v, v); render(); } } },
         ];
 
@@ -10458,9 +10474,9 @@ function assemblyMoveStepDown() {
             'ctx-px': obj.position.x,
             'ctx-py': obj.position.y,
             'ctx-pz': obj.position.z,
-            'ctx-rx': obj.rotation.x,
-            'ctx-ry': obj.rotation.y,
-            'ctx-rz': obj.rotation.z,
+            'ctx-rx': THREE.MathUtils.radToDeg(obj.rotation.x),
+            'ctx-ry': THREE.MathUtils.radToDeg(obj.rotation.y),
+            'ctx-rz': THREE.MathUtils.radToDeg(obj.rotation.z),
             'ctx-sc': obj.scale.x,
         };
         for (const [id, val] of Object.entries(map)) {
