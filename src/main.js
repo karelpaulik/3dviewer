@@ -1247,6 +1247,7 @@ function init() {
                 lastSelectedObject.quaternion,
                 lastSelectedObject.scale
             );
+            roundObjectTransformNearZero(lastSelectedObject);
         }
         render();
     } );
@@ -1288,15 +1289,8 @@ function init() {
                 isTransformDragging = false;
                 orbitControls.enabled = true;
                 // Zaokrouhlení floating-point nepřesností blízkých nule
-                if (transformControls.object) {
-                    const obj = transformControls.object;
-                    obj.position.x = roundNearZero(obj.position.x);
-                    obj.position.y = roundNearZero(obj.position.y);
-                    obj.position.z = roundNearZero(obj.position.z);
-                    obj.rotation.x = roundNearZero(obj.rotation.x);
-                    obj.rotation.y = roundNearZero(obj.rotation.y);
-                    obj.rotation.z = roundNearZero(obj.rotation.z);
-                }
+                roundObjectTransformNearZero(transformControls.object);
+                roundObjectTransformNearZero(lastSelectedObject);
                 // Zaznamenat transformaci v assembly edit modu
                 if (assemblyState.editMode && assemblyState.currentStepIndex >= 0) {
                     if (viewProp.isGroupTransformActive && previousGroupTransformStates.length > 0) {
@@ -3588,6 +3582,19 @@ function rotateAllModels(axis, angle) {
 
 function roundNearZero(value, epsilon = 1e-10) {
     return Math.abs(value) < epsilon ? 0 : value;
+}
+
+function roundObjectTransformNearZero(obj) {
+    if (!obj) return;
+    obj.position.x = roundNearZero(obj.position.x);
+    obj.position.y = roundNearZero(obj.position.y);
+    obj.position.z = roundNearZero(obj.position.z);
+    const r = obj.rotation;
+    obj.rotation.set(
+        roundNearZero(r.x),
+        roundNearZero(r.y),
+        roundNearZero(r.z)
+    );
 }
 
 function syncSingleSelectPivotOrientation() {
