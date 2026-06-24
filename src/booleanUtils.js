@@ -607,6 +607,57 @@ export function mergeDescendantMeshes(container) {
 export const mergeDirectChildMeshes = mergeDescendantMeshes;
 
 /**
+ * Collapse geometry.groups to a single group covering the whole mesh.
+ * @param {THREE.BufferGeometry} geometry
+ */
+function collapseGeometryToSingleGroup(geometry) {
+    const posAttr = geometry.getAttribute('position');
+    if (!posAttr) return;
+    const index = geometry.getIndex();
+    const count = index ? index.count : posAttr.count;
+    geometry.clearGroups();
+    geometry.addGroup(0, count, 0);
+}
+
+/**
+ * Collapse multi-material mesh to single material (materials[0]).
+ * Geometry groups keep start/count unless collapseGroups is true.
+ * @param {THREE.Mesh} mesh
+ * @param {{ collapseGroups?: boolean }} [options]
+ * @returns {{ changed: boolean, disposedCount: number, error: string|null }}
+ */
+export function flattenMeshMaterials(mesh, { collapseGroups = false } = {}) {
+    if (!mesh?.isMesh || !mesh.geometry) {
+        return { changed: false, disposedCount: 0, error: 'No mesh selected.' };
+    }
+    if (!Array.isArray(mesh.material) || mesh.material.length <= 1) {
+        return { changed: false, disposedCount: 0, error: 'Selected mesh has no multi-material array to flatten.' };
+    }
+
+    const materials = mesh.material;
+    const kept = materials[0];
+    const groups = mesh.geometry.groups;
+
+    if (groups && groups.length > 0) {
+        for (const group of groups) {
+            group.materialIndex = 0;
+        }
+    }
+
+    for (let i = 1; i < materials.length; i++) {
+        materials[i].dispose();
+    }
+
+    mesh.material = kept;
+
+    if (collapseGroups) {
+        collapseGeometryToSingleGroup(mesh.geometry);
+    }
+
+    return { changed: true, disposedCount: materials.length - 1, error: null };
+}
+
+/**
  * @param {THREE.Object3D} object3d
  * @returns {THREE.Material}
  */

@@ -71,6 +71,7 @@ import {
     pickMaterialFromObject,
     collectDescendantMeshes,
     mergeDescendantMeshes,
+    flattenMeshMaterials,
     separateConnectedComponents,
     computeSplitLoosePartsTolerance,
     BOOLEAN_OPERATION_LABELS,
@@ -2121,6 +2122,51 @@ function addMainGui() {
         if (!confirm(confirmMsg)) return;
         mergeChildMeshes(obj);
     } }, 'fn').name('Merge Mesh (join descendants)');
+    function runFlattenMeshMaterials(mesh, { collapseGroups }) {
+        const { error } = flattenMeshMaterials(mesh, { collapseGroups });
+        if (error) { alert(error); return; }
+        applyMeshMaterialDefaults(mesh.material, clipPlanes);
+        if (_materialFolder && selectedFolder) {
+            buildMaterialFolder(mesh, selectedFolder);
+            buildMaterialFolder(mesh, selectedFolder);
+        }
+        if (_materialFolderAll && selectedFolder) {
+            buildMaterialFolderAll(mesh, selectedFolder);
+            buildMaterialFolderAll(mesh, selectedFolder);
+        }
+        render();
+    }
+    meshOpsFolder.add({ fn() {
+        const mesh = lastSelectedObject;
+        if (!mesh?.geometry) { alert('No mesh selected.'); return; }
+        if (!Array.isArray(mesh.material) || mesh.material.length <= 1) {
+            alert('Selected mesh has no multi-material array to flatten.');
+            return;
+        }
+        const count = mesh.material.length;
+        const matType = mesh.material[0].type || 'Material';
+        const groupCount = mesh.geometry.groups?.length ?? 0;
+        const confirmMsg = `Sloučit ${count} materiálů do prvního materiálu (${matType})?\n`
+            + `Geometry groups (${groupCount}) zůstanou; všechny budou používat tento materiál. Ostatní materiály budou odstraněny.`;
+        if (!confirm(confirmMsg)) return;
+        runFlattenMeshMaterials(mesh, { collapseGroups: false });
+    } }, 'fn').name('Flatten Materials');
+    meshOpsFolder.add({ fn() {
+        const mesh = lastSelectedObject;
+        if (!mesh?.geometry) { alert('No mesh selected.'); return; }
+        if (!Array.isArray(mesh.material) || mesh.material.length <= 1) {
+            alert('Selected mesh has no multi-material array to flatten.');
+            return;
+        }
+        const count = mesh.material.length;
+        const matType = mesh.material[0].type || 'Material';
+        const groupCount = mesh.geometry.groups?.length ?? 0;
+        const confirmMsg = `Sloučit ${count} materiálů do prvního materiálu (${matType}) `
+            + `a sloučit ${groupCount || 'všechny'} geometry groups do jedné?\n`
+            + 'Ostatní materiály budou odstraněny. Separate Mesh pak rozdělí mesh jen do jednoho dílu.';
+        if (!confirm(confirmMsg)) return;
+        runFlattenMeshMaterials(mesh, { collapseGroups: true });
+    } }, 'fn').name('Flatten Materials + geometry');
     const splitLooseFolder = meshOpsFolder.addFolder('Split loose parts');
     const splitLooseModeCtrl = splitLooseFolder.add(viewProp, 'splitLoosePartsToleranceMode', { Auto: 'auto', Manual: 'manual' }).name('Tolerance mode');
     const splitLooseMultCtrl = splitLooseFolder.add(viewProp, 'splitLoosePartsToleranceMultiplier', 0.1, 100, 0.1).name('Auto multiplier');
