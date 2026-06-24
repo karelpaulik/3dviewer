@@ -22,7 +22,8 @@ import { GUI } from 'lil-gui';
 import ZipLoader from 'zip-loader';
 import { updateCrossSectionLines as updateCrossSectionLinesCore, updateSectionCrossLines as updateSectionCrossLinesCore } from './crossSectionUtils.js';
 import { exportToHTML, exportToHTMLDraco, exportToHTMLObfuscated, exportToHTMLObfuscatedDraco } from './htmlExport.js';
-import { initOutliner, toggleOutliner, rebuildTree, highlightObject as outlinerHighlight, updateVisibilityIcon, updateSelectableIcon, updateObjectLabel, isOutlinerOpen, navigateOutliner, highlightGroupObjects, clearGroupHighlights, setNavigationPosition } from './sceneOutliner.js';
+import { initOutliner, toggleOutliner, rebuildTree, highlightObject as outlinerHighlight, updateVisibilityIcon, updateSelectableIcon, updateObjectLabel, isOutlinerOpen, navigateOutliner, highlightGroupObjects, clearGroupHighlights, setNavigationPosition, setOnTreeRebuild } from './sceneOutliner.js';
+import { computeModelStats } from './modelInfoUtils.js';
 import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements, isSelectDimActive, setSelectDimActive, deleteSelectedDimension, initSelectDimension, updateSelectDimensionCamera, reconstructMeasurements, stripMeasurementVisuals, setMeasurementsVisible, setMeasurementDepthTest, removeMeasurementsForOwner, isCadDimActive, setCadDimActive, getCadDimStep, getCadDimAxis, addCadDimPoint, updateCadDimPreview, updateCadDimHoverPreview, cycleCadDimAxis, placeCadDim, clearCadDimMeasurements, removeCadDimMeasurementsForOwner, getSelectedCadDim, setCadDimLabelMode, setCadDimDragMode, selectDimTouchStart, selectDimTouchMove, selectDimTouchEnd, registerLabelForSelection, getSelectedCadDim3d, getCadDimMeasurements, deleteCadDimByRef, convertCadDim3dTo2d, getFlatDimDefaults, applyDefaultsToAllFlatDim, setDimMarkerFixedSize, setDimMarkerFixedScreenPx, setDimMarkerWorldSize, setDimMarkerColor, getDimMarkerSettings } from './measurementUtils.js';
 import { detectCircleCenterFromHit } from './circleDetectionUtils.js';
 import { initAnnotations, isAnnotationActive, setAnnotationActive, addAnnotationPoint, getAnnotationPendingPoint, updateAnnotationPreview, updateAnnotationMarkerScales, setAnnotationsVisible, clearAnnotations, stripAnnotationVisuals, reconstructAnnotations, setAnnotationDepthTest, removeAnnotationsForOwner, getAnnotations, isAddLeaderLineActive, cancelAddLeaderLine, commitAddLeaderLine, deleteAnnotationByRef, setConvertTo3dFn, reconstructAnnotationFromRec, getFlatAnnDefaults, applyDefaultsToAllFlatAnnotations, setAnnMarkerFixedSize, setAnnMarkerFixedScreenPx, setAnnMarkerWorldSize, setAnnMarkerColor, getAnnMarkerSettings } from './annotationUtils.js';
@@ -265,12 +266,19 @@ statusSelEl.addEventListener('change', function() {
     _modeIndicatorCache = '';
     render();
 });
+const statusModelSepEl = document.createElement('span');
+statusModelSepEl.className = 'status-sep';
+statusModelSepEl.textContent = '|';
+const statusModelInfoEl = document.createElement('span');
+statusModelInfoEl.className = 'status-model-info';
 const _statusLeft = statusBar.querySelector('.status-left');
 _statusLeft.appendChild(statusModeLabelEl);
 _statusLeft.appendChild(statusModeEl);
 _statusLeft.appendChild(statusSepEl);
 _statusLeft.appendChild(statusSelLabelEl);
 _statusLeft.appendChild(statusSelEl);
+_statusLeft.appendChild(statusModelSepEl);
+_statusLeft.appendChild(statusModelInfoEl);
 
 let sectionCtrl = null; // Reference to the GUI 'Section' controller for syncing
 let sectionCrossLinesCtrl = null; // Reference to the GUI 'Cross Section Lines' controller for syncing
@@ -584,6 +592,29 @@ let groupHistoryIndex = -1;       // index aktuálně zobrazeného záznamu (-1 
 const groupHistoryPreviewHelpers = []; // oránžové BoxHelpery pro náhled history entry
 const assemblyStepHelpers = [];       // žluté BoxHelpery pro objekty aktuálního assembly kroku (edit mode)
 
+// --- Model info (status bar) ---
+let _modelStatsCache = null;
+let _modelStatsDirty = true;
+let _modelInfoDisplayCache = '';
+
+function markModelStatsDirty() {
+    _modelStatsDirty = true;
+}
+
+function updateModelInfoDisplay() {
+    if (_modelStatsDirty) {
+        _modelStatsCache = computeModelStats(loadedModels);
+        _modelStatsDirty = false;
+    }
+    const s = _modelStatsCache;
+    const sel = selectedObjects.length;
+    let text = `Objects: ${s.objects} | Groups: ${s.groups} | Object3D: ${s.object3d} | Meshes: ${s.meshes} | Hidden obj: ${hiddenObjects.length}`;
+    if (sel > 0) text += ` | Selected: ${sel}`;
+    if (text === _modelInfoDisplayCache) return;
+    _modelInfoDisplayCache = text;
+    statusModelInfoEl.textContent = text;
+}
+
 const viewProp = {
     perspCam: false,
     section: false,
@@ -832,6 +863,7 @@ init();
 render();
 
 // Initialize scene outliner
+setOnTreeRebuild(markModelStatsDirty);
 outlinerPanelEl = initOutliner({
     onSelect: (obj) => selectObject(obj),
     onGroupAdd: (obj) => toggleObjectInMultiSelect(obj),
@@ -5822,6 +5854,7 @@ function deselectObject() {
 
 // --- Mode + Selection indicator (status bar) ---
 var _modeIndicatorCache = '';
+
 function updateModeIndicator() {
     const vp = viewProp;
 
@@ -5856,6 +5889,7 @@ function updateModeIndicator() {
 
 function render() {   
     updateModeIndicator();
+    updateModelInfoDisplay();
     //console.log("viewProp.isSelectAllowed: ", viewProp.isSelectAllowed);
     // isMouseOverGui - pokud kurzor nad GUI a současně nad objektem, pak má přednost GUI.
     const _client = ndcToClient(mouse.x, mouse.y);

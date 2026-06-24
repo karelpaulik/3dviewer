@@ -44,6 +44,17 @@ let activeFlyoutEl = null;
 /** @type {ReturnType<typeof setTimeout>|null} */
 let flyoutHideTimer = null;
 
+/** @type {(() => void)|null} */
+let _onTreeRebuild = null;
+
+/**
+ * Register a callback invoked after each rebuildTree (scene graph changed).
+ * @param {(() => void)|null} cb
+ */
+export function setOnTreeRebuild(cb) {
+    _onTreeRebuild = cb;
+}
+
 const MENU_MARGIN = 8;
 
 const PRIMITIVE_TYPES = [
@@ -731,6 +742,7 @@ export function isOutlinerOpen() {
  */
 export function rebuildTree(loadedModels, preserveExpanded = false) {
     lastLoadedModels = loadedModels;
+    if (_onTreeRebuild) _onTreeRebuild();
     if (!treeEl) return;
     // Optionally save expanded state and scroll before destroying DOM
     const scrollTop = preserveExpanded ? treeEl.scrollTop : 0;
