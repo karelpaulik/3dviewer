@@ -1409,7 +1409,7 @@ function init() {
             case 'Q':
                 transformControls.setSpace( transformControls.space === 'local' ? 'world' : 'local' );
                 viewProp.transformSpace = transformControls.space === 'world';
-                if (transformControls.space === 'local') syncSingleSelectPivotOrientation();
+                if (transformControls.space === 'local') syncTransformPivotOrientation();
                 break;
 
 
@@ -2119,7 +2119,7 @@ function addMainGui() {
     } }, 'fn').name('Clear annotations');
     editGui.add(viewProp, 'transformSpace').name('Transform: World space').onChange(function(value) {
         transformControls.setSpace( value ? 'world' : 'local' );
-        if (!value) syncSingleSelectPivotOrientation();
+        if (!value) syncTransformPivotOrientation();
     }).listen();
     const meshOpsFolder = editGui.addFolder('Mesh operations');
     meshOpsFolder.add({ fn() {
@@ -2607,17 +2607,17 @@ function refreshSelectedObjGui(obj) {
             .listen();
         folder2.add(obj.rotation, 'x', extent.rn, extent.rp, extent.rStep)
             .name('Rx')
-            .onChange(function(value){obj.rotation.x=value; if (!viewProp.transformSpace) syncSingleSelectPivotOrientation(); render(); })
+            .onChange(function(value){obj.rotation.x=value; if (!viewProp.transformSpace) syncTransformPivotOrientation(); render(); })
             .onFinishChange(_onGuiLocationFinish)
             .listen();
         folder2.add(obj.rotation, 'y', extent.rn, extent.rp, extent.rStep)
             .name('Ry')
-            .onChange(function(value){obj.rotation.y=value; if (!viewProp.transformSpace) syncSingleSelectPivotOrientation(); render(); })
+            .onChange(function(value){obj.rotation.y=value; if (!viewProp.transformSpace) syncTransformPivotOrientation(); render(); })
             .onFinishChange(_onGuiLocationFinish)
             .listen();
         folder2.add(obj.rotation, 'z', extent.rn, extent.rp, extent.rStep)
             .name('Rz')
-            .onChange(function(value){obj.rotation.z=value; if (!viewProp.transformSpace) syncSingleSelectPivotOrientation(); render(); })
+            .onChange(function(value){obj.rotation.z=value; if (!viewProp.transformSpace) syncTransformPivotOrientation(); render(); })
             .onFinishChange(_onGuiLocationFinish)
             .listen();
         folder2.add(obj.scale, 'x', extent.sn, extent.sp, extent.sStep)
@@ -3543,6 +3543,44 @@ function syncSingleSelectPivotOrientation() {
     singleSelectPivot.updateMatrixWorld(true);
 }
 
+// Local gizmo frame for group selection: align pivotObject to selectedObjects[0] world rotation.
+// Compensates child local transforms so world positions stay unchanged.
+function syncGroupPivotOrientation() {
+    if (!pivotObject || !viewProp.isGroupTransformActive || selectedObjects.length === 0) return;
+
+    const identityQuat = new THREE.Quaternion();
+    const pivotWorldQuat = pivotObject.getWorldQuaternion(new THREE.Quaternion());
+    if (pivotWorldQuat.angleTo(identityQuat) > 1e-6) return;
+
+    const refObj = selectedObjects[0];
+    refObj.updateWorldMatrix(true, false);
+    const targetQuat = refObj.getWorldQuaternion(new THREE.Quaternion());
+
+    const savedWorld = selectedObjects.map(obj => {
+        obj.updateWorldMatrix(true, false);
+        return obj.matrixWorld.clone();
+    });
+
+    pivotObject.quaternion.copy(targetQuat);
+    pivotObject.updateMatrixWorld(true);
+
+    const invPivot = new THREE.Matrix4().copy(pivotObject.matrixWorld).invert();
+    selectedObjects.forEach((obj, i) => {
+        obj.matrix.copy(savedWorld[i]).premultiply(invPivot);
+        obj.matrix.decompose(obj.position, obj.quaternion, obj.scale);
+    });
+
+    pivotObject.updateMatrixWorld(true);
+    multiSelectionHelpers.forEach((h, i) => {
+        if (selectedObjects[i]) h.setFromObject(selectedObjects[i]);
+    });
+}
+
+function syncTransformPivotOrientation() {
+    if (viewProp.isGroupTransformActive) syncGroupPivotOrientation();
+    else syncSingleSelectPivotOrientation();
+}
+
 function savePreviousTransformState() {
     // Pokud je aktivní single-select pivot, ukládáme stav skutečného objektu (ne pivotu).
     // Pivot je jen gizmo helper – GUI sliders a undo musí pracovat s originálem.
@@ -4250,6 +4288,7 @@ function toggleObjectInMultiSelect(obj) {
         multiSelectionHelpers.push(h);
         console.log(`Multi-selection: added "${obj.name}", total: ${selectedObjects.length}`);
         refreshGroupGui();
+        if (!viewProp.transformSpace && selectedObjects.length === 1) syncTransformPivotOrientation();
     }
     render();
 }
@@ -4299,6 +4338,7 @@ function activateMultiSelect() {
     viewProp.isGroupTransformActive = true;
     console.log(`Multi-selection activated, ${selectedObjects.length} objects.`);
     refreshGroupGui();
+    if (!viewProp.transformSpace) syncTransformPivotOrientation();
     render();
 }
 
@@ -5624,7 +5664,7 @@ function selectObject(object, options = {}) {
             // Objekt NENÍ reparentován – zůstává u původního rodiče.
             // Pohyb pivotu se v change eventu aplikuje jako delta matice na objekt.
             transformControls.attach(singleSelectPivot);// Připojíme TransformControls na pivot
-            if (!viewProp.transformSpace) syncSingleSelectPivotOrientation();
+            if (!viewProp.transformSpace) syncTransformPivotOrientation();
         }
         outlinerHighlight(object, { scroll: options.outlinerScroll !== false });// Zvýraznění uzlu v scene outlineru   
              
