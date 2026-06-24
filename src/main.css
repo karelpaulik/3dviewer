@@ -3222,3 +3222,12 @@ a, button, input, select {
     border-color: #aac4e8;
     cursor: not-allowed;
 }
+
+.box-select-overlay {
+    position: fixed;
+    border: 1px dashed #00ccff;
+    background: rgba(0, 204, 255, 0.12);
+    pointer-events: none;
+    z-index: 1000;
+    box-sizing: border-box;
+}

@@ -80,6 +80,12 @@ import {
     REVERSE_SUBTRACTION,
     INTERSECTION
 } from './booleanUtils.js';
+import {
+    collectBoxSelectCandidates,
+    findObjectsInScreenRect,
+    clientDragToScreenRect,
+    createBoxSelectOverlay,
+} from './boxSelectionUtils.js';
 
 // Proměnné globálního rozsahu----------------------------------------------------------------------------------------
 let container, stats;
@@ -521,6 +527,12 @@ let isTouchDragging = false;
 let suppressTouchEndOnce = false; // Prevents deselect after long-press context menu
 let _suppressNextClick = false;   // Prevents object selection on the click that closes a context menu
 
+// --- Box (marquee) selection (Shift + drag) ---
+let isBoxSelecting = false;
+let boxSelectPending = false;
+const boxSelectStart = new THREE.Vector2();
+let boxSelectOverlay = null;
+
 let isTouchScreen;
 
 let selectionHelper;
@@ -609,6 +621,7 @@ const viewProp = {
     raycastHelperSize: 20000,  // Délka paprsku raycasting helperu
     cadSelection: 'CAD', // CAD selection: 'CAD' = vybere pojmenovaného předka meshe, 'Detailed' = vybere mesh přímo
     multiSelectBoxPadding: 3, // Rozšíření PaddedBoxHelperu pro multiselect (world-units)
+    boxSelectMode: 'center', // 'partial' | 'full' | 'center' – režim obdélníkového výběru (Shift+drag)
     isGroupTransformActive: false,
     historyInfo: '– žádný záznam –',
     measureMode: false, // Point-to-point measurement mode
@@ -1291,6 +1304,8 @@ function init() {
     selectionHelper = new PaddedBoxHelper(new THREE.Mesh(), 0xffff00, 0);
     selectionHelper.visible = false;
     scene.add(selectionHelper);
+
+    boxSelectOverlay = createBoxSelectOverlay();
     
     setupViewportListeners();
     window.addEventListener( 'mousemove', onMouseMove, false );
@@ -1818,6 +1833,11 @@ function addMainGui() {
             rebuildLightsFolder();
             lightsFolder.close();
         const multiFolder = folderProp.addFolder("Group Selection");
+            multiFolder.add(viewProp, 'boxSelectMode', {
+                'Overlap (any part)': 'partial',
+                'Fully inside': 'full',
+                'Center inside': 'center',
+            }).name('Box select mode').listen();
             multiFolder.add(viewProp, 'multiSelectBoxPadding', 0, 200, 1).name('Box padding').listen();
             multiFolder.add({ fn: addCurrentToMultiSelect }, 'fn').name('Add/remove selected (/)');
             multiFolder.add({ fn: clearMultiSelect }, 'fn').name('Clear group');
@@ -4399,6 +4419,87 @@ function assemblySelectStepObjects() {
     render();
 }
 
+function isBoxSelectAllowed() {
+    return viewProp.isSelectAllowed
+        && !isDocOverlayBlockingInput()
+        && !faceSnapMode
+        && !ptpSnapMode
+        && !booleanMode
+        && !isTransformDragging;
+}
+
+function applyBoxSelection(startX, startY, endX, endY, additive) {
+    const rect = clientDragToScreenRect(startX, startY, endX, endY);
+    const viewport = getViewportSize();
+    const isVisible = (obj) => {
+        let o = obj;
+        while (o) { if (!o.visible) return false; o = o.parent; }
+        return true;
+    };
+    const candidates = collectBoxSelectCandidates(
+        meshObjects,
+        viewProp.cadSelection,
+        resolveCADSelection,
+        isObjectPickable,
+        isVisible
+    );
+    const picked = findObjectsInScreenRect(candidates, rect, currentCamera, viewport, viewProp.boxSelectMode);
+
+    if (!additive) {
+        deselectObject();
+        selectionHistory.length = 0;
+        clearHistoryPreviewHelpers();
+        if (selectedObjects.length > 0) {
+            addCurrentGroupToHistory();
+            clearMultiSelect();
+        }
+    }
+
+    if (picked.length === 0) {
+        render();
+        return;
+    }
+
+    if (additive) {
+        picked.forEach(obj => {
+            if (selectedObjects.indexOf(obj) === -1) {
+                toggleObjectInMultiSelect(obj);
+            }
+        });
+        return;
+    }
+
+    if (picked.length === 1) {
+        selectObject(picked[0]);
+        return;
+    }
+
+    deactivateMultiSelect();
+    multiSelectionHelpers.forEach(h => scene.remove(h));
+    multiSelectionHelpers.length = 0;
+    selectedObjects.length = 0;
+    multiOriginalParents.length = 0;
+
+    picked.forEach(obj => {
+        selectedObjects.push(obj);
+        multiOriginalParents.push(obj.parent);
+        const h = new PaddedBoxHelper(obj, 0x00ccff, viewProp.multiSelectBoxPadding);
+        scene.add(h);
+        multiSelectionHelpers.push(h);
+        obj.traverse(child => { if (child.isMesh) { applyEmissive(child, 0xff0000); if (viewProp.xrayOnSelect) applyXray(child); } });
+    });
+
+    activateMultiSelect();
+    render();
+}
+
+function resetBoxSelectState() {
+    boxSelectPending = false;
+    isBoxSelecting = false;
+    if (boxSelectOverlay) boxSelectOverlay.hide();
+    if (orbitControls) orbitControls.enabled = true;
+}
+
 // Zobrazí PaddedBoxHelpery kolem objektů aktuálního assembly kroku, pokud je aktivní edit mode.
 // Volá se z updateAssemblyGuiInfo() a při přepnutí editMode.
 function updateAssemblyStepHelpers(stepOverride = null) {
@@ -5931,6 +6032,28 @@ function viewHelperAnimate() {
 
 
 function onMouseMove( event ) {	
+    if (boxSelectPending || isBoxSelecting) {
+        event.preventDefault();
+        const dx = event.clientX - boxSelectStart.x;
+        const dy = event.clientY - boxSelectStart.y;
+        if (dx * dx + dy * dy > 9) {
+            isBoxSelecting = true;
+            const rect = clientDragToScreenRect(
+                boxSelectStart.x, boxSelectStart.y,
+                event.clientX, event.clientY
+            );
+            if (boxSelectOverlay) {
+                boxSelectOverlay.show(
+                    rect.left,
+                    rect.top,
+                    rect.right - rect.left,
+                    rect.bottom - rect.top
+                );
+            }
+        }
+        return;
+    }
+
     event.preventDefault();			
     // calculate mouse position in normalized device coordinates
     // (-1 to +1) for both components				
@@ -5945,6 +6068,12 @@ function onMouseDown( event ) {
     mouseDownPos.x = event.clientX;
     mouseDownPos.y = event.clientY;
     isMouseDown = true;
+
+    if (event.button === 0 && event.shiftKey && isBoxSelectAllowed() && !isMouseOnGUI(event)) {
+        boxSelectPending = true;
+        boxSelectStart.set(event.clientX, event.clientY);
+        orbitControls.enabled = false;
+    }
 }
 
 function clearFaceSnapHighlight() {
@@ -6153,6 +6282,17 @@ function runBooleanAndRegister() {
 }
 
 function onMouseUp( event ) {
+    if (isBoxSelecting) {
+        applyBoxSelection(
+            boxSelectStart.x, boxSelectStart.y,
+            event.clientX, event.clientY,
+            event.ctrlKey
+        );
+        _suppressNextClick = true;
+    }
+    if (boxSelectPending || isBoxSelecting) {
+        resetBoxSelectState();
+    }
     isMouseDown = false;
 }
 
