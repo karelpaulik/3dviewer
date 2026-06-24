@@ -671,6 +671,8 @@ const viewProp = {
     splitLoosePartsToleranceMode: 'auto', // 'auto' | 'manual'
     splitLoosePartsToleranceMultiplier: 1, // Auto: multiplier on default bbox factor
     splitLoosePartsToleranceManual: 1e-4, // Manual: absolute weld tolerance in model units
+    locationKeepOpen: false, // Keep Location folder open when selecting another object
+    navigationKeepOpen: false, // Keep Navigation folder open when selecting another object
 };
 
 const toolbarDefaults = {
@@ -2619,6 +2621,7 @@ function refreshSelectedObjGui(obj) {
     }
 
     const folder2 = selectedFolder.addFolder("Location");
+        folder2.add(viewProp, 'locationKeepOpen').name('Keep open');
         folder2.add({ fn() { if (lastSelectedObject) setDefPosRotScale(lastSelectedObject); } }, 'fn').name('Reset init. location');
         folder2.add({ fn() { if (lastSelectedObject && previousTransformState) undoLastTransform(lastSelectedObject); } }, 'fn').name('Undo last transform');
 
@@ -2671,7 +2674,8 @@ function refreshSelectedObjGui(obj) {
             .onFinishChange(_onGuiLocationFinish)
             .listen();
         folder2.add({ fn: bakeSelectedObjectLocation }, 'fn').name('Bake location');
-        folder2.close();
+        if (viewProp.locationKeepOpen) folder2.open();
+        else folder2.close();
     
     // if (obj.children[0]) {   
     //     const folder3 = selectedFolder.addFolder("Section view");
@@ -2683,9 +2687,11 @@ function refreshSelectedObjGui(obj) {
 
     // Navigation buttons: Arrow Up / Arrow Down
     const navFolder = selectedFolder.addFolder("Navigation");
+        navFolder.add(viewProp, 'navigationKeepOpen').name('Keep open');
         navFolder.add({ fn: selectParent }, 'fn').name('Select parent (Arrow Up)');
         navFolder.add({ fn: selectPrevious }, 'fn').name('Select previous (Arrow Down)');
-        navFolder.open();
+        if (viewProp.navigationKeepOpen) navFolder.open();
+        else navFolder.close();
 
     selectedFolder.open();
 }
@@ -2803,6 +2809,7 @@ function refreshGroupGui() {
     // --- Location: sliders bound to pivotObject ---
     if (pivotObject) {
         const folder2 = selectedFolder.addFolder("Location (pivot)");
+        folder2.add(viewProp, 'locationKeepOpen').name('Keep open');
 
         folder2.add({ fn() {
             // Objects are currently children of pivotObject, so their local coords are
@@ -2841,7 +2848,8 @@ function refreshGroupGui() {
         folder2.add(pivotObject.scale, 'x', extent.sn, extent.sp, extent.sStep)
             .name('Scale').onChange(function(value) { pivotObject.scale.set(value, value, value); render(); })
             .onFinishChange(_onGroupGuiLocationFinish).listen();
-        folder2.close();
+        if (viewProp.locationKeepOpen) folder2.open();
+        else folder2.close();
     }
 
     highlightGroupObjects(selectedObjects);
