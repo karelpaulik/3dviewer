@@ -1409,6 +1409,7 @@ function init() {
             case 'Q':
                 transformControls.setSpace( transformControls.space === 'local' ? 'world' : 'local' );
                 viewProp.transformSpace = transformControls.space === 'world';
+                if (transformControls.space === 'local') syncSingleSelectPivotOrientation();
                 break;
 
 
@@ -2118,6 +2119,7 @@ function addMainGui() {
     } }, 'fn').name('Clear annotations');
     editGui.add(viewProp, 'transformSpace').name('Transform: World space').onChange(function(value) {
         transformControls.setSpace( value ? 'world' : 'local' );
+        if (!value) syncSingleSelectPivotOrientation();
     }).listen();
     const meshOpsFolder = editGui.addFolder('Mesh operations');
     meshOpsFolder.add({ fn() {
@@ -2605,17 +2607,17 @@ function refreshSelectedObjGui(obj) {
             .listen();
         folder2.add(obj.rotation, 'x', extent.rn, extent.rp, extent.rStep)
             .name('Rx')
-            .onChange(function(value){obj.rotation.x=value; render(); })
+            .onChange(function(value){obj.rotation.x=value; if (!viewProp.transformSpace) syncSingleSelectPivotOrientation(); render(); })
             .onFinishChange(_onGuiLocationFinish)
             .listen();
         folder2.add(obj.rotation, 'y', extent.rn, extent.rp, extent.rStep)
             .name('Ry')
-            .onChange(function(value){obj.rotation.y=value; render(); })
+            .onChange(function(value){obj.rotation.y=value; if (!viewProp.transformSpace) syncSingleSelectPivotOrientation(); render(); })
             .onFinishChange(_onGuiLocationFinish)
             .listen();
         folder2.add(obj.rotation, 'z', extent.rn, extent.rp, extent.rStep)
             .name('Rz')
-            .onChange(function(value){obj.rotation.z=value; render(); })
+            .onChange(function(value){obj.rotation.z=value; if (!viewProp.transformSpace) syncSingleSelectPivotOrientation(); render(); })
             .onFinishChange(_onGuiLocationFinish)
             .listen();
         folder2.add(obj.scale, 'x', extent.sn, extent.sp, extent.sStep)
@@ -3532,6 +3534,13 @@ function rotateAllModels(axis, angle) {
 
 function roundNearZero(value, epsilon = 1e-10) {
     return Math.abs(value) < epsilon ? 0 : value;
+}
+
+function syncSingleSelectPivotOrientation() {
+    if (!singleSelectPivot || !lastSelectedObject) return;
+    lastSelectedObject.updateWorldMatrix(true, false);
+    lastSelectedObject.getWorldQuaternion(singleSelectPivot.quaternion);
+    singleSelectPivot.updateMatrixWorld(true);
 }
 
 function savePreviousTransformState() {
@@ -5615,6 +5624,7 @@ function selectObject(object, options = {}) {
             // Objekt NENÍ reparentován – zůstává u původního rodiče.
             // Pohyb pivotu se v change eventu aplikuje jako delta matice na objekt.
             transformControls.attach(singleSelectPivot);// Připojíme TransformControls na pivot
+            if (!viewProp.transformSpace) syncSingleSelectPivotOrientation();
         }
         outlinerHighlight(object, { scroll: options.outlinerScroll !== false });// Zvýraznění uzlu v scene outlineru   
              
