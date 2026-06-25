@@ -68,6 +68,13 @@ import {
     applyMeshMaterialDefaults
 } from './createObjectUtils.js';
 import {
+    convertMaterial,
+    convertToStandardMaterial,
+    getMaterialTypeOptions,
+    replaceMeshMaterial,
+    syncSectionMeshFromParent,
+} from './materialUtils.js';
+import {
     performBooleanOperation,
     pickMaterialFromObject,
     collectDescendantMeshes,
@@ -2941,6 +2948,19 @@ function buildMaterialFolder(meshObj, parentFolder) {
         const label = materials.length > 1 ? `Material [${idx}]: ${mat.type}` : `Material: ${mat.type}`;
         const mf = parentFolder.addFolder(label);
 
+        const typeProxy = { type: mat.type };
+        mf.add(typeProxy, 'type', getMaterialTypeOptions())
+            .name('type')
+            .onChange(newType => {
+                if (newType === mat.type) return;
+                const newMat = convertMaterial(mat, newType, { clipPlanes });
+                replaceMeshMaterial(meshObj, newMat, idx);
+                syncSectionMeshFromParent(meshObj, idx);
+                render();
+                buildMaterialFolder(meshObj, parentFolder);
+                buildMaterialFolder(meshObj, parentFolder);
+            });
+
         // --- Color properties (THREE.Color) ---
         const colorProps = ['color', 'emissive', 'specular', 'sheenColor', 'attenuationColor'];
         colorProps.forEach(prop => {
@@ -3148,6 +3168,25 @@ function buildMaterialFolderAll(meshObj, parentFolder) {
             let val;
             try { val = mat[key]; } catch (e) { continue; }
             if (typeof val === 'function') continue;
+
+            // Material type – replace material instance (type string alone is not editable)
+            if (key === 'type') {
+                const typeProxy = { type: mat.type };
+                try {
+                    mf.add(typeProxy, 'type', getMaterialTypeOptions())
+                        .name('type')
+                        .onChange(newType => {
+                            if (newType === mat.type) return;
+                            const newMat = convertMaterial(mat, newType, { clipPlanes });
+                            replaceMeshMaterial(meshObj, newMat, idx);
+                            syncSectionMeshFromParent(meshObj, idx);
+                            render();
+                            buildMaterialFolderAll(meshObj, parentFolder);
+                            buildMaterialFolderAll(meshObj, parentFolder);
+                        });
+                } catch (e) {}
+                continue;
+            }
 
             // Enum dropdown
             if (enumMaps[key] !== undefined) {
@@ -7685,31 +7724,6 @@ function import3mfFile() {
 }
 
 // --- Legacy material helpers ---
-
-function convertToStandardMaterial(mat) {
-    const std = new THREE.MeshStandardMaterial({
-        color:              mat.color        ? mat.color.clone()     : new THREE.Color(0x888888),
-        map:                mat.map          || null,
-        emissive:           mat.emissive     ? mat.emissive.clone()  : new THREE.Color(0x000000),
-        emissiveMap:        mat.emissiveMap  || null,
-        normalMap:          mat.normalMap    || null,
-        alphaMap:           mat.alphaMap     || null,
-        aoMap:              mat.aoMap        || null,
-        opacity:            mat.opacity      ?? 1,
-        transparent:        mat.transparent  ?? false,
-        side:               mat.side,
-        wireframe:          mat.wireframe    ?? false,
-        vertexColors:       mat.vertexColors ?? false,
-        clippingPlanes:     mat.clippingPlanes,
-        clipIntersection:   mat.clipIntersection,
-        polygonOffset:      mat.polygonOffset,
-        polygonOffsetFactor:mat.polygonOffsetFactor,
-        depthTest:          mat.depthTest    ?? true,
-        depthWrite:         mat.depthWrite   ?? true,
-    });
-    mat.dispose();
-    return std;
-}
 
 function resolveSplitPartMaterial(origMaterial, materialIndex = 0) {
     let src;
