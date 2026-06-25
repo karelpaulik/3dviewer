@@ -541,9 +541,10 @@ let isTouchDragging = false;
 let suppressTouchEndOnce = false; // Prevents deselect after long-press context menu
 let _suppressNextClick = false;   // Prevents object selection on the click that closes a context menu
 
-// --- Box (marquee) selection (Shift + drag) ---
+// --- Box (marquee) selection (Shift + drag, or context menu) ---
 let isBoxSelecting = false;
 let boxSelectPending = false;
+let boxSelectArmed = false; // next LMB drag → box selection (from context menu)
 const boxSelectStart = new THREE.Vector2();
 let boxSelectOverlay = null;
 
@@ -6412,10 +6413,18 @@ function onMouseDown( event ) {
     mouseDownPos.y = event.clientY;
     isMouseDown = true;
 
-    if (event.button === 0 && event.shiftKey && isBoxSelectAllowed() && !isMouseOnGUI(event)) {
+    const wantBoxSelect = event.button === 0
+        && (event.shiftKey || boxSelectArmed)
+        && isBoxSelectAllowed()
+        && !isMouseOnGUI(event);
+
+    if (wantBoxSelect) {
+        boxSelectArmed = false;
         boxSelectPending = true;
         boxSelectStart.set(event.clientX, event.clientY);
         orbitControls.enabled = false;
+    } else if (event.button === 0 && boxSelectArmed) {
+        boxSelectArmed = false;
     }
 }
 
@@ -10316,6 +10325,12 @@ function assemblyMoveStepDown() {
             hideAll();
         });
         m.appendChild(itemSel);
+
+        m.appendChild(simpleItem('Box selection', () => {
+            _suppressNextClick = true;
+            hideAll();
+            setTimeout(() => { boxSelectArmed = true; }, 0);
+        }));
 
         m.appendChild(separator());
 
