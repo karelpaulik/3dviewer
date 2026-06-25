@@ -288,6 +288,7 @@ function _showTextDialog(defaultText) {
 
 function _deleteAnnotation(annotation, renderFn) {
     const owner = annotation.ownerObject || _scene;
+    if (annotation.label && annotation.label.element) annotation.label.element.remove();
     owner.remove(annotation.label);
     annotation.leaderLines.forEach(ll => {
         owner.remove(ll.marker);
@@ -738,16 +739,9 @@ export function removeAnnotationsForOwner(root) {
     if (!root) return;
     const owned = new Set();
     root.traverse(obj => owned.add(obj));
-
-    _annotations = _annotations.filter(a => {
-        if (!owned.has(a.ownerObject)) return true;
-        if (a.label && a.label.element) a.label.element.remove();
-        a.leaderLines.forEach(ll => {
-            ll.marker.geometry.dispose(); ll.marker.material.dispose();
-            ll.line.geometry.dispose(); ll.line.material.dispose();
-        });
-        return false;
-    });
+    for (const a of _annotations.filter(a => owned.has(a.ownerObject))) {
+        _deleteAnnotation(a, null);
+    }
 }
 
 /**

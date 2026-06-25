@@ -913,15 +913,8 @@ export function removeCadDim3dMeasurementsForOwner(root) {
     if (!root) return;
     const owned = new Set();
     root.traverse(obj => owned.add(obj));
-    _cadDim3dMeasurements = _cadDim3dMeasurements.filter(m => {
-        if (!owned.has(m.ownerObject)) return true;
-        if (m.label && m.label.element) m.label.element.remove();
-        for (const obj of [m.markerP1, m.markerP2, m.markerFoot1, m.markerFoot2, m.extLine1, m.extLine2, m.dimLine]) {
-            if (obj) { if (obj.geometry) obj.geometry.dispose(); if (obj.material) obj.material.dispose(); }
-        }
-        if (m.leaderLine) { m.leaderLine.geometry.dispose(); m.leaderLine.material.dispose(); m.leaderLine = null; }
-        return false;
-    });
+    const toRemove = _cadDim3dMeasurements.filter(m => owned.has(m.ownerObject));
+    for (const m of toRemove) deleteCadDim3dByRef(m);
 }
 
 /** Show / hide all placed CSS3D CAD dimension visuals. */

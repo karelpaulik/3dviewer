@@ -9000,6 +9000,22 @@ function separateMesh(meshToSeparate, { geometries } = {}) {
 function mergeChildMeshes(containerObject) {
     if (!containerObject) return;
 
+    deselectObject();
+    stripMeasurementVisuals(containerObject);
+    stripAnnotationVisuals(containerObject);
+    stripAnnotation3dVisuals(containerObject);
+    stripCadDim3dVisuals(containerObject);
+    removeMeasurementsForOwner(containerObject);
+    removeAnnotationsForOwner(containerObject);
+    removeAnnotations3dForOwner(containerObject);
+    removeCadDim3dMeasurementsForOwner(containerObject);
+    containerObject.traverse(obj => {
+        delete obj.userData.measurements;
+        delete obj.userData.measurements3d;
+        delete obj.userData.annotations;
+        delete obj.userData.annotations3d;
+    });
+
     const { geometry, materials, error } = mergeDescendantMeshes(containerObject);
     if (error || !geometry) {
         alert(error || 'Failed to merge child meshes.');
@@ -9015,18 +9031,6 @@ function mergeChildMeshes(containerObject) {
         : scene.children.indexOf(containerObject);
     const lmIdx = loadedModels.indexOf(containerObject);
     const wasRoot = lmIdx !== -1;
-
-    deselectObject();
-    removeMeasurementsForOwner(containerObject);
-    removeAnnotationsForOwner(containerObject);
-    removeAnnotations3dForOwner(containerObject);
-    removeCadDim3dMeasurementsForOwner(containerObject);
-    containerObject.traverse(obj => {
-        removeMeasurementsForOwner(obj);
-        removeAnnotationsForOwner(obj);
-        removeAnnotations3dForOwner(obj);
-        removeCadDim3dMeasurementsForOwner(obj);
-    });
 
     containerObject.traverse(obj => {
         const mi = meshObjects.indexOf(obj);

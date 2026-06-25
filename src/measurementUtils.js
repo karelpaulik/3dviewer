@@ -332,29 +332,15 @@ export function removeMeasurementsForOwner(root) {
     const owned = new Set();
     root.traverse(obj => owned.add(obj));
 
-    _measurements = _measurements.filter(m => {
-        if (!owned.has(m.ownerObject)) return true;
-        if (m.label && m.label.element) m.label.element.remove();
-        m.line.geometry.dispose(); m.line.material.dispose();
-        m.marker1.geometry.dispose(); m.marker1.material.dispose();
-        m.marker2.geometry.dispose(); m.marker2.material.dispose();
-        if (m.leaderLine) { m.leaderLine.geometry.dispose(); m.leaderLine.material.dispose(); }
-        return false;
-    });
-
-    _angleMeasurements = _angleMeasurements.filter(m => {
-        if (!owned.has(m.ownerObject)) return true;
-        if (m.label && m.label.element) m.label.element.remove();
-        m.line1.geometry.dispose(); m.line1.material.dispose();
-        m.line2.geometry.dispose(); m.line2.material.dispose();
-        m.midLine.geometry.dispose(); m.midLine.material.dispose();
-        for (const mk of m.markers) { mk.geometry.dispose(); mk.material.dispose(); }
-        if (m.leaderLine) { m.leaderLine.geometry.dispose(); m.leaderLine.material.dispose(); }
-        return false;
-    });
-
-    // Also remove CAD dim measurements for this owner
-    removeCadDimMeasurementsForOwner(root);
+    for (const m of _measurements.filter(m => owned.has(m.ownerObject))) {
+        _removeSingleMeasurement(m, 'distance');
+    }
+    for (const m of _angleMeasurements.filter(m => owned.has(m.ownerObject))) {
+        _removeSingleMeasurement(m, 'angle');
+    }
+    for (const m of _cadDimMeasurements.filter(m => owned.has(m.ownerObject))) {
+        _removeSingleMeasurement(m, 'cadDim');
+    }
 
     // Clear selected dim if it was one of the removed ones
     if (_selectedDim && owned.has(_selectedDim.ownerObject)) {
@@ -1264,6 +1250,7 @@ function _removeSingleMeasurement(meas, type) {
     _removeLeaderLine(meas);
     const owner = meas.ownerObject || _scene;
     if (type === 'distance') {
+        if (meas.label && meas.label.element) meas.label.element.remove();
         owner.remove(meas.line);
         owner.remove(meas.label);
         owner.remove(meas.marker1);
@@ -1282,6 +1269,7 @@ function _removeSingleMeasurement(meas, type) {
             if (owner.userData.measurements.length === 0) delete owner.userData.measurements;
         }
     } else if (type === 'angle') {
+        if (meas.label && meas.label.element) meas.label.element.remove();
         owner.remove(meas.line1);
         owner.remove(meas.line2);
         owner.remove(meas.midLine);
@@ -2118,14 +2106,9 @@ export function removeCadDimMeasurementsForOwner(root) {
     if (!root) return;
     const owned = new Set();
     root.traverse(obj => owned.add(obj));
-    _cadDimMeasurements = _cadDimMeasurements.filter(m => {
-        if (!owned.has(m.ownerObject)) return true;
-        if (m.label && m.label.element) m.label.element.remove();
-        for (const obj of [m.markerP1, m.markerP2, m.markerFoot1, m.markerFoot2, m.extLine1, m.extLine2, m.dimLine]) {
-            if (obj) { if (obj.geometry) obj.geometry.dispose(); if (obj.material) obj.material.dispose(); }
-        }
-        return false;
-    });
+    for (const m of _cadDimMeasurements.filter(m => owned.has(m.ownerObject))) {
+        _removeSingleMeasurement(m, 'cadDim');
+    }
 }
 
 function _reconstructCadDim(owner, rec) {
