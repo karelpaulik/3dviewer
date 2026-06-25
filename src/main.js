@@ -647,6 +647,9 @@ const viewProp = {
     snapRotationDeg: 30,   // krok rotace ve stupních
     snapScale: 0.25,       // krok měřítka
     transformMode: 'translate', // transform mode: translate, rotate, scale
+    pStep: 0.1,            // krok sliderů Px/Py/Pz (Location, Sections, context menu)
+    rStep: 30,               // krok sliderů Rx/Ry/Rz (°)
+    sStep: 0.1,              // krok slideru Scale
     wireframe: false,       // Wireframe přepínač
     showAxesHelper: false, // Zobrazit / skrýt axes helper
     axesHelperSize: 100,   // Velikost axes helperu
@@ -681,6 +684,19 @@ const viewProp = {
     navigationKeepOpen: false, // Keep Navigation folder open when selecting another object
 };
 
+const snapTransformInitDefaults = {
+    transformMode: 'translate',
+    snapTranslation: 10,
+    snapRotationDeg: 30,
+    snapScale: 0.25,
+};
+
+const snapSlidersInitDefaults = {
+    pStep: 0.1,
+    rStep: 30,
+    sStep: 0.1,
+};
+
 const toolbarDefaults = {
     toolbarFontSize: 12,    // px – toolbar button font size
     toolbarHeight: 28,      // px – toolbar bar height
@@ -707,13 +723,49 @@ const dracoInitDefaults = { ...dracoDefaults };
 const extent = {
     pn: -1000,
     pp: +1000,
-    pStep: 0.1,
     rn: -180,
     rp: 180,
-    rStep: 30,
     sn: 0,
     sp: 10,
-    sStep: 0.1
+};
+
+const extentSliderControllers = [];
+
+function trackExtentSlider(ctrl, stepKey) {
+    ctrl._extentStepKey = stepKey;
+    extentSliderControllers.push(ctrl);
+    return ctrl;
+}
+
+function applyExtentStepSettings() {
+    for (const ctrl of extentSliderControllers) {
+        if (ctrl._extentStepKey) ctrl.step(viewProp[ctrl._extentStepKey]);
+    }
+    if (viewProp.isGroupTransformActive && selectedObjects.length > 0) {
+        refreshGroupGui();
+    } else if (lastSelectedObject) {
+        refreshSelectedObjGui(lastSelectedObject);
+    }
+}
+
+function copyTransformSnapToExtentSteps() {
+    viewProp.pStep = viewProp.snapTranslation;
+    viewProp.rStep = viewProp.snapRotationDeg;
+    viewProp.sStep = viewProp.snapScale;
+    applyExtentStepSettings();
+}
+
+function resetTransformSnapToDefault() {
+    Object.assign(viewProp, snapTransformInitDefaults);
+    if (transformControls) {
+        transformControls.setMode(viewProp.transformMode);
+        applySnapSettings();
+    }
+}
+
+function resetExtentStepsToDefault() {
+    Object.assign(viewProp, snapSlidersInitDefaults);
+    applyExtentStepSettings();
 }
 
 /** GUI proxy for THREE.Euler – displays/edits rotation in degrees, stores radians. */
@@ -1857,9 +1909,9 @@ function addMainGui() {
             showSectionMeshCtrl = sectionFolder.add(viewProp, 'showSectionMesh').name('Show Section Mesh').onChange(function(value){ toggleSectionMeshAll(); showSectionMeshBtn.classList.toggle('active', value); render(); }).listen();
             sectionFolder.add(viewProp, 'sectionGizmo').name('Gizmo').onChange(function(value){ activateSectionGizmo(value); }).listen();
             sectionFolder.add(viewProp, 'sectionSnapTranslation', 0.1, 100, 0.1).name('Snap translation').onChange(function(value){ sectionTransformControls.setTranslationSnap(value); }).listen();
-            sectionFolder.add(viewProp, 'px', extent.pn, extent.pp, extent.pStep).name('Pos. x').onChange(function(value){clipPlanes[0].constant=value; syncSectionGizmoPosition(); if(viewProp.sectionCrossLines) updateSectionCrossLines(); if(viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render); render(); }).listen();
-            sectionFolder.add(viewProp, 'py', extent.pn, extent.pp, extent.pStep).name('Pos. y').onChange(function(value){clipPlanes[1].constant=value; syncSectionGizmoPosition(); if(viewProp.sectionCrossLines) updateSectionCrossLines(); if(viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render); render(); }).listen();
-            sectionFolder.add(viewProp, 'pz', extent.pn, extent.pp, extent.pStep).name('Pos. z').onChange(function(value){clipPlanes[2].constant=value; syncSectionGizmoPosition(); if(viewProp.sectionCrossLines) updateSectionCrossLines(); if(viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render); render(); }).listen();
+            trackExtentSlider(sectionFolder.add(viewProp, 'px', extent.pn, extent.pp, viewProp.pStep).name('Pos. x').onChange(function(value){clipPlanes[0].constant=value; syncSectionGizmoPosition(); if(viewProp.sectionCrossLines) updateSectionCrossLines(); if(viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render); render(); }).listen(), 'pStep');
+            trackExtentSlider(sectionFolder.add(viewProp, 'py', extent.pn, extent.pp, viewProp.pStep).name('Pos. y').onChange(function(value){clipPlanes[1].constant=value; syncSectionGizmoPosition(); if(viewProp.sectionCrossLines) updateSectionCrossLines(); if(viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render); render(); }).listen(), 'pStep');
+            trackExtentSlider(sectionFolder.add(viewProp, 'pz', extent.pn, extent.pp, viewProp.pStep).name('Pos. z').onChange(function(value){clipPlanes[2].constant=value; syncSectionGizmoPosition(); if(viewProp.sectionCrossLines) updateSectionCrossLines(); if(viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render); render(); }).listen(), 'pStep');
             sectionFolder.add({ fn: resetSection }, 'fn').name('Reset section');
 
             const crossSectionFolder = sectionFolder.addFolder("Cross Section Lines");
@@ -1867,7 +1919,7 @@ function addMainGui() {
             crossSectionFolder.add(viewProp, 'crossSectionOnHidden').name('Apply to hidden').onChange(function(value){ if(viewProp.showCrossSection) { updateCrossSectionLines(); render(); } }).listen();
             crossSectionFolder.add(viewProp, 'autoUpdateSectionLines').name('Update Section Lines');
             crossSectionFolder.add(viewProp, 'crossSectionPlane', ['XY', 'XZ', 'YZ']).name('Plane').onChange(function(value){if(viewProp.showCrossSection){updateCrossSectionLines(); render();}});
-            crossSectionFolder.add(viewProp, 'crossSectionPos', extent.pn, extent.pp, extent.pStep).name('Position').onChange(function(value){if(viewProp.showCrossSection){updateCrossSectionLines(); render();}}).listen();
+            trackExtentSlider(crossSectionFolder.add(viewProp, 'crossSectionPos', extent.pn, extent.pp, viewProp.pStep).name('Position').onChange(function(value){if(viewProp.showCrossSection){updateCrossSectionLines(); render();}}).listen(), 'pStep');
             crossSectionFolder.addColor(viewProp, 'crossSectionColor').name('Color').onChange(function(value){if(crossSectionLines){crossSectionLines.material.color.set(value); render();}});
             crossSectionFolder.close();
             
@@ -2395,10 +2447,20 @@ function addMainGui() {
             rotationFolder.add({ fn: bakeWholeModelRotation }, 'fn').name('Bake rotation');
             rotationFolder.close();
         const snapFolder = editGui.addFolder("Snap");
-            snapFolder.add(viewProp, 'transformMode', ['translate', 'rotate', 'scale']).name('Mode').onChange(function(value) { transformControls.setMode(value); }).listen();
-            snapFolder.add(viewProp, 'snapTranslation', 1, 1000, 1).name('Translation').onChange(function() { applySnapSettings(); }).listen();
-            snapFolder.add(viewProp, 'snapRotationDeg', 1, 90, 1).name('Rotation (°)').onChange(function() { applySnapSettings(); }).listen();
-            snapFolder.add(viewProp, 'snapScale', 0.01, 2, 0.01).name('Scale').onChange(function() { applySnapSettings(); }).listen();
+            const snapTransformFolder = snapFolder.addFolder("Transform control");
+            snapTransformFolder.add(viewProp, 'transformMode', ['translate', 'rotate', 'scale']).name('Mode').onChange(function(value) { transformControls.setMode(value); }).listen();
+            snapTransformFolder.add(viewProp, 'snapTranslation', 1, 1000, 1).name('Translation').onChange(function() { applySnapSettings(); }).listen();
+            snapTransformFolder.add(viewProp, 'snapRotationDeg', 1, 90, 1).name('Rotation (°)').onChange(function() { applySnapSettings(); }).listen();
+            snapTransformFolder.add(viewProp, 'snapScale', 0.01, 2, 0.01).name('Scale').onChange(function() { applySnapSettings(); }).listen();
+            snapTransformFolder.add({ fn: resetTransformSnapToDefault }, 'fn').name('Set to default');
+            snapTransformFolder.close();
+            const snapSlidersFolder = snapFolder.addFolder("Location sliders, Sections");
+            snapSlidersFolder.add(viewProp, 'pStep', 0.001, 1000, 0.001).name('Translation').onChange(function() { applyExtentStepSettings(); }).listen();
+            snapSlidersFolder.add(viewProp, 'rStep', 0.1, 90, 0.1).name('Rotation (°)').onChange(function() { applyExtentStepSettings(); }).listen();
+            snapSlidersFolder.add(viewProp, 'sStep', 0.001, 10, 0.001).name('Scale').onChange(function() { applyExtentStepSettings(); }).listen();
+            snapSlidersFolder.add({ fn: copyTransformSnapToExtentSteps }, 'fn').name('Copy from Transform control');
+            snapSlidersFolder.add({ fn: resetExtentStepsToDefault }, 'fn').name('Set to default');
+            snapSlidersFolder.close();
             snapFolder.close();
     registerGuiPanel('Edit', editGui);
 }
@@ -2642,38 +2704,38 @@ function refreshSelectedObjGui(obj) {
             savePreviousTransformState();
         }
 
-        folder2.add(obj.position, 'x', extent.pn, extent.pp, extent.pStep)
+        folder2.add(obj.position, 'x', extent.pn, extent.pp, viewProp.pStep)
             .name('Px')
             .onChange(function(value){obj.position.x=value; render(); })
             .onFinishChange(_onGuiLocationFinish)
             .listen();
-        folder2.add(obj.position, 'y', extent.pn, extent.pp, extent.pStep)
+        folder2.add(obj.position, 'y', extent.pn, extent.pp, viewProp.pStep)
             .name('Py')
             .onChange(function(value){obj.position.y=value; render(); })
             .onFinishChange(_onGuiLocationFinish)
             .listen();
-        folder2.add(obj.position, 'z', extent.pn, extent.pp, extent.pStep)
+        folder2.add(obj.position, 'z', extent.pn, extent.pp, viewProp.pStep)
             .name('Pz')
             .onChange(function(value){obj.position.z=value; render(); })
             .onFinishChange(_onGuiLocationFinish)
             .listen();
         const rotDeg = makeEulerDegProxy(obj.rotation);
-        folder2.add(rotDeg, 'x', extent.rn, extent.rp, extent.rStep)
+        folder2.add(rotDeg, 'x', extent.rn, extent.rp, viewProp.rStep)
             .name('Rx')
             .onChange(function(){ if (!viewProp.transformSpace) syncTransformPivotOrientation(); render(); })
             .onFinishChange(_onGuiLocationFinish)
             .listen();
-        folder2.add(rotDeg, 'y', extent.rn, extent.rp, extent.rStep)
+        folder2.add(rotDeg, 'y', extent.rn, extent.rp, viewProp.rStep)
             .name('Ry')
             .onChange(function(){ if (!viewProp.transformSpace) syncTransformPivotOrientation(); render(); })
             .onFinishChange(_onGuiLocationFinish)
             .listen();
-        folder2.add(rotDeg, 'z', extent.rn, extent.rp, extent.rStep)
+        folder2.add(rotDeg, 'z', extent.rn, extent.rp, viewProp.rStep)
             .name('Rz')
             .onChange(function(){ if (!viewProp.transformSpace) syncTransformPivotOrientation(); render(); })
             .onFinishChange(_onGuiLocationFinish)
             .listen();
-        folder2.add(obj.scale, 'x', extent.sn, extent.sp, extent.sStep)
+        folder2.add(obj.scale, 'x', extent.sn, extent.sp, viewProp.sStep)
             .name('Scale')
             .onChange(function(value){obj.scale.x=value; obj.scale.y=value; obj.scale.z=value; render(); })
             .onFinishChange(_onGuiLocationFinish)
@@ -2837,20 +2899,20 @@ function refreshGroupGui() {
             savePreviousTransformState();
         }
 
-        folder2.add(pivotObject.position, 'x', extent.pn, extent.pp, extent.pStep)
+        folder2.add(pivotObject.position, 'x', extent.pn, extent.pp, viewProp.pStep)
             .name('Px').onChange(() => render()).onFinishChange(_onGroupGuiLocationFinish).listen();
-        folder2.add(pivotObject.position, 'y', extent.pn, extent.pp, extent.pStep)
+        folder2.add(pivotObject.position, 'y', extent.pn, extent.pp, viewProp.pStep)
             .name('Py').onChange(() => render()).onFinishChange(_onGroupGuiLocationFinish).listen();
-        folder2.add(pivotObject.position, 'z', extent.pn, extent.pp, extent.pStep)
+        folder2.add(pivotObject.position, 'z', extent.pn, extent.pp, viewProp.pStep)
             .name('Pz').onChange(() => render()).onFinishChange(_onGroupGuiLocationFinish).listen();
         const pivotRotDeg = makeEulerDegProxy(pivotObject.rotation);
-        folder2.add(pivotRotDeg, 'x', extent.rn, extent.rp, extent.rStep)
+        folder2.add(pivotRotDeg, 'x', extent.rn, extent.rp, viewProp.rStep)
             .name('Rx').onChange(() => render()).onFinishChange(_onGroupGuiLocationFinish).listen();
-        folder2.add(pivotRotDeg, 'y', extent.rn, extent.rp, extent.rStep)
+        folder2.add(pivotRotDeg, 'y', extent.rn, extent.rp, viewProp.rStep)
             .name('Ry').onChange(() => render()).onFinishChange(_onGroupGuiLocationFinish).listen();
-        folder2.add(pivotRotDeg, 'z', extent.rn, extent.rp, extent.rStep)
+        folder2.add(pivotRotDeg, 'z', extent.rn, extent.rp, viewProp.rStep)
             .name('Rz').onChange(() => render()).onFinishChange(_onGroupGuiLocationFinish).listen();
-        folder2.add(pivotObject.scale, 'x', extent.sn, extent.sp, extent.sStep)
+        folder2.add(pivotObject.scale, 'x', extent.sn, extent.sp, viewProp.sStep)
             .name('Scale').onChange(function(value) { pivotObject.scale.set(value, value, value); render(); })
             .onFinishChange(_onGroupGuiLocationFinish).listen();
         if (viewProp.locationKeepOpen) folder2.open();
@@ -10338,13 +10400,13 @@ function assemblyMoveStepDown() {
         subLoc.appendChild(separator());
 
         const inputDefs = [
-            { id: 'ctx-px', label: 'Px',    step: extent.pStep, get: () => lastSelectedObject?.position.x,  set: v => { if (lastSelectedObject) { lastSelectedObject.position.x = v; render(); } } },
-            { id: 'ctx-py', label: 'Py',    step: extent.pStep, get: () => lastSelectedObject?.position.y,  set: v => { if (lastSelectedObject) { lastSelectedObject.position.y = v; render(); } } },
-            { id: 'ctx-pz', label: 'Pz',    step: extent.pStep, get: () => lastSelectedObject?.position.z,  set: v => { if (lastSelectedObject) { lastSelectedObject.position.z = v; render(); } } },
-            { id: 'ctx-rx', label: 'Rx',    step: extent.rStep, get: () => lastSelectedObject ? THREE.MathUtils.radToDeg(lastSelectedObject.rotation.x) : undefined, set: v => { if (lastSelectedObject) { lastSelectedObject.rotation.x = THREE.MathUtils.degToRad(v); render(); } } },
-            { id: 'ctx-ry', label: 'Ry',    step: extent.rStep, get: () => lastSelectedObject ? THREE.MathUtils.radToDeg(lastSelectedObject.rotation.y) : undefined, set: v => { if (lastSelectedObject) { lastSelectedObject.rotation.y = THREE.MathUtils.degToRad(v); render(); } } },
-            { id: 'ctx-rz', label: 'Rz',    step: extent.rStep, get: () => lastSelectedObject ? THREE.MathUtils.radToDeg(lastSelectedObject.rotation.z) : undefined, set: v => { if (lastSelectedObject) { lastSelectedObject.rotation.z = THREE.MathUtils.degToRad(v); render(); } } },
-            { id: 'ctx-sc', label: 'Scale', step: extent.sStep, get: () => lastSelectedObject?.scale.x,     set: v => { if (lastSelectedObject) { lastSelectedObject.scale.set(v, v, v); render(); } } },
+            { id: 'ctx-px', label: 'Px',    stepKey: 'pStep', get: () => lastSelectedObject?.position.x,  set: v => { if (lastSelectedObject) { lastSelectedObject.position.x = v; render(); } } },
+            { id: 'ctx-py', label: 'Py',    stepKey: 'pStep', get: () => lastSelectedObject?.position.y,  set: v => { if (lastSelectedObject) { lastSelectedObject.position.y = v; render(); } } },
+            { id: 'ctx-pz', label: 'Pz',    stepKey: 'pStep', get: () => lastSelectedObject?.position.z,  set: v => { if (lastSelectedObject) { lastSelectedObject.position.z = v; render(); } } },
+            { id: 'ctx-rx', label: 'Rx',    stepKey: 'rStep', get: () => lastSelectedObject ? THREE.MathUtils.radToDeg(lastSelectedObject.rotation.x) : undefined, set: v => { if (lastSelectedObject) { lastSelectedObject.rotation.x = THREE.MathUtils.degToRad(v); render(); } } },
+            { id: 'ctx-ry', label: 'Ry',    stepKey: 'rStep', get: () => lastSelectedObject ? THREE.MathUtils.radToDeg(lastSelectedObject.rotation.y) : undefined, set: v => { if (lastSelectedObject) { lastSelectedObject.rotation.y = THREE.MathUtils.degToRad(v); render(); } } },
+            { id: 'ctx-rz', label: 'Rz',    stepKey: 'rStep', get: () => lastSelectedObject ? THREE.MathUtils.radToDeg(lastSelectedObject.rotation.z) : undefined, set: v => { if (lastSelectedObject) { lastSelectedObject.rotation.z = THREE.MathUtils.degToRad(v); render(); } } },
+            { id: 'ctx-sc', label: 'Scale', stepKey: 'sStep', get: () => lastSelectedObject?.scale.x,     set: v => { if (lastSelectedObject) { lastSelectedObject.scale.set(v, v, v); render(); } } },
         ];
 
         inputDefs.forEach(def => {
@@ -10355,7 +10417,8 @@ function assemblyMoveStepDown() {
             const inp = document.createElement('input');
             inp.type = 'number';
             inp.id = def.id;
-            inp.step = def.step;
+            inp.step = viewProp[def.stepKey];
+            inp.dataset.stepKey = def.stepKey;
             inp.addEventListener('click', e => e.stopPropagation());
             inp.addEventListener('change', e => def.set(parseFloat(e.target.value)));
             row.appendChild(lbl);
@@ -10696,7 +10759,10 @@ function assemblyMoveStepDown() {
         };
         for (const [id, val] of Object.entries(map)) {
             const el = document.getElementById(id);
-            if (el) el.value = parseFloat(val.toFixed(4));
+            if (el) {
+                el.value = parseFloat(val.toFixed(4));
+                if (el.dataset.stepKey) el.step = viewProp[el.dataset.stepKey];
+            }
         }
     }
 
