@@ -2382,7 +2382,7 @@ function addMainGui() {
         const typeCounts = new Map();
         loadedModels.forEach(root => {
             root.traverse(child => {
-                if (!child.isMesh) return;
+                if (!child.isMesh || child.isSectionMesh) return;
                 const mats = Array.isArray(child.material) ? child.material : [child.material];
                 mats.forEach(mat => {
                     const type = mat.type || 'Unknown';
@@ -2394,7 +2394,7 @@ function addMainGui() {
         const lines = [...typeCounts.entries()]
             .sort((a, b) => b[1] - a[1])
             .map(([type, count]) => `  ${type}: ${count}x`);
-        alert(`Nalezené typy materiálů (${[...typeCounts.values()].reduce((a, b) => a + b, 0)} celkem):\n\n${lines.join('\n')}`);
+        alert(`Nalezené typy materiálů (${[...typeCounts.values()].reduce((a, b) => a + b, 0)} celkem, bez section overlay):\n\n${lines.join('\n')}`);
     } }, 'fn').name('List All Material Types');
     materialFolder.add({ fn() {
         if (loadedModels.length === 0) { alert('Žádné načtené modely.'); return; }
@@ -3884,7 +3884,8 @@ function createSectionMesh(mesh) {
     
     // Označení, že jde o sectionMesh
     sectionMesh.isSectionMesh = true;
-            
+    sectionMesh.name = (mesh.name || 'mesh') + '__section';
+
     mesh.add(sectionMesh);			
 }
 
@@ -7710,12 +7711,31 @@ function convertToStandardMaterial(mat) {
     return std;
 }
 
+function resolveSplitPartMaterial(origMaterial, materialIndex = 0) {
+    let src;
+    if (Array.isArray(origMaterial)) {
+        src = origMaterial[materialIndex] ?? origMaterial[0];
+    } else {
+        src = origMaterial;
+    }
+    if (!src) {
+        src = new THREE.MeshStandardMaterial({ color: 0x888888 });
+    } else {
+        src = src.clone();
+    }
+    if (src.isMeshBasicMaterial || src.isMeshPhongMaterial || src.isMeshLambertMaterial) {
+        src = convertToStandardMaterial(src);
+    }
+    applyMeshMaterialDefaults(src, clipPlanes);
+    return src;
+}
+
 function countLegacyMaterials(objects, typeFilter = ['basic', 'phong', 'lambert']) {
     let count = 0;
     const affected = [];
     objects.forEach(root => {
         root.traverse(child => {
-            if (!child.isMesh) return;
+            if (!child.isMesh || child.isSectionMesh) return;
             const mats = Array.isArray(child.material) ? child.material : [child.material];
             const indices = [];
             mats.forEach((mat, i) => {
@@ -8925,6 +8945,7 @@ function separateMesh(meshToSeparate, { geometries } = {}) {
     const worldMatrix = meshToSeparate.matrixWorld.clone();
     const origName = meshToSeparate.name || 'sep';
     const origMaterial = meshToSeparate.material;
+    const sourceGroups = meshToSeparate.geometry.groups || [];
     const origParent = meshToSeparate.parent;
     const siblingIndex = origParent
         ? origParent.children.indexOf(meshToSeparate)
@@ -8977,7 +8998,8 @@ function separateMesh(meshToSeparate, { geometries } = {}) {
 
     // Nové díly jako potomci skupiny — v lokálních souřadnicích skupiny (origin = 0)
     parts.forEach((geom, i) => {
-        const mat = Array.isArray(origMaterial) ? origMaterial[i] : origMaterial.clone();
+        const matIdx = sourceGroups[i]?.materialIndex ?? 0;
+        const mat = resolveSplitPartMaterial(origMaterial, matIdx);
         const newMesh = new THREE.Mesh(geom, mat);
         newMesh.name = `Part_${i}_${origName}`;
         newMesh.userData.initPosition = new THREE.Vector3(0, 0, 0);
@@ -8993,6 +9015,14 @@ function separateMesh(meshToSeparate, { geometries } = {}) {
 
     rebuildTree(loadedModels, true);
     if (_assemblyFolderRef) updateAssemblyGuiInfo();
+    if (viewProp.showSectionMesh) {
+        group.traverse(child => {
+            if (child.isMesh && !child.isSectionMesh) createSectionMesh(child);
+        });
+    }
+    if (viewProp.solidSection) {
+        computeSolidSection(scene, meshObjects, viewProp, render);
+    }
     selectObject(group, { outlinerScroll: false });
     render();
 }
