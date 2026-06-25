@@ -13,7 +13,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { STLExporter } from 'three/addons/exporters/STLExporter.js';
-import { CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 import { CSS3DRenderer } from 'three/addons/renderers/CSS3DRenderer.js';
 import { ViewHelper } from 'three/addons/helpers/ViewHelper.js';
 
@@ -105,6 +105,12 @@ let sectionGizmoHelper = null;       // Invisible helper object whose position d
 
 let cameraPersp, cameraOrtho, currentCamera;
 let transformControls, orbitControls;
+let transformSpaceGizmoAnchor = null;
+let transformSpaceGizmoLabel = null;
+let transformSpaceGizmoBtnEl = null;
+const _tsgCamRight = new THREE.Vector3();
+const _tsgCamUp = new THREE.Vector3();
+const _tsgCamPos = new THREE.Vector3();
 const meshObjects = [];
 const hiddenObjects = [];
 let temporarilyShownObjects = [];
@@ -1196,6 +1202,7 @@ function init() {
     transformControls.setSpace( 'world' ); // Default: world space (intuitivnější pro uživatele)
     applySnapSettings(); // Aplikujeme snap nastavení při inicializaci
     scene.add( transformControls.getHelper() );	//Nutno v novém three.js. Dříve bylo: scene.add( transformControls );
+    initTransformSpaceGizmo();
     transformControls.addEventListener( 'change', function() {
         // World-space manual snap: built-in setTranslationSnap works only in 'local' space.
         // In 'world' space we must snap the world-space coordinates and convert back to local.
@@ -1262,6 +1269,7 @@ function init() {
                 const hasName = dragObj && dragObj.name && dragObj.name.trim() !== '';
                 if (!hasName) {
                     transformControls.detach();
+                    hideTransformSpaceGizmo();
                     orbitControls.enabled = false;
                     console.warn('Assembly edit mode: cannot transform an unnamed object.');
                     alert('Object without name can not be transformed.');
@@ -1453,9 +1461,7 @@ function init() {
                 break;
             case 'q':
             case 'Q':
-                transformControls.setSpace( transformControls.space === 'local' ? 'world' : 'local' );
-                viewProp.transformSpace = transformControls.space === 'world';
-                if (transformControls.space === 'local') syncTransformPivotOrientation();
+                toggleTransformSpace();
                 break;
 
 
@@ -2164,8 +2170,7 @@ function addMainGui() {
         clearAnnotations3d(render);
     } }, 'fn').name('Clear annotations');
     editGui.add(viewProp, 'transformSpace').name('Transform: World space').onChange(function(value) {
-        transformControls.setSpace( value ? 'world' : 'local' );
-        if (!value) syncTransformPivotOrientation();
+        setTransformSpace(value);
     }).listen();
     const meshOpsFolder = editGui.addFolder('Mesh operations');
     meshOpsFolder.add({ fn() {
@@ -3645,6 +3650,97 @@ function syncGroupPivotOrientation() {
     });
 }
 
+function isTransformGizmoActive() {
+    if (!transformControls) return false;
+    const helper = transformControls.getHelper();
+    return !!transformControls.object
+        && transformControls.enabled
+        && helper.visible
+        && (!!lastSelectedObject || viewProp.isGroupTransformActive);
+}
+
+function updateTransformSpaceGizmoLabel() {
+    if (!transformSpaceGizmoBtnEl) return;
+    const isWorld = viewProp.transformSpace;
+    transformSpaceGizmoBtnEl.textContent = isWorld ? 'WCS' : 'LCS';
+    transformSpaceGizmoBtnEl.title = isWorld ? 'World coordinate system (Q)' : 'Local coordinate system (Q)';
+    transformSpaceGizmoBtnEl.classList.toggle('is-world', isWorld);
+    transformSpaceGizmoBtnEl.classList.toggle('is-local', !isWorld);
+}
+
+function setTransformSpace(isWorld, triggerRender = true) {
+    if (!transformControls) return;
+    transformControls.setSpace(isWorld ? 'world' : 'local');
+    viewProp.transformSpace = isWorld;
+    if (!isWorld) syncTransformPivotOrientation();
+    updateTransformSpaceGizmoLabel();
+    if (triggerRender) render();
+}
+
+function toggleTransformSpace() {
+    setTransformSpace(!viewProp.transformSpace);
+}
+
+function initTransformSpaceGizmo() {
+    transformSpaceGizmoAnchor = new THREE.Object3D();
+    transformSpaceGizmoAnchor.name = '__transformSpaceGizmoAnchor__';
+    transformSpaceGizmoAnchor.visible = false;
+    scene.add(transformSpaceGizmoAnchor);
+
+    const div = document.createElement('div');
+    div.className = 'transform-space-gizmo-btn';
+    div.style.display = 'none';
+    transformSpaceGizmoBtnEl = div;
+    div.addEventListener('mousedown', (e) => { e.stopPropagation(); });
+    div.addEventListener('click', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        toggleTransformSpace();
+    });
+
+    const label = new CSS2DObject(div);
+    label.visible = false;
+    label.userData._isTransformSpaceGizmo = true;
+    transformSpaceGizmoLabel = label;
+    transformSpaceGizmoAnchor.add(label);
+    updateTransformSpaceGizmoLabel();
+}
+
+function hideTransformSpaceGizmo() {
+    if (transformSpaceGizmoAnchor) transformSpaceGizmoAnchor.visible = false;
+    if (transformSpaceGizmoLabel) transformSpaceGizmoLabel.visible = false;
+    if (transformSpaceGizmoBtnEl) transformSpaceGizmoBtnEl.style.display = 'none';
+}
+
+function updateTransformSpaceGizmo() {
+    if (!transformSpaceGizmoAnchor || !transformControls) return;
+    const show = isTransformGizmoActive();
+    transformSpaceGizmoAnchor.visible = show;
+    if (transformSpaceGizmoLabel) transformSpaceGizmoLabel.visible = show;
+    if (transformSpaceGizmoBtnEl) transformSpaceGizmoBtnEl.style.display = show ? '' : 'none';
+    if (!show) return;
+
+    transformControls.getHelper().updateMatrixWorld(true);
+    const wp = transformControls.worldPosition;
+
+    let factor;
+    if (currentCamera.isOrthographicCamera) {
+        factor = (currentCamera.top - currentCamera.bottom) / currentCamera.zoom;
+    } else {
+        currentCamera.getWorldPosition(_tsgCamPos);
+        factor = wp.distanceTo(_tsgCamPos) * Math.min(1.9 * Math.tan(Math.PI * currentCamera.fov / 360) / currentCamera.zoom, 7);
+    }
+    factor *= transformControls.size / 4;
+
+    const e = currentCamera.matrixWorld.elements;
+    _tsgCamRight.set(e[0], e[1], e[2]);
+    _tsgCamUp.set(e[4], e[5], e[6]);
+
+    transformSpaceGizmoAnchor.position.copy(wp);
+    transformSpaceGizmoAnchor.position.addScaledVector(_tsgCamUp, factor * 0.45);
+    transformSpaceGizmoAnchor.position.addScaledVector(_tsgCamRight, factor * 0.35);
+}
+
 function syncTransformPivotOrientation() {
     if (viewProp.isGroupTransformActive) syncGroupPivotOrientation();
     else syncSingleSelectPivotOrientation();
@@ -4320,6 +4416,7 @@ function toggleObjectInMultiSelect(obj) {
         if (selectedObjects.length === 0) {
             // Poslední objekt odebrán – zničit pivot a group GUI
             if (transformControls.object === pivotObject) transformControls.detach();
+            hideTransformSpaceGizmo();
             if (pivotObject) { scene.remove(pivotObject); pivotObject = null; }
             viewProp.isGroupTransformActive = false;
             clearGroupHighlights();
@@ -4425,6 +4522,7 @@ function deactivateMultiSelect() {
     clearGroupHighlights();
 
     if (transformControls.object === pivotObject) transformControls.detach();
+    hideTransformSpaceGizmo();
 
     // Zrušíme group GUI
     if (selectedFolder) {
@@ -5828,6 +5926,7 @@ function deselectObject() {
     if (transformControls.object) {
         transformControls.detach();
     }
+    hideTransformSpaceGizmo();
     // Zničíme pivot pro single-select (objekt zůstal u původního rodiče po celou dobu)
     if (singleSelectPivot) {
         scene.remove(singleSelectPivot);
@@ -6198,6 +6297,7 @@ function render() {
         viewHelper.render(renderer);
         renderer.autoClear = true;
     }
+    updateTransformSpaceGizmo();
     if (css2DRenderer) css2DRenderer.render(scene, currentCamera);
     if (css3DRenderer) css3DRenderer.render(scene, currentCamera);
 }
