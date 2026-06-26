@@ -690,6 +690,8 @@ const viewProp = {
     splitLoosePartsToleranceManual: 1e-4, // Manual: absolute weld tolerance in model units
     locationKeepOpen: false, // Keep Location folder open when selecting another object
     navigationKeepOpen: false, // Keep Navigation folder open when selecting another object
+    materialKeepOpen: false, // Keep Material folder open when selecting another object
+    materialAllKeepOpen: false, // Keep ALL Material folder open when selecting another object
 };
 
 const snapTransformInitDefaults = {
@@ -2518,8 +2520,34 @@ function updateBBoxSize(obj) {
     part.bbSize = size.x.toFixed(2) + ' × ' + size.y.toFixed(2) + ' × ' + size.z.toFixed(2);
 }
 
+let _savedSelectedGuiScrollTop = 0;
+
+function selectedGuiScrollElement() {
+    return selectedFolder?.$children
+        || selectedFolder?.domElement?.querySelector(':scope > .lil-children')
+        || null;
+}
+
+function saveSelectedGuiScrollForMaterialKeepOpen() {
+    const el = selectedGuiScrollElement();
+    if ((viewProp.materialKeepOpen || viewProp.materialAllKeepOpen) && el) {
+        _savedSelectedGuiScrollTop = el.scrollTop;
+    }
+}
+
+function restoreSelectedGuiScrollForMaterialKeepOpen() {
+    if (!viewProp.materialKeepOpen && !viewProp.materialAllKeepOpen) return;
+    requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+            const el = selectedGuiScrollElement();
+            if (el) el.scrollTop = _savedSelectedGuiScrollTop;
+        });
+    });
+}
+
 function refreshSelectedObjGui(obj) {
     if (selectedFolder) {
+        saveSelectedGuiScrollForMaterialKeepOpen();
         selectedFolder.destroy();
         selectedFolder = null;
     }
@@ -2768,7 +2796,18 @@ function refreshSelectedObjGui(obj) {
         if (viewProp.navigationKeepOpen) navFolder.open();
         else navFolder.close();
 
+    if (obj.isMesh && obj.material) {
+        if (viewProp.materialKeepOpen) {
+            buildMaterialFolder(obj, selectedFolder);
+        }
+        if (viewProp.materialAllKeepOpen) {
+            buildMaterialFolderAll(obj, selectedFolder);
+        }
+    }
+
     selectedFolder.open();
+
+    restoreSelectedGuiScrollForMaterialKeepOpen();
 }
 
 // GUI panel for an active group selection (multi-select pivot).
@@ -2947,6 +2986,10 @@ function buildMaterialFolder(meshObj, parentFolder) {
     materials.forEach((mat, idx) => {
         const label = materials.length > 1 ? `Material [${idx}]: ${mat.type}` : `Material: ${mat.type}`;
         const mf = parentFolder.addFolder(label);
+
+        if (idx === 0) {
+            mf.add(viewProp, 'materialKeepOpen').name('Keep open');
+        }
 
         const typeProxy = { type: mat.type };
         mf.add(typeProxy, 'type', getMaterialTypeOptions())
@@ -3147,6 +3190,10 @@ function buildMaterialFolderAll(meshObj, parentFolder) {
     materials.forEach((mat, idx) => {
         const label = materials.length > 1 ? `ALL [${idx}]: ${mat.type}` : `ALL: ${mat.type}`;
         const mf = parentFolder.addFolder(label);
+
+        if (idx === 0) {
+            mf.add(viewProp, 'materialAllKeepOpen').name('Keep open');
+        }
 
         // Collect all own + prototype properties (getters)
         const allKeys = new Set();
@@ -6039,6 +6086,7 @@ function deselectObject() {
     }                
     // Zničíme složku v lil-gui, pokud existuje
     if (selectedFolder) {
+        saveSelectedGuiScrollForMaterialKeepOpen();
         selectedFolder.destroy();
         selectedFolder = null;
         guiPanels['Selected'].gui = null;
