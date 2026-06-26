@@ -89,6 +89,16 @@ import {
     INTERSECTION
 } from './booleanUtils.js';
 import {
+    DEVIATION_DEFAULTS,
+    computeDeviationMap,
+    applyDeviationColors,
+    clearDeviationMap,
+    recolorDeviationMap,
+    applyReferenceVisualization,
+    clearReferenceVisualization,
+    buildDeviationLegendHtml,
+} from './deviationMapUtils.js';
+import {
     collectBoxSelectCandidates,
     findObjectsInScreenRect,
     clientDragToScreenRect,
@@ -400,7 +410,7 @@ document.body.appendChild(statusCircleDetectEl);
 
 // Wrapper reference for hit-testing (toolbar + panels + outliner)
 let outlinerPanelEl = null;
-const guiWrapper = { contains(el) { return guiToolbar.contains(el) || Object.values(guiPanels).some(p => p.gui && p.gui.domElement.style.display !== 'none' && p.gui.domElement.contains(el)) || (outlinerPanelEl && outlinerPanelEl.contains(el)) || statusBar.contains(el) || statusCircleDetectEl.contains(el) || fsBtn.contains(el) || sectionBtn.contains(el) || solidSectionBtn.contains(el) || showSectionMeshBtn.contains(el) || crossSectionLinesBtn.contains(el); } }; // Add crossSectionLinesBtn here
+const guiWrapper = { contains(el) { return guiToolbar.contains(el) || Object.values(guiPanels).some(p => p.gui && p.gui.domElement.style.display !== 'none' && p.gui.domElement.contains(el)) || (outlinerPanelEl && outlinerPanelEl.contains(el)) || statusBar.contains(el) || statusCircleDetectEl.contains(el) || fsBtn.contains(el) || sectionBtn.contains(el) || solidSectionBtn.contains(el) || showSectionMeshBtn.contains(el) || crossSectionLinesBtn.contains(el) || (_deviationLegendEl && _deviationLegendEl.contains(el)); } };
 
 let guiView = null;
 let guiAssembly = null;
@@ -542,6 +552,136 @@ function _updateBooleanHintUI() {
     }
 }
 
+function _updateDeviationHintUI() {
+    if (!_deviationHintDiv) return;
+    if (deviationMapMode) {
+        const stepText = deviationStep === 0
+            ? 'Deviation map: click scan object (A)'
+            : 'Deviation map: click reference object (B)';
+        _deviationHintDiv.innerHTML = `${stepText} &nbsp;·&nbsp; <button type="button" data-deviation-cancel style="margin-left:6px;padding:2px 10px;border:1px solid rgba(255,255,255,0.7);border-radius:4px;background:rgba(255,255,255,0.15);color:#fff;font-size:12px;cursor:pointer;">Cancel</button>`;
+        _deviationHintDiv.style.display = 'block';
+    } else {
+        _deviationHintDiv.style.display = 'none';
+    }
+}
+
+function _clampDeviationLegendPosition(left, top) {
+    if (!_deviationLegendEl) return { left, top };
+    const w = _deviationLegendEl.offsetWidth || 240;
+    const h = _deviationLegendEl.offsetHeight || 120;
+    const margin = 8;
+    return {
+        left: Math.max(margin, Math.min(left, window.innerWidth - w - margin)),
+        top: Math.max(margin, Math.min(top, window.innerHeight - h - margin)),
+    };
+}
+
+function _applyDeviationLegendPosition(left, top) {
+    if (!_deviationLegendEl) return;
+    const clamped = _clampDeviationLegendPosition(left, top);
+    _deviationLegendEl.style.left = `${clamped.left}px`;
+    _deviationLegendEl.style.top = `${clamped.top}px`;
+    _deviationLegendEl.style.right = 'auto';
+    _deviationLegendEl.style.bottom = 'auto';
+}
+
+function _loadDeviationLegendPosition() {
+    try {
+        const raw = localStorage.getItem(DEVIATION_LEGEND_POS_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (Number.isFinite(parsed.left) && Number.isFinite(parsed.top)) {
+            return { left: parsed.left, top: parsed.top };
+        }
+    } catch (_) { /* ignore */ }
+    return null;
+}
+
+function _saveDeviationLegendPosition() {
+    if (!_deviationLegendEl) return;
+    const left = parseFloat(_deviationLegendEl.style.left);
+    const top = parseFloat(_deviationLegendEl.style.top);
+    if (Number.isFinite(left) && Number.isFinite(top)) {
+        localStorage.setItem(DEVIATION_LEGEND_POS_KEY, JSON.stringify({ left, top }));
+    }
+}
+
+function _ensureDeviationLegendPosition() {
+    if (!_deviationLegendEl || _deviationLegendPositionReady) return;
+    const saved = _loadDeviationLegendPosition();
+    if (saved) {
+        _applyDeviationLegendPosition(saved.left, saved.top);
+    } else {
+        _applyDeviationLegendPosition(window.innerWidth - 256, 80);
+    }
+    _deviationLegendPositionReady = true;
+}
+
+function _initDeviationLegendDrag() {
+    if (!_deviationLegendHeaderEl || !_deviationLegendEl) return;
+
+    let dragging = false;
+    let startX = 0;
+    let startY = 0;
+    let startLeft = 0;
+    let startTop = 0;
+
+    _deviationLegendHeaderEl.addEventListener('mousedown', (e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+        dragging = true;
+        _deviationLegendEl.classList.add('deviation-legend-dragging');
+        startX = e.clientX;
+        startY = e.clientY;
+        startLeft = _deviationLegendEl.offsetLeft;
+        startTop = _deviationLegendEl.offsetTop;
+    });
+
+    window.addEventListener('mousemove', (e) => {
+        if (!dragging) return;
+        e.preventDefault();
+        _applyDeviationLegendPosition(
+            startLeft + (e.clientX - startX),
+            startTop + (e.clientY - startY)
+        );
+    });
+
+    window.addEventListener('mouseup', () => {
+        if (!dragging) return;
+        dragging = false;
+        _deviationLegendEl.classList.remove('deviation-legend-dragging');
+        _saveDeviationLegendPosition();
+    });
+
+    window.addEventListener('resize', () => {
+        if (!_deviationLegendEl || _deviationLegendEl.style.display === 'none') return;
+        const left = parseFloat(_deviationLegendEl.style.left);
+        const top = parseFloat(_deviationLegendEl.style.top);
+        if (Number.isFinite(left) && Number.isFinite(top)) {
+            _applyDeviationLegendPosition(left, top);
+        }
+    });
+}
+
+function _updateDeviationLegend(stats, tolerance) {
+    if (!_deviationLegendEl || !_deviationLegendBodyEl || !stats) return;
+    const distancesByMesh = deviationScanObject?.userData?._deviationState?.distancesByMesh;
+    _deviationLegendBodyEl.innerHTML = buildDeviationLegendHtml(stats, tolerance, distancesByMesh);
+    _deviationLegendEl.style.display = 'block';
+    _ensureDeviationLegendPosition();
+    if (Number.isFinite(parseFloat(_deviationLegendEl.style.left))) {
+        _applyDeviationLegendPosition(
+            parseFloat(_deviationLegendEl.style.left),
+            parseFloat(_deviationLegendEl.style.top)
+        );
+    }
+}
+
+function _hideDeviationLegend() {
+    if (_deviationLegendEl) _deviationLegendEl.style.display = 'none';
+}
+
 let INTERSECTED;
 let isMouseDown = false;
 let isTouchDragging = false;
@@ -587,6 +727,23 @@ let booleanOperation = null;
 let booleanObjectA = null;
 let booleanObjectB = null;
 let booleanHighlightHelper = null;
+// --- Deviation map state ---
+let deviationMapMode = false;
+let deviationStep = 0;
+let deviationScanObject = null;
+let deviationRefObject = null;
+let deviationHighlightHelper = null;
+let deviationResultActive = false;
+const deviationGui = {
+    tolerance: DEVIATION_DEFAULTS.tolerance,
+    referenceWireframe: DEVIATION_DEFAULTS.referenceWireframe,
+};
+let _deviationHintDiv = null;
+let _deviationLegendEl = null;
+let _deviationLegendHeaderEl = null;
+let _deviationLegendBodyEl = null;
+let _deviationLegendPositionReady = false;
+const DEVIATION_LEGEND_POS_KEY = 'deviationLegendPos';
 let previousTransformState = null; // Uložení předchozího stavu pro undo
 let previousGroupTransformStates = []; // World positions of group objects before drag (for assembly recording)
 
@@ -1494,6 +1651,9 @@ function init() {
                 if (booleanMode) {
                     cancelBooleanMode();
                 }
+                if (deviationMapMode) {
+                    cancelDeviationMapMode();
+                }
                 _syncModeBtns();
                 statusCircleDetectEl.style.display = 'none';
                 cancelAddLeaderLine();
@@ -1759,6 +1919,32 @@ function init() {
         }
     });
     document.body.appendChild(_booleanHintDiv);
+
+    _deviationHintDiv = document.createElement('div');
+    _deviationHintDiv.style.cssText = 'position:fixed;bottom:156px;left:50%;transform:translateX(-50%);background:rgba(180,60,20,0.88);color:#fff;padding:5px 14px;border-radius:5px;font-size:12px;display:none;z-index:1000;white-space:nowrap;';
+    _deviationHintDiv.addEventListener('click', (e) => {
+        if (e.target.closest('[data-deviation-cancel]')) {
+            e.preventDefault();
+            e.stopPropagation();
+            cancelDeviationMapMode();
+        }
+    });
+    document.body.appendChild(_deviationHintDiv);
+
+    _deviationLegendEl = document.createElement('div');
+    _deviationLegendEl.id = 'deviation-legend';
+
+    _deviationLegendHeaderEl = document.createElement('div');
+    _deviationLegendHeaderEl.id = 'deviation-legend-header';
+    _deviationLegendHeaderEl.innerHTML = '<span>Deviation map</span><span class="deviation-legend-grip" aria-hidden="true">⋮⋮</span>';
+
+    _deviationLegendBodyEl = document.createElement('div');
+    _deviationLegendBodyEl.id = 'deviation-legend-body';
+
+    _deviationLegendEl.appendChild(_deviationLegendHeaderEl);
+    _deviationLegendEl.appendChild(_deviationLegendBodyEl);
+    document.body.appendChild(_deviationLegendEl);
+    _initDeviationLegendDrag();
 } //End init 
 
 // Přepočítá frustum ortografické kamery podle aktuálního obsahu meshObjects.
@@ -2347,6 +2533,10 @@ function addMainGui() {
             alert('Boolean režim je již aktivní. Dokončete výběr nebo zrušte (Cancel / ESC).');
             return;
         }
+        if (deviationMapMode) {
+            alert('Deviation map mode is active. Finish selection or cancel (Cancel / ESC).');
+            return;
+        }
         startBooleanMode(operation);
     }
     const booleanFolder = editGui.addFolder('Boolean Operations');
@@ -2355,6 +2545,56 @@ function addMainGui() {
     booleanFolder.add({ fn() { tryStartBoolean(REVERSE_SUBTRACTION); } }, 'fn').name('Subtract (B − A)');
     booleanFolder.add({ fn() { tryStartBoolean(INTERSECTION); } }, 'fn').name('Intersect (A ∩ B)');
     booleanFolder.close();
+    function tryStartDeviationMap() {
+        if (booleanMode) {
+            alert('Boolean režim je aktivní. Dokončete výběr nebo zrušte (Cancel / ESC).');
+            return;
+        }
+        if (deviationMapMode) {
+            alert('Deviation map mode is already active. Finish selection or cancel (Cancel / ESC).');
+            return;
+        }
+        startDeviationMapMode();
+    }
+    function runDeviationMapRecompute() {
+        if (!deviationResultActive || !deviationScanObject || !deviationRefObject) {
+            alert('Create a deviation map first (Start deviation map).');
+            return;
+        }
+        runDeviationMapCompute(true);
+    }
+    function clearActiveDeviationMap() {
+        if (!deviationResultActive || !deviationScanObject) {
+            alert('No active deviation map.');
+            return;
+        }
+        clearDeviationMap(deviationScanObject, deviationRefObject);
+        deviationResultActive = false;
+        deviationScanObject = null;
+        deviationRefObject = null;
+        _hideDeviationLegend();
+        render();
+    }
+    const deviationFolder = editGui.addFolder('Model Comparison');
+    deviationFolder.add({ fn() { tryStartDeviationMap(); } }, 'fn').name('Start deviation map');
+    deviationFolder.add({ fn() { runDeviationMapRecompute(); } }, 'fn').name('Recompute');
+    deviationFolder.add({ fn() { clearActiveDeviationMap(); } }, 'fn').name('Clear deviation map');
+    deviationFolder.add(deviationGui, 'tolerance', 0.001, 100, 0.001).name('Tolerance').onChange(function(value) {
+        if (!deviationResultActive || !deviationScanObject) return;
+        recolorDeviationMap(deviationScanObject, value);
+        const state = deviationScanObject.userData._deviationState;
+        if (state?.stats) {
+            _updateDeviationLegend(state.stats, value);
+        }
+        render();
+    });
+    deviationFolder.add(deviationGui, 'referenceWireframe').name('Reference wireframe').onChange(function(value) {
+        if (!deviationRefObject) return;
+        if (value) applyReferenceVisualization(deviationRefObject, true);
+        else clearReferenceVisualization(deviationRefObject);
+        render();
+    });
+    deviationFolder.close();
     const materialFolder = editGui.addFolder('Material operations');
     materialFolder.add({ fn() {
         const { count, affected } = countLegacyMaterials(loadedModels, ['basic']);
@@ -4843,6 +5083,7 @@ function isBoxSelectAllowed() {
         && !faceSnapMode
         && !ptpSnapMode
         && !booleanMode
+        && !deviationMapMode
         && !isTransformDragging;
 }
 
@@ -6632,6 +6873,122 @@ function cancelPtpSnapMode() {
     render();
 }
 
+function clearDeviationHighlight() {
+    if (deviationHighlightHelper) {
+        scene.remove(deviationHighlightHelper);
+        deviationHighlightHelper = null;
+    }
+}
+
+function startDeviationMapMode() {
+    if (faceSnapMode) cancelFaceSnapMode();
+    if (ptpSnapMode) cancelPtpSnapMode();
+    if (booleanMode) cancelBooleanMode();
+    deviationMapMode = true;
+    deviationStep = 0;
+    deviationScanObject = null;
+    deviationRefObject = null;
+    clearDeviationHighlight();
+    deselectObject();
+    _updateDeviationHintUI();
+    render();
+}
+
+function _exitDeviationPickMode() {
+    deviationMapMode = false;
+    deviationStep = 0;
+    clearDeviationHighlight();
+    _updateDeviationHintUI();
+}
+
+function cancelDeviationMapMode() {
+    _exitDeviationPickMode();
+    if (!deviationResultActive) {
+        deviationScanObject = null;
+        deviationRefObject = null;
+    }
+    render();
+}
+
+function runDeviationMapCompute(isRecompute = false) {
+    const scan = deviationScanObject;
+    const ref = deviationRefObject;
+    if (!scan || !ref) {
+        alert('Select both scan (A) and reference (B).');
+        cancelDeviationMapMode();
+        return;
+    }
+
+    if (isRecompute) {
+        clearDeviationMap(scan, ref);
+    }
+
+    let overlay = document.getElementById('deviationOverlay');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'deviationOverlay';
+        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:99999;color:#fff;font-size:18px;font-family:sans-serif;gap:8px;';
+        document.body.appendChild(overlay);
+    }
+    overlay.innerHTML = '<div>Computing deviation map… please wait</div><div id="deviationOverlayProgress" style="font-size:14px;opacity:0.85;">0 %</div>';
+    overlay.style.display = 'flex';
+
+    const progressEl = overlay.querySelector('#deviationOverlayProgress');
+
+    setTimeout(async () => {
+        try {
+            const result = await computeDeviationMap(scan, ref, {
+                batchSize: DEVIATION_DEFAULTS.batchSize,
+                tolerance: deviationGui.tolerance,
+                onProgress(p) {
+                    if (progressEl) progressEl.textContent = `${Math.round(p * 100)} %`;
+                },
+            });
+
+            if (result.error || !result.stats) {
+                alert(result.error || 'Deviation map computation failed.');
+                if (deviationMapMode) cancelDeviationMapMode();
+                return;
+            }
+
+            const tolerance = deviationGui.tolerance;
+            if (!Number.isFinite(tolerance) || tolerance <= 0) {
+                alert('Tolerance must be a positive number.');
+                if (deviationMapMode) cancelDeviationMapMode();
+                return;
+            }
+
+            applyDeviationColors(scan, result.distancesByMesh, tolerance);
+            scan.userData._deviationState = {
+                referenceObject: ref,
+                stats: result.stats,
+                tolerance,
+                distancesByMesh: result.distancesByMesh,
+                computedAt: Date.now(),
+            };
+
+            if (deviationGui.referenceWireframe) {
+                applyReferenceVisualization(ref, true);
+            }
+
+            deviationResultActive = true;
+            deviationScanObject = scan;
+            deviationRefObject = ref;
+
+            if (deviationMapMode) _exitDeviationPickMode();
+
+            _updateDeviationLegend(result.stats, tolerance);
+            render();
+        } catch (err) {
+            console.error('Deviation map error:', err);
+            alert(err?.message || 'Deviation map computation failed.');
+            if (deviationMapMode) cancelDeviationMapMode();
+        } finally {
+            overlay.style.display = 'none';
+        }
+    }, 50);
+}
+
 function clearBooleanHighlight() {
     if (booleanHighlightHelper) {
         scene.remove(booleanHighlightHelper);
@@ -6642,6 +6999,7 @@ function clearBooleanHighlight() {
 function startBooleanMode(operation) {
     if (faceSnapMode) cancelFaceSnapMode();
     if (ptpSnapMode) cancelPtpSnapMode();
+    if (deviationMapMode) cancelDeviationMapMode();
     booleanMode = true;
     booleanStep = 0;
     booleanOperation = operation;
@@ -6971,6 +7329,40 @@ function onClick( event ) {
                 const worldPoint3d = clickNDC3d.unproject(currentCamera);
                 addAnnotation3dPoint(worldPoint3d, null, render);
             }
+        }
+        return;
+    }
+
+    // --- Deviation map mode ---
+    if (deviationMapMode) {
+        mouseUpPos.x = event.clientX;
+        mouseUpPos.y = event.clientY;
+        if (mouseDownPos.distanceTo(mouseUpPos) > 3) return;
+
+        const hit = getFreshRaycastTarget();
+        if (!hit) {
+            alert(deviationStep === 0 ? 'Click the scan object (A).' : 'Click the reference object (B).');
+            return;
+        }
+
+        const picked = resolveCADSelection(hit);
+        if (!picked) return;
+
+        if (deviationStep === 0) {
+            deviationScanObject = picked;
+            clearDeviationHighlight();
+            deviationHighlightHelper = new PaddedBoxHelper(picked, 0xff6600, viewProp.multiSelectBoxPadding);
+            scene.add(deviationHighlightHelper);
+            deviationStep = 1;
+            _updateDeviationHintUI();
+            render();
+        } else {
+            if (picked === deviationScanObject) {
+                alert('Select a different object for reference (B).');
+                return;
+            }
+            deviationRefObject = picked;
+            runDeviationMapCompute(false);
         }
         return;
     }

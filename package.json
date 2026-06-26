@@ -46,6 +46,7 @@
     "tesseract.js": "^7.0.0",
     "three": "^0.182.0",
     "three-bvh-csg": "^0.0.18",
+    "three-mesh-bvh": "^0.9.10",
     "tiptap-extension-resize-image": "^1.3.3",
     "zip-loader": "^1.3.0"
   },
