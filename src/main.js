@@ -2980,40 +2980,45 @@ function refreshSelectedObjGui(obj) {
             savePreviousTransformState();
         }
 
+        function _onGuiLocationChange() {
+            refreshCrossSectionLinesAfterTransform(lastSelectedObject);
+            render();
+        }
+
         folder2.add(obj.position, 'x', extent.pn, extent.pp, viewProp.pStep)
             .name('Px')
-            .onChange(function(value){obj.position.x=value; render(); })
+            .onChange(function(value){obj.position.x=value; _onGuiLocationChange(); })
             .onFinishChange(_onGuiLocationFinish)
             .listen();
         folder2.add(obj.position, 'y', extent.pn, extent.pp, viewProp.pStep)
             .name('Py')
-            .onChange(function(value){obj.position.y=value; render(); })
+            .onChange(function(value){obj.position.y=value; _onGuiLocationChange(); })
             .onFinishChange(_onGuiLocationFinish)
             .listen();
         folder2.add(obj.position, 'z', extent.pn, extent.pp, viewProp.pStep)
             .name('Pz')
-            .onChange(function(value){obj.position.z=value; render(); })
+            .onChange(function(value){obj.position.z=value; _onGuiLocationChange(); })
             .onFinishChange(_onGuiLocationFinish)
             .listen();
         const rotDeg = makeEulerDegProxy(obj.rotation);
         folder2.add(rotDeg, 'x', extent.rn, extent.rp, viewProp.rStep)
             .name('Rx')
-            .onChange(function(){ if (!viewProp.transformSpace) syncTransformPivotOrientation(); render(); })
+            .onChange(function(){ if (!viewProp.transformSpace) syncTransformPivotOrientation(); _onGuiLocationChange(); })
             .onFinishChange(_onGuiLocationFinish)
             .listen();
         folder2.add(rotDeg, 'y', extent.rn, extent.rp, viewProp.rStep)
             .name('Ry')
-            .onChange(function(){ if (!viewProp.transformSpace) syncTransformPivotOrientation(); render(); })
+            .onChange(function(){ if (!viewProp.transformSpace) syncTransformPivotOrientation(); _onGuiLocationChange(); })
             .onFinishChange(_onGuiLocationFinish)
             .listen();
         folder2.add(rotDeg, 'z', extent.rn, extent.rp, viewProp.rStep)
             .name('Rz')
-            .onChange(function(){ if (!viewProp.transformSpace) syncTransformPivotOrientation(); render(); })
+            .onChange(function(){ if (!viewProp.transformSpace) syncTransformPivotOrientation(); _onGuiLocationChange(); })
             .onFinishChange(_onGuiLocationFinish)
             .listen();
         folder2.add(obj.scale, 'x', extent.sn, extent.sp, viewProp.sStep)
             .name('Scale')
-            .onChange(function(value){obj.scale.x=value; obj.scale.y=value; obj.scale.z=value; render(); })
+            .onChange(function(value){obj.scale.x=value; obj.scale.y=value; obj.scale.z=value; _onGuiLocationChange(); })
             .onFinishChange(_onGuiLocationFinish)
             .listen();
         folder2.add({ fn: bakeSelectedObjectLocation }, 'fn').name('Bake location');
@@ -3186,21 +3191,26 @@ function refreshGroupGui() {
             savePreviousTransformState();
         }
 
+        function _onGroupGuiLocationChange() {
+            refreshCrossSectionLinesAfterTransform(pivotObject);
+            render();
+        }
+
         folder2.add(pivotObject.position, 'x', extent.pn, extent.pp, viewProp.pStep)
-            .name('Px').onChange(() => render()).onFinishChange(_onGroupGuiLocationFinish).listen();
+            .name('Px').onChange(_onGroupGuiLocationChange).onFinishChange(_onGroupGuiLocationFinish).listen();
         folder2.add(pivotObject.position, 'y', extent.pn, extent.pp, viewProp.pStep)
-            .name('Py').onChange(() => render()).onFinishChange(_onGroupGuiLocationFinish).listen();
+            .name('Py').onChange(_onGroupGuiLocationChange).onFinishChange(_onGroupGuiLocationFinish).listen();
         folder2.add(pivotObject.position, 'z', extent.pn, extent.pp, viewProp.pStep)
-            .name('Pz').onChange(() => render()).onFinishChange(_onGroupGuiLocationFinish).listen();
+            .name('Pz').onChange(_onGroupGuiLocationChange).onFinishChange(_onGroupGuiLocationFinish).listen();
         const pivotRotDeg = makeEulerDegProxy(pivotObject.rotation);
         folder2.add(pivotRotDeg, 'x', extent.rn, extent.rp, viewProp.rStep)
-            .name('Rx').onChange(() => render()).onFinishChange(_onGroupGuiLocationFinish).listen();
+            .name('Rx').onChange(_onGroupGuiLocationChange).onFinishChange(_onGroupGuiLocationFinish).listen();
         folder2.add(pivotRotDeg, 'y', extent.rn, extent.rp, viewProp.rStep)
-            .name('Ry').onChange(() => render()).onFinishChange(_onGroupGuiLocationFinish).listen();
+            .name('Ry').onChange(_onGroupGuiLocationChange).onFinishChange(_onGroupGuiLocationFinish).listen();
         folder2.add(pivotRotDeg, 'z', extent.rn, extent.rp, viewProp.rStep)
-            .name('Rz').onChange(() => render()).onFinishChange(_onGroupGuiLocationFinish).listen();
+            .name('Rz').onChange(_onGroupGuiLocationChange).onFinishChange(_onGroupGuiLocationFinish).listen();
         folder2.add(pivotObject.scale, 'x', extent.sn, extent.sp, viewProp.sStep)
-            .name('Scale').onChange(function(value) { pivotObject.scale.set(value, value, value); render(); })
+            .name('Scale').onChange(function(value) { pivotObject.scale.set(value, value, value); _onGroupGuiLocationChange(); })
             .onFinishChange(_onGroupGuiLocationFinish).listen();
         if (viewProp.locationKeepOpen) folder2.open();
         else folder2.close();
@@ -4338,6 +4348,18 @@ function updateCrossSectionLines() {
 // Wrapper funkce pro aktualizaci průřezových čar vázaných na section view
 function updateSectionCrossLines() {
     sectionCrossSectionLines = updateSectionCrossLinesCore(scene, sectionCrossSectionLines, viewProp, meshObjects, clipPlanes);
+}
+
+function refreshCrossSectionLinesAfterTransform(transformRoot) {
+    if (transformRoot) {
+        transformRoot.updateWorldMatrix(true, true);
+    }
+    if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) {
+        updateCrossSectionLines();
+    }
+    if (viewProp.sectionCrossLines) {
+        updateSectionCrossLines();
+    }
 }
     
 function viewFromPoint(x, y, z) {
