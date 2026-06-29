@@ -5,8 +5,7 @@
 
 import JSZip from 'jszip';
 import { PDFDocument } from 'pdf-lib';
-import * as pdfjsLib from 'pdfjs-dist';
-import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+import { loadPdfDocument } from './pdfUtils.js';
 import {
     openFilePreview,
     closeFilePreviewForAttachment,
@@ -17,8 +16,6 @@ import {
 import { openImageEditor, autoArrangeImageEditors } from './imageEditorUtils.js';
 import { runOcr, runOcrWithProgress, showOcrResultDialog } from './ocrUtils.js';
 import { openPdfPageManager } from './pdfPageManagerUtils.js';
-
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
 let attachmentsStore = []; // [{ id, name, mimeType, data (base64 string), size, addedAt }]
 let _guiRef = null;
@@ -662,7 +659,7 @@ async function _editPdf(att) {
     _pdfEditing = true;
     try {
         const bytes = _attToUint8Array(att);
-        const pdf = await pdfjsLib.getDocument({ data: bytes.slice() }).promise;
+        const pdf = await loadPdfDocument(bytes);
         const numPages = pdf.numPages;
 
         const pageInput = window.prompt(
@@ -934,7 +931,7 @@ async function _convertPdfToImages(att, options) {
 
     try {
         const bytes = _attToUint8Array(att);
-        const pdf = await pdfjsLib.getDocument({ data: bytes.slice() }).promise;
+        const pdf = await loadPdfDocument(bytes);
         const numPages = pdf.numPages;
         const baseName = _pdfBaseName(att.name);
         let added = 0;

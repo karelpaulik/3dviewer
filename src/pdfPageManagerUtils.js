@@ -2,7 +2,7 @@
 // Reorder, delete, and insert pages in an existing PDF attachment.
 
 import { PDFDocument } from 'pdf-lib';
-import * as pdfjsLib from 'pdfjs-dist';
+import { loadPdfDocument } from './pdfUtils.js';
 
 const A4_WIDTH_PT = 595.28;
 const A4_HEIGHT_PT = 841.89;
@@ -28,7 +28,7 @@ let _session = null;
 export async function openPdfPageManager(att, helpers) {
     try {
         const bytes = helpers.attToUint8Array(att);
-        const pdf = await pdfjsLib.getDocument({ data: bytes.slice() }).promise;
+        const pdf = await loadPdfDocument(bytes);
         const numPages = pdf.numPages;
         const defaultSize = await _getPdfPageSizePt(pdf, 1);
 
@@ -484,7 +484,7 @@ async function _addPagesFromPdfAttachment() {
 
 async function _insertPagesFromExternalPdf(bytes, sourceLabel) {
     if (!_session) return;
-    const pdf = await pdfjsLib.getDocument({ data: bytes.slice() }).promise;
+    const pdf = await loadPdfDocument(bytes);
     const numPages = pdf.numPages;
 
     const pageInput = window.prompt(
@@ -539,7 +539,7 @@ async function _renderThumb(ref) {
         return canvas.toDataURL('image/png');
     }
     if (ref.type === 'external') {
-        const pdf = await pdfjsLib.getDocument({ data: ref.bytes.slice() }).promise;
+        const pdf = await loadPdfDocument(ref.bytes);
         const { canvas } = await _renderPdfPageCanvas(pdf, ref.srcIndex + 1, THUMB_SCALE);
         return canvas.toDataURL('image/png');
     }
