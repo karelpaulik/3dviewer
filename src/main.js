@@ -90,6 +90,7 @@ import {
 } from './booleanUtils.js';
 import {
     DEVIATION_DEFAULTS,
+    angleDegToNormalDot,
     computeDeviationMap,
     applyDeviationColors,
     clearDeviationMap,
@@ -98,6 +99,11 @@ import {
     clearReferenceVisualization,
     buildDeviationLegendHtml,
 } from './deviationMapUtils.js';
+import {
+    collectMeshesForGeometryOps,
+    applyFlatVertexNormalsToMeshes,
+    applySmoothVertexNormalsToMeshes,
+} from './geometryOperationsUtils.js';
 import {
     collectBoxSelectCandidates,
     findObjectsInScreenRect,
@@ -666,8 +672,12 @@ function _initDeviationLegendDrag() {
 
 function _updateDeviationLegend(stats, tolerance) {
     if (!_deviationLegendEl || !_deviationLegendBodyEl || !stats) return;
-    const distancesByMesh = deviationScanObject?.userData?._deviationState?.distancesByMesh;
-    _deviationLegendBodyEl.innerHTML = buildDeviationLegendHtml(stats, tolerance, distancesByMesh);
+    const state = deviationScanObject?.userData?._deviationState;
+    const distancesByMesh = state?.distancesByMesh;
+    _deviationLegendBodyEl.innerHTML = buildDeviationLegendHtml(stats, tolerance, distancesByMesh, {
+        useNormalFilter: state?.useNormalFilter ?? deviationGui.useNormalFilter,
+        normalAngleDeg: state?.normalAngleDeg ?? deviationGui.normalAngleDeg,
+    });
     _deviationLegendEl.style.display = 'block';
     _ensureDeviationLegendPosition();
     if (Number.isFinite(parseFloat(_deviationLegendEl.style.left))) {
@@ -737,6 +747,8 @@ let deviationResultActive = false;
 const deviationGui = {
     tolerance: DEVIATION_DEFAULTS.tolerance,
     referenceWireframe: DEVIATION_DEFAULTS.referenceWireframe,
+    useNormalFilter: DEVIATION_DEFAULTS.useNormalFilter,
+    normalAngleDeg: DEVIATION_DEFAULTS.normalAngleDeg,
 };
 let _deviationHintDiv = null;
 let _deviationLegendEl = null;
@@ -2528,6 +2540,50 @@ function addMainGui() {
     } }, 'fn').name('Separate Mesh (split loose parts)');
     splitLooseFolder.close();
     meshOpsFolder.close();
+
+    const geometryOpsFolder = editGui.addFolder('Normals operations');
+    function geometryOpAffectsDeviationScan(obj) {
+        if (!deviationResultActive || !deviationScanObject) return false;
+        if (obj === deviationScanObject) return true;
+        let found = false;
+        obj.traverse(o => { if (o === deviationScanObject) found = true; });
+        return found;
+    }
+    function runGeometryNormalsOp(applyFn, opLabel) {
+        const obj = lastSelectedObject;
+        if (!obj) {
+            alert('No object selected.');
+            return;
+        }
+        const meshes = collectMeshesForGeometryOps(obj);
+        if (meshes.length === 0) {
+            alert('No meshes found in selection.');
+            return;
+        }
+        const targetName = obj.name || 'object';
+        const confirmMsg = meshes.length === 1
+            ? `${opLabel} on 1 mesh in "${targetName}"?`
+            : `${opLabel} on ${meshes.length} meshes in "${targetName}"?`;
+        if (!confirm(confirmMsg)) return;
+
+        const result = applyFn(meshes);
+        if (result.error) {
+            alert(result.error);
+            return;
+        }
+        if (geometryOpAffectsDeviationScan(obj)) {
+            alert(`Normals updated on ${result.count} mesh(es). Recompute deviation map if one is active.`);
+        }
+        render();
+    }
+    geometryOpsFolder.add({ fn() {
+        runGeometryNormalsOp(applyFlatVertexNormalsToMeshes, 'Apply flat normals (split vertices)');
+    } }, 'fn').name('Flat normals (split vertices)');
+    geometryOpsFolder.add({ fn() {
+        runGeometryNormalsOp(applySmoothVertexNormalsToMeshes, 'Apply smooth normals (merge vertices)');
+    } }, 'fn').name('Smooth normals (merge vertices)');
+    geometryOpsFolder.close();
+
     function tryStartBoolean(operation) {
         if (booleanMode) {
             alert('Boolean režim je již aktivní. Dokončete výběr nebo zrušte (Cancel / ESC).');
@@ -2594,6 +2650,15 @@ function addMainGui() {
         else clearReferenceVisualization(deviationRefObject);
         render();
     });
+    deviationFolder.add(deviationGui, 'useNormalFilter').name('Filter by normal').onChange(function(value) {
+        if (value) normalAngleCtrl.enable();
+        else normalAngleCtrl.disable();
+        if (deviationResultActive) runDeviationMapRecompute();
+    });
+    const normalAngleCtrl = deviationFolder.add(deviationGui, 'normalAngleDeg', 0, 180, 1).name('Normal angle (°)').onChange(function() {
+        if (deviationResultActive && deviationGui.useNormalFilter) runDeviationMapRecompute();
+    });
+    if (!deviationGui.useNormalFilter) normalAngleCtrl.disable();
     deviationFolder.close();
     const materialFolder = editGui.addFolder('Material operations');
     materialFolder.add({ fn() {
@@ -6962,6 +7027,8 @@ function runDeviationMapCompute(isRecompute = false) {
             const result = await computeDeviationMap(scan, ref, {
                 batchSize: DEVIATION_DEFAULTS.batchSize,
                 tolerance: deviationGui.tolerance,
+                useNormalFilter: deviationGui.useNormalFilter,
+                minNormalDot: angleDegToNormalDot(deviationGui.normalAngleDeg),
                 onProgress(p) {
                     if (progressEl) progressEl.textContent = `${Math.round(p * 100)} %`;
                 },
@@ -6986,6 +7053,8 @@ function runDeviationMapCompute(isRecompute = false) {
                 stats: result.stats,
                 tolerance,
                 distancesByMesh: result.distancesByMesh,
+                useNormalFilter: deviationGui.useNormalFilter,
+                normalAngleDeg: deviationGui.normalAngleDeg,
                 computedAt: Date.now(),
             };
 

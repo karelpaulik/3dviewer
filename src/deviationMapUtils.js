@@ -1,15 +1,21 @@
 // deviationMapUtils.js – deviation map (heatmap) between scan and reference meshes
 import * as THREE from 'three';
-import { MeshBVH } from 'three-mesh-bvh';
+import { MeshBVH, getTriangleHitPointInfo } from 'three-mesh-bvh';
 import { objectToWorldGeometry, collectMeshes } from './booleanUtils.js';
 
 export const DEVIATION_DEFAULTS = {
     batchSize: 10000,
     referenceWireframe: true,
     tolerance: 0.1,
+    useNormalFilter: false,
+    normalAngleDeg: 60,
 };
 
 const _worldVertex = new THREE.Vector3();
+const _scanNormal = new THREE.Vector3();
+const _triNormal = new THREE.Vector3();
+const _closestPoint = new THREE.Vector3();
+const _normalMatrix = new THREE.Matrix3();
 const _hitTarget = { point: new THREE.Vector3(), distance: 0, faceIndex: 0 };
 
 /** @type {THREE.Color} */
@@ -21,6 +27,22 @@ const COLOR_STOPS = [
     { t: 0.66, color: new THREE.Color(0xffdd00) },
     { t: 1.0, color: new THREE.Color(0xff2222) },
 ];
+
+/**
+ * @param {number} deg
+ * @returns {number}
+ */
+export function angleDegToNormalDot(deg) {
+    return Math.cos(deg * Math.PI / 180);
+}
+
+/**
+ * @param {number} dot
+ * @returns {number}
+ */
+export function normalDotToAngleDeg(dot) {
+    return Math.acos(Math.max(-1, Math.min(1, dot))) * 180 / Math.PI;
+}
 
 /**
  * Map normalized distance t in [0,1] to RGB color (blue → green → yellow → red).
@@ -52,6 +74,79 @@ function collectComparisonMeshes(root) {
         && !obj.userData._isAnnotation3d
         && !obj.userData._isCadDim3d
     );
+}
+
+/**
+ * @param {THREE.Mesh} mesh
+ * @param {number} vertexIndex
+ * @param {THREE.Vector3} target
+ * @returns {THREE.Vector3}
+ */
+function getScanWorldNormal(mesh, vertexIndex, target) {
+    let normalAttr = mesh.geometry.getAttribute('normal');
+    if (!normalAttr) {
+        mesh.geometry.computeVertexNormals();
+        normalAttr = mesh.geometry.getAttribute('normal');
+    }
+    target.fromBufferAttribute(normalAttr, vertexIndex);
+    _normalMatrix.getNormalMatrix(mesh.matrixWorld);
+    target.applyMatrix3(_normalMatrix).normalize();
+    return target;
+}
+
+/**
+ * @param {THREE.BufferGeometry} refGeom
+ * @param {number} faceIndex
+ * @param {THREE.Vector3} point
+ * @param {THREE.Vector3} target
+ * @returns {THREE.Vector3}
+ */
+function getRefTriangleNormal(refGeom, faceIndex, point, target) {
+    const info = getTriangleHitPointInfo(point, refGeom, faceIndex);
+    return target.copy(info.face.normal);
+}
+
+/**
+ * @param {MeshBVH} bvh
+ * @param {THREE.BufferGeometry} refGeom
+ * @param {THREE.Vector3} point
+ * @param {THREE.Vector3} scanNormal
+ * @param {number} minDot
+ * @param {{ point: THREE.Vector3, distance: number, faceIndex: number }} target
+ * @returns {number}
+ */
+function closestCompatibleDistance(bvh, refGeom, point, scanNormal, minDot, target) {
+    const hit = bvh.closestPointToPoint(point, target);
+    if (hit) {
+        getRefTriangleNormal(refGeom, target.faceIndex, point, _triNormal);
+        if (scanNormal.dot(_triNormal) >= minDot) {
+            return target.distance;
+        }
+    }
+
+    let bestDist = Infinity;
+    let found = false;
+
+    bvh.shapecast({
+        intersectsBounds: (box) => box.distanceToPoint(point) < bestDist,
+        intersectsTriangle: (tri, triangleIndex) => {
+            tri.getNormal(_triNormal);
+            if (scanNormal.dot(_triNormal) < minDot) return false;
+
+            tri.closestPointToPoint(point, _closestPoint);
+            const dist = point.distanceTo(_closestPoint);
+            if (dist < bestDist) {
+                bestDist = dist;
+                target.point.copy(_closestPoint);
+                target.distance = dist;
+                target.faceIndex = triangleIndex;
+                found = true;
+            }
+            return false;
+        },
+    });
+
+    return found ? bestDist : Infinity;
 }
 
 /**
@@ -139,49 +234,65 @@ export function clearReferenceVisualization(refRoot) {
 }
 
 /**
- * @param {Float32Array} distances
+ * @param {Float32Array|number[]} distances
  * @param {number} tolerance
- * @returns {{ min: number, max: number, mean: number, rms: number, vertexCount: number, outOfTolerance: number, outOfTolerancePct: number }}
+ * @returns {{ min: number, max: number, mean: number, rms: number, vertexCount: number, outOfTolerance: number, outOfTolerancePct: number, ambiguousCount: number }}
  */
 export function computeDeviationStats(distances, tolerance = DEVIATION_DEFAULTS.tolerance) {
     const n = distances.length;
     if (n === 0) {
-        return { min: 0, max: 0, mean: 0, rms: 0, vertexCount: 0, outOfTolerance: 0, outOfTolerancePct: 0 };
+        return {
+            min: 0, max: 0, mean: 0, rms: 0, vertexCount: 0,
+            outOfTolerance: 0, outOfTolerancePct: 0, ambiguousCount: 0,
+        };
     }
-    let min = Infinity;
-    let max = -Infinity;
+    let finiteMin = Infinity;
+    let finiteMax = -Infinity;
     let sum = 0;
     let sumSq = 0;
+    let finiteCount = 0;
     let outOfTolerance = 0;
+    let ambiguousCount = 0;
+
     for (let i = 0; i < n; i++) {
         const d = distances[i];
-        if (d < min) min = d;
-        if (d > max) max = d;
+        if (!Number.isFinite(d)) {
+            ambiguousCount++;
+            outOfTolerance++;
+            continue;
+        }
+        if (d < finiteMin) finiteMin = d;
+        if (d > finiteMax) finiteMax = d;
         sum += d;
         sumSq += d * d;
+        finiteCount++;
         if (d > tolerance) outOfTolerance++;
     }
+
     return {
-        min,
-        max,
-        mean: sum / n,
-        rms: Math.sqrt(sumSq / n),
+        min: finiteCount > 0 ? finiteMin : 0,
+        max: finiteCount > 0 ? finiteMax : 0,
+        mean: finiteCount > 0 ? sum / finiteCount : 0,
+        rms: finiteCount > 0 ? Math.sqrt(sumSq / finiteCount) : 0,
         vertexCount: n,
         outOfTolerance,
         outOfTolerancePct: (outOfTolerance / n) * 100,
+        ambiguousCount,
     };
 }
 
 /**
  * @param {THREE.Object3D} scanRoot
  * @param {THREE.Object3D} refRoot
- * @param {{ batchSize?: number, onProgress?: (p: number) => void, tolerance?: number }} [options]
+ * @param {{ batchSize?: number, onProgress?: (p: number) => void, tolerance?: number, useNormalFilter?: boolean, minNormalDot?: number }} [options]
  * @returns {Promise<{ distancesByMesh: Map<THREE.Mesh, Float32Array>, stats: object, maxDistance: number, error: string|null }>}
  */
 export function computeDeviationMap(scanRoot, refRoot, options = {}) {
     const batchSize = options.batchSize ?? DEVIATION_DEFAULTS.batchSize;
     const onProgress = options.onProgress ?? (() => {});
     const tolerance = options.tolerance ?? DEVIATION_DEFAULTS.tolerance;
+    const useNormalFilter = options.useNormalFilter ?? DEVIATION_DEFAULTS.useNormalFilter;
+    const minNormalDot = options.minNormalDot ?? angleDegToNormalDot(DEVIATION_DEFAULTS.normalAngleDeg);
 
     return new Promise((resolve) => {
         try {
@@ -233,8 +344,17 @@ export function computeDeviationMap(scanRoot, refRoot, options = {}) {
                     _worldVertex.fromBufferAttribute(currentPos, vertexIndex);
                     _worldVertex.applyMatrix4(currentMatrix);
 
-                    const hit = bvh.closestPointToPoint(_worldVertex, _hitTarget);
-                    const dist = hit ? hit.distance : Infinity;
+                    let dist;
+                    if (useNormalFilter) {
+                        getScanWorldNormal(currentMesh, vertexIndex, _scanNormal);
+                        dist = closestCompatibleDistance(
+                            bvh, refGeom, _worldVertex, _scanNormal, minNormalDot, _hitTarget,
+                        );
+                    } else {
+                        const hit = bvh.closestPointToPoint(_worldVertex, _hitTarget);
+                        dist = hit ? hit.distance : Infinity;
+                    }
+
                     currentDistances[vertexIndex] = dist;
                     allDistances.push(dist);
 
@@ -282,7 +402,8 @@ function applyColorsToMesh(mesh, distances, tolerance) {
     const scale = tolerance > 0 ? tolerance : 1;
 
     for (let i = 0; i < pos.count; i++) {
-        const t = distances[i] / scale;
+        const d = distances[i];
+        const t = Number.isFinite(d) ? d / scale : 1;
         const c = mapDistanceToColor(t);
         colors[i * 3] = c.r;
         colors[i * 3 + 1] = c.g;
@@ -369,7 +490,8 @@ export function computeOutOfTolerance(distancesByMesh, tolerance) {
     for (const distances of distancesByMesh.values()) {
         for (let i = 0; i < distances.length; i++) {
             total++;
-            if (distances[i] > tolerance) outOfTolerance++;
+            const d = distances[i];
+            if (!Number.isFinite(d) || d > tolerance) outOfTolerance++;
         }
     }
     return {
@@ -382,9 +504,10 @@ export function computeOutOfTolerance(distancesByMesh, tolerance) {
  * @param {object} stats
  * @param {number} tolerance
  * @param {Map<THREE.Mesh, Float32Array>} [distancesByMesh]
+ * @param {{ useNormalFilter?: boolean, normalAngleDeg?: number }} [legendOptions]
  * @returns {string}
  */
-export function buildDeviationLegendHtml(stats, tolerance, distancesByMesh) {
+export function buildDeviationLegendHtml(stats, tolerance, distancesByMesh, legendOptions = {}) {
     if (!stats) return '';
 
     let outOfTolerance = stats.outOfTolerance;
@@ -402,10 +525,22 @@ export function buildDeviationLegendHtml(stats, tolerance, distancesByMesh) {
     const row = (label, value) =>
         `<div style="display:flex;justify-content:space-between;gap:12px;"><span style="opacity:0.85;">${label}</span><span>${value}</span></div>`;
 
+    const modeRow = legendOptions.useNormalFilter
+        ? row('Filter by normal:', `on (${legendOptions.normalAngleDeg ?? DEVIATION_DEFAULTS.normalAngleDeg}°)`)
+        : row('Filter by normal:', 'off');
+
+    const ambiguousRow = stats.ambiguousCount > 0
+        ? row('No compatible surface:', `${stats.ambiguousCount} vertices`)
+        : '';
+
     return `
         <div style="height:14px;border-radius:3px;background:linear-gradient(to right,#2244ff,#22cc44,#ffdd00,#ff2222);margin-bottom:4px;"></div>
         <div style="display:flex;justify-content:space-between;font-size:11px;opacity:0.9;margin-bottom:2px;">
             <span>0</span><span>Tolerance: ${tolLabel}</span>
+        </div>
+        <div style="font-size:11px;margin-top:8px;line-height:1.55;border-top:1px solid rgba(255,255,255,0.12);padding-top:8px;">
+            <div style="font-weight:600;margin-bottom:4px;opacity:0.95;">Comparison</div>
+            ${modeRow}
         </div>
         <div style="font-size:11px;margin-top:8px;line-height:1.55;border-top:1px solid rgba(255,255,255,0.12);padding-top:8px;">
             <div style="font-weight:600;margin-bottom:4px;opacity:0.95;">Statistics</div>
@@ -414,6 +549,7 @@ export function buildDeviationLegendHtml(stats, tolerance, distancesByMesh) {
             ${row('Mean:', stats.mean.toFixed(4))}
             ${row('RMS:', stats.rms.toFixed(4))}
             ${row('Vertices:', String(stats.vertexCount))}
+            ${ambiguousRow}
         </div>
         <div style="font-size:11px;margin-top:8px;line-height:1.55;border-top:1px solid rgba(255,255,255,0.12);padding-top:8px;">
             <div style="font-weight:600;margin-bottom:4px;opacity:0.95;">Tolerance check</div>
