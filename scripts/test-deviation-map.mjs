@@ -5,6 +5,9 @@
 import * as THREE from 'three';
 import {
     computeDeviationMap,
+    computeBidirectionalDeviationMap,
+    mergeDeviationStats,
+    mergeDistancesByMesh,
     applyDeviationColors,
     clearDeviationMap,
     computeDeviationStats,
@@ -23,6 +26,19 @@ function makeBoxMesh(name, offsetX = 0) {
     mesh.position.x = offsetX;
     mesh.updateMatrixWorld(true);
     return mesh;
+}
+
+/** Cube 10³ and cuboid 10×10×10.5 with five faces aligned (shared bottom). */
+function makeAlignedCubeCuboidPair() {
+    const cube = makeBoxMesh('cube', 0);
+    const cuboid = new THREE.Mesh(
+        new THREE.BoxGeometry(10, 10, 10.5),
+        new THREE.MeshStandardMaterial({ color: 0x888888 }),
+    );
+    cuboid.name = 'cuboid';
+    cuboid.position.z = 0.25;
+    cuboid.updateMatrixWorld(true);
+    return { cube, cuboid };
 }
 
 /** Vertices whose world normal matches targetNormal (e.g. pure -X face). */
@@ -151,10 +167,68 @@ async function main() {
         throw new Error('180° angle should allow opposite normals (-X face ~0)');
     }
 
+    // --- mergeDeviationStats ---
+    const merged = mergeDeviationStats(
+        {
+            vertexCount: 24, ambiguousCount: 0, min: 0, max: 1, mean: 0.5, rms: 0.6,
+            outOfTolerance: 5, outOfTolerancePct: 20.83,
+        },
+        {
+            vertexCount: 24, ambiguousCount: 0, min: 0, max: 0.5, mean: 0.1, rms: 0.2,
+            outOfTolerance: 2, outOfTolerancePct: 8.33,
+        },
+    );
+    if (merged.vertexCount !== 48) throw new Error(`merged vertexCount expected 48, got ${merged.vertexCount}`);
+    if (merged.max !== 1) throw new Error(`merged max expected 1, got ${merged.max}`);
+    if (merged.outOfTolerance !== 7) throw new Error(`merged outOfTolerance expected 7, got ${merged.outOfTolerance}`);
+
+    // --- Cube vs taller cuboid (5 faces aligned, +Z overshoot on cuboid) ---
+    const { cube, cuboid } = makeAlignedCubeCuboidPair();
+    const plusZ = new THREE.Vector3(0, 0, 1);
+
+    const cuboidScanResult = await computeDeviationMap(cuboid, cube, {
+        batchSize: 500,
+        tolerance: 0.1,
+    });
+    if (cuboidScanResult.error) throw new Error(cuboidScanResult.error);
+
+    const cuboidTop = distancesOnFaceWithNormal(cuboid, cuboidScanResult.distancesByMesh, plusZ)
+        .map(s => s.distance);
+    if (cuboidTop.length !== 4) {
+        throw new Error(`expected 4 cuboid +Z face vertices, got ${cuboidTop.length}`);
+    }
+    const cuboidTopMin = Math.min(...cuboidTop);
+    const cuboidTopMax = Math.max(...cuboidTop);
+    if (cuboidTopMin < 0.45 || cuboidTopMax > 0.55) {
+        throw new Error(`cuboid +Z overshoot expected ~0.5, got min=${cuboidTopMin} max=${cuboidTopMax}`);
+    }
+
+    const biResult = await computeBidirectionalDeviationMap(cube, cuboid, {
+        batchSize: 500,
+        tolerance: 0.1,
+    });
+    if (biResult.error) throw new Error(biResult.error);
+    if (!biResult.stats || biResult.stats.vertexCount !== 48) {
+        throw new Error(`bidirectional vertexCount expected 48, got ${biResult.stats?.vertexCount}`);
+    }
+    if (biResult.bToA.stats.max < 0.45) {
+        throw new Error(`bidirectional B→A max expected >= 0.5, got ${biResult.bToA.stats.max}`);
+    }
+
+    const mergedMaps = mergeDistancesByMesh(biResult.aToB.distancesByMesh, biResult.bToA.distancesByMesh);
+    if (mergedMaps.size !== 2) {
+        throw new Error(`merged distance maps expected 2 meshes, got ${mergedMaps.size}`);
+    }
+
+    clearDeviationMap(cube, null);
+    clearDeviationMap(cuboid, null);
+
     console.log('Deviation map smoke test OK');
     console.log(`  aligned offset: min=${result.stats.min.toFixed(4)} max=${result.stats.max.toFixed(4)}`);
     console.log(`  adjacent normal-aware -X face: ~${touchMin.toFixed(4)} mm`);
     console.log(`  adjacent legacy -X face max: ${legacyTouchMax.toFixed(4)} mm`);
+    console.log(`  cuboid +Z overshoot: ~${cuboidTopMin.toFixed(4)} mm`);
+    console.log(`  bidirectional combined vertices: ${biResult.stats.vertexCount}`);
 }
 
 main().catch(err => {

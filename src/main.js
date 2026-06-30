@@ -93,12 +93,15 @@ import {
     DEVIATION_DEFAULTS,
     angleDegToNormalDot,
     computeDeviationMap,
+    computeBidirectionalDeviationMap,
+    mergeDistancesByMesh,
     applyDeviationColors,
     clearDeviationMap,
     recolorDeviationMap,
     applyReferenceVisualization,
     clearReferenceVisualization,
     buildDeviationLegendHtml,
+    buildBidirectionalLegendHtml,
     findDeviationProbeHit,
 } from './deviationMapUtils.js';
 import {
@@ -579,8 +582,8 @@ function _updateDeviationHintUI() {
     if (!_deviationHintDiv) return;
     if (deviationMapMode) {
         const stepText = deviationStep === 0
-            ? 'Deviation map: click scan object (A) or select in Scene outliner'
-            : 'Deviation map: click reference object (B) or select in Scene outliner';
+            ? 'Deviation map: click object A or select in Scene outliner'
+            : 'Deviation map: click object B or select in Scene outliner';
         _deviationHintDiv.innerHTML = `${stepText} &nbsp;·&nbsp; <button type="button" data-deviation-cancel style="margin-left:6px;padding:2px 10px;border:1px solid rgba(255,255,255,0.7);border-radius:4px;background:rgba(255,255,255,0.15);color:#fff;font-size:12px;cursor:pointer;">Cancel</button>`;
         _deviationHintDiv.style.display = 'block';
     } else {
@@ -703,12 +706,38 @@ function _initDeviationLegendDrag() {
 
 function _updateDeviationLegend(stats, tolerance) {
     if (!_deviationLegendEl || !_deviationLegendBodyEl || !stats) return;
-    const state = deviationScanObject?.userData?._deviationState;
-    const distancesByMesh = state?.distancesByMesh;
-    _deviationLegendBodyEl.innerHTML = buildDeviationLegendHtml(stats, tolerance, distancesByMesh, {
-        useNormalFilter: state?.useNormalFilter ?? deviationGui.useNormalFilter,
-        normalAngleDeg: state?.normalAngleDeg ?? deviationGui.normalAngleDeg,
-    });
+    const objectA = deviationScanObject;
+    const objectB = deviationRefObject;
+    const stateA = objectA?.userData?._deviationState;
+    const stateB = objectB?.userData?._deviationState;
+    const legendOptions = {
+        useNormalFilter: stateA?.useNormalFilter ?? deviationGui.useNormalFilter,
+        normalAngleDeg: stateA?.normalAngleDeg ?? deviationGui.normalAngleDeg,
+        comparisonMode: stateA?.mode ?? deviationGui.comparisonMode,
+    };
+
+    if (stateA?.mode === 'bidirectional' && stateA.stats && stateB?.stats) {
+        _deviationLegendBodyEl.innerHTML = buildBidirectionalLegendHtml(
+            stateA.stats,
+            stateB.stats,
+            stateA.mergedStats ?? stats,
+            tolerance,
+            stateA.distancesByMesh,
+            stateB.distancesByMesh,
+            {
+                ...legendOptions,
+                objectAName: objectA?.name || 'Object A',
+                objectBName: objectB?.name || 'Object B',
+            },
+        );
+    } else {
+        _deviationLegendBodyEl.innerHTML = buildDeviationLegendHtml(
+            stats,
+            tolerance,
+            stateA?.distancesByMesh,
+            legendOptions,
+        );
+    }
     _deviationLegendEl.style.display = 'block';
     _ensureDeviationLegendPosition();
     if (Number.isFinite(parseFloat(_deviationLegendEl.style.left))) {
@@ -777,12 +806,15 @@ let deviationHighlightHelper = null;
 let deviationResultActive = false;
 let deviationProbeMode = false;
 const deviationGui = {
+    comparisonMode: 'unidirectional',
     tolerance: DEVIATION_DEFAULTS.tolerance,
     referenceWireframe: DEVIATION_DEFAULTS.referenceWireframe,
     useNormalFilter: DEVIATION_DEFAULTS.useNormalFilter,
     normalAngleDeg: DEVIATION_DEFAULTS.normalAngleDeg,
     labelScale: 1,
 };
+/** @type {import('lil-gui').Controller|null} */
+let deviationWireframeCtrl = null;
 let _deviationHintDiv = null;
 let _deviationProbeHintDiv = null;
 let _deviationLegendEl = null;
@@ -2601,11 +2633,13 @@ function addMainGui() {
     meshOpsFolder.close();
 
     const geometryOpsFolder = editGui.addFolder('Normals operations');
-    function geometryOpAffectsDeviationScan(obj) {
+    function geometryOpAffectsDeviationPair(obj) {
         if (!deviationResultActive || !deviationScanObject) return false;
-        if (obj === deviationScanObject) return true;
+        if (obj === deviationScanObject || obj === deviationRefObject) return true;
         let found = false;
-        obj.traverse(o => { if (o === deviationScanObject) found = true; });
+        obj.traverse(o => {
+            if (o === deviationScanObject || o === deviationRefObject) found = true;
+        });
         return found;
     }
     function runGeometryNormalsOp(applyFn, opLabel) {
@@ -2630,7 +2664,7 @@ function addMainGui() {
             alert(result.error);
             return;
         }
-        if (geometryOpAffectsDeviationScan(obj)) {
+        if (geometryOpAffectsDeviationPair(obj)) {
             alert(`Normals updated on ${result.count} mesh(es). Recompute deviation map if one is active.`);
         }
         if (normalsViewGui.showVertexAllNormals || normalsViewGui.showVertexNormals) updateVertexNormalsHelpers();
@@ -2721,12 +2755,17 @@ function addMainGui() {
         }
         runDeviationMapCompute(true);
     }
+    function _syncDeviationWireframeCtrl() {
+        if (!deviationWireframeCtrl) return;
+        if (deviationGui.comparisonMode === 'bidirectional') deviationWireframeCtrl.disable();
+        else deviationWireframeCtrl.enable();
+    }
     function clearActiveDeviationMap() {
         if (!deviationResultActive || !deviationScanObject) {
             alert('No active deviation map.');
             return;
         }
-        clearDeviationMap(deviationScanObject, deviationRefObject);
+        _clearActiveDeviationBoth();
         clearDeviationProbes();
         cancelDeviationProbeMode();
         deviationResultActive = false;
@@ -2736,24 +2775,37 @@ function addMainGui() {
         render();
     }
     const deviationFolder = editGui.addFolder('Model Comparison');
+    deviationFolder.add(deviationGui, 'comparisonMode', {
+        'Unidirectional (A→B)': 'unidirectional',
+        'Bidirectional (A↔B)': 'bidirectional',
+    }).name('Comparison mode').onChange(function(value) {
+        _syncDeviationWireframeCtrl();
+        if (value === 'bidirectional' && deviationRefObject) {
+            clearReferenceVisualization(deviationRefObject);
+        }
+        if (deviationResultActive) runDeviationMapRecompute();
+    });
     deviationFolder.add({ fn() { tryStartDeviationMap(); } }, 'fn').name('Start deviation map');
     deviationFolder.add({ fn() { runDeviationMapRecompute(); } }, 'fn').name('Recompute');
     deviationFolder.add({ fn() { clearActiveDeviationMap(); } }, 'fn').name('Clear deviation map');
     deviationFolder.add(deviationGui, 'tolerance', 0.001, 100, 0.001).name('Tolerance').onChange(function(value) {
         if (!deviationResultActive || !deviationScanObject) return;
-        recolorDeviationMap(deviationScanObject, value);
+        _recolorActiveDeviationBoth(value);
         const state = deviationScanObject.userData._deviationState;
-        if (state?.stats) {
-            _updateDeviationLegend(state.stats, value);
+        const legendStats = state?.mergedStats ?? state?.stats;
+        if (legendStats) {
+            _updateDeviationLegend(legendStats, value);
         }
         render();
     });
-    deviationFolder.add(deviationGui, 'referenceWireframe').name('Reference wireframe').onChange(function(value) {
+    deviationWireframeCtrl = deviationFolder.add(deviationGui, 'referenceWireframe').name('Reference wireframe').onChange(function(value) {
         if (!deviationRefObject) return;
+        if (deviationGui.comparisonMode === 'bidirectional') return;
         if (value) applyReferenceVisualization(deviationRefObject, true);
         else clearReferenceVisualization(deviationRefObject);
         render();
     });
+    _syncDeviationWireframeCtrl();
     deviationFolder.add(deviationGui, 'useNormalFilter').name('Filter by normal').onChange(function(value) {
         if (value) normalAngleCtrl.enable();
         else normalAngleCtrl.disable();
@@ -7176,10 +7228,42 @@ function _raycastVisibleMeshHits() {
         : intersects.filter(hit => isFullyVisible(hit.object));
 }
 
+function _getMergedDeviationDistances() {
+    const stateA = deviationScanObject?.userData?._deviationState;
+    const stateB = deviationRefObject?.userData?._deviationState;
+    if (!stateA?.distancesByMesh && !stateB?.distancesByMesh) return null;
+    if (stateA?.mode === 'bidirectional') {
+        return mergeDistancesByMesh(stateA.distancesByMesh, stateB?.distancesByMesh);
+    }
+    return stateA?.distancesByMesh ?? null;
+}
+
+function _clearActiveDeviationBoth() {
+    const stateA = deviationScanObject?.userData?._deviationState;
+    const isBidirectional = stateA?.mode === 'bidirectional' || deviationGui.comparisonMode === 'bidirectional';
+    if (deviationScanObject) {
+        clearDeviationMap(
+            deviationScanObject,
+            isBidirectional ? null : deviationRefObject,
+        );
+    }
+    if (isBidirectional && deviationRefObject && deviationRefObject !== deviationScanObject) {
+        clearDeviationMap(deviationRefObject, null);
+    }
+}
+
+function _recolorActiveDeviationBoth(tolerance) {
+    if (deviationScanObject) recolorDeviationMap(deviationScanObject, tolerance);
+    const stateA = deviationScanObject?.userData?._deviationState;
+    if (stateA?.mode === 'bidirectional' && deviationRefObject) {
+        recolorDeviationMap(deviationRefObject, tolerance);
+    }
+}
+
 function _raycastDeviationProbeHit() {
-    const state = deviationScanObject?.userData?._deviationState;
-    if (!state?.distancesByMesh) return null;
-    return findDeviationProbeHit(_raycastVisibleMeshHits(), state.distancesByMesh);
+    const distancesByMesh = _getMergedDeviationDistances();
+    if (!distancesByMesh) return null;
+    return findDeviationProbeHit(_raycastVisibleMeshHits(), distancesByMesh);
 }
 
 function startDeviationProbeMode() {
@@ -7235,7 +7319,7 @@ function handleDeviationMapPick(picked) {
         render();
     } else {
         if (picked === deviationScanObject) {
-            alert('Select a different object for reference (B).');
+            alert('Select a different object for B.');
             return;
         }
         deviationRefObject = picked;
@@ -7279,13 +7363,15 @@ function runDeviationMapCompute(isRecompute = false) {
     const scan = deviationScanObject;
     const ref = deviationRefObject;
     if (!scan || !ref) {
-        alert('Select both scan (A) and reference (B).');
+        alert('Select both object A and object B.');
         cancelDeviationMapMode();
         return;
     }
 
+    const isBidirectional = deviationGui.comparisonMode === 'bidirectional';
+
     if (isRecompute) {
-        clearDeviationMap(scan, ref);
+        _clearActiveDeviationBoth();
         clearDeviationProbes();
     }
 
@@ -7296,29 +7382,29 @@ function runDeviationMapCompute(isRecompute = false) {
         overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:99999;color:#fff;font-size:18px;font-family:sans-serif;gap:8px;';
         document.body.appendChild(overlay);
     }
-    overlay.innerHTML = '<div>Computing deviation map… please wait</div><div id="deviationOverlayProgress" style="font-size:14px;opacity:0.85;">0 %</div>';
+    overlay.innerHTML = '<div id="deviationOverlayTitle">Computing deviation map… please wait</div><div id="deviationOverlayProgress" style="font-size:14px;opacity:0.85;">0 %</div>';
     overlay.style.display = 'flex';
 
     const progressEl = overlay.querySelector('#deviationOverlayProgress');
+    const titleEl = overlay.querySelector('#deviationOverlayTitle');
+
+    const computeOptions = {
+        batchSize: DEVIATION_DEFAULTS.batchSize,
+        tolerance: deviationGui.tolerance,
+        useNormalFilter: deviationGui.useNormalFilter,
+        minNormalDot: angleDegToNormalDot(deviationGui.normalAngleDeg),
+        onProgress(p) {
+            if (progressEl) progressEl.textContent = `${Math.round(p * 100)} %`;
+            if (titleEl && isBidirectional) {
+                titleEl.textContent = p < 0.5
+                    ? 'Computing A → B… please wait'
+                    : 'Computing B → A… please wait';
+            }
+        },
+    };
 
     setTimeout(async () => {
         try {
-            const result = await computeDeviationMap(scan, ref, {
-                batchSize: DEVIATION_DEFAULTS.batchSize,
-                tolerance: deviationGui.tolerance,
-                useNormalFilter: deviationGui.useNormalFilter,
-                minNormalDot: angleDegToNormalDot(deviationGui.normalAngleDeg),
-                onProgress(p) {
-                    if (progressEl) progressEl.textContent = `${Math.round(p * 100)} %`;
-                },
-            });
-
-            if (result.error || !result.stats) {
-                alert(result.error || 'Deviation map computation failed.');
-                if (deviationMapMode) cancelDeviationMapMode();
-                return;
-            }
-
             const tolerance = deviationGui.tolerance;
             if (!Number.isFinite(tolerance) || tolerance <= 0) {
                 alert('Tolerance must be a positive number.');
@@ -7326,19 +7412,78 @@ function runDeviationMapCompute(isRecompute = false) {
                 return;
             }
 
-            applyDeviationColors(scan, result.distancesByMesh, tolerance);
-            scan.userData._deviationState = {
-                referenceObject: ref,
-                stats: result.stats,
-                tolerance,
-                distancesByMesh: result.distancesByMesh,
-                useNormalFilter: deviationGui.useNormalFilter,
-                normalAngleDeg: deviationGui.normalAngleDeg,
-                computedAt: Date.now(),
-            };
+            if (isBidirectional) {
+                const result = await computeBidirectionalDeviationMap(scan, ref, computeOptions);
 
-            if (deviationGui.referenceWireframe) {
-                applyReferenceVisualization(ref, true);
+                if (result.error || !result.stats || !result.aToB?.stats || !result.bToA?.stats) {
+                    alert(result.error || 'Bidirectional deviation map computation failed.');
+                    if (deviationMapMode) cancelDeviationMapMode();
+                    return;
+                }
+
+                applyDeviationColors(scan, result.aToB.distancesByMesh, tolerance);
+                applyDeviationColors(ref, result.bToA.distancesByMesh, tolerance);
+
+                const sharedMeta = {
+                    tolerance,
+                    useNormalFilter: deviationGui.useNormalFilter,
+                    normalAngleDeg: deviationGui.normalAngleDeg,
+                    computedAt: Date.now(),
+                    mode: 'bidirectional',
+                };
+
+                scan.userData._deviationState = {
+                    ...sharedMeta,
+                    partnerObject: ref,
+                    role: 'a',
+                    referenceObject: ref,
+                    stats: result.aToB.stats,
+                    mergedStats: result.stats,
+                    distancesByMesh: result.aToB.distancesByMesh,
+                };
+                ref.userData._deviationState = {
+                    ...sharedMeta,
+                    partnerObject: scan,
+                    role: 'b',
+                    referenceObject: scan,
+                    stats: result.bToA.stats,
+                    mergedStats: result.stats,
+                    distancesByMesh: result.bToA.distancesByMesh,
+                };
+
+                clearReferenceVisualization(ref);
+            } else {
+                const result = await computeDeviationMap(scan, ref, computeOptions);
+
+                if (result.error || !result.stats) {
+                    alert(result.error || 'Deviation map computation failed.');
+                    if (deviationMapMode) cancelDeviationMapMode();
+                    return;
+                }
+
+                applyDeviationColors(scan, result.distancesByMesh, tolerance);
+                scan.userData._deviationState = {
+                    referenceObject: ref,
+                    partnerObject: ref,
+                    role: 'a',
+                    mode: 'unidirectional',
+                    stats: result.stats,
+                    tolerance,
+                    distancesByMesh: result.distancesByMesh,
+                    useNormalFilter: deviationGui.useNormalFilter,
+                    normalAngleDeg: deviationGui.normalAngleDeg,
+                    computedAt: Date.now(),
+                };
+
+                if (deviationRefObject?.userData?._deviationState) {
+                    delete deviationRefObject.userData._deviationState;
+                }
+
+                if (deviationGui.referenceWireframe) {
+                    applyReferenceVisualization(ref, true);
+                } else {
+                    clearReferenceVisualization(ref);
+                }
             }
 
             deviationResultActive = true;
@@ -7347,7 +7492,10 @@ function runDeviationMapCompute(isRecompute = false) {
 
             if (deviationMapMode) _exitDeviationPickMode();
 
-            _updateDeviationLegend(result.stats, tolerance);
+            const legendStats = isBidirectional
+                ? scan.userData._deviationState.mergedStats
+                : scan.userData._deviationState.stats;
+            _updateDeviationLegend(legendStats, tolerance);
             render();
         } catch (err) {
             console.error('Deviation map error:', err);
@@ -7727,7 +7875,7 @@ function onClick( event ) {
 
         const hit = getFreshRaycastTarget();
         if (!hit) {
-            alert(deviationStep === 0 ? 'Click the scan object (A).' : 'Click the reference object (B).');
+            alert(deviationStep === 0 ? 'Click object A.' : 'Click object B.');
             return;
         }
 

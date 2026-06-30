@@ -282,6 +282,112 @@ export function computeDeviationStats(distances, tolerance = DEVIATION_DEFAULTS.
 }
 
 /**
+ * Merge statistics from two deviation-map passes (e.g. A→B and B→A).
+ * @param {object|null|undefined} statsA
+ * @param {object|null|undefined} statsB
+ * @returns {object|null}
+ */
+export function mergeDeviationStats(statsA, statsB) {
+    if (!statsA && !statsB) return null;
+    if (!statsB) return statsA;
+    if (!statsA) return statsB;
+
+    const vertexCount = statsA.vertexCount + statsB.vertexCount;
+    const ambiguousCount = statsA.ambiguousCount + statsB.ambiguousCount;
+    const outOfTolerance = statsA.outOfTolerance + statsB.outOfTolerance;
+    const fcA = Math.max(0, statsA.vertexCount - statsA.ambiguousCount);
+    const fcB = Math.max(0, statsB.vertexCount - statsB.ambiguousCount);
+    const totalFinite = fcA + fcB;
+
+    const minCandidates = [];
+    const maxCandidates = [];
+    if (fcA > 0) {
+        minCandidates.push(statsA.min);
+        maxCandidates.push(statsA.max);
+    }
+    if (fcB > 0) {
+        minCandidates.push(statsB.min);
+        maxCandidates.push(statsB.max);
+    }
+
+    return {
+        min: minCandidates.length ? Math.min(...minCandidates) : 0,
+        max: maxCandidates.length ? Math.max(...maxCandidates) : 0,
+        mean: totalFinite > 0 ? (statsA.mean * fcA + statsB.mean * fcB) / totalFinite : 0,
+        rms: totalFinite > 0
+            ? Math.sqrt((statsA.rms ** 2 * fcA + statsB.rms ** 2 * fcB) / totalFinite)
+            : 0,
+        vertexCount,
+        outOfTolerance,
+        outOfTolerancePct: vertexCount > 0 ? (outOfTolerance / vertexCount) * 100 : 0,
+        ambiguousCount,
+    };
+}
+
+/**
+ * @param {Map<THREE.Mesh, Float32Array>|null|undefined} mapA
+ * @param {Map<THREE.Mesh, Float32Array>|null|undefined} mapB
+ * @returns {Map<THREE.Mesh, Float32Array>}
+ */
+export function mergeDistancesByMesh(mapA, mapB) {
+    const merged = new Map();
+    if (mapA) {
+        for (const [mesh, distances] of mapA) merged.set(mesh, distances);
+    }
+    if (mapB) {
+        for (const [mesh, distances] of mapB) merged.set(mesh, distances);
+    }
+    return merged;
+}
+
+/**
+ * @param {THREE.Object3D} objA
+ * @param {THREE.Object3D} objB
+ * @param {{ batchSize?: number, onProgress?: (p: number) => void, tolerance?: number, useNormalFilter?: boolean, minNormalDot?: number }} [options]
+ * @returns {Promise<{ aToB: object, bToA: object|null, stats: object|null, maxDistance: number, error: string|null }>}
+ */
+export async function computeBidirectionalDeviationMap(objA, objB, options = {}) {
+    const onProgress = options.onProgress ?? (() => {});
+
+    const aToB = await computeDeviationMap(objA, objB, {
+        ...options,
+        onProgress: (p) => onProgress(p * 0.5),
+    });
+    if (aToB.error || !aToB.stats) {
+        return {
+            aToB,
+            bToA: null,
+            stats: null,
+            maxDistance: 0,
+            error: aToB.error || 'Deviation map computation failed (A → B).',
+        };
+    }
+
+    const bToA = await computeDeviationMap(objB, objA, {
+        ...options,
+        onProgress: (p) => onProgress(0.5 + p * 0.5),
+    });
+    if (bToA.error || !bToA.stats) {
+        return {
+            aToB,
+            bToA,
+            stats: null,
+            maxDistance: 0,
+            error: bToA.error || 'Deviation map computation failed (B → A).',
+        };
+    }
+
+    const stats = mergeDeviationStats(aToB.stats, bToA.stats);
+    return {
+        aToB,
+        bToA,
+        stats,
+        maxDistance: stats?.max ?? 0,
+        error: null,
+    };
+}
+
+/**
  * @param {THREE.Object3D} scanRoot
  * @param {THREE.Object3D} refRoot
  * @param {{ batchSize?: number, onProgress?: (p: number) => void, tolerance?: number, useNormalFilter?: boolean, minNormalDot?: number }} [options]
@@ -472,7 +578,8 @@ export function clearDeviationMap(scanRoot, refRoot) {
 
     if (refRoot) clearReferenceVisualization(refRoot);
     else {
-        const ref = scanRoot.userData._deviationState?.referenceObject;
+        const state = scanRoot.userData._deviationState;
+        const ref = state?.referenceObject ?? state?.partnerObject;
         if (ref) clearReferenceVisualization(ref);
     }
 
@@ -500,14 +607,11 @@ export function computeOutOfTolerance(distancesByMesh, tolerance) {
     };
 }
 
-/**
- * @param {object} stats
- * @param {number} tolerance
- * @param {Map<THREE.Mesh, Float32Array>} [distancesByMesh]
- * @param {{ useNormalFilter?: boolean, normalAngleDeg?: number }} [legendOptions]
- * @returns {string}
- */
-export function buildDeviationLegendHtml(stats, tolerance, distancesByMesh, legendOptions = {}) {
+function _deviationLegendRow(label, value) {
+    return `<div style="display:flex;justify-content:space-between;gap:12px;"><span style="opacity:0.85;">${label}</span><span>${value}</span></div>`;
+}
+
+function _buildDeviationStatsSection(title, stats, tolerance, distancesByMesh) {
     if (!stats) return '';
 
     let outOfTolerance = stats.outOfTolerance;
@@ -521,17 +625,46 @@ export function buildDeviationLegendHtml(stats, tolerance, distancesByMesh, lege
     const withinTolerance = stats.vertexCount - outOfTolerance;
     const withinTolerancePct = stats.vertexCount > 0 ? (withinTolerance / stats.vertexCount) * 100 : 0;
     const tolLabel = tolerance.toFixed(4);
+    const row = _deviationLegendRow;
+    const ambiguousRow = stats.ambiguousCount > 0
+        ? row('No compatible surface:', `${stats.ambiguousCount} vertices`)
+        : '';
 
-    const row = (label, value) =>
-        `<div style="display:flex;justify-content:space-between;gap:12px;"><span style="opacity:0.85;">${label}</span><span>${value}</span></div>`;
+    return `
+        <div style="font-size:11px;margin-top:8px;line-height:1.55;border-top:1px solid rgba(255,255,255,0.12);padding-top:8px;">
+            <div style="font-weight:600;margin-bottom:4px;opacity:0.95;">${title}</div>
+            ${row('Min deviation:', stats.min.toFixed(4))}
+            ${row('Max deviation:', stats.max.toFixed(4))}
+            ${row('Mean:', stats.mean.toFixed(4))}
+            ${row('RMS:', stats.rms.toFixed(4))}
+            ${row('Vertices:', String(stats.vertexCount))}
+            ${ambiguousRow}
+            ${row(`Over tolerance (${tolLabel}):`, `${outOfTolerance} vertices (${outOfTolerancePct.toFixed(1)}%)`)}
+            ${row('Within tolerance:', `${withinTolerance} vertices (${withinTolerancePct.toFixed(1)}%)`)}
+        </div>
+    `;
+}
+
+/**
+ * @param {object} stats
+ * @param {number} tolerance
+ * @param {Map<THREE.Mesh, Float32Array>} [distancesByMesh]
+ * @param {{ useNormalFilter?: boolean, normalAngleDeg?: number }} [legendOptions]
+ * @returns {string}
+ */
+export function buildDeviationLegendHtml(stats, tolerance, distancesByMesh, legendOptions = {}) {
+    if (!stats) return '';
+
+    const tolLabel = tolerance.toFixed(4);
+    const row = _deviationLegendRow;
 
     const modeRow = legendOptions.useNormalFilter
         ? row('Filter by normal:', `on (${legendOptions.normalAngleDeg ?? DEVIATION_DEFAULTS.normalAngleDeg}°)`)
         : row('Filter by normal:', 'off');
 
-    const ambiguousRow = stats.ambiguousCount > 0
-        ? row('No compatible surface:', `${stats.ambiguousCount} vertices`)
-        : '';
+    const comparisonModeRow = legendOptions.comparisonMode === 'bidirectional'
+        ? row('Mode:', 'Bidirectional (A↔B)')
+        : row('Mode:', 'Unidirectional (A→B)');
 
     return `
         <div style="height:14px;border-radius:3px;background:linear-gradient(to right,#2244ff,#22cc44,#ffdd00,#ff2222);margin-bottom:4px;"></div>
@@ -540,22 +673,56 @@ export function buildDeviationLegendHtml(stats, tolerance, distancesByMesh, lege
         </div>
         <div style="font-size:11px;margin-top:8px;line-height:1.55;border-top:1px solid rgba(255,255,255,0.12);padding-top:8px;">
             <div style="font-weight:600;margin-bottom:4px;opacity:0.95;">Comparison</div>
+            ${comparisonModeRow}
             ${modeRow}
         </div>
-        <div style="font-size:11px;margin-top:8px;line-height:1.55;border-top:1px solid rgba(255,255,255,0.12);padding-top:8px;">
-            <div style="font-weight:600;margin-bottom:4px;opacity:0.95;">Statistics</div>
-            ${row('Min deviation:', stats.min.toFixed(4))}
-            ${row('Max deviation:', stats.max.toFixed(4))}
-            ${row('Mean:', stats.mean.toFixed(4))}
-            ${row('RMS:', stats.rms.toFixed(4))}
-            ${row('Vertices:', String(stats.vertexCount))}
-            ${ambiguousRow}
+        ${_buildDeviationStatsSection('Statistics', stats, tolerance, distancesByMesh)}
+    `;
+}
+
+/**
+ * @param {object} aStats
+ * @param {object} bStats
+ * @param {object} mergedStats
+ * @param {number} tolerance
+ * @param {Map<THREE.Mesh, Float32Array>} [aDistancesByMesh]
+ * @param {Map<THREE.Mesh, Float32Array>} [bDistancesByMesh]
+ * @param {{ useNormalFilter?: boolean, normalAngleDeg?: number, objectAName?: string, objectBName?: string }} [legendOptions]
+ * @returns {string}
+ */
+export function buildBidirectionalLegendHtml(
+    aStats,
+    bStats,
+    mergedStats,
+    tolerance,
+    aDistancesByMesh,
+    bDistancesByMesh,
+    legendOptions = {},
+) {
+    if (!mergedStats) return '';
+
+    const tolLabel = tolerance.toFixed(4);
+    const row = _deviationLegendRow;
+    const nameA = legendOptions.objectAName || 'Object A';
+    const nameB = legendOptions.objectBName || 'Object B';
+
+    const modeRow = legendOptions.useNormalFilter
+        ? row('Filter by normal:', `on (${legendOptions.normalAngleDeg ?? DEVIATION_DEFAULTS.normalAngleDeg}°)`)
+        : row('Filter by normal:', 'off');
+
+    return `
+        <div style="height:14px;border-radius:3px;background:linear-gradient(to right,#2244ff,#22cc44,#ffdd00,#ff2222);margin-bottom:4px;"></div>
+        <div style="display:flex;justify-content:space-between;font-size:11px;opacity:0.9;margin-bottom:2px;">
+            <span>0</span><span>Tolerance: ${tolLabel}</span>
         </div>
         <div style="font-size:11px;margin-top:8px;line-height:1.55;border-top:1px solid rgba(255,255,255,0.12);padding-top:8px;">
-            <div style="font-weight:600;margin-bottom:4px;opacity:0.95;">Tolerance check</div>
-            ${row(`Over tolerance (${tolLabel}):`, `${outOfTolerance} vertices (${outOfTolerancePct.toFixed(1)}%)`)}
-            ${row('Within tolerance:', `${withinTolerance} vertices (${withinTolerancePct.toFixed(1)}%)`)}
+            <div style="font-weight:600;margin-bottom:4px;opacity:0.95;">Comparison</div>
+            ${row('Mode:', 'Bidirectional (A↔B)')}
+            ${modeRow}
         </div>
+        ${_buildDeviationStatsSection(`${nameA} (A → B)`, aStats, tolerance, aDistancesByMesh)}
+        ${_buildDeviationStatsSection(`${nameB} (B → A)`, bStats, tolerance, bDistancesByMesh)}
+        ${_buildDeviationStatsSection('Combined', mergedStats, tolerance, mergeDistancesByMesh(aDistancesByMesh, bDistancesByMesh))}
     `;
 }
 
