@@ -816,6 +816,7 @@ let deviationPoseState = null;
 const deviationGui = {
     comparisonMode: 'unidirectional',
     tolerance: DEVIATION_DEFAULTS.tolerance,
+    withinToleranceOpacity: DEVIATION_DEFAULTS.withinToleranceOpacity,
     referenceWireframe: DEVIATION_DEFAULTS.referenceWireframe,
     useNormalFilter: DEVIATION_DEFAULTS.useNormalFilter,
     normalAngleDeg: DEVIATION_DEFAULTS.normalAngleDeg,
@@ -2803,12 +2804,17 @@ function addMainGui() {
     deviationFolder.add({ fn() { clearActiveDeviationMap(); } }, 'fn').name('Clear deviation map');
     deviationFolder.add(deviationGui, 'tolerance', 0.001, 100, 0.001).name('Tolerance').onChange(function(value) {
         if (!deviationResultActive || !deviationScanObject) return;
-        _recolorActiveDeviationBoth(value);
+        _recolorActiveDeviationBoth(value, deviationGui.withinToleranceOpacity);
         const state = deviationScanObject.userData._deviationState;
         const legendStats = state?.mergedStats ?? state?.stats;
         if (legendStats) {
             _updateDeviationLegend(legendStats, value);
         }
+        render();
+    });
+    deviationFolder.add(deviationGui, 'withinToleranceOpacity', 0, 1, 0.01).name('Opacity (within tolerance)').onChange(function(value) {
+        if (!deviationResultActive || !deviationScanObject) return;
+        _recolorActiveDeviationBoth(deviationGui.tolerance, value);
         render();
     });
     deviationWireframeCtrl = deviationFolder.add(deviationGui, 'referenceWireframe').name('Reference wireframe').onChange(function(value) {
@@ -7286,11 +7292,12 @@ function _clearActiveDeviationBoth() {
     }
 }
 
-function _recolorActiveDeviationBoth(tolerance) {
-    if (deviationScanObject) recolorDeviationMap(deviationScanObject, tolerance);
+function _recolorActiveDeviationBoth(tolerance, withinToleranceOpacity) {
+    const opacity = withinToleranceOpacity ?? deviationGui.withinToleranceOpacity;
+    if (deviationScanObject) recolorDeviationMap(deviationScanObject, tolerance, opacity);
     const stateA = deviationScanObject?.userData?._deviationState;
     if (stateA?.mode === 'bidirectional' && deviationRefObject) {
-        recolorDeviationMap(deviationRefObject, tolerance);
+        recolorDeviationMap(deviationRefObject, tolerance, opacity);
     }
 }
 
@@ -7445,6 +7452,7 @@ function runDeviationMapCompute(isRecompute = false) {
 
         try {
             const tolerance = deviationGui.tolerance;
+            const withinToleranceOpacity = deviationGui.withinToleranceOpacity;
             if (!Number.isFinite(tolerance) || tolerance <= 0) {
                 alert('Tolerance must be a positive number.');
                 if (deviationMapMode) cancelDeviationMapMode();
@@ -7460,11 +7468,12 @@ function runDeviationMapCompute(isRecompute = false) {
                     return;
                 }
 
-                applyDeviationColors(scan, result.aToB.distancesByMesh, tolerance);
-                applyDeviationColors(ref, result.bToA.distancesByMesh, tolerance);
+                applyDeviationColors(scan, result.aToB.distancesByMesh, tolerance, withinToleranceOpacity);
+                applyDeviationColors(ref, result.bToA.distancesByMesh, tolerance, withinToleranceOpacity);
 
                 const sharedMeta = {
                     tolerance,
+                    withinToleranceOpacity,
                     useNormalFilter: deviationGui.useNormalFilter,
                     normalAngleDeg: deviationGui.normalAngleDeg,
                     computedAt: Date.now(),
@@ -7500,7 +7509,7 @@ function runDeviationMapCompute(isRecompute = false) {
                     return;
                 }
 
-                applyDeviationColors(scan, result.distancesByMesh, tolerance);
+                applyDeviationColors(scan, result.distancesByMesh, tolerance, withinToleranceOpacity);
                 scan.userData._deviationState = {
                     referenceObject: ref,
                     partnerObject: ref,
@@ -7508,6 +7517,7 @@ function runDeviationMapCompute(isRecompute = false) {
                     mode: 'unidirectional',
                     stats: result.stats,
                     tolerance,
+                    withinToleranceOpacity,
                     distancesByMesh: result.distancesByMesh,
                     useNormalFilter: deviationGui.useNormalFilter,
                     normalAngleDeg: deviationGui.normalAngleDeg,

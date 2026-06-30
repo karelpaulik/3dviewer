@@ -7,9 +7,21 @@ export const DEVIATION_DEFAULTS = {
     batchSize: 10000,
     referenceWireframe: true,
     tolerance: 0.1,
+    withinToleranceOpacity: 1,
     useNormalFilter: false,
     normalAngleDeg: 60,
 };
+
+const _DEVIATION_VERTEX_ALPHA_HOOK = '_deviationVertexAlphaHook';
+
+/**
+ * @param {number} distance
+ * @param {number} tolerance
+ * @returns {boolean}
+ */
+export function isWithinTolerance(distance, tolerance) {
+    return Number.isFinite(distance) && distance <= tolerance;
+}
 
 const _worldVertex = new THREE.Vector3();
 const _scanNormal = new THREE.Vector3();
@@ -164,6 +176,9 @@ function backupMaterialState(material) {
         wireframe: mat.wireframe,
         opacity: mat.opacity,
         transparent: mat.transparent,
+        depthWrite: mat.depthWrite,
+        onBeforeCompile: mat.onBeforeCompile,
+        customProgramCacheKey: mat.customProgramCacheKey,
     }));
 }
 
@@ -184,8 +199,62 @@ function restoreMaterialState(material, backup) {
         mat.wireframe = b.wireframe;
         mat.opacity = b.opacity;
         mat.transparent = b.transparent;
+        if (b.depthWrite !== undefined) mat.depthWrite = b.depthWrite;
+        mat.onBeforeCompile = b.onBeforeCompile;
+        if (b.customProgramCacheKey) {
+            mat.customProgramCacheKey = b.customProgramCacheKey;
+        } else {
+            delete mat.customProgramCacheKey;
+        }
+        delete mat.userData[_DEVIATION_VERTEX_ALPHA_HOOK];
         mat.needsUpdate = true;
     });
+}
+
+/**
+ * Apply per-vertex alpha from the color attribute (RGBA) in the fragment shader.
+ * @param {THREE.Material} mat
+ */
+function ensureDeviationVertexAlphaShader(mat) {
+    if (mat.userData[_DEVIATION_VERTEX_ALPHA_HOOK]) return;
+
+    const previousOnBeforeCompile = mat.onBeforeCompile?.bind(mat);
+    const previousCacheKey = mat.customProgramCacheKey?.bind(mat);
+
+    mat.onBeforeCompile = (shader, renderer) => {
+        previousOnBeforeCompile?.(shader, renderer);
+        shader.fragmentShader = shader.fragmentShader.replace(
+            '#include <color_fragment>',
+            `#include <color_fragment>
+#ifdef USE_COLOR
+            diffuseColor.a *= vColor.a;
+#endif`,
+        );
+    };
+
+    mat.customProgramCacheKey = () => {
+        const base = previousCacheKey ? previousCacheKey() : mat.type;
+        return `${base}_deviationVertexAlpha`;
+    };
+
+    mat.userData[_DEVIATION_VERTEX_ALPHA_HOOK] = true;
+}
+
+/**
+ * @param {THREE.Material} mat
+ * @param {boolean} needsTransparency
+ */
+function applyDeviationMaterialState(mat, needsTransparency) {
+    mat.vertexColors = true;
+    if (mat.color) mat.color.set(0xffffff);
+    mat.map = null;
+    if (mat.metalness !== undefined) mat.metalness = 0;
+    if (mat.roughness !== undefined) mat.roughness = 1;
+    mat.opacity = 1;
+    mat.transparent = needsTransparency;
+    mat.depthWrite = !needsTransparency;
+    ensureDeviationVertexAlphaShader(mat);
+    mat.needsUpdate = true;
 }
 
 /**
@@ -499,49 +568,55 @@ export function computeDeviationMap(scanRoot, refRoot, options = {}) {
  * @param {THREE.Mesh} mesh
  * @param {Float32Array} distances
  * @param {number} tolerance
+ * @param {number} withinToleranceOpacity
  */
-function applyColorsToMesh(mesh, distances, tolerance) {
+function applyColorsToMesh(mesh, distances, tolerance, withinToleranceOpacity = DEVIATION_DEFAULTS.withinToleranceOpacity) {
     backupMeshForDeviation(mesh);
 
     const pos = mesh.geometry.getAttribute('position');
-    const colors = new Float32Array(pos.count * 3);
+    const colors = new Float32Array(pos.count * 4);
     const scale = tolerance > 0 ? tolerance : 1;
+    const inTolAlpha = Math.max(0, Math.min(1, withinToleranceOpacity));
+    const needsTransparency = inTolAlpha < 1;
 
     for (let i = 0; i < pos.count; i++) {
         const d = distances[i];
         const t = Number.isFinite(d) ? d / scale : 1;
         const c = mapDistanceToColor(t);
-        colors[i * 3] = c.r;
-        colors[i * 3 + 1] = c.g;
-        colors[i * 3 + 2] = c.b;
+        const alpha = isWithinTolerance(d, tolerance) ? inTolAlpha : 1;
+        const i4 = i * 4;
+        colors[i4] = c.r;
+        colors[i4 + 1] = c.g;
+        colors[i4 + 2] = c.b;
+        colors[i4 + 3] = alpha;
     }
 
-    mesh.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    mesh.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 4));
 
     const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-    mats.forEach(mat => {
-        mat.vertexColors = true;
-        if (mat.color) mat.color.set(0xffffff);
-        mat.map = null;
-        if (mat.metalness !== undefined) mat.metalness = 0;
-        if (mat.roughness !== undefined) mat.roughness = 1;
-        mat.needsUpdate = true;
-    });
+    mats.forEach(mat => applyDeviationMaterialState(mat, needsTransparency));
 }
 
 /**
  * @param {THREE.Object3D} scanRoot
  * @param {Map<THREE.Mesh, Float32Array>} distancesByMesh
  * @param {number} tolerance
+ * @param {number} [withinToleranceOpacity]
  */
-export function applyDeviationColors(scanRoot, distancesByMesh, tolerance) {
+export function applyDeviationColors(
+    scanRoot,
+    distancesByMesh,
+    tolerance,
+    withinToleranceOpacity = DEVIATION_DEFAULTS.withinToleranceOpacity,
+) {
     for (const [mesh, distances] of distancesByMesh) {
-        applyColorsToMesh(mesh, distances, tolerance);
+        applyColorsToMesh(mesh, distances, tolerance, withinToleranceOpacity);
     }
 
     scanRoot.userData._deviationState = {
         ...(scanRoot.userData._deviationState || {}),
         tolerance,
+        withinToleranceOpacity,
         distancesByMesh,
     };
 }
@@ -550,12 +625,15 @@ export function applyDeviationColors(scanRoot, distancesByMesh, tolerance) {
  * Re-apply colors using stored distances and a new tolerance scale.
  * @param {THREE.Object3D} scanRoot
  * @param {number} tolerance
+ * @param {number} [withinToleranceOpacity]
  */
-export function recolorDeviationMap(scanRoot, tolerance) {
+export function recolorDeviationMap(scanRoot, tolerance, withinToleranceOpacity) {
     const state = scanRoot.userData._deviationState;
     if (!state?.distancesByMesh) return false;
-    applyDeviationColors(scanRoot, state.distancesByMesh, tolerance);
+    const opacity = withinToleranceOpacity ?? state.withinToleranceOpacity ?? DEVIATION_DEFAULTS.withinToleranceOpacity;
+    applyDeviationColors(scanRoot, state.distancesByMesh, tolerance, opacity);
     state.tolerance = tolerance;
+    state.withinToleranceOpacity = opacity;
     return true;
 }
 

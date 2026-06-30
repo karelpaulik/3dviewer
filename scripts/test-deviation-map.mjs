@@ -170,7 +170,20 @@ async function main() {
 
     applyDeviationColors(scan, result.distancesByMesh, result.maxDistance);
     if (!scan.geometry.getAttribute('color')) throw new Error('color attribute missing');
+    if (scan.geometry.getAttribute('color').itemSize !== 4) throw new Error('color attribute should be RGBA');
     if (!scan.material.vertexColors) throw new Error('vertexColors not enabled');
+
+    applyDeviationColors(scan, result.distancesByMesh, 10, 0.25);
+    const rgba = scan.geometry.getAttribute('color').array;
+    if (Math.abs(rgba[3] - 0.25) > 1e-6 || Math.abs(rgba[7] - 0.25) > 1e-6) {
+        throw new Error('within-tolerance vertices should use configured opacity');
+    }
+    if (!scan.material.transparent) throw new Error('transparent should be enabled when opacity < 1');
+
+    applyDeviationColors(scan, result.distancesByMesh, 10, 1);
+    const rgbaFull = scan.geometry.getAttribute('color').array;
+    if (Math.abs(rgbaFull[3] - 1) > 1e-6) throw new Error('opacity 1 should restore full alpha on in-tolerance vertices');
+    if (scan.material.transparent) throw new Error('transparent should be disabled when opacity is 1');
 
     const ootLow = computeOutOfTolerance(result.distancesByMesh, 0.1);
     const ootHigh = computeOutOfTolerance(result.distancesByMesh, 10);
