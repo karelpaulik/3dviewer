@@ -178,10 +178,15 @@ async function main() {
     if (Math.abs(rgba[3] - 0.25) > 1e-6 || Math.abs(rgba[7] - 0.25) > 1e-6) {
         throw new Error('within-tolerance vertices should use configured opacity');
     }
-    if (!scan.material.transparent) throw new Error('transparent should be enabled when opacity < 1');
-    if (!scan.material.depthWrite) throw new Error('depthWrite should stay enabled for deviation map materials');
+    if (scan.material.transparent) throw new Error('base mesh should stay opaque in split-pass mode');
+    if (!scan.material.depthWrite) throw new Error('base mesh should write depth in split-pass mode');
+    const ghost = scan.userData._deviationGhostOverlay;
+    if (!ghost?.isMesh) throw new Error('ghost overlay expected for partial opacity');
+    if (!ghost.material.transparent) throw new Error('ghost overlay should be transparent');
+    if (ghost.material.depthWrite) throw new Error('ghost overlay should not write depth');
 
     applyDeviationColors(scan, result.distancesByMesh, 10, 0);
+    if (scan.userData._deviationGhostOverlay) throw new Error('ghost overlay should be removed when opacity is 0');
     if (scan.material.transparent) throw new Error('opacity 0 should use opaque pass with alphaTest');
     if (scan.material.alphaTest <= 0) throw new Error('opacity 0 should discard in-tolerance fragments via alphaTest');
 
@@ -189,6 +194,7 @@ async function main() {
     const rgbaFull = scan.geometry.getAttribute('color').array;
     if (Math.abs(rgbaFull[3] - 1) > 1e-6) throw new Error('opacity 1 should restore full alpha on in-tolerance vertices');
     if (scan.material.transparent) throw new Error('transparent should be disabled when opacity is 1');
+    if (scan.userData._deviationGhostOverlay) throw new Error('ghost overlay should be removed when opacity is 1');
 
     const ootLow = computeOutOfTolerance(result.distancesByMesh, 0.1);
     const ootHigh = computeOutOfTolerance(result.distancesByMesh, 10);

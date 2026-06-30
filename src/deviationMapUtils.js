@@ -13,6 +13,10 @@ export const DEVIATION_DEFAULTS = {
 };
 
 const _DEVIATION_VERTEX_ALPHA_HOOK = '_deviationVertexAlphaHook';
+const _DEVIATION_VERTEX_ALPHA_PASS = '_deviationVertexAlphaPass';
+const _DEVIATION_GHOST_OVERLAY = '_deviationGhostOverlay';
+
+/** @typedef {'single' | 'oot' | 'ghost'} DeviationAlphaPass */
 
 /**
  * @param {number} distance
@@ -209,25 +213,49 @@ function restoreMaterialState(material, backup) {
             delete mat.customProgramCacheKey;
         }
         delete mat.userData[_DEVIATION_VERTEX_ALPHA_HOOK];
+        delete mat.userData[_DEVIATION_VERTEX_ALPHA_PASS];
         mat.needsUpdate = true;
     });
 }
 
 /**
- * Apply per-vertex alpha from the color attribute (RGBA) in the fragment shader.
  * @param {THREE.Material} mat
  */
-function ensureDeviationVertexAlphaShader(mat) {
-    if (mat.userData[_DEVIATION_VERTEX_ALPHA_HOOK]) return;
+function clearDeviationShaderHook(mat) {
+    delete mat.userData[_DEVIATION_VERTEX_ALPHA_HOOK];
+    delete mat.userData[_DEVIATION_VERTEX_ALPHA_PASS];
+}
 
-    const previousOnBeforeCompile = mat.onBeforeCompile?.bind(mat);
-    const previousCacheKey = mat.customProgramCacheKey?.bind(mat);
-
-    mat.onBeforeCompile = (shader, renderer) => {
-        previousOnBeforeCompile?.(shader, renderer);
-        shader.fragmentShader = shader.fragmentShader.replace(
-            '#include <color_fragment>',
-            `#include <color_fragment>
+/**
+ * @param {DeviationAlphaPass} pass
+ * @returns {string}
+ */
+function _deviationAlphaFragmentGlsl(pass) {
+    if (pass === 'ghost') {
+        return `#include <color_fragment>
+#ifdef USE_COLOR
+            if (vColor.a >= 0.999) {
+                discard;
+            } else if (vColor.a <= 0.001) {
+                discard;
+            } else {
+                diffuseColor.a *= vColor.a;
+            }
+#endif`;
+    }
+    if (pass === 'oot') {
+        return `#include <color_fragment>
+#ifdef USE_COLOR
+            if (vColor.a <= 0.001) {
+                discard;
+            } else if (vColor.a >= 0.999) {
+                diffuseColor.a = 1.0;
+            } else {
+                discard;
+            }
+#endif`;
+    }
+    return `#include <color_fragment>
 #ifdef USE_COLOR
             if (vColor.a <= 0.001) {
                 discard;
@@ -236,25 +264,49 @@ function ensureDeviationVertexAlphaShader(mat) {
             } else {
                 diffuseColor.a *= vColor.a;
             }
-#endif`,
+#endif`;
+}
+
+/**
+ * Apply per-vertex alpha from the color attribute (RGBA) in the fragment shader.
+ * @param {THREE.Material} mat
+ * @param {DeviationAlphaPass} pass
+ */
+function ensureDeviationVertexAlphaShader(mat, pass) {
+    if (mat.userData[_DEVIATION_VERTEX_ALPHA_HOOK] && mat.userData[_DEVIATION_VERTEX_ALPHA_PASS] === pass) {
+        return;
+    }
+
+    clearDeviationShaderHook(mat);
+
+    const previousOnBeforeCompile = mat.onBeforeCompile?.bind(mat);
+    const previousCacheKey = mat.customProgramCacheKey?.bind(mat);
+    const fragmentGlsl = _deviationAlphaFragmentGlsl(pass);
+
+    mat.onBeforeCompile = (shader, renderer) => {
+        previousOnBeforeCompile?.(shader, renderer);
+        shader.fragmentShader = shader.fragmentShader.replace(
+            '#include <color_fragment>',
+            fragmentGlsl,
         );
     };
 
     mat.customProgramCacheKey = () => {
         const base = previousCacheKey ? previousCacheKey() : mat.type;
-        return `${base}_deviationVertexAlpha`;
+        return `${base}_deviationVertexAlpha_${pass}`;
     };
 
     mat.userData[_DEVIATION_VERTEX_ALPHA_HOOK] = true;
+    mat.userData[_DEVIATION_VERTEX_ALPHA_PASS] = pass;
 }
 
 /**
  * @param {THREE.Material} mat
+ * @param {DeviationAlphaPass} pass
  * @param {number} withinToleranceOpacity
  */
-function applyDeviationMaterialState(mat, withinToleranceOpacity) {
+function applyDeviationMaterialState(mat, pass, withinToleranceOpacity) {
     const inTolAlpha = Math.max(0, Math.min(1, withinToleranceOpacity));
-    const needsBlend = inTolAlpha > 0 && inTolAlpha < 1;
 
     mat.vertexColors = true;
     if (mat.color) mat.color.set(0xffffff);
@@ -262,13 +314,93 @@ function applyDeviationMaterialState(mat, withinToleranceOpacity) {
     if (mat.metalness !== undefined) mat.metalness = 0;
     if (mat.roughness !== undefined) mat.roughness = 1;
     mat.opacity = 1;
-    // OOT regions (alpha = 1) stay in the opaque pass with depth write.
-    // Blending is enabled only when in-tolerance vertices are semi-transparent.
-    mat.transparent = needsBlend;
-    mat.depthWrite = true;
-    mat.alphaTest = inTolAlpha <= 0 ? 0.001 : 0;
-    ensureDeviationVertexAlphaShader(mat);
+
+    if (pass === 'ghost') {
+        mat.transparent = true;
+        mat.depthWrite = false;
+        mat.depthTest = true;
+        mat.alphaTest = 0;
+    } else if (pass === 'oot') {
+        mat.transparent = false;
+        mat.depthWrite = true;
+        mat.depthTest = true;
+        mat.alphaTest = 0;
+    } else {
+        const needsBlend = inTolAlpha > 0 && inTolAlpha < 1;
+        mat.transparent = needsBlend;
+        mat.depthWrite = true;
+        mat.depthTest = true;
+        mat.alphaTest = inTolAlpha <= 0 ? 0.001 : 0;
+    }
+
+    ensureDeviationVertexAlphaShader(mat, pass);
     mat.needsUpdate = true;
+}
+
+/**
+ * @param {THREE.Material|THREE.Material[]} material
+ * @returns {THREE.Material|THREE.Material[]}
+ */
+function cloneMaterialsForDeviationGhost(material) {
+    const cloneOne = (mat) => {
+        const cloned = mat.clone();
+        clearDeviationShaderHook(cloned);
+        return cloned;
+    };
+    return Array.isArray(material) ? material.map(cloneOne) : cloneOne(material);
+}
+
+/**
+ * @param {THREE.Material|THREE.Material[]} material
+ */
+function disposeDeviationGhostMaterials(material) {
+    const mats = Array.isArray(material) ? material : [material];
+    mats.forEach(mat => mat.dispose());
+}
+
+/**
+ * @param {THREE.Mesh} mesh
+ */
+function removeDeviationGhostOverlay(mesh) {
+    const ghost = mesh.userData[_DEVIATION_GHOST_OVERLAY];
+    if (!ghost) return;
+
+    mesh.remove(ghost);
+    disposeDeviationGhostMaterials(ghost.material);
+    delete mesh.userData[_DEVIATION_GHOST_OVERLAY];
+}
+
+/**
+ * @param {THREE.Mesh} mesh
+ * @param {number} withinToleranceOpacity
+ */
+function ensureDeviationGhostOverlay(mesh, withinToleranceOpacity) {
+    let ghost = mesh.userData[_DEVIATION_GHOST_OVERLAY];
+    if (!ghost) {
+        ghost = new THREE.Mesh(mesh.geometry, cloneMaterialsForDeviationGhost(mesh.material));
+        ghost.userData._isDeviationGhostOverlay = true;
+        ghost.raycast = () => {};
+        mesh.add(ghost);
+        mesh.userData[_DEVIATION_GHOST_OVERLAY] = ghost;
+    } else {
+        ghost.geometry = mesh.geometry;
+    }
+
+    ghost.renderOrder = 1;
+    const ghostMats = Array.isArray(ghost.material) ? ghost.material : [ghost.material];
+    ghostMats.forEach(mat => applyDeviationMaterialState(mat, 'ghost', withinToleranceOpacity));
+}
+
+/**
+ * @param {THREE.Object3D|null|undefined} object
+ * @returns {THREE.Mesh|null}
+ */
+function resolveDeviationSourceMesh(object) {
+    if (!object?.isMesh) return null;
+    if (object.userData._isDeviationGhostOverlay && object.parent?.isMesh) {
+        return object.parent;
+    }
+    return object;
 }
 
 /**
@@ -592,7 +724,6 @@ function applyColorsToMesh(mesh, distances, tolerance, withinToleranceOpacity = 
     const colors = new Float32Array(pos.count * 4);
     const scale = tolerance > 0 ? tolerance : 1;
     const inTolAlpha = Math.max(0, Math.min(1, withinToleranceOpacity));
-    const needsBlend = inTolAlpha > 0 && inTolAlpha < 1;
 
     for (let i = 0; i < pos.count; i++) {
         const d = distances[i];
@@ -607,10 +738,18 @@ function applyColorsToMesh(mesh, distances, tolerance, withinToleranceOpacity = 
     }
 
     mesh.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 4));
-    mesh.renderOrder = needsBlend ? 1 : 0;
+    mesh.renderOrder = 0;
 
+    removeDeviationGhostOverlay(mesh);
+
+    const needsSplitPass = inTolAlpha > 0 && inTolAlpha < 1;
+    const basePass = needsSplitPass ? 'oot' : 'single';
     const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-    mats.forEach(mat => applyDeviationMaterialState(mat, inTolAlpha));
+    mats.forEach(mat => applyDeviationMaterialState(mat, basePass, inTolAlpha));
+
+    if (needsSplitPass) {
+        ensureDeviationGhostOverlay(mesh, inTolAlpha);
+    }
 }
 
 /**
@@ -661,7 +800,9 @@ export function clearDeviationMap(scanRoot, refRoot) {
     if (!scanRoot) return;
 
     scanRoot.traverse(obj => {
-        if (!obj.isMesh || !obj.userData._deviationBackup) return;
+        if (!obj.isMesh) return;
+        removeDeviationGhostOverlay(obj);
+        if (!obj.userData._deviationBackup) return;
         const backup = obj.userData._deviationBackup;
         restoreMaterialState(obj.material, backup.material);
         if (!backup.hadColorAttr && obj.geometry.getAttribute('color')) {
@@ -843,7 +984,10 @@ export function formatDeviationValue(distance) {
 export function sampleDeviationAtHit(hit, distancesByMesh) {
     if (!hit?.object?.isMesh || !hit.face || !distancesByMesh) return null;
 
-    const distances = distancesByMesh.get(hit.object);
+    const mesh = resolveDeviationSourceMesh(hit.object);
+    if (!mesh) return null;
+
+    const distances = distancesByMesh.get(mesh);
     if (!distances) return null;
 
     const { a, b, c } = hit.face;
@@ -855,7 +999,6 @@ export function sampleDeviationAtHit(hit, distancesByMesh) {
     if (hit.barycoord) {
         distance = hit.barycoord.x * da + hit.barycoord.y * db + hit.barycoord.z * dc;
     } else {
-        const mesh = hit.object;
         const pos = mesh.geometry.getAttribute('position');
         _vA.fromBufferAttribute(pos, a).applyMatrix4(mesh.matrixWorld);
         _vB.fromBufferAttribute(pos, b).applyMatrix4(mesh.matrixWorld);
