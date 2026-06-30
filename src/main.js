@@ -564,8 +564,8 @@ function _updateDeviationHintUI() {
     if (!_deviationHintDiv) return;
     if (deviationMapMode) {
         const stepText = deviationStep === 0
-            ? 'Deviation map: click scan object (A)'
-            : 'Deviation map: click reference object (B)';
+            ? 'Deviation map: click scan object (A) or select in Scene outliner'
+            : 'Deviation map: click reference object (B) or select in Scene outliner';
         _deviationHintDiv.innerHTML = `${stepText} &nbsp;·&nbsp; <button type="button" data-deviation-cancel style="margin-left:6px;padding:2px 10px;border:1px solid rgba(255,255,255,0.7);border-radius:4px;background:rgba(255,255,255,0.15);color:#fff;font-size:12px;cursor:pointer;">Cancel</button>`;
         _deviationHintDiv.style.display = 'block';
     } else {
@@ -6443,6 +6443,11 @@ function clearHighlight() {
 }
 
 function selectObject(object, options = {}) {
+    if (deviationMapMode) {
+        if (object) handleDeviationMapPick(object);
+        return;
+    }
+
     if (lastSelectedObject) {// Pokud už je něco vybraného, nejdřív to "uklidíme"
         deselectObject();
     }
@@ -7081,6 +7086,29 @@ function clearDeviationHighlight() {
     }
 }
 
+function handleDeviationMapPick(picked) {
+    if (!picked || !deviationMapMode) return;
+
+    if (deviationStep === 0) {
+        deviationScanObject = picked;
+        clearDeviationHighlight();
+        deviationHighlightHelper = new PaddedBoxHelper(picked, 0xff6600, viewProp.multiSelectBoxPadding);
+        scene.add(deviationHighlightHelper);
+        deviationStep = 1;
+        outlinerHighlight(picked);
+        _updateDeviationHintUI();
+        render();
+    } else {
+        if (picked === deviationScanObject) {
+            alert('Select a different object for reference (B).');
+            return;
+        }
+        deviationRefObject = picked;
+        outlinerHighlight(picked);
+        runDeviationMapCompute(false);
+    }
+}
+
 function startDeviationMapMode() {
     if (faceSnapMode) cancelFaceSnapMode();
     if (ptpSnapMode) cancelPtpSnapMode();
@@ -7552,23 +7580,7 @@ function onClick( event ) {
 
         const picked = resolveCADSelection(hit);
         if (!picked) return;
-
-        if (deviationStep === 0) {
-            deviationScanObject = picked;
-            clearDeviationHighlight();
-            deviationHighlightHelper = new PaddedBoxHelper(picked, 0xff6600, viewProp.multiSelectBoxPadding);
-            scene.add(deviationHighlightHelper);
-            deviationStep = 1;
-            _updateDeviationHintUI();
-            render();
-        } else {
-            if (picked === deviationScanObject) {
-                alert('Select a different object for reference (B).');
-                return;
-            }
-            deviationRefObject = picked;
-            runDeviationMapCompute(false);
-        }
+        handleDeviationMapPick(picked);
         return;
     }
 
