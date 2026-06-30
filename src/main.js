@@ -115,6 +115,12 @@ import {
     setDeviationProbeLabelScale,
 } from './deviationProbeUtils.js';
 import {
+    createDeviationPoseState,
+    updateDisplayPose,
+    applyComparisonPoses,
+    applyDisplayPoses,
+} from './deviationPoseUtils.js';
+import {
     collectMeshesForGeometryOps,
     collectAllMeshesForNormalsDisplay,
     applyFlatVertexNormalsToMeshes,
@@ -805,6 +811,8 @@ let deviationRefObject = null;
 let deviationHighlightHelper = null;
 let deviationResultActive = false;
 let deviationProbeMode = false;
+/** @type {ReturnType<typeof createDeviationPoseState>|null} */
+let deviationPoseState = null;
 const deviationGui = {
     comparisonMode: 'unidirectional',
     tolerance: DEVIATION_DEFAULTS.tolerance,
@@ -1622,6 +1630,7 @@ function init() {
                     });
                     render();
                 }
+                _updateDeviationComparisonDisplayPosesFromDrag();
             }, 100);
         }
     } );	
@@ -2765,12 +2774,16 @@ function addMainGui() {
             alert('No active deviation map.');
             return;
         }
+        if (deviationPoseState) {
+            applyComparisonPoses(deviationPoseState);
+        }
         _clearActiveDeviationBoth();
         clearDeviationProbes();
         cancelDeviationProbeMode();
         deviationResultActive = false;
         deviationScanObject = null;
         deviationRefObject = null;
+        deviationPoseState = null;
         _hideDeviationLegend();
         render();
     }
@@ -7238,6 +7251,27 @@ function _getMergedDeviationDistances() {
     return stateA?.distancesByMesh ?? null;
 }
 
+function _isDeviationComparisonObject(obj) {
+    if (!obj) return false;
+    return obj === deviationScanObject || obj === deviationRefObject;
+}
+
+function _updateDeviationComparisonDisplayPosesFromDrag() {
+    if (!deviationResultActive || !deviationPoseState) return;
+    if (viewProp.isGroupTransformActive) {
+        for (const obj of selectedObjects) {
+            if (_isDeviationComparisonObject(obj)) {
+                updateDisplayPose(deviationPoseState, obj);
+            }
+        }
+        return;
+    }
+    const dragObj = lastSelectedObject || transformControls.object;
+    if (dragObj && _isDeviationComparisonObject(dragObj)) {
+        updateDisplayPose(deviationPoseState, dragObj);
+    }
+}
+
 function _clearActiveDeviationBoth() {
     const stateA = deviationScanObject?.userData?._deviationState;
     const isBidirectional = stateA?.mode === 'bidirectional' || deviationGui.comparisonMode === 'bidirectional';
@@ -7404,6 +7438,11 @@ function runDeviationMapCompute(isRecompute = false) {
     };
 
     setTimeout(async () => {
+        const needsPoseRestore = isRecompute && !!deviationPoseState;
+        if (needsPoseRestore) {
+            applyComparisonPoses(deviationPoseState);
+        }
+
         try {
             const tolerance = deviationGui.tolerance;
             if (!Number.isFinite(tolerance) || tolerance <= 0) {
@@ -7486,6 +7525,10 @@ function runDeviationMapCompute(isRecompute = false) {
                 }
             }
 
+            if (!deviationPoseState) {
+                deviationPoseState = createDeviationPoseState(scan, ref);
+            }
+
             deviationResultActive = true;
             deviationScanObject = scan;
             deviationRefObject = ref;
@@ -7496,12 +7539,16 @@ function runDeviationMapCompute(isRecompute = false) {
                 ? scan.userData._deviationState.mergedStats
                 : scan.userData._deviationState.stats;
             _updateDeviationLegend(legendStats, tolerance);
-            render();
+            if (!needsPoseRestore) render();
         } catch (err) {
             console.error('Deviation map error:', err);
             alert(err?.message || 'Deviation map computation failed.');
             if (deviationMapMode) cancelDeviationMapMode();
         } finally {
+            if (needsPoseRestore) {
+                applyDisplayPoses(deviationPoseState);
+                render();
+            }
             overlay.style.display = 'none';
         }
     }, 50);

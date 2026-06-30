@@ -17,6 +17,71 @@ import {
     normalDotToAngleDeg,
     DEVIATION_DEFAULTS,
 } from '../src/deviationMapUtils.js';
+import {
+    captureObjectTransform,
+    applyObjectTransform,
+    createDeviationPoseState,
+    updateDisplayPose,
+    applyComparisonPoses,
+    applyDisplayPoses,
+} from '../src/deviationPoseUtils.js';
+
+function makeMockObject(x = 0, y = 0, z = 0) {
+    const obj = new THREE.Object3D();
+    obj.position.set(x, y, z);
+    obj.quaternion.setFromEuler(new THREE.Euler(0.1, 0.2, 0.3));
+    obj.scale.set(1.1, 1.2, 1.3);
+    obj.updateMatrixWorld(true);
+    return obj;
+}
+
+function testDeviationPoseUtils() {
+    const scan = makeMockObject(0, 0, 0);
+    const ref = makeMockObject(5, 0, 0);
+
+    const state = createDeviationPoseState(scan, ref);
+    if (state.scan !== scan || state.ref !== ref) {
+        throw new Error('createDeviationPoseState should store object refs');
+    }
+    if (state.poses.scan.comparison.position.x !== 0 || state.poses.ref.comparison.position.x !== 5) {
+        throw new Error('createDeviationPoseState comparison pose mismatch');
+    }
+    if (state.poses.scan.display.position.x !== 0 || state.poses.ref.display.position.x !== 5) {
+        throw new Error('createDeviationPoseState display pose mismatch');
+    }
+
+    scan.position.set(100, 0, 0);
+    scan.updateMatrixWorld(true);
+    if (!updateDisplayPose(state, scan)) {
+        throw new Error('updateDisplayPose should return true for scan');
+    }
+    if (state.poses.scan.display.position.x !== 100) {
+        throw new Error('updateDisplayPose should update scan display pose');
+    }
+    if (state.poses.scan.comparison.position.x !== 0) {
+        throw new Error('updateDisplayPose must not change comparison pose');
+    }
+    if (updateDisplayPose(state, makeMockObject())) {
+        throw new Error('updateDisplayPose should return false for unrelated object');
+    }
+
+    applyComparisonPoses(state);
+    if (scan.position.x !== 0 || ref.position.x !== 5) {
+        throw new Error('applyComparisonPoses should restore comparison transforms');
+    }
+
+    applyDisplayPoses(state);
+    if (scan.position.x !== 100 || ref.position.x !== 5) {
+        throw new Error('applyDisplayPoses should restore display transforms');
+    }
+
+    const snapshot = captureObjectTransform(scan);
+    scan.position.set(999, 999, 999);
+    applyObjectTransform(scan, snapshot);
+    if (scan.position.x !== 100) {
+        throw new Error('applyObjectTransform should restore captured transform');
+    }
+}
 
 function makeBoxMesh(name, offsetX = 0) {
     const geom = new THREE.BoxGeometry(10, 10, 10);
@@ -222,6 +287,8 @@ async function main() {
 
     clearDeviationMap(cube, null);
     clearDeviationMap(cuboid, null);
+
+    testDeviationPoseUtils();
 
     console.log('Deviation map smoke test OK');
     console.log(`  aligned offset: min=${result.stats.min.toFixed(4)} max=${result.stats.max.toFixed(4)}`);
