@@ -179,6 +179,11 @@ async function main() {
         throw new Error('within-tolerance vertices should use configured opacity');
     }
     if (!scan.material.transparent) throw new Error('transparent should be enabled when opacity < 1');
+    if (!scan.material.depthWrite) throw new Error('depthWrite should stay enabled for deviation map materials');
+
+    applyDeviationColors(scan, result.distancesByMesh, 10, 0);
+    if (scan.material.transparent) throw new Error('opacity 0 should use opaque pass with alphaTest');
+    if (scan.material.alphaTest <= 0) throw new Error('opacity 0 should discard in-tolerance fragments via alphaTest');
 
     applyDeviationColors(scan, result.distancesByMesh, 10, 1);
     const rgbaFull = scan.geometry.getAttribute('color').array;

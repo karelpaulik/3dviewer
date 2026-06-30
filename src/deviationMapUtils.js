@@ -177,6 +177,7 @@ function backupMaterialState(material) {
         opacity: mat.opacity,
         transparent: mat.transparent,
         depthWrite: mat.depthWrite,
+        alphaTest: mat.alphaTest,
         onBeforeCompile: mat.onBeforeCompile,
         customProgramCacheKey: mat.customProgramCacheKey,
     }));
@@ -200,6 +201,7 @@ function restoreMaterialState(material, backup) {
         mat.opacity = b.opacity;
         mat.transparent = b.transparent;
         if (b.depthWrite !== undefined) mat.depthWrite = b.depthWrite;
+        mat.alphaTest = b.alphaTest ?? 0;
         mat.onBeforeCompile = b.onBeforeCompile;
         if (b.customProgramCacheKey) {
             mat.customProgramCacheKey = b.customProgramCacheKey;
@@ -227,7 +229,13 @@ function ensureDeviationVertexAlphaShader(mat) {
             '#include <color_fragment>',
             `#include <color_fragment>
 #ifdef USE_COLOR
-            diffuseColor.a *= vColor.a;
+            if (vColor.a <= 0.001) {
+                discard;
+            } else if (vColor.a >= 0.999) {
+                diffuseColor.a = 1.0;
+            } else {
+                diffuseColor.a *= vColor.a;
+            }
 #endif`,
         );
     };
@@ -242,17 +250,23 @@ function ensureDeviationVertexAlphaShader(mat) {
 
 /**
  * @param {THREE.Material} mat
- * @param {boolean} needsTransparency
+ * @param {number} withinToleranceOpacity
  */
-function applyDeviationMaterialState(mat, needsTransparency) {
+function applyDeviationMaterialState(mat, withinToleranceOpacity) {
+    const inTolAlpha = Math.max(0, Math.min(1, withinToleranceOpacity));
+    const needsBlend = inTolAlpha > 0 && inTolAlpha < 1;
+
     mat.vertexColors = true;
     if (mat.color) mat.color.set(0xffffff);
     mat.map = null;
     if (mat.metalness !== undefined) mat.metalness = 0;
     if (mat.roughness !== undefined) mat.roughness = 1;
     mat.opacity = 1;
-    mat.transparent = needsTransparency;
-    mat.depthWrite = !needsTransparency;
+    // OOT regions (alpha = 1) stay in the opaque pass with depth write.
+    // Blending is enabled only when in-tolerance vertices are semi-transparent.
+    mat.transparent = needsBlend;
+    mat.depthWrite = true;
+    mat.alphaTest = inTolAlpha <= 0 ? 0.001 : 0;
     ensureDeviationVertexAlphaShader(mat);
     mat.needsUpdate = true;
 }
@@ -265,6 +279,7 @@ function backupMeshForDeviation(mesh) {
     mesh.userData._deviationBackup = {
         material: backupMaterialState(mesh.material),
         hadColorAttr: !!mesh.geometry.getAttribute('color'),
+        renderOrder: mesh.renderOrder,
     };
 }
 
@@ -577,7 +592,7 @@ function applyColorsToMesh(mesh, distances, tolerance, withinToleranceOpacity = 
     const colors = new Float32Array(pos.count * 4);
     const scale = tolerance > 0 ? tolerance : 1;
     const inTolAlpha = Math.max(0, Math.min(1, withinToleranceOpacity));
-    const needsTransparency = inTolAlpha < 1;
+    const needsBlend = inTolAlpha > 0 && inTolAlpha < 1;
 
     for (let i = 0; i < pos.count; i++) {
         const d = distances[i];
@@ -592,9 +607,10 @@ function applyColorsToMesh(mesh, distances, tolerance, withinToleranceOpacity = 
     }
 
     mesh.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 4));
+    mesh.renderOrder = needsBlend ? 1 : 0;
 
     const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-    mats.forEach(mat => applyDeviationMaterialState(mat, needsTransparency));
+    mats.forEach(mat => applyDeviationMaterialState(mat, inTolAlpha));
 }
 
 /**
@@ -651,6 +667,7 @@ export function clearDeviationMap(scanRoot, refRoot) {
         if (!backup.hadColorAttr && obj.geometry.getAttribute('color')) {
             obj.geometry.deleteAttribute('color');
         }
+        if (backup.renderOrder !== undefined) obj.renderOrder = backup.renderOrder;
         delete obj.userData._deviationBackup;
     });
 
