@@ -16,6 +16,7 @@ import { STLExporter } from 'three/addons/exporters/STLExporter.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 import { CSS3DRenderer } from 'three/addons/renderers/CSS3DRenderer.js';
 import { ViewHelper } from 'three/addons/helpers/ViewHelper.js';
+import { VertexNormalsHelper } from 'three/addons/helpers/VertexNormalsHelper.js';
 
 //import { GUI } from 'dat.gui';
 import { GUI } from 'lil-gui';
@@ -101,6 +102,7 @@ import {
 } from './deviationMapUtils.js';
 import {
     collectMeshesForGeometryOps,
+    collectAllMeshesForNormalsDisplay,
     applyFlatVertexNormalsToMeshes,
     applySmoothVertexNormalsToMeshes,
 } from './geometryOperationsUtils.js';
@@ -969,6 +971,14 @@ const part = {
 };
 let bbHelper = null; // Dedicated PaddedBoxHelper for bounding box display toggle
 let bbAxesHelper = null; // AxesHelper shown together with bbHelper
+const normalsViewGui = {
+    showVertexNormals: false,
+    showVertexAllNormals: false,
+    vertexNormalsHelperSize: 0, // 0 = auto from bbox
+    mergeNormalsBeforeSmooth: true,
+    mergeUvBeforeSmooth: true,
+};
+let vertexNormalsHelpers = [];
 
 // Možnost zobrazení následujících objektů v konzoli pouze v režimu "npx vite"
 if (import.meta.env.DEV) {
@@ -1267,7 +1277,8 @@ outlinerPanelEl = initOutliner({
             const hi = hiddenObjects.indexOf(obj);
             if (hi !== -1) hiddenObjects.splice(hi, 1);
             if (viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render);
-            render();
+            if (normalsViewGui.showVertexAllNormals || normalsViewGui.showVertexNormals) updateVertexNormalsHelpers();
+            else render();
         }
         updateVisibilityIcon(obj);
     },
@@ -2574,14 +2585,49 @@ function addMainGui() {
         if (geometryOpAffectsDeviationScan(obj)) {
             alert(`Normals updated on ${result.count} mesh(es). Recompute deviation map if one is active.`);
         }
-        render();
+        if (normalsViewGui.showVertexAllNormals || normalsViewGui.showVertexNormals) updateVertexNormalsHelpers();
+        else render();
     }
     geometryOpsFolder.add({ fn() {
         runGeometryNormalsOp(applyFlatVertexNormalsToMeshes, 'Apply flat normals (split vertices)');
     } }, 'fn').name('Flat normals (split vertices)');
+    geometryOpsFolder.add(normalsViewGui, 'mergeNormalsBeforeSmooth')
+        .name('Merge normals before Smooth').listen();
+    geometryOpsFolder.add(normalsViewGui, 'mergeUvBeforeSmooth')
+        .name('Merge UV before Smooth').listen();
     geometryOpsFolder.add({ fn() {
-        runGeometryNormalsOp(applySmoothVertexNormalsToMeshes, 'Apply smooth normals (merge vertices)');
+        runGeometryNormalsOp(
+            (meshes) => applySmoothVertexNormalsToMeshes(meshes, {
+                mergeNormalsBeforeSmooth: normalsViewGui.mergeNormalsBeforeSmooth,
+                mergeUvBeforeSmooth: normalsViewGui.mergeUvBeforeSmooth,
+            }),
+            'Apply smooth normals (merge vertices)',
+        );
     } }, 'fn').name('Smooth normals (merge vertices)');
+    geometryOpsFolder.add(normalsViewGui, 'showVertexNormals')
+        .name('Show vertex normals')
+        .onChange(function(value) {
+            if (value && !lastSelectedObject) {
+                alert('No object selected.');
+                normalsViewGui.showVertexNormals = false;
+                this.updateDisplay();
+                return;
+            }
+            updateVertexNormalsHelpers();
+        })
+        .listen();
+    geometryOpsFolder.add(normalsViewGui, 'showVertexAllNormals')
+        .name('Show vertex all normals')
+        .onChange(function() { updateVertexNormalsHelpers(); })
+        .listen();
+    geometryOpsFolder.add(normalsViewGui, 'vertexNormalsHelperSize', 0, 500, 1)
+        .name('Normals length (0=auto)')
+        .onChange(function() {
+            if (normalsViewGui.showVertexAllNormals || normalsViewGui.showVertexNormals) {
+                updateVertexNormalsHelpers();
+            }
+        })
+        .listen();
     geometryOpsFolder.close();
 
     function tryStartBoolean(operation) {
@@ -4643,6 +4689,63 @@ function updateAxesHelper() {
     render();
 }
 
+function disposeVertexNormalsHelpers() {
+    for (const helper of vertexNormalsHelpers) {
+        scene.remove(helper);
+        helper.dispose();
+    }
+    vertexNormalsHelpers = [];
+}
+
+function computeVertexNormalsHelperSize(object) {
+    if (normalsViewGui.vertexNormalsHelperSize > 0) {
+        return normalsViewGui.vertexNormalsHelperSize;
+    }
+    const box = new THREE.Box3().setFromObject(object);
+    if (box.isEmpty()) return 1;
+    const boxSize = box.getSize(new THREE.Vector3());
+    return Math.max(boxSize.x, boxSize.y, boxSize.z) * 0.05;
+}
+
+function updateVertexNormalsHelpers() {
+    disposeVertexNormalsHelpers();
+
+    const anyVisible = normalsViewGui.showVertexAllNormals || normalsViewGui.showVertexNormals;
+    if (!anyVisible) {
+        render();
+        return;
+    }
+
+    let meshes;
+    if (normalsViewGui.showVertexAllNormals) {
+        meshes = collectAllMeshesForNormalsDisplay(meshObjects);
+    } else {
+        if (!lastSelectedObject) {
+            render();
+            return;
+        }
+        meshes = collectMeshesForGeometryOps(lastSelectedObject);
+        if (meshes.length === 0) {
+            alert('No meshes found in selection.');
+            normalsViewGui.showVertexNormals = false;
+            render();
+            return;
+        }
+    }
+
+    for (const mesh of meshes) {
+        if (!mesh.geometry.getAttribute('normal')) {
+            mesh.geometry.computeVertexNormals();
+        }
+        const size = computeVertexNormalsHelperSize(mesh);
+        const helper = new VertexNormalsHelper(mesh, size, 0xff0000);
+        scene.add(helper);
+        helper.update();
+        vertexNormalsHelpers.push(helper);
+    }
+    render();
+}
+
 function updateCameraHelper() {
     if (cameraProspHelperObject) {
         scene.remove(cameraProspHelperObject);
@@ -5892,7 +5995,8 @@ function removeModel(part, skipConfirm = false, options = {}) {
         if (viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render);
 
         rebuildTree(loadedModels, true);
-        render();
+        if (normalsViewGui.showVertexAllNormals) updateVertexNormalsHelpers();
+        else render();
     } catch(err) {
         console.log("Error: removeModel " + err.message);
     }
@@ -5931,7 +6035,8 @@ function hideObject(part) {
         // Aktualizace solid section (skrytý objekt nesmí figurovat ve stencilu)
         if (viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render);
 
-        render();
+        if (normalsViewGui.showVertexAllNormals || normalsViewGui.showVertexNormals) updateVertexNormalsHelpers();
+        else render();
     } catch(err) {
         console.log("Error: hideObject " + err.message);
     }
@@ -5957,7 +6062,8 @@ function showHiddenObjects() {
         // Aktualizace solid section
         if (viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render);
 
-        render();
+        if (normalsViewGui.showVertexAllNormals || normalsViewGui.showVertexNormals) updateVertexNormalsHelpers();
+        else render();
     } catch(err) {
         console.log("Error: showHiddenObjects " + err.message);
     }
@@ -6391,7 +6497,10 @@ function selectObject(object, options = {}) {
         });
         console.log("selected object: ", lastSelectedObject);
 
-    }    
+        if (normalsViewGui.showVertexAllNormals || normalsViewGui.showVertexNormals) updateVertexNormalsHelpers();
+        else render();
+        return;
+    }
     render();
 }
 
@@ -6436,12 +6545,16 @@ function deselectObject() {
     }
 
     lastSelectedObject = null;
+    updateVertexNormalsHelpers();
+
     highlightObject(null); // Zrušení zvýraznění v outlineru
     outlinerHighlight(null); // Zrušení zvýraznění uzlu v scene outlineru
 
-    setTimeout(() => { //render uvnitř setTimeout, pro deselekci objektu, kdy je nějaký objekt pod kurzorem.
-        render();
-    }, 100);
+    if (!normalsViewGui.showVertexAllNormals && !normalsViewGui.showVertexNormals) {
+        setTimeout(() => { //render uvnitř setTimeout, pro deselekci objektu, kdy je nějaký objekt pod kurzorem.
+            render();
+        }, 100);
+    }
 
 }
 
@@ -6766,6 +6879,7 @@ function render() {
     if (cameraProspHelperObject) cameraProspHelperObject.update();
     if (cameraOrthoHelperObject) cameraOrthoHelperObject.update();
     lightHelperObjects.forEach(h => h.update());
+    vertexNormalsHelpers.forEach(h => h.update());
 
     // Dynamicky rozšíří far aktivní kamery, pokud helper druhé kamery přesahuje frustum
     if (cameraProspHelperObject || cameraOrthoHelperObject) ensureCameraFarCoversHelpers();
