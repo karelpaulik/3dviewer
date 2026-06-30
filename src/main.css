@@ -848,6 +848,12 @@ canvas {
 	color: rgba(255,255,255,0.45);
 	white-space: nowrap;
 }
+.status-deviation-probe {
+	color: rgba(255, 200, 120, 0.95);
+	white-space: nowrap;
+	margin-left: 10px;
+	font-weight: 600;
+}
 .status-right {
 	margin-left: auto;
 	display: flex;

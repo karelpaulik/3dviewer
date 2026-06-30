@@ -558,3 +558,71 @@ export function buildDeviationLegendHtml(stats, tolerance, distancesByMesh, lege
         </div>
     `;
 }
+
+const _vA = new THREE.Vector3();
+const _vB = new THREE.Vector3();
+const _vC = new THREE.Vector3();
+
+/**
+ * @param {number} distance
+ * @returns {string}
+ */
+export function formatDeviationValue(distance) {
+    if (!Number.isFinite(distance)) return 'N/A';
+    return distance.toFixed(4);
+}
+
+/**
+ * Sample deviation at a raycast hit using stored per-vertex distances.
+ * @param {THREE.Intersection} hit
+ * @param {Map<THREE.Mesh, Float32Array>} distancesByMesh
+ * @returns {{ distance: number, isAmbiguous: boolean } | null}
+ */
+export function sampleDeviationAtHit(hit, distancesByMesh) {
+    if (!hit?.object?.isMesh || !hit.face || !distancesByMesh) return null;
+
+    const distances = distancesByMesh.get(hit.object);
+    if (!distances) return null;
+
+    const { a, b, c } = hit.face;
+    const da = distances[a];
+    const db = distances[b];
+    const dc = distances[c];
+
+    let distance;
+    if (hit.barycoord) {
+        distance = hit.barycoord.x * da + hit.barycoord.y * db + hit.barycoord.z * dc;
+    } else {
+        const mesh = hit.object;
+        const pos = mesh.geometry.getAttribute('position');
+        _vA.fromBufferAttribute(pos, a).applyMatrix4(mesh.matrixWorld);
+        _vB.fromBufferAttribute(pos, b).applyMatrix4(mesh.matrixWorld);
+        _vC.fromBufferAttribute(pos, c).applyMatrix4(mesh.matrixWorld);
+        const p = hit.point;
+        const da2 = p.distanceToSquared(_vA);
+        const db2 = p.distanceToSquared(_vB);
+        const dc2 = p.distanceToSquared(_vC);
+        if (da2 <= db2 && da2 <= dc2) distance = da;
+        else if (db2 <= dc2) distance = db;
+        else distance = dc;
+    }
+
+    return {
+        distance,
+        isAmbiguous: !Number.isFinite(distance),
+    };
+}
+
+/**
+ * @param {THREE.Intersection[]} intersects
+ * @param {Map<THREE.Mesh, Float32Array>} distancesByMesh
+ * @returns {{ hit: THREE.Intersection, sample: { distance: number, isAmbiguous: boolean } } | null}
+ */
+export function findDeviationProbeHit(intersects, distancesByMesh) {
+    if (!intersects?.length || !distancesByMesh) return null;
+    for (const hit of intersects) {
+        const sample = sampleDeviationAtHit(hit, distancesByMesh);
+        if (sample) return { hit, sample };
+    }
+    return null;
+}

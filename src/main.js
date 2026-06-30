@@ -99,7 +99,18 @@ import {
     applyReferenceVisualization,
     clearReferenceVisualization,
     buildDeviationLegendHtml,
+    findDeviationProbeHit,
 } from './deviationMapUtils.js';
+import {
+    initDeviationProbe,
+    isDeviationProbeActive,
+    setDeviationProbeActive,
+    updateDeviationProbePreview,
+    addDeviationProbeLabel,
+    clearDeviationProbes,
+    getDeviationProbeHoverText,
+    setDeviationProbeLabelScale,
+} from './deviationProbeUtils.js';
 import {
     collectMeshesForGeometryOps,
     collectAllMeshesForNormalsDisplay,
@@ -302,6 +313,9 @@ statusModelSepEl.className = 'status-sep';
 statusModelSepEl.textContent = '|';
 const statusModelInfoEl = document.createElement('span');
 statusModelInfoEl.className = 'status-model-info';
+const statusDeviationProbeEl = document.createElement('span');
+statusDeviationProbeEl.id = 'status-deviation-probe';
+statusDeviationProbeEl.className = 'status-deviation-probe';
 const _statusLeft = statusBar.querySelector('.status-left');
 _statusLeft.appendChild(statusModeLabelEl);
 _statusLeft.appendChild(statusModeEl);
@@ -310,6 +324,7 @@ _statusLeft.appendChild(statusSelLabelEl);
 _statusLeft.appendChild(statusSelEl);
 _statusLeft.appendChild(statusModelSepEl);
 _statusLeft.appendChild(statusModelInfoEl);
+_statusLeft.appendChild(statusDeviationProbeEl);
 
 let sectionCtrl = null; // Reference to the GUI 'Section' controller for syncing
 let sectionCrossLinesCtrl = null; // Reference to the GUI 'Cross Section Lines' controller for syncing
@@ -573,6 +588,20 @@ function _updateDeviationHintUI() {
     }
 }
 
+function _updateDeviationProbeHintUI() {
+    if (!_deviationProbeHintDiv) return;
+    if (deviationProbeMode) {
+        _deviationProbeHintDiv.innerHTML = 'Probe deviation: hover to preview, click to pin value &nbsp;·&nbsp; <button type="button" data-deviation-probe-cancel style="margin-left:6px;padding:2px 10px;border:1px solid rgba(255,255,255,0.7);border-radius:4px;background:rgba(255,255,255,0.15);color:#fff;font-size:12px;cursor:pointer;">Cancel</button>';
+        _deviationProbeHintDiv.style.display = 'block';
+    } else {
+        _deviationProbeHintDiv.style.display = 'none';
+    }
+}
+
+function _updateDeviationProbeStatusText(text) {
+    if (statusDeviationProbeEl) statusDeviationProbeEl.textContent = text || '';
+}
+
 function _clampDeviationLegendPosition(left, top) {
     if (!_deviationLegendEl) return { left, top };
     const w = _deviationLegendEl.offsetWidth || 240;
@@ -746,13 +775,16 @@ let deviationScanObject = null;
 let deviationRefObject = null;
 let deviationHighlightHelper = null;
 let deviationResultActive = false;
+let deviationProbeMode = false;
 const deviationGui = {
     tolerance: DEVIATION_DEFAULTS.tolerance,
     referenceWireframe: DEVIATION_DEFAULTS.referenceWireframe,
     useNormalFilter: DEVIATION_DEFAULTS.useNormalFilter,
     normalAngleDeg: DEVIATION_DEFAULTS.normalAngleDeg,
+    labelScale: 1,
 };
 let _deviationHintDiv = null;
+let _deviationProbeHintDiv = null;
 let _deviationLegendEl = null;
 let _deviationLegendHeaderEl = null;
 let _deviationLegendBodyEl = null;
@@ -1677,6 +1709,9 @@ function init() {
                 if (deviationMapMode) {
                     cancelDeviationMapMode();
                 }
+                if (deviationProbeMode) {
+                    cancelDeviationProbeMode();
+                }
                 _syncModeBtns();
                 statusCircleDetectEl.style.display = 'none';
                 cancelAddLeaderLine();
@@ -1870,6 +1905,8 @@ function init() {
     addCallGui();
     applyToolbarPreferences(); // Apply initial toolbar CSS from viewProp defaults
     initMeasurement(scene);
+    initDeviationProbe(scene);
+    setDeviationProbeLabelScale(deviationGui.labelScale);
     initSelectDimension(currentCamera, render, orbitControls);
     initAnnotations(scene, render);
     initAnnotations3d(scene, render);
@@ -1953,6 +1990,17 @@ function init() {
         }
     });
     document.body.appendChild(_deviationHintDiv);
+
+    _deviationProbeHintDiv = document.createElement('div');
+    _deviationProbeHintDiv.style.cssText = 'position:fixed;bottom:178px;left:50%;transform:translateX(-50%);background:rgba(200,90,30,0.88);color:#fff;padding:5px 14px;border-radius:5px;font-size:12px;display:none;z-index:1000;white-space:nowrap;';
+    _deviationProbeHintDiv.addEventListener('click', (e) => {
+        if (e.target.closest('[data-deviation-probe-cancel]')) {
+            e.preventDefault();
+            e.stopPropagation();
+            cancelDeviationProbeMode();
+        }
+    });
+    document.body.appendChild(_deviationProbeHintDiv);
 
     _deviationLegendEl = document.createElement('div');
     _deviationLegendEl.id = 'deviation-legend';
@@ -2639,6 +2687,10 @@ function addMainGui() {
             alert('Deviation map mode is active. Finish selection or cancel (Cancel / ESC).');
             return;
         }
+        if (deviationProbeMode) {
+            alert('Deviation probe mode is active. Cancel (Cancel / ESC).');
+            return;
+        }
         startBooleanMode(operation);
     }
     const booleanFolder = editGui.addFolder('Boolean Operations');
@@ -2656,6 +2708,10 @@ function addMainGui() {
             alert('Deviation map mode is already active. Finish selection or cancel (Cancel / ESC).');
             return;
         }
+        if (deviationProbeMode) {
+            alert('Deviation probe mode is active. Cancel (Cancel / ESC).');
+            return;
+        }
         startDeviationMapMode();
     }
     function runDeviationMapRecompute() {
@@ -2671,6 +2727,8 @@ function addMainGui() {
             return;
         }
         clearDeviationMap(deviationScanObject, deviationRefObject);
+        clearDeviationProbes();
+        cancelDeviationProbeMode();
         deviationResultActive = false;
         deviationScanObject = null;
         deviationRefObject = null;
@@ -2705,6 +2763,12 @@ function addMainGui() {
         if (deviationResultActive && deviationGui.useNormalFilter) runDeviationMapRecompute();
     });
     if (!deviationGui.useNormalFilter) normalAngleCtrl.disable();
+    deviationFolder.add({ fn() { tryStartDeviationProbeMode(); } }, 'fn').name('Probe deviation values');
+    deviationFolder.add({ fn() { clearDeviationProbes(); render(); } }, 'fn').name('Clear deviation labels');
+    deviationFolder.add(deviationGui, 'labelScale', 0.5, 4, 0.05).name('Label size').onChange(function(value) {
+        setDeviationProbeLabelScale(value);
+        render();
+    });
     deviationFolder.close();
     const materialFolder = editGui.addFolder('Material operations');
     materialFolder.add({ fn() {
@@ -5274,6 +5338,7 @@ function isBoxSelectAllowed() {
         && !ptpSnapMode
         && !booleanMode
         && !deviationMapMode
+        && !deviationProbeMode
         && !isTransformDragging;
 }
 
@@ -6870,6 +6935,22 @@ function render() {
     } else {
         updateAnnotation3dPreview(null);
     }
+
+    // Deviation probe hover preview
+    if (deviationProbeMode && deviationResultActive && !docBlocks3dInput && !isMouseOverGui && !isMouseDown) {
+        const probeHit = _raycastDeviationProbeHit();
+        const tolerance = deviationScanObject?.userData?._deviationState?.tolerance ?? deviationGui.tolerance;
+        if (probeHit) {
+            updateDeviationProbePreview(probeHit.hit.point, probeHit.sample, tolerance);
+            _updateDeviationProbeStatusText(getDeviationProbeHoverText());
+        } else {
+            updateDeviationProbePreview(null, null, tolerance);
+            _updateDeviationProbeStatusText('');
+        }
+    } else {
+        updateDeviationProbePreview(null, null, deviationGui.tolerance);
+        if (!deviationProbeMode) _updateDeviationProbeStatusText('');
+    }
     
     // Pokud se objekty ve scéně hýbou, odkomentuj řádek níže pro plynulý rámeček:
     // if (selectionHelper && selectionHelper.visible) selectionHelper.update();
@@ -7086,6 +7167,60 @@ function clearDeviationHighlight() {
     }
 }
 
+function _raycastVisibleMeshHits() {
+    raycaster.setFromCamera(mouse, currentCamera);
+    const intersects = raycaster.intersectObjects(meshObjects);
+    const isFullyVisible = (obj) => { let o = obj; while (o) { if (!o.visible) return false; o = o.parent; } return true; };
+    return (renderer.localClippingEnabled && clipPlanes.length > 0)
+        ? intersects.filter(hit => isFullyVisible(hit.object) && clipPlanes.some(plane => plane.distanceToPoint(hit.point) >= 0))
+        : intersects.filter(hit => isFullyVisible(hit.object));
+}
+
+function _raycastDeviationProbeHit() {
+    const state = deviationScanObject?.userData?._deviationState;
+    if (!state?.distancesByMesh) return null;
+    return findDeviationProbeHit(_raycastVisibleMeshHits(), state.distancesByMesh);
+}
+
+function startDeviationProbeMode() {
+    if (!deviationResultActive || !deviationScanObject) {
+        alert('Create a deviation map first (Start deviation map).');
+        return;
+    }
+    if (deviationMapMode) cancelDeviationMapMode();
+    if (faceSnapMode) cancelFaceSnapMode();
+    if (ptpSnapMode) cancelPtpSnapMode();
+    if (booleanMode) cancelBooleanMode();
+    deselectObject();
+    deviationProbeMode = true;
+    setDeviationProbeActive(true);
+    setDeviationProbeLabelScale(deviationGui.labelScale);
+    viewProp.isSelectAllowed = false;
+    _updateDeviationProbeHintUI();
+    render();
+}
+
+function tryStartDeviationProbeMode() {
+    if (deviationMapMode) {
+        alert('Finish deviation map selection or cancel (Cancel / ESC).');
+        return;
+    }
+    if (deviationProbeMode) {
+        cancelDeviationProbeMode();
+        return;
+    }
+    startDeviationProbeMode();
+}
+
+function cancelDeviationProbeMode() {
+    deviationProbeMode = false;
+    setDeviationProbeActive(false);
+    viewProp.isSelectAllowed = true;
+    _updateDeviationProbeHintUI();
+    _updateDeviationProbeStatusText('');
+    render();
+}
+
 function handleDeviationMapPick(picked) {
     if (!picked || !deviationMapMode) return;
 
@@ -7113,6 +7248,7 @@ function startDeviationMapMode() {
     if (faceSnapMode) cancelFaceSnapMode();
     if (ptpSnapMode) cancelPtpSnapMode();
     if (booleanMode) cancelBooleanMode();
+    if (deviationProbeMode) cancelDeviationProbeMode();
     deviationMapMode = true;
     deviationStep = 0;
     deviationScanObject = null;
@@ -7150,6 +7286,7 @@ function runDeviationMapCompute(isRecompute = false) {
 
     if (isRecompute) {
         clearDeviationMap(scan, ref);
+        clearDeviationProbes();
     }
 
     let overlay = document.getElementById('deviationOverlay');
@@ -7233,6 +7370,7 @@ function startBooleanMode(operation) {
     if (faceSnapMode) cancelFaceSnapMode();
     if (ptpSnapMode) cancelPtpSnapMode();
     if (deviationMapMode) cancelDeviationMapMode();
+    if (deviationProbeMode) cancelDeviationProbeMode();
     booleanMode = true;
     booleanStep = 0;
     booleanOperation = operation;
@@ -7351,6 +7489,21 @@ function onClick( event ) {
 
     // Document editor open – ignore all 3D model interaction (annotation, measure, select, …)
     if (isDocOverlayBlockingInput()) return;
+
+    // --- Deviation probe mode ---
+    if (deviationProbeMode && deviationResultActive) {
+        mouseUpPos.x = event.clientX;
+        mouseUpPos.y = event.clientY;
+        if (mouseDownPos.distanceTo(mouseUpPos) > 3) return;
+
+        const probeHit = _raycastDeviationProbeHit();
+        if (probeHit) {
+            const tolerance = deviationScanObject?.userData?._deviationState?.tolerance ?? deviationGui.tolerance;
+            addDeviationProbeLabel(probeHit.hit.point, probeHit.sample, tolerance, probeHit.hit.object);
+            render();
+        }
+        return;
+    }
 
     // --- Measurement mode ---
     if (viewProp.measureMode && isMeasureActive()) {
