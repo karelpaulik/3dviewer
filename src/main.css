@@ -703,6 +703,22 @@ canvas {
     color: #ffc878;
 }
 
+/* ViewHelper orientation gizmo – bottom-right, above status bar and GUI panels */
+#view-gizmo {
+    position: fixed;
+    bottom: 36px;
+    right: 8px;
+    z-index: 1015;
+    width: 128px;
+    height: 128px;
+    pointer-events: auto;
+}
+#view-gizmo canvas {
+    display: block;
+    width: 128px;
+    height: 128px;
+}
+
 /* Fullscreen toggle button – bottom-left, above status bar */
 #fs-btn {
     position: fixed;

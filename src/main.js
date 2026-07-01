@@ -139,7 +139,9 @@ let container, stats;
 let camera, cameraTarget, scene, renderer;
 let css2DRenderer;
 let css3DRenderer;
-let viewHelper;			
+let viewHelper;
+let viewHelperRenderer;
+const VIEW_HELPER_SIZE = 128;
 
 const clipPlanes = [];		
 let crossSectionLines = null; // Pro uchování průřezových čar
@@ -441,9 +443,14 @@ document.body.appendChild(crossSectionLinesBtn);
 
 document.body.appendChild(statusCircleDetectEl);
 
+// ViewHelper overlay – fixed bottom-right, above GUI panels
+const viewHelperContainer = document.createElement('div');
+viewHelperContainer.id = 'view-gizmo';
+document.body.appendChild(viewHelperContainer);
+
 // Wrapper reference for hit-testing (toolbar + panels + outliner)
 let outlinerPanelEl = null;
-const guiWrapper = { contains(el) { return guiToolbar.contains(el) || Object.values(guiPanels).some(p => p.gui && p.gui.domElement.style.display !== 'none' && p.gui.domElement.contains(el)) || (outlinerPanelEl && outlinerPanelEl.contains(el)) || statusBar.contains(el) || statusCircleDetectEl.contains(el) || fsBtn.contains(el) || sectionBtn.contains(el) || solidSectionBtn.contains(el) || showSectionMeshBtn.contains(el) || crossSectionLinesBtn.contains(el) || (_deviationLegendEl && _deviationLegendEl.contains(el)); } };
+const guiWrapper = { contains(el) { return guiToolbar.contains(el) || Object.values(guiPanels).some(p => p.gui && p.gui.domElement.style.display !== 'none' && p.gui.domElement.contains(el)) || (outlinerPanelEl && outlinerPanelEl.contains(el)) || statusBar.contains(el) || statusCircleDetectEl.contains(el) || fsBtn.contains(el) || sectionBtn.contains(el) || solidSectionBtn.contains(el) || showSectionMeshBtn.contains(el) || crossSectionLinesBtn.contains(el) || viewHelperContainer.contains(el) || (_deviationLegendEl && _deviationLegendEl.contains(el)); } };
 
 let guiView = null;
 let guiAssembly = null;
@@ -1508,10 +1515,13 @@ function init() {
     orbitControls.update();
     orbitControls.addEventListener( 'change', render ); // use if there is no animation loop
 
-    // ViewHelper – orientation gizmo in the bottom-right corner
-    viewHelper = new ViewHelper( currentCamera, renderer.domElement );
-    viewHelper.center = orbitControls.target;
-    viewHelper.setLabels( 'X', 'Y', 'Z' );
+    // ViewHelper – orientation gizmo in dedicated overlay (above GUI)
+    viewHelperRenderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+    viewHelperRenderer.setPixelRatio(window.devicePixelRatio);
+    viewHelperRenderer.setSize(VIEW_HELPER_SIZE, VIEW_HELPER_SIZE);
+    viewHelperRenderer.setClearColor(0x000000, 0);
+    viewHelperContainer.appendChild(viewHelperRenderer.domElement);
+    createViewHelper();
 
     transformControls = new TransformControls( currentCamera, renderer.domElement );
     transformControls.setSize( 0.5 );	
@@ -4813,7 +4823,16 @@ function setCamera() {
 
     currentCamera.lookAt( orbitControls.target.x, orbitControls.target.y, orbitControls.target.z );
     updateSelectDimensionCamera(currentCamera);
+    createViewHelper();
     onWindowResize();
+}
+
+function createViewHelper() {
+    if (viewHelper) viewHelper.dispose();
+    if (!viewHelperRenderer || !orbitControls) return;
+    viewHelper = new ViewHelper(currentCamera, viewHelperRenderer.domElement);
+    viewHelper.center = orbitControls.target;
+    viewHelper.setLabels('X', 'Y', 'Z');
 }	
 //GUI----------------------------------------------------------------------------------------------------------------
 function isTouchDevice() {
@@ -7127,9 +7146,7 @@ function render() {
 
     renderer.render(scene, currentCamera);
     if (viewHelper) {
-        renderer.autoClear = false;
-        viewHelper.render(renderer);
-        renderer.autoClear = true;
+        viewHelper.render(viewHelperRenderer);
     }
     updateTransformSpaceGizmo();
     if (css2DRenderer) css2DRenderer.render(scene, currentCamera);
