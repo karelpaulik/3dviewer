@@ -43,6 +43,20 @@ export function collectMeshes(object3d) {
 }
 
 /**
+ * Remove optional attributes when not present on every geometry (mergeGeometries requirement).
+ * @param {THREE.BufferGeometry[]} geometries
+ */
+function harmonizeMergeGeometryAttributes(geometries) {
+    const optionalAttrs = ['uv', 'uv2', 'color', 'tangent'];
+    for (const attrName of optionalAttrs) {
+        const allHave = geometries.every(g => g.getAttribute(attrName));
+        if (!allHave) {
+            geometries.forEach(g => g.deleteAttribute(attrName));
+        }
+    }
+}
+
+/**
  * @param {THREE.BufferGeometry} geom
  * @returns {THREE.BufferGeometry|null}
  */
@@ -51,15 +65,35 @@ export function prepareGeometryForCSG(geom) {
         return null;
     }
 
-    let prepared = geom.index ? geom.clone() : mergeVertices(geom.clone());
-    prepared = mergeVertices(prepared);
+    const posAttr = geom.getAttribute('position');
+    if (posAttr.count === 0) return null;
 
-    if (!prepared.getAttribute('normal')) {
-        prepared.computeVertexNormals();
-    } else {
-        prepared.computeVertexNormals();
+    let prepared = geom.clone();
+    prepared.clearGroups();
+
+    // mergeVertices hashes all attributes; strip extras that often differ across CAD mesh pieces.
+    for (const attr of ['normal', 'uv', 'uv2', 'color', 'tangent']) {
+        if (prepared.getAttribute(attr)) prepared.deleteAttribute(attr);
     }
 
+    if (prepared.index) {
+        prepared = prepared.toNonIndexed();
+    }
+
+    try {
+        prepared = mergeVertices(prepared);
+    } catch (err) {
+        prepared?.dispose?.();
+        console.warn('prepareGeometryForCSG mergeVertices failed:', err);
+        return null;
+    }
+
+    if (!prepared?.getAttribute('position') || prepared.getAttribute('position').count === 0) {
+        prepared?.dispose?.();
+        return null;
+    }
+
+    prepared.computeVertexNormals();
     stripNonCSGAttributes(prepared);
     prepared.clearGroups();
     prepared.drawRange = { start: 0, count: Infinity };
@@ -91,27 +125,51 @@ export function normalizeCSGResult(geom) {
 }
 
 /**
- * @param {THREE.Object3D} object3d
+ * Merge world-space geometries from an array of meshes (skips invalid pieces).
+ * @param {THREE.Mesh[]} meshes
+ * @param {THREE.Object3D|null} [rootForMatrixUpdate]
  * @returns {THREE.BufferGeometry|null}
  */
-export function objectToWorldGeometry(object3d) {
-    const meshes = collectMeshes(object3d);
-    if (meshes.length === 0) return null;
+export function meshesToWorldGeometry(meshes, rootForMatrixUpdate = null) {
+    if (!meshes?.length) return null;
+
+    if (rootForMatrixUpdate) {
+        rootForMatrixUpdate.updateWorldMatrix(true, true);
+    } else {
+        meshes.forEach(mesh => mesh.updateWorldMatrix(true, true));
+    }
 
     const worldGeometries = [];
     for (const mesh of meshes) {
+        const pos = mesh.geometry?.getAttribute('position');
+        if (!pos || pos.count === 0) continue;
+
         const geom = mesh.geometry.clone();
         geom.applyMatrix4(mesh.matrixWorld);
         const prepared = prepareGeometryForCSG(geom);
+        geom.dispose();
         if (prepared) worldGeometries.push(prepared);
     }
 
     if (worldGeometries.length === 0) return null;
     if (worldGeometries.length === 1) return worldGeometries[0];
 
+    harmonizeMergeGeometryAttributes(worldGeometries);
     const merged = mergeGeometries(worldGeometries, false);
     worldGeometries.forEach(g => g.dispose());
-    return merged ? prepareGeometryForCSG(merged) : null;
+    if (!merged) return null;
+
+    const normalized = prepareGeometryForCSG(merged);
+    if (normalized !== merged) merged.dispose();
+    return normalized;
+}
+
+/**
+ * @param {THREE.Object3D} object3d
+ * @returns {THREE.BufferGeometry|null}
+ */
+export function objectToWorldGeometry(object3d) {
+    return meshesToWorldGeometry(collectMeshes(object3d), object3d);
 }
 
 /**
@@ -477,17 +535,6 @@ export function separateConnectedComponents(bufGeom, options = {}) {
     }
     working.dispose();
     return outGeometries;
-}
-
-/** @param {THREE.BufferGeometry[]} geometries */
-function harmonizeMergeGeometryAttributes(geometries) {
-    const optionalAttrs = ['uv', 'color'];
-    for (const attrName of optionalAttrs) {
-        const allHave = geometries.every(g => g.getAttribute(attrName));
-        if (!allHave) {
-            geometries.forEach(g => g.deleteAttribute(attrName));
-        }
-    }
 }
 
 /**

@@ -1,7 +1,7 @@
 // deviationMapUtils.js – deviation map (heatmap) between scan and reference meshes
 import * as THREE from 'three';
 import { MeshBVH, getTriangleHitPointInfo } from 'three-mesh-bvh';
-import { objectToWorldGeometry, collectMeshes } from './booleanUtils.js';
+import { meshesToWorldGeometry, collectMeshes } from './booleanUtils.js';
 
 export const DEVIATION_DEFAULTS = {
     batchSize: 10000,
@@ -82,7 +82,7 @@ export function mapDistanceToColor(t) {
  * @param {THREE.Object3D} root
  * @returns {THREE.Mesh[]}
  */
-function collectComparisonMeshes(root) {
+export function collectComparisonMeshes(root) {
     return collectMeshes(root).filter(obj =>
         !obj.isSectionMesh
         && !obj.userData._isMeasurement
@@ -90,6 +90,36 @@ function collectComparisonMeshes(root) {
         && !obj.userData._isAnnotation3d
         && !obj.userData._isCadDim3d
     );
+}
+
+/**
+ * @param {THREE.Object3D|null|undefined} root
+ * @returns {boolean}
+ */
+export function hasComparisonMeshes(root) {
+    return collectComparisonMeshes(root).length > 0;
+}
+
+/**
+ * True when one target is the same node or an ancestor/descendant of the other.
+ * @param {THREE.Object3D|null|undefined} a
+ * @param {THREE.Object3D|null|undefined} b
+ * @returns {boolean}
+ */
+export function comparisonTargetsOverlap(a, b) {
+    if (!a || !b) return false;
+    if (a === b) return true;
+    let o = b;
+    while (o) {
+        if (o === a) return true;
+        o = o.parent;
+    }
+    o = a;
+    while (o) {
+        if (o === b) return true;
+        o = o.parent;
+    }
+    return false;
 }
 
 /**
@@ -621,7 +651,7 @@ export function computeDeviationMap(scanRoot, refRoot, options = {}) {
             scanRoot.updateWorldMatrix(true, true);
             refRoot.updateWorldMatrix(true, true);
 
-            const refGeom = objectToWorldGeometry(refRoot);
+            const refGeom = meshesToWorldGeometry(collectComparisonMeshes(refRoot), refRoot);
             if (!refGeom) {
                 resolve({ distancesByMesh: new Map(), stats: null, maxDistance: 0, error: 'Reference object has no valid mesh geometry.' });
                 return;

@@ -15,6 +15,8 @@ import {
     mapDistanceToColor,
     angleDegToNormalDot,
     normalDotToAngleDeg,
+    hasComparisonMeshes,
+    comparisonTargetsOverlap,
     DEVIATION_DEFAULTS,
 } from '../src/deviationMapUtils.js';
 import {
@@ -311,6 +313,79 @@ async function main() {
 
     clearDeviationMap(cube, null);
     clearDeviationMap(cuboid, null);
+
+    // --- Hierarchy roots (Group with mesh descendants) ---
+    const groupA = new THREE.Group();
+    groupA.name = 'AssemblyA';
+    const meshA1 = makeBoxMesh('meshA1', 0);
+    const meshA2 = makeBoxMesh('meshA2', 15);
+    groupA.add(meshA1, meshA2);
+
+    const groupB = new THREE.Group();
+    groupB.name = 'AssemblyB';
+    const meshB1 = makeBoxMesh('meshB1', 0.5);
+    groupB.add(meshB1);
+
+    const hierarchyResult = await computeDeviationMap(groupA, groupB, { batchSize: 500, tolerance: 0.1 });
+    if (hierarchyResult.error) throw new Error(hierarchyResult.error);
+    if (hierarchyResult.distancesByMesh.size !== 2) {
+        throw new Error(`hierarchy scan expected 2 meshes, got ${hierarchyResult.distancesByMesh.size}`);
+    }
+    if (!hierarchyResult.stats || hierarchyResult.stats.vertexCount !== 48) {
+        throw new Error(`hierarchy vertexCount expected 48, got ${hierarchyResult.stats?.vertexCount}`);
+    }
+
+    if (!hasComparisonMeshes(groupA) || !hasComparisonMeshes(groupB)) {
+        throw new Error('hasComparisonMeshes should accept hierarchy roots');
+    }
+    if (hasComparisonMeshes(new THREE.Group())) {
+        throw new Error('hasComparisonMeshes should reject empty groups');
+    }
+    if (!comparisonTargetsOverlap(groupA, meshA1)) {
+        throw new Error('comparisonTargetsOverlap should detect parent/child');
+    }
+    if (comparisonTargetsOverlap(groupA, groupB)) {
+        throw new Error('comparisonTargetsOverlap should not match unrelated roots');
+    }
+
+    // --- Hierarchy with mixed optional attributes (uv on one mesh only, multi-material groups) ---
+    function makeIndexedMultiMaterialBox(name, offsetX = 0) {
+        const geom = new THREE.BoxGeometry(10, 10, 10);
+        const posCount = geom.getAttribute('position').count;
+        geom.clearGroups();
+        geom.addGroup(0, posCount / 2, 0);
+        geom.addGroup(posCount / 2, posCount / 2, 1);
+        const matA = new THREE.MeshStandardMaterial({ color: 0xaa4444 });
+        const matB = new THREE.MeshStandardMaterial({ color: 0x44aa44 });
+        const mesh = new THREE.Mesh(geom, [matA, matB]);
+        mesh.name = name;
+        mesh.position.x = offsetX;
+        mesh.updateMatrixWorld(true);
+        return mesh;
+    }
+
+    const mixedGroupA = new THREE.Group();
+    mixedGroupA.name = 'MixedA';
+    const mixedMeshWithUv = makeBoxMesh('withUv', 0);
+    mixedMeshWithUv.geometry.setAttribute('uv', mixedMeshWithUv.geometry.getAttribute('uv').clone());
+    const mixedMeshNoUv = makeBoxMesh('noUv', 12);
+    mixedMeshNoUv.geometry.deleteAttribute('uv');
+    const mixedMultiMat = makeIndexedMultiMaterialBox('multiMat', 24);
+    mixedGroupA.add(mixedMeshWithUv, mixedMeshNoUv, mixedMultiMat);
+
+    const mixedGroupB = new THREE.Group();
+    mixedGroupB.name = 'MixedB';
+    const mixedRefMesh = makeIndexedMultiMaterialBox('refMulti', 0.5);
+    mixedGroupB.add(mixedRefMesh);
+
+    const mixedResult = await computeDeviationMap(mixedGroupA, mixedGroupB, { batchSize: 500, tolerance: 0.1 });
+    if (mixedResult.error) throw new Error(`mixed hierarchy: ${mixedResult.error}`);
+    if (mixedResult.distancesByMesh.size !== 3) {
+        throw new Error(`mixed hierarchy scan expected 3 meshes, got ${mixedResult.distancesByMesh.size}`);
+    }
+
+    const mixedBi = await computeBidirectionalDeviationMap(mixedGroupA, mixedGroupB, { batchSize: 500, tolerance: 0.1 });
+    if (mixedBi.error) throw new Error(`mixed hierarchy bidirectional: ${mixedBi.error}`);
 
     testDeviationPoseUtils();
 

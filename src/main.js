@@ -104,6 +104,8 @@ import {
     buildDeviationLegendHtml,
     buildBidirectionalLegendHtml,
     findDeviationProbeHit,
+    hasComparisonMeshes,
+    comparisonTargetsOverlap,
 } from './deviationMapUtils.js';
 import {
     initDeviationProbe,
@@ -596,8 +598,8 @@ function _updateDeviationHintUI() {
     if (!_deviationHintDiv) return;
     if (deviationMapMode) {
         const stepText = deviationStep === 0
-            ? 'Deviation map: click object A or select in Scene outliner'
-            : 'Deviation map: click object B or select in Scene outliner';
+            ? 'Deviation map: click object A or select a node with meshes in Scene outliner'
+            : 'Deviation map: click object B or select a node with meshes in Scene outliner';
         _deviationHintDiv.innerHTML = `${stepText} &nbsp;·&nbsp; <button type="button" data-deviation-cancel style="margin-left:6px;padding:2px 10px;border:1px solid rgba(255,255,255,0.7);border-radius:4px;background:rgba(255,255,255,0.15);color:#fff;font-size:12px;cursor:pointer;">Cancel</button>`;
         _deviationHintDiv.style.display = 'block';
     } else {
@@ -6652,6 +6654,29 @@ function getFirstPickableHit(visibleIntersects) {
     return null;
 }
 
+// Model Comparison: mesh z viewportu nebo uzel z outlineru → kořen s mesh potomky (pojmenovaný předek nebo přímo uzel).
+function resolveDeviationComparisonPick(object) {
+    if (!object) return null;
+
+    let root = resolveCADSelection(object);
+
+    if (root.isMesh && root.parent) {
+        let ascending = root.parent;
+        let namedAncestor = null;
+        while (ascending && ascending.parent) {
+            if (hasComparisonMeshes(ascending)) {
+                if (ascending.name && ascending.name.trim() !== '') {
+                    namedAncestor = ascending;
+                }
+            }
+            ascending = ascending.parent;
+        }
+        if (namedAncestor) root = namedAncestor;
+    }
+
+    return hasComparisonMeshes(root) ? root : null;
+}
+
 // Pokud je cadSelection zapnutý, vrátí nejbližšího pojmenovaného předka (nebo mesh samotný, pokud žádný není).
 // Pokud je cadSelection vypnutý, vrátí objekt beze změny.
 function resolveCADSelection(object) {
@@ -6683,7 +6708,14 @@ function clearHighlight() {
 
 function selectObject(object, options = {}) {
     if (deviationMapMode) {
-        if (object) handleDeviationMapPick(object);
+        if (object) {
+            const picked = resolveDeviationComparisonPick(object);
+            if (!picked) {
+                alert('Selected object has no mesh geometry for comparison.');
+                return;
+            }
+            handleDeviationMapPick(picked);
+        }
         return;
     }
 
@@ -7460,8 +7492,8 @@ function handleDeviationMapPick(picked) {
         _updateDeviationHintUI();
         render();
     } else {
-        if (picked === deviationScanObject) {
-            alert('Select a different object for B.');
+        if (comparisonTargetsOverlap(picked, deviationScanObject)) {
+            alert('Select a different object for B (not the same node or its parent/child).');
             return;
         }
         deviationRefObject = picked;
@@ -8037,8 +8069,11 @@ function onClick( event ) {
             return;
         }
 
-        const picked = resolveCADSelection(hit);
-        if (!picked) return;
+        const picked = resolveDeviationComparisonPick(hit);
+        if (!picked) {
+            alert('Selected object has no mesh geometry for comparison.');
+            return;
+        }
         handleDeviationMapPick(picked);
         return;
     }
