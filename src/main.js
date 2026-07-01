@@ -31,8 +31,9 @@ import { initAnnotations, isAnnotationActive, setAnnotationActive, addAnnotation
 import { initAnnotations3d, isAnnotation3dActive, setAnnotation3dActive, addAnnotation3dPoint, getAnnotation3dPendingPoint, updateAnnotation3dPreview, updateAnnotation3dMarkerScales, updateAnnotation3dOrientations, setAnnotations3dVisible, clearAnnotations3d, stripAnnotation3dVisuals, reconstructAnnotations3d, setAnnotation3dDepthTest, removeAnnotations3dForOwner, isAddLeaderLine3dActive, cancelAddLeaderLine3d, commitAddLeaderLine3d, getAnnotation3dDefaults, deleteAnnotation3dByRef, setConvertTo2dFn, reconstructAnnotation3dFromRec, applyDefaultsToAllAnnotations3d, setAnn3dMarkerFixedSize, setAnn3dMarkerFixedScreenPx, setAnn3dMarkerWorldSize, setAnn3dMarkerColor } from './annotation3dUtils.js';
 import { initCadDim3d, isCadDim3dActive, getCadDim3dStep, getCadDim3dAxis, setCadDim3dActive, addCadDim3dPoint, updateCadDim3dPreview, updateCadDim3dHoverPreview, cycleCadDim3dAxis, placeCadDim3d, clearCadDim3dMeasurements, removeCadDim3dMeasurementsForOwner, setCadDim3dVisible, setCadDim3dDepthTest, updateCadDim3dOrientations, updateCadDim3dMarkerScales, reconstructCadDim3d, stripCadDim3dVisuals, setCadDim3dLabelMode, setCadDim3dDragMode, setCadDim3dOrientationMode, setCadDim3dRotate, setCadDim3dLabelScaleDialog, setCadDim3dMirrored, setCadDim3dTextColor, setCadDim3dBgColor, getCadDim3dDefaults, convertCadDimTo3d, applyDefaultsToAllCadDim3d, setCadDimMarkerFixedSize, setCadDimMarkerFixedScreenPx, setCadDimMarkerWorldSize, setCadDimMarkerColor } from './cadDim3dUtils.js';
 import { computeSolidSection, clearSolidSection } from './solidSectionUtils.js';
-import { initDocumentsGui, importDocumentsFromGltfScene, getDocumentsStore, flushDocumentEdits, isDocOverlayBlockingInput, setDocLabelOptions } from './documentsUtils.js';
-import { initAttachmentsGui, importAttachmentsFromGltfScene, getAttachmentsStore, addImageAttachmentFromBlob } from './attachmentsUtils.js';
+import { initDocumentsGui, importDocumentsFromGltfScene, getDocumentsStore, flushDocumentEdits, isDocOverlayBlockingInput, setDocLabelOptions, clearDocumentsStore } from './documentsUtils.js';
+import { initAttachmentsGui, importAttachmentsFromGltfScene, getAttachmentsStore, addImageAttachmentFromBlob, clearAttachmentsStore } from './attachmentsUtils.js';
+import { initLocalFileAccess, openLocalGlbFile, saveLocalGlbFile, saveLocalGlbFileAs, clearCurrentLocalFileHandle, waitForLaunchQueueSignal, wasLaunchedWithFile } from './localFileAccess.js';
 import { captureScreenFromDisplayMedia } from './viewportCapture.js';
 import { openHelp } from './helpUtils.js';
 import { openBomDialog } from './bomUtils.js';
@@ -1691,6 +1692,26 @@ function init() {
     window.addEventListener( 'keydown', function ( event ) {
         const tag = event.target.tagName;
         if (tag === 'TEXTAREA' || tag === 'INPUT' || event.target.isContentEditable) return;
+
+        if ((event.ctrlKey || event.metaKey) && !event.altKey) {
+            const modKey = event.key.toLowerCase();
+            if (modKey === 'o') {
+                event.preventDefault();
+                openLocalGlbFile();
+                return;
+            }
+            if (modKey === 's' && event.shiftKey) {
+                event.preventDefault();
+                saveLocalGlbFileAs();
+                return;
+            }
+            if (modKey === 's') {
+                event.preventDefault();
+                saveLocalGlbFile();
+                return;
+            }
+        }
+
         switch ( event.key ) {
             case 'Escape':
                 if (viewProp.measureMode) {
@@ -2436,6 +2457,9 @@ function addMainGui() {
 
     // --- File panel (Export / Import) ---
     const fileGui = new GUI({ container: guiContainer, title: 'File' });
+    fileGui.add({ fn: openLocalGlbFile }, 'fn').name('Open…');
+    fileGui.add({ fn: saveLocalGlbFile }, 'fn').name('Save');
+    fileGui.add({ fn: saveLocalGlbFileAs }, 'fn').name('Save As…');
     fileGui.add({ fn: importGlbFile }, 'fn').name('Import GLB…');
     fileGui.add({ fn: exportAllModelsDraco }, 'fn').name('Export all to GLB (Compression)');
     fileGui.add({ fn: exportSelectedObjectDraco }, 'fn').name('Export selected to GLB (Compression)');
@@ -2490,6 +2514,27 @@ function addMainGui() {
     exportHtmlFolder.add({ fn() { exportToHTMLObfuscated(loadedModels, assemblyGui, viewProp, assemblyWriteToUserData, assemblyClearUserData); } }, 'fn').name('Export to HTML obfuscated');
     exportHtmlFolder.add({ fn() { exportToHTMLObfuscatedDraco(loadedModels, assemblyGui, viewProp, assemblyWriteToUserData, assemblyClearUserData); } }, 'fn').name('Export to HTML obfuscated (Compression)');
     registerGuiPanel('File', fileGui);
+
+    initLocalFileAccess({
+        hasLoadedContent: () => loadedModels.length > 0,
+        clearScene: () => clearSceneFully(),
+        loadGlbFile: async (file) => {
+            const url = URL.createObjectURL(file);
+            try {
+                await loadGlbModel(url, file.name, 0.001, true);
+                fitView();
+            } finally {
+                URL.revokeObjectURL(url);
+            }
+        },
+        updateFileUi: (fileName) => {
+            document.getElementById('fileNameLabel').textContent = fileName;
+            document.getElementById('pageTitle').textContent = fileName;
+            fileNameInput.value = fileName.replace(/\.[^.]+$/, '');
+        },
+        buildGlbBuffer: (opts) => buildAllModelsGlbArrayBuffer(opts),
+        fallbackImportGlb: () => importGlbFile(),
+    });
 
     // --- Edit panel ---
     const editGui = new GUI({ container: guiContainer, title: 'Edit' });
@@ -5982,6 +6027,45 @@ function promoteToRoot(obj) {
     render();
 }
 
+function clearSceneFully() {
+    deselectObject();
+    clearHistoryPreviewHelpers();
+
+    const modelsCopy = loadedModels.slice();
+    modelsCopy.forEach(part => {
+        removeMeasurementsForOwner(part);
+        removeAnnotationsForOwner(part);
+        removeAnnotations3dForOwner(part);
+        removeCadDim3dMeasurementsForOwner(part);
+    });
+
+    meshObjects.length = 0;
+    hiddenObjects.length = 0;
+    temporarilyShownObjects = [];
+
+    assemblyData.steps.length = 0;
+    assemblyAnchors.clear();
+    assemblyState.currentStepIndex = -1;
+
+    modelsCopy.forEach(part => {
+        if (part.parent) part.parent.remove(part);
+        else scene.remove(part);
+    });
+    loadedModels.length = 0;
+
+    clearDocumentsStore();
+    clearAttachmentsStore();
+    clearCurrentLocalFileHandle();
+
+    if (_assemblyFolderRef) updateAssemblyGuiInfo();
+    if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) updateCrossSectionLines();
+    if (viewProp.sectionCrossLines) updateSectionCrossLines();
+    if (viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render);
+
+    rebuildTree(loadedModels);
+    render();
+}
+
 function clearSceneKeepDocs() {
     if (!confirm('Clear scene? Documents and files will be kept.')) return;
     try {
@@ -8493,6 +8577,7 @@ function importGlbFile() {
     input.addEventListener('change', function() {
         const file = input.files[0];
         if (!file) return;
+        clearCurrentLocalFileHandle();
         const url = URL.createObjectURL(file);
         loadGlbModel(url, file.name, 0.001, true).then(() => {
             URL.revokeObjectURL(url);
@@ -9391,23 +9476,34 @@ function importAssemblyFromGltfScene(gltfScene) {
 
 // ================================================================================================
 
-function exportAllModels() {
-    if (loadedModels.length === 0) {
-        console.warn('Žádné modely k exportu.');
-        return;
+function getDefaultGlbExportName() {
+    const baseName = fileNameInput.value.trim()
+        || (loadedModels[0]?.userData?.fileName?.replace(/\.[^.]+$/, '') ?? 'export_all');
+    return (baseName.replace(/\.glb$/i, '') + '.glb');
+}
+
+function showDracoOverlay() {
+    let overlay = document.getElementById('dracoOverlay');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'dracoOverlay';
+        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:99999;color:#fff;font-size:22px;font-family:sans-serif;';
+        overlay.textContent = 'Draco compressing… please wait';
+        document.body.appendChild(overlay);
     }
-    const baseName = fileNameInput.value.trim() || (loadedModels[0]?.userData?.fileName?.replace(/\.[^.]+$/, '') ?? 'export_all');
-    const input = window.prompt('File name (.glb will be added):', baseName);
-    if (input === null) return; // uživatel stiskl Cancel
-    const finalName = (input.trim() || baseName).replace(/\.glb$/i, '') + '.glb';
+    overlay.style.display = 'flex';
+    return overlay;
+}
 
-    // Write assembly workflow into userData before cloning
+function hideDracoOverlay() {
+    const overlay = document.getElementById('dracoOverlay');
+    if (overlay) overlay.style.display = 'none';
+}
+
+function buildAllModelsExportGroup(finalName) {
     assemblyWriteToUserData();
-
-    // Flush any unsaved document editor changes
     flushDocumentEdits();
 
-    const exporter = new GLTFExporter();
     const group = new THREE.Group();
     loadedModels.forEach((model) => {
         const clone = model.clone(true);
@@ -9415,16 +9511,9 @@ function exportAllModels() {
         group.add(clone);
     });
 
-    // Mark as app export root so import can unwrap the extra wrapper layer
     group.userData._appExportRoot = true;
-
-    // Embed documents into export
     group.userData.documents = getDocumentsStore().map(d => ({ ...d }));
-
-    // Embed attachments into export
     group.userData.attachments = getAttachmentsStore().map(a => ({ ...a }));
-
-    // Embed 3D dimension defaults, 3D annotation defaults, section settings
     group.userData.cadDim3dDefaults = { ...getCadDim3dDefaults() };
     group.userData.annotation3dDefaults = { ...getAnnotation3dDefaults() };
     group.userData.dimMarkerSettings = { ...getDimMarkerSettings() };
@@ -9440,21 +9529,102 @@ function exportAllModels() {
         showSectionMesh:   viewProp.showSectionMesh,
     };
 
-    // Clean up originals — clones already carry the assembly data
     assemblyClearUserData();
-
-    // Strip measurement visuals from clones (userData.measurements stays for reconstruction)
     stripMeasurementVisuals(group);
     stripAnnotationVisuals(group);
     stripAnnotation3dVisuals(group);
     stripCadDim3dVisuals(group);
 
-    exporter.parse(group, function(result) {
-        saveArrayBuffer(result, finalName);
+    return group;
+}
+
+function parseExportGroupToArrayBuffer(group) {
+    return new Promise((resolve, reject) => {
+        const exporter = new GLTFExporter();
+        exporter.parse(group, resolve, reject, { binary: true, onlyVisible: false });
+    });
+}
+
+async function compressGlbWithDraco(result) {
+    const { WebIO } = await import('@gltf-transform/core');
+    const { KHRDracoMeshCompression } = await import('@gltf-transform/extensions');
+    const { draco } = await import('@gltf-transform/functions');
+
+    const loadDracoScript = (url) => new Promise((resolve, reject) => {
+        const id = url.includes('encoder') ? 'DracoEncoderModule' : 'DracoDecoderModule';
+        if (window[id]) { resolve(); return; }
+        const s = document.createElement('script');
+        s.src = url;
+        s.onload = resolve;
+        s.onerror = () => reject(new Error('Failed to load ' + url));
+        document.head.appendChild(s);
+    });
+
+    await loadDracoScript('./draco/draco_encoder_wasm.js');
+    await loadDracoScript('./draco/draco_decoder_wasm.js');
+
+    const encoder = await window.DracoEncoderModule();
+    const decoder = await window.DracoDecoderModule();
+
+    const io = new WebIO()
+        .registerExtensions([KHRDracoMeshCompression])
+        .registerDependencies({
+            'draco3d.decoder': decoder,
+            'draco3d.encoder': encoder,
+        });
+
+    const gltfDoc = await io.readBinary(new Uint8Array(result));
+    await gltfDoc.transform(dracoDefaults.useCustomSettings ? draco({ ...dracoDefaults }) : draco());
+    return io.writeBinary(gltfDoc);
+}
+
+async function buildAllModelsGlbArrayBuffer({ draco = false, finalName = null } = {}) {
+    if (loadedModels.length === 0) {
+        console.warn('Žádné modely k exportu.');
+        return null;
+    }
+
+    const resolvedName = (finalName || getDefaultGlbExportName()).replace(/\.glb$/i, '') + '.glb';
+
+    if (draco) showDracoOverlay();
+
+    try {
+        const group = buildAllModelsExportGroup(resolvedName);
+        let result = await parseExportGroupToArrayBuffer(group);
+
+        if (draco) {
+            await new Promise(resolve => setTimeout(resolve, 50));
+            try {
+                result = await compressGlbWithDraco(result);
+            } catch (err) {
+                console.error('Chyba při Draco kompresi:', err);
+                console.warn('Uloženo bez Draco komprese (fallback).');
+            }
+        }
+
+        return { buffer: result, suggestedName: resolvedName };
+    } finally {
+        if (draco) hideDracoOverlay();
+    }
+}
+
+function exportAllModels() {
+    if (loadedModels.length === 0) {
+        console.warn('Žádné modely k exportu.');
+        return;
+    }
+    const baseName = fileNameInput.value.trim() || (loadedModels[0]?.userData?.fileName?.replace(/\.[^.]+$/, '') ?? 'export_all');
+    const input = window.prompt('File name (.glb will be added):', baseName);
+    if (input === null) return;
+    const finalName = (input.trim() || baseName).replace(/\.glb$/i, '') + '.glb';
+
+    buildAllModelsGlbArrayBuffer({ draco: false, finalName }).then((built) => {
+        if (!built) return;
+        saveArrayBuffer(built.buffer, built.suggestedName);
         console.log('Export all: hotovo.');
-    }, function(error) {
+    }).catch((error) => {
         console.error('Chyba při exportu:', error);
-    }, { binary: true, onlyVisible: false });
+    });
 }
 
 async function exportAllModelsDraco() {
@@ -9467,124 +9637,15 @@ async function exportAllModelsDraco() {
     if (input === null) return;
     const finalName = (input.trim() || baseName).replace(/\.glb$/i, '') + '.glb';
 
-    // Zobrazíme overlay
-    let overlay = document.getElementById('dracoOverlay');
-    if (!overlay) {
-        overlay = document.createElement('div');
-        overlay.id = 'dracoOverlay';
-        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:99999;color:#fff;font-size:22px;font-family:sans-serif;';
-        overlay.textContent = 'Draco compressing… please wait';
-        document.body.appendChild(overlay);
-    }
-    overlay.style.display = 'flex';
-
-    assemblyWriteToUserData();
-
-    // Flush any unsaved document editor changes
-    flushDocumentEdits();
-
-    const exporter = new GLTFExporter();
-    const group = new THREE.Group();
-    loadedModels.forEach((model) => {
-        const clone = model.clone(true);
-        clone.userData.fileName = finalName;
-        group.add(clone);
-    });
-
-    // Mark as app export root so import can unwrap the extra wrapper layer
-    group.userData._appExportRoot = true;
-
-    // Embed documents into export
-    group.userData.documents = getDocumentsStore().map(d => ({ ...d }));
-
-    // Embed attachments into export
-    group.userData.attachments = getAttachmentsStore().map(a => ({ ...a }));
-
-    // Embed 3D dimension defaults, 3D annotation defaults, section settings
-    group.userData.cadDim3dDefaults = { ...getCadDim3dDefaults() };
-    group.userData.annotation3dDefaults = { ...getAnnotation3dDefaults() };
-    group.userData.dimMarkerSettings = { ...getDimMarkerSettings() };
-    group.userData.annMarkerSettings = { ...getAnnMarkerSettings() };
-    group.userData.sectionSettings = {
-        section:           viewProp.section,
-        px:                viewProp.px,
-        py:                viewProp.py,
-        pz:                viewProp.pz,
-        sectionCrossLines: viewProp.sectionCrossLines,
-        crossSectionColor: viewProp.crossSectionColor,
-        capColor:          viewProp.capColor,
-        showSectionMesh:   viewProp.showSectionMesh,
-    };
-
-    assemblyClearUserData();
-
-    // Strip measurement visuals from clones (userData.measurements stays for reconstruction)
-    stripMeasurementVisuals(group);
-    stripAnnotationVisuals(group);
-    stripAnnotation3dVisuals(group);
-    stripCadDim3dVisuals(group);
-
-    exporter.parse(group, function(result) {
-        // setTimeout dá prohlížeči čas vykreslit overlay
-        setTimeout(async () => {
-            try {
-                const { WebIO } = await import('@gltf-transform/core');
-                const { KHRDracoMeshCompression } = await import('@gltf-transform/extensions');
-                const { draco } = await import('@gltf-transform/functions');
-
-                // Dynamicky načteme Draco encoder/decoder z public/draco/
-                const loadDracoScript = (url) => new Promise((resolve, reject) => {
-                    const id = url.includes('encoder') ? 'DracoEncoderModule' : 'DracoDecoderModule';
-                    if (window[id]) { resolve(); return; }
-                    const s = document.createElement('script');
-                    s.src = url;
-                    s.onload = resolve;
-                    s.onerror = () => reject(new Error('Failed to load ' + url));
-                    document.head.appendChild(s);
-                });
-
-                await loadDracoScript('./draco/draco_encoder_wasm.js');
-                await loadDracoScript('./draco/draco_decoder_wasm.js');
-
-                const encoder = await window.DracoEncoderModule();
-                const decoder = await window.DracoDecoderModule();
-
-                const io = new WebIO()
-                    .registerExtensions([KHRDracoMeshCompression])
-                    .registerDependencies({
-                        'draco3d.decoder': decoder,
-                        'draco3d.encoder': encoder,
-                    });
-
-                const gltfDoc = await io.readBinary(new Uint8Array(result));
-                // Draco compression settings (defaults shown):
-                // await gltfDoc.transform(draco({
-                //     method: 'edgebreaker',   // 'edgebreaker' | 'sequential'
-                //     encodeSpeed: 5,           // 0–10 (higher = faster, worse compression)
-                //     decodeSpeed: 5,           // 0–10 (higher = faster decode)
-                //     quantizePosition: 14,     // bits for vertex positions
-                //     quantizeNormal: 10,       // bits for normals
-                //     quantizeColor: 8,         // bits for vertex colors
-                //     quantizeTexcoord: 12,     // bits for UV coordinates
-                //     quantizeGeneric: 12,      // bits for other attributes
-                // }));
-                await gltfDoc.transform(dracoDefaults.useCustomSettings ? draco({ ...dracoDefaults }) : draco());
-                const compressedGlb = await io.writeBinary(gltfDoc);
-
-                saveArrayBuffer(compressedGlb, finalName);
-                console.log('Export all (Draco): hotovo.');
-            } catch (err) {
-                console.error('Chyba při Draco kompresi:', err);
-                saveArrayBuffer(result, finalName);
-                console.warn('Uloženo bez Draco komprese (fallback).');
-            } finally {
-                overlay.style.display = 'none';
-            }
-        }, 50);
-    }, function(error) {
-        overlay.style.display = 'none';
+    try {
+        const built = await buildAllModelsGlbArrayBuffer({ draco: true, finalName });
+        if (!built) return;
+        saveArrayBuffer(built.buffer, built.suggestedName);
+        console.log('Export all (Draco): hotovo.');
+    } catch (error) {
+        hideDracoOverlay();
         console.error('Chyba při exportu:', error);
-    }, { binary: true, onlyVisible: false });
+    }
 }
 
 function exportSelectedObject() {
@@ -10285,7 +10346,12 @@ function addHelpGui() {
     `;
     welcomeDialog.addEventListener('click', e => { if (e.target === welcomeDialog) welcomeDialog.close(); });
     document.body.appendChild(welcomeDialog);
-    welcomeDialog.showModal();
+    void (async () => {
+        await waitForLaunchQueueSignal();
+        if (!wasLaunchedWithFile()) {
+            welcomeDialog.showModal();
+        }
+    })();
 
         // Create <dialog> element once
     const aboutDialog = document.createElement('dialog');

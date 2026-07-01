@@ -197,6 +197,11 @@ export function getDocumentsStore() {
     return documentsStore;
 }
 
+export function clearDocumentsStore() {
+    documentsStore.length = 0;
+    refreshDocumentsGui();
+}
+
 /** Returns true when the doc overlay is open and 3D model interaction should be suppressed.
  *  Always blocks while editing; in view mode blocks unless 3D navigation is toggled on. */
 export function isDocOverlayBlockingInput() {

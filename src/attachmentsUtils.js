@@ -33,6 +33,11 @@ export function getAttachmentsStore() {
     return attachmentsStore;
 }
 
+export function clearAttachmentsStore() {
+    attachmentsStore.length = 0;
+    refreshAttachmentsGui();
+}
+
 /** Extracts attachments embedded in a loaded GLB scene and adds them to the store. */
 export function importAttachmentsFromGltfScene(gltfScene) {
     let attachments = null;
