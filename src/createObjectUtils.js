@@ -122,6 +122,59 @@ export function prepareParametricClone(clone) {
 }
 
 /**
+ * Read x/y/z from Vector3/Euler instances or JSON-cloned plain objects (_x/_y/_z).
+ * @param {{ x?: number, y?: number, z?: number, _x?: number, _y?: number, _z?: number } | null | undefined} src
+ * @param {'x'|'y'|'z'} axis
+ */
+export function readInitComponent(src, axis) {
+    if (!src) return 0;
+    const v = src[axis];
+    if (Number.isFinite(v)) return v;
+    const underscored = src['_' + axis];
+    if (Number.isFinite(underscored)) return underscored;
+    return 0;
+}
+
+/**
+ * Restore local transform from userData init snapshots.
+ * @param {THREE.Object3D} obj
+ * @returns {boolean}
+ */
+export function applyInitTransformFromUserData(obj) {
+    const p = obj.userData.initPosition;
+    const r = obj.userData.initRotation;
+    const s = obj.userData.initScale;
+    if (!p || !r || !s) return false;
+
+    obj.position.set(
+        readInitComponent(p, 'x'),
+        readInitComponent(p, 'y'),
+        readInitComponent(p, 'z')
+    );
+    obj.rotation.set(
+        readInitComponent(r, 'x'),
+        readInitComponent(r, 'y'),
+        readInitComponent(r, 'z')
+    );
+    if (r.order) obj.rotation.order = r.order;
+    obj.scale.set(
+        readInitComponent(s, 'x'),
+        readInitComponent(s, 'y'),
+        readInitComponent(s, 'z')
+    );
+    return true;
+}
+
+/** Store current local transform as init baseline (e.g. after Object3D.clone()). */
+export function refreshInitTransformUserData(root) {
+    root.traverse(child => {
+        child.userData.initPosition = child.position.clone();
+        child.userData.initRotation = child.rotation.clone();
+        child.userData.initScale = child.scale.clone();
+    });
+}
+
+/**
  * @param {THREE.Mesh} mesh
  * @param {THREE.Object3D} parent
  * @param {THREE.Scene} scene
@@ -138,9 +191,7 @@ export function registerParametricMesh(mesh, parent, scene, loadedModels, meshOb
         parent.add(mesh);
     }
 
-    mesh.userData.initPosition = mesh.position.clone();
-    mesh.userData.initRotation = mesh.rotation.clone();
-    mesh.userData.initScale = mesh.scale.clone();
+    refreshInitTransformUserData(mesh);
     meshObjects.push(mesh);
 }
 

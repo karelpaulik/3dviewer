@@ -67,7 +67,9 @@ import {
     prepareParametricClone,
     isParametricMesh,
     buildParametricGui,
-    applyMeshMaterialDefaults
+    applyMeshMaterialDefaults,
+    applyInitTransformFromUserData,
+    refreshInitTransformUserData
 } from './createObjectUtils.js';
 import {
     convertMaterial,
@@ -598,10 +600,19 @@ function _updateBooleanHintUI() {
 function _updateDeviationHintUI() {
     if (!_deviationHintDiv) return;
     if (deviationMapMode) {
-        const stepText = deviationStep === 0
-            ? 'Deviation map: click object A or select a node with meshes in Scene outliner'
-            : 'Deviation map: click object B or select a node with meshes in Scene outliner';
-        _deviationHintDiv.innerHTML = `${stepText} &nbsp;·&nbsp; <button type="button" data-deviation-cancel style="margin-left:6px;padding:2px 10px;border:1px solid rgba(255,255,255,0.7);border-radius:4px;background:rgba(255,255,255,0.15);color:#fff;font-size:12px;cursor:pointer;">Cancel</button>`;
+        const btnStyle = 'margin-left:6px;padding:2px 10px;border:1px solid rgba(255,255,255,0.7);border-radius:4px;background:rgba(255,255,255,0.15);color:#fff;font-size:12px;cursor:pointer;';
+        if (deviationPendingPick) {
+            const stepLabel = deviationStep === 0 ? 'A' : 'B';
+            const pickName = (deviationPendingPick.name && deviationPendingPick.name.trim())
+                ? deviationPendingPick.name.trim()
+                : (deviationPendingPick.type || 'Unnamed');
+            _deviationHintDiv.innerHTML = `Confirm object ${stepLabel}: «${pickName}» &nbsp;·&nbsp; <button type="button" data-deviation-ok style="${btnStyle}">OK</button> <button type="button" data-deviation-cancel-pick style="${btnStyle}">Cancel pick</button> &nbsp;·&nbsp; <button type="button" data-deviation-cancel style="${btnStyle}">Cancel</button>`;
+        } else {
+            const stepText = deviationStep === 0
+                ? 'Deviation map: click object A or select a node in Scene outliner'
+                : 'Deviation map: click object B or select a node in Scene outliner';
+            _deviationHintDiv.innerHTML = `${stepText} &nbsp;·&nbsp; <button type="button" data-deviation-cancel style="${btnStyle}">Cancel</button>`;
+        }
         _deviationHintDiv.style.display = 'block';
     } else {
         _deviationHintDiv.style.display = 'none';
@@ -827,6 +838,9 @@ let deviationStep = 0;
 let deviationScanObject = null;
 let deviationRefObject = null;
 let deviationHighlightHelper = null;
+let deviationPendingPick = null;
+/** @type {THREE.Mesh[]} */
+let deviationPendingMeshes = [];
 let deviationResultActive = false;
 let deviationProbeMode = false;
 /** @type {ReturnType<typeof createDeviationPoseState>|null} */
@@ -1209,7 +1223,7 @@ render();
 // Initialize scene outliner
 setOnTreeRebuild(markModelStatsDirty);
 outlinerPanelEl = initOutliner({
-    onSelect: (obj) => selectObject(obj),
+    onSelect: (obj) => selectObject(obj, { fromOutliner: true }),
     onGroupAdd: (obj) => toggleObjectInMultiSelect(obj),
     onGroupRemove: (obj) => { const idx = selectedObjects.indexOf(obj); if (idx !== -1) toggleObjectInMultiSelect(obj); },
     onHideOthers: (obj) => {
@@ -1338,6 +1352,8 @@ outlinerPanelEl = initOutliner({
         reconstructAnnotations3d(clone, render);
         reconstructMeasurements(clone, render);
         reconstructCadDim3d(clone);
+        // Object3D.clone() JSON-copies userData; Euler initRotation loses .x/.y/.z (only _x/_y/_z).
+        refreshInitTransformUserData(clone);
         // Sync loadedModels if cloned at root level
         if (obj.parent === scene) {
             if (!loadedModels.includes(clone)) {
@@ -2071,6 +2087,18 @@ function init() {
     _deviationHintDiv = document.createElement('div');
     _deviationHintDiv.style.cssText = 'position:fixed;bottom:156px;left:50%;transform:translateX(-50%);background:rgba(180,60,20,0.88);color:#fff;padding:5px 14px;border-radius:5px;font-size:12px;display:none;z-index:1000;white-space:nowrap;';
     _deviationHintDiv.addEventListener('click', (e) => {
+        if (e.target.closest('[data-deviation-ok]')) {
+            e.preventDefault();
+            e.stopPropagation();
+            _confirmDeviationPendingPick();
+            return;
+        }
+        if (e.target.closest('[data-deviation-cancel-pick]')) {
+            e.preventDefault();
+            e.stopPropagation();
+            _cancelDeviationPendingPick();
+            return;
+        }
         if (e.target.closest('[data-deviation-cancel]')) {
             e.preventDefault();
             e.stopPropagation();
@@ -4131,20 +4159,14 @@ function changeColor(obj, color) {
 
 function setDefPosRotScale(obj) {
     if (!obj) return;
-    obj.position.set(obj.userData.initPosition.x, obj.userData.initPosition.y, obj.userData.initPosition.z);
-    obj.rotation.set(obj.userData.initRotation.x, obj.userData.initRotation.y, obj.userData.initRotation.z);
-    obj.scale.set(obj.userData.initScale.x, obj.userData.initScale.y, obj.userData.initScale.z);
+    applyInitTransformFromUserData(obj);
     render();
 }
 
 function resetWholeModel() {
     if (!confirm('Reset whole model to initial positions?')) return;
     scene.traverse(function(child) {
-        if (child.userData.initPosition && child.userData.initRotation && child.userData.initScale) {
-            child.position.copy(child.userData.initPosition);
-            child.rotation.copy(child.userData.initRotation);
-            child.scale.copy(child.userData.initScale);
-        }
+        applyInitTransformFromUserData(child);
     });
     
     // Aktualizace průřezových čar
@@ -6691,42 +6713,23 @@ function getFirstPickableHit(visibleIntersects) {
     return null;
 }
 
-// Model Comparison: mesh z viewportu nebo uzel z outlineru → kořen s mesh potomky (pojmenovaný předek nebo přímo uzel).
-function resolveDeviationComparisonPick(object) {
+// Model Comparison: outliner = exact node; viewport mesh → CAD/Detailed via resolveCADSelection.
+function resolveDeviationComparisonPick(object, options = {}) {
     if (!object) return null;
-
-    let root = resolveCADSelection(object);
-
-    if (root.isMesh && root.parent) {
-        let ascending = root.parent;
-        let namedAncestor = null;
-        while (ascending && ascending.parent) {
-            if (hasComparisonMeshes(ascending)) {
-                if (ascending.name && ascending.name.trim() !== '') {
-                    namedAncestor = ascending;
-                }
-            }
-            ascending = ascending.parent;
-        }
-        if (namedAncestor) root = namedAncestor;
-    }
-
+    const root = options.fromOutliner ? object : resolveCADSelection(object);
     return hasComparisonMeshes(root) ? root : null;
 }
 
-// Pokud je cadSelection zapnutý, vrátí nejbližšího pojmenovaného předka (nebo mesh samotný, pokud žádný není).
+// Pokud je cadSelection zapnutý, vrátí nejbližšího pojmenovaného předka meshe (nebo mesh samotný, pokud žádný není).
 // Pokud je cadSelection vypnutý, vrátí objekt beze změny.
 function resolveCADSelection(object) {
-    if (viewProp.cadSelection !== 'CAD') return object;
-    // Začínáme od rodiče meshe
+    if (viewProp.cadSelection !== 'CAD' || !object?.isMesh) return object;
     let candidate = object.parent;
     while (candidate) {
-        // Konec hierarchie – vraťme naposledy nalezeného pojmenovaného nebo samotný mesh
         if (!candidate.parent) break;
         if (candidate.name && candidate.name.trim() !== '') return candidate;
         candidate = candidate.parent;
     }
-    // Žádný pojmenovaný předek nenalezen – vrátíme původní mesh
     return object;
 }
 
@@ -6746,7 +6749,7 @@ function clearHighlight() {
 function selectObject(object, options = {}) {
     if (deviationMapMode) {
         if (object) {
-            const picked = resolveDeviationComparisonPick(object);
+            const picked = resolveDeviationComparisonPick(object, { fromOutliner: options.fromOutliner });
             if (!picked) {
                 alert('Selected object has no mesh geometry for comparison.');
                 return;
@@ -7521,27 +7524,70 @@ function cancelDeviationProbeMode() {
     render();
 }
 
-function handleDeviationMapPick(picked) {
-    if (!picked || !deviationMapMode) return;
+function _clearDeviationPendingPickHighlight() {
+    deviationPendingMeshes.forEach(child => {
+        applyEmissive(child, 0x000000);
+        clearXray(child);
+    });
+    deviationPendingMeshes = [];
+    if (selectionHelper && !lastSelectedObject) {
+        selectionHelper.visible = false;
+    }
+    outlinerHighlight(null);
+    deviationPendingPick = null;
+}
+
+function _highlightDeviationPendingPick(object) {
+    _clearDeviationPendingPickHighlight();
+    deviationPendingPick = object;
+    object.traverse(child => {
+        if (child.isMesh) {
+            deviationPendingMeshes.push(child);
+            applyEmissive(child, 0xff0000);
+            if (viewProp.xrayOnSelect) applyXray(child);
+        }
+    });
+    highlightObject(object);
+    outlinerHighlight(object);
+}
+
+function _confirmDeviationPendingPick() {
+    if (!deviationPendingPick || !deviationMapMode) return;
+
+    const picked = deviationPendingPick;
 
     if (deviationStep === 0) {
         deviationScanObject = picked;
-        clearDeviationHighlight();
-        deviationHighlightHelper = new PaddedBoxHelper(picked, 0xff6600, viewProp.multiSelectBoxPadding);
-        scene.add(deviationHighlightHelper);
+        _clearDeviationPendingPickHighlight();
         deviationStep = 1;
-        outlinerHighlight(picked);
         _updateDeviationHintUI();
         render();
-    } else {
-        if (comparisonTargetsOverlap(picked, deviationScanObject)) {
-            alert('Select a different object for B (not the same node or its parent/child).');
-            return;
-        }
-        deviationRefObject = picked;
-        outlinerHighlight(picked);
-        runDeviationMapCompute(false);
+        return;
     }
+
+    if (comparisonTargetsOverlap(picked, deviationScanObject)) {
+        alert('Select a different object for B (not the same node or its parent/child).');
+        return;
+    }
+
+    deviationRefObject = picked;
+    _clearDeviationPendingPickHighlight();
+    _updateDeviationHintUI();
+    runDeviationMapCompute(false);
+}
+
+function _cancelDeviationPendingPick() {
+    if (!deviationPendingPick) return;
+    _clearDeviationPendingPickHighlight();
+    _updateDeviationHintUI();
+    render();
+}
+
+function handleDeviationMapPick(picked) {
+    if (!picked || !deviationMapMode) return;
+    _highlightDeviationPendingPick(picked);
+    _updateDeviationHintUI();
+    render();
 }
 
 function startDeviationMapMode() {
@@ -7553,6 +7599,7 @@ function startDeviationMapMode() {
     deviationStep = 0;
     deviationScanObject = null;
     deviationRefObject = null;
+    _clearDeviationPendingPickHighlight();
     clearDeviationHighlight();
     deselectObject();
     _updateDeviationHintUI();
@@ -7562,6 +7609,7 @@ function startDeviationMapMode() {
 function _exitDeviationPickMode() {
     deviationMapMode = false;
     deviationStep = 0;
+    _clearDeviationPendingPickHighlight();
     clearDeviationHighlight();
     _updateDeviationHintUI();
 }
