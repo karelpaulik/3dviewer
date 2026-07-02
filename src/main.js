@@ -607,10 +607,17 @@ function _updateDeviationHintUI() {
     }
 }
 
+function _formatProbeFilterHint() {
+    if (!deviationGui.probeFilterEnabled) return '';
+    const threshold = deviationGui.probeFilterThreshold.toFixed(3);
+    const op = deviationGui.probeFilterMode === 'below' ? '≤' : '≥';
+    return ` &nbsp;·&nbsp; filter ${op} ${threshold}`;
+}
+
 function _updateDeviationProbeHintUI() {
     if (!_deviationProbeHintDiv) return;
     if (deviationProbeMode) {
-        _deviationProbeHintDiv.innerHTML = 'Probe deviation: hover to preview, click to pin value &nbsp;·&nbsp; <button type="button" data-deviation-probe-cancel style="margin-left:6px;padding:2px 10px;border:1px solid rgba(255,255,255,0.7);border-radius:4px;background:rgba(255,255,255,0.15);color:#fff;font-size:12px;cursor:pointer;">Cancel</button>';
+        _deviationProbeHintDiv.innerHTML = `Probe deviation: hover to preview, click to pin value${_formatProbeFilterHint()} &nbsp;·&nbsp; <button type="button" data-deviation-probe-cancel style="margin-left:6px;padding:2px 10px;border:1px solid rgba(255,255,255,0.7);border-radius:4px;background:rgba(255,255,255,0.15);color:#fff;font-size:12px;cursor:pointer;">Cancel</button>`;
         _deviationProbeHintDiv.style.display = 'block';
     } else {
         _deviationProbeHintDiv.style.display = 'none';
@@ -830,6 +837,9 @@ const deviationGui = {
     referenceWireframe: DEVIATION_DEFAULTS.referenceWireframe,
     useNormalFilter: DEVIATION_DEFAULTS.useNormalFilter,
     normalAngleDeg: DEVIATION_DEFAULTS.normalAngleDeg,
+    probeFilterEnabled: false,
+    probeFilterMode: 'above',
+    probeFilterThreshold: DEVIATION_DEFAULTS.tolerance,
     labelScale: 1,
 };
 /** @type {import('lil-gui').Controller|null} */
@@ -2891,6 +2901,26 @@ function addMainGui() {
         if (deviationResultActive && deviationGui.useNormalFilter) runDeviationMapRecompute();
     });
     if (!deviationGui.useNormalFilter) normalAngleCtrl.disable();
+    const probeFilterEnabledCtrl = deviationFolder.add(deviationGui, 'probeFilterEnabled').name('Probe deviation filter');
+    const probeFilterModeCtrl = deviationFolder.add(deviationGui, 'probeFilterMode', {
+        'Above threshold': 'above',
+        'Below threshold': 'below',
+    }).name('Probe filter mode').onChange(function() {
+        if (deviationProbeMode) _updateDeviationProbeHintUI();
+    });
+    const probeFilterThresholdCtrl = deviationFolder.add(deviationGui, 'probeFilterThreshold', 0.001, 100, 0.001)
+        .name('Probe filter threshold').onChange(function() {
+            if (deviationProbeMode) _updateDeviationProbeHintUI();
+        });
+    probeFilterEnabledCtrl.onChange(function(enabled) {
+        probeFilterModeCtrl[enabled ? 'enable' : 'disable']();
+        probeFilterThresholdCtrl[enabled ? 'enable' : 'disable']();
+        if (deviationProbeMode) _updateDeviationProbeHintUI();
+    });
+    if (!deviationGui.probeFilterEnabled) {
+        probeFilterModeCtrl.disable();
+        probeFilterThresholdCtrl.disable();
+    }
     deviationFolder.add({ fn() { tryStartDeviationProbeMode(); } }, 'fn').name('Probe deviation values');
     deviationFolder.add({ fn() { clearDeviationProbes(); render(); } }, 'fn').name('Clear deviation labels');
     deviationFolder.add(deviationGui, 'labelScale', 0.5, 4, 0.05).name('Label size').onChange(function(value) {
@@ -7437,7 +7467,11 @@ function _recolorActiveDeviationBoth(tolerance, withinToleranceOpacity) {
 function _raycastDeviationProbeHit() {
     const distancesByMesh = _getMergedDeviationDistances();
     if (!distancesByMesh) return null;
-    return findDeviationProbeHit(_raycastVisibleMeshHits(), distancesByMesh);
+    return findDeviationProbeHit(_raycastVisibleMeshHits(), distancesByMesh, {
+        enabled: deviationGui.probeFilterEnabled,
+        mode: deviationGui.probeFilterMode,
+        threshold: deviationGui.probeFilterThreshold,
+    });
 }
 
 function startDeviationProbeMode() {

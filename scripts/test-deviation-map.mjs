@@ -17,6 +17,9 @@ import {
     normalDotToAngleDeg,
     hasComparisonMeshes,
     comparisonTargetsOverlap,
+    matchesProbeDeviationFilter,
+    findDeviationProbeHit,
+    sampleDeviationAtHit,
     DEVIATION_DEFAULTS,
 } from '../src/deviationMapUtils.js';
 import {
@@ -135,6 +138,100 @@ function distancesOnFaceWithNormal(mesh, distancesByMesh, targetNormal, targetNo
         out.push({ index: i, distance: meshDistances[i], pos: v.clone() });
     }
     return out;
+}
+
+function testProbeDeviationFilter() {
+    if (!matchesProbeDeviationFilter(0.05, { enabled: false })) {
+        throw new Error('disabled filter should accept any distance');
+    }
+    if (!matchesProbeDeviationFilter(0.15, { enabled: true, mode: 'above', threshold: 0.1 })) {
+        throw new Error('above filter should accept distance >= threshold');
+    }
+    if (matchesProbeDeviationFilter(0.05, { enabled: true, mode: 'above', threshold: 0.1 })) {
+        throw new Error('above filter should reject distance < threshold');
+    }
+    if (!matchesProbeDeviationFilter(0.05, { enabled: true, mode: 'below', threshold: 0.1 })) {
+        throw new Error('below filter should accept distance <= threshold');
+    }
+    if (matchesProbeDeviationFilter(0.15, { enabled: true, mode: 'below', threshold: 0.1 })) {
+        throw new Error('below filter should reject distance > threshold');
+    }
+    if (!matchesProbeDeviationFilter(Number.NaN, { enabled: true, mode: 'above', threshold: 0.1 })) {
+        throw new Error('ambiguous distance should pass above filter');
+    }
+    if (matchesProbeDeviationFilter(Number.NaN, { enabled: true, mode: 'below', threshold: 0.1 })) {
+        throw new Error('ambiguous distance should fail below filter');
+    }
+
+    const geom = new THREE.BufferGeometry();
+    const positions = new Float32Array([
+        0, 0, 0,
+        1, 0, 0,
+        0, 1, 0,
+    ]);
+    geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const mesh = new THREE.Mesh(geom, new THREE.MeshStandardMaterial());
+    mesh.updateMatrixWorld(true);
+
+    const distances = new Float32Array([0.05, 0.05, 0.05]);
+    const distancesByMesh = new Map([[mesh, distances]]);
+
+    const hitNear = {
+        object: mesh,
+        face: { a: 0, b: 1, c: 2 },
+        barycoord: new THREE.Vector3(1, 0, 0),
+        point: new THREE.Vector3(),
+    };
+    const hitFar = {
+        object: mesh,
+        face: { a: 0, b: 1, c: 2 },
+        barycoord: new THREE.Vector3(0, 1, 0),
+        point: new THREE.Vector3(),
+    };
+
+    const nearSample = sampleDeviationAtHit(hitNear, distancesByMesh);
+    const farSample = sampleDeviationAtHit(hitFar, distancesByMesh);
+    if (!nearSample || Math.abs(nearSample.distance - 0.05) > 1e-6 || !farSample || Math.abs(farSample.distance - 0.05) > 1e-6) {
+        throw new Error('sampleDeviationAtHit mock setup failed');
+    }
+
+    const unfiltered = findDeviationProbeHit([hitNear, hitFar], distancesByMesh);
+    if (!unfiltered || unfiltered.hit !== hitNear) {
+        throw new Error('unfiltered probe hit should return first intersection');
+    }
+
+    distances[1] = 0.15;
+    distances[2] = 0.15;
+    const aboveHit = findDeviationProbeHit([hitNear, hitFar], distancesByMesh, {
+        enabled: true,
+        mode: 'above',
+        threshold: 0.1,
+    });
+    if (!aboveHit || aboveHit.hit !== hitFar) {
+        throw new Error('above filter should skip in-tolerance hit and return OOT hit');
+    }
+
+    distances[0] = 0.15;
+    distances[1] = 0.05;
+    distances[2] = 0.05;
+    const belowHit = findDeviationProbeHit([hitNear, hitFar], distancesByMesh, {
+        enabled: true,
+        mode: 'below',
+        threshold: 0.1,
+    });
+    if (!belowHit || belowHit.hit !== hitFar) {
+        throw new Error('below filter should skip OOT hit and return in-tolerance hit');
+    }
+
+    distances[0] = 0.05;
+    const noneAfterReset = findDeviationProbeHit([hitNear], distancesByMesh, {
+        enabled: true,
+        mode: 'above',
+        threshold: 0.1,
+    });
+    if (noneAfterReset !== null) {
+        throw new Error('above filter should return null when all hits are below threshold');
+    }
 }
 
 async function main() {
@@ -388,6 +485,7 @@ async function main() {
     if (mixedBi.error) throw new Error(`mixed hierarchy bidirectional: ${mixedBi.error}`);
 
     testDeviationPoseUtils();
+    testProbeDeviationFilter();
 
     console.log('Deviation map smoke test OK');
     console.log(`  aligned offset: min=${result.stats.min.toFixed(4)} max=${result.stats.max.toFixed(4)}`);

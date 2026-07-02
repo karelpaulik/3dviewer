@@ -1049,15 +1049,35 @@ export function sampleDeviationAtHit(hit, distancesByMesh) {
 }
 
 /**
+ * @typedef {{ enabled?: boolean, mode?: 'above' | 'below', threshold?: number }} ProbeDeviationFilter
+ */
+
+/**
+ * @param {number} distance
+ * @param {ProbeDeviationFilter} [filter]
+ * @returns {boolean}
+ */
+export function matchesProbeDeviationFilter(distance, filter) {
+    if (!filter?.enabled) return true;
+    const threshold = filter.threshold ?? 0;
+    if (!Number.isFinite(distance)) return filter.mode === 'above';
+    if (filter.mode === 'below') return distance <= threshold;
+    return distance >= threshold;
+}
+
+/**
  * @param {THREE.Intersection[]} intersects
  * @param {Map<THREE.Mesh, Float32Array>} distancesByMesh
+ * @param {ProbeDeviationFilter} [filter]
  * @returns {{ hit: THREE.Intersection, sample: { distance: number, isAmbiguous: boolean } } | null}
  */
-export function findDeviationProbeHit(intersects, distancesByMesh) {
+export function findDeviationProbeHit(intersects, distancesByMesh, filter = {}) {
     if (!intersects?.length || !distancesByMesh) return null;
     for (const hit of intersects) {
         const sample = sampleDeviationAtHit(hit, distancesByMesh);
-        if (sample) return { hit, sample };
+        if (!sample) continue;
+        if (!matchesProbeDeviationFilter(sample.distance, filter)) continue;
+        return { hit, sample };
     }
     return null;
 }
