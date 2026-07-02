@@ -116,6 +116,7 @@ import {
     clearDeviationProbes,
     getDeviationProbeHoverText,
     setDeviationProbeLabelScale,
+    setDeviationProbeMarkerScale,
 } from './deviationProbeUtils.js';
 import {
     createDeviationPoseState,
@@ -841,6 +842,7 @@ const deviationGui = {
     probeFilterMode: 'above',
     probeFilterThreshold: DEVIATION_DEFAULTS.tolerance,
     labelScale: 1,
+    markerScale: 1,
 };
 /** @type {import('lil-gui').Controller|null} */
 let deviationWireframeCtrl = null;
@@ -1992,6 +1994,7 @@ function init() {
     initMeasurement(scene);
     initDeviationProbe(scene);
     setDeviationProbeLabelScale(deviationGui.labelScale);
+    setDeviationProbeMarkerScale(deviationGui.markerScale);
     initSelectDimension(currentCamera, render, orbitControls);
     initAnnotations(scene, render);
     initAnnotations3d(scene, render);
@@ -2925,6 +2928,10 @@ function addMainGui() {
     deviationFolder.add({ fn() { clearDeviationProbes(); render(); } }, 'fn').name('Clear deviation labels');
     deviationFolder.add(deviationGui, 'labelScale', 0.5, 4, 0.05).name('Label size').onChange(function(value) {
         setDeviationProbeLabelScale(value);
+        render();
+    });
+    deviationFolder.add(deviationGui, 'markerScale', 0.5, 4, 0.05).name('Marker size').onChange(function(value) {
+        setDeviationProbeMarkerScale(value);
         render();
     });
     deviationFolder.close();
@@ -7487,6 +7494,7 @@ function startDeviationProbeMode() {
     deviationProbeMode = true;
     setDeviationProbeActive(true);
     setDeviationProbeLabelScale(deviationGui.labelScale);
+    setDeviationProbeMarkerScale(deviationGui.markerScale);
     viewProp.isSelectAllowed = false;
     _updateDeviationProbeHintUI();
     render();

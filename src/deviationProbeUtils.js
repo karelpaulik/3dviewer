@@ -16,6 +16,7 @@ let _probes = [];
 let _previewMarker = null;
 let _hoverText = null;
 let _labelScale = 1;
+let _markerScale = 1;
 
 export function initDeviationProbe(scene) {
     _scene = scene;
@@ -45,6 +46,20 @@ export function setDeviationProbeLabelScale(scale) {
     _labelScale = scale;
     for (const probe of _probes) {
         _applyLabelStyle(probe.label, probe.distance, probe.tolerance);
+    }
+}
+
+export function getDeviationProbeMarkerScale() {
+    return _markerScale;
+}
+
+export function setDeviationProbeMarkerScale(scale) {
+    _markerScale = scale;
+    for (const probe of _probes) {
+        probe.marker?.scale.setScalar(scale);
+    }
+    if (_previewMarker) {
+        _previewMarker.scale.setScalar(scale);
     }
 }
 
@@ -84,6 +99,7 @@ function _createMarker(localPos, color) {
     const mesh = new THREE.Mesh(geo, mat);
     mesh.renderOrder = 999;
     mesh.position.copy(localPos);
+    mesh.scale.setScalar(_markerScale);
     mesh.userData._isDeviationProbe = true;
     return mesh;
 }
