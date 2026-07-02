@@ -81,6 +81,7 @@ import {
 import {
     performBooleanOperation,
     pickMaterialFromObject,
+    collectMeshes,
     collectDescendantMeshes,
     mergeDescendantMeshes,
     flattenMeshMaterials,
@@ -588,8 +589,8 @@ function _updateBooleanHintUI() {
     if (!_booleanHintDiv) return;
     if (booleanMode) {
         const stepText = booleanStep === 0
-            ? 'Boolean: klikněte na první objekt (A)'
-            : 'Boolean: klikněte na druhý objekt (B)';
+            ? 'Boolean: klikněte na první objekt (A) nebo vyberte uzel ve Scene outlineru'
+            : 'Boolean: klikněte na druhý objekt (B) nebo vyberte uzel ve Scene outlineru';
         _booleanHintDiv.innerHTML = `${stepText} &nbsp;·&nbsp; <button type="button" data-boolean-cancel style="margin-left:6px;padding:2px 10px;border:1px solid rgba(255,255,255,0.7);border-radius:4px;background:rgba(255,255,255,0.15);color:#fff;font-size:12px;cursor:pointer;">Zrušit</button>`;
         _booleanHintDiv.style.display = 'block';
     } else {
@@ -1926,7 +1927,7 @@ function init() {
                     const obj = navigateOutliner('up');
                     if (obj) {
                         if (event.ctrlKey) { toggleObjectInMultiSelect(obj); setNavigationPosition(obj); }
-                        else { selectObject(obj); render(); }
+                        else { selectObject(obj, { fromOutliner: true }); render(); }
                     }
                     event.preventDefault();
                 }
@@ -1937,7 +1938,7 @@ function init() {
                     const obj = navigateOutliner('down');
                     if (obj) {
                         if (event.ctrlKey) { toggleObjectInMultiSelect(obj); setNavigationPosition(obj); }
-                        else { selectObject(obj); render(); }
+                        else { selectObject(obj, { fromOutliner: true }); render(); }
                     }
                     event.preventDefault();
                 }
@@ -6725,6 +6726,14 @@ function resolveDeviationComparisonPick(object, options = {}) {
     return hasComparisonMeshes(root) ? root : null;
 }
 
+// Boolean: outliner = exact node; viewport mesh → CAD/Detailed via resolveCADSelection.
+function resolveBooleanPick(object, options = {}) {
+    if (!object || !isObjectPickable(object)) return null;
+    const root = options.fromOutliner ? object : resolveCADSelection(object);
+    if (!isObjectPickable(root)) return null;
+    return collectMeshes(root).length > 0 ? root : null;
+}
+
 // Pokud je cadSelection zapnutý, vrátí nejbližšího pojmenovaného předka meshe (nebo mesh samotný, pokud žádný není).
 // Pokud je cadSelection vypnutý, vrátí objekt beze změny.
 function resolveCADSelection(object) {
@@ -6760,6 +6769,18 @@ function selectObject(object, options = {}) {
                 return;
             }
             handleDeviationMapPick(picked);
+        }
+        return;
+    }
+
+    if (booleanMode) {
+        if (object) {
+            const picked = resolveBooleanPick(object, { fromOutliner: options.fromOutliner });
+            if (!picked) {
+                alert('Vybraný objekt nemá platnou mesh geometrii pro boolean operaci.');
+                return;
+            }
+            handleBooleanPick(picked);
         }
         return;
     }
@@ -7832,6 +7853,28 @@ function clearBooleanHighlight() {
     }
 }
 
+function handleBooleanPick(picked) {
+    if (!picked || !booleanMode) return;
+
+    if (booleanStep === 0) {
+        booleanObjectA = picked;
+        clearBooleanHighlight();
+        booleanHighlightHelper = new PaddedBoxHelper(picked, 0xffaa00, viewProp.multiSelectBoxPadding);
+        scene.add(booleanHighlightHelper);
+        booleanStep = 1;
+        outlinerHighlight(picked);
+        _updateBooleanHintUI();
+        render();
+    } else {
+        if (picked === booleanObjectA) {
+            alert('Vyberte jiný objekt pro B.');
+            return;
+        }
+        booleanObjectB = picked;
+        runBooleanAndRegister();
+    }
+}
+
 function startBooleanMode(operation) {
     if (faceSnapMode) cancelFaceSnapMode();
     if (ptpSnapMode) cancelPtpSnapMode();
@@ -7904,8 +7947,8 @@ function runBooleanAndRegister() {
             const resultMesh = new THREE.Mesh(geometry, material);
             resultMesh.name = `Boolean_${opLabel}_${nameA}_${nameB}`;
 
-            registerBooleanResultMesh(resultMesh);
             cancelBooleanMode();
+            registerBooleanResultMesh(resultMesh);
         } catch (err) {
             console.error('Boolean operation error:', err);
             alert(err?.message || 'Boolean operation failed.');
@@ -8218,25 +8261,12 @@ function onClick( event ) {
             return;
         }
 
-        const picked = resolveCADSelection(hit);
-        if (!picked) return;
-
-        if (booleanStep === 0) {
-            booleanObjectA = picked;
-            clearBooleanHighlight();
-            booleanHighlightHelper = new PaddedBoxHelper(picked, 0xffaa00, viewProp.multiSelectBoxPadding);
-            scene.add(booleanHighlightHelper);
-            booleanStep = 1;
-            _updateBooleanHintUI();
-            render();
-        } else {
-            if (picked === booleanObjectA) {
-                alert('Vyberte jiný objekt pro B.');
-                return;
-            }
-            booleanObjectB = picked;
-            runBooleanAndRegister();
+        const picked = resolveBooleanPick(hit);
+        if (!picked) {
+            alert('Vybraný objekt nemá platnou mesh geometrii pro boolean operaci.');
+            return;
         }
+        handleBooleanPick(picked);
         return;
     }
 
