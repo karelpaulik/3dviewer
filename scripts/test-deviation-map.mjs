@@ -234,6 +234,49 @@ function testProbeDeviationFilter() {
     }
 }
 
+async function testComputeAbort() {
+    const { cube, cuboid } = makeAlignedCubeCuboidPair();
+    const controller = new AbortController();
+    let progressCalls = 0;
+
+    const result = await computeDeviationMap(cube, cuboid, {
+        batchSize: 10,
+        tolerance: 0.1,
+        signal: controller.signal,
+        onProgress() {
+            progressCalls++;
+            if (progressCalls === 1) controller.abort();
+        },
+    });
+
+    if (!result.cancelled) {
+        throw new Error('aborted computeDeviationMap should return cancelled: true');
+    }
+    if (result.error) {
+        throw new Error(`aborted computeDeviationMap should not set error: ${result.error}`);
+    }
+    if (result.distancesByMesh.size !== 0) {
+        throw new Error('aborted computeDeviationMap should return empty distancesByMesh');
+    }
+
+    const biController = new AbortController();
+    let biAborted = false;
+    const biResult = await computeBidirectionalDeviationMap(cube, cuboid, {
+        batchSize: 10,
+        tolerance: 0.1,
+        signal: biController.signal,
+        onProgress(p) {
+            if (!biAborted && p > 0.01) {
+                biAborted = true;
+                biController.abort();
+            }
+        },
+    });
+    if (!biResult.cancelled) {
+        throw new Error('aborted computeBidirectionalDeviationMap should return cancelled: true');
+    }
+}
+
 async function main() {
     if (Math.abs(angleDegToNormalDot(60) - 0.5) > 1e-6) {
         throw new Error('angleDegToNormalDot(60) should be 0.5');
@@ -486,6 +529,7 @@ async function main() {
 
     testDeviationPoseUtils();
     testProbeDeviationFilter();
+    await testComputeAbort();
 
     console.log('Deviation map smoke test OK');
     console.log(`  aligned offset: min=${result.stats.min.toFixed(4)} max=${result.stats.max.toFixed(4)}`);

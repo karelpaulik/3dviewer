@@ -845,6 +845,9 @@ let deviationResultActive = false;
 let deviationProbeMode = false;
 /** @type {ReturnType<typeof createDeviationPoseState>|null} */
 let deviationPoseState = null;
+/** @type {AbortController|null} */
+let deviationComputeAbortController = null;
+let deviationComputeGeneration = 0;
 const deviationGui = {
     comparisonMode: 'unidirectional',
     tolerance: DEVIATION_DEFAULTS.tolerance,
@@ -1809,7 +1812,9 @@ function init() {
                 if (booleanMode) {
                     cancelBooleanMode();
                 }
-                if (deviationMapMode) {
+                if (deviationComputeAbortController) {
+                    cancelDeviationMapCompute();
+                } else if (deviationMapMode) {
                     cancelDeviationMapMode();
                 }
                 if (deviationProbeMode) {
@@ -2857,11 +2862,11 @@ function addMainGui() {
         startDeviationMapMode();
     }
     function runDeviationMapRecompute() {
-        if (!deviationResultActive || !deviationScanObject || !deviationRefObject) {
+        if (!deviationScanObject || !deviationRefObject) {
             alert('Create a deviation map first (Start deviation map).');
             return;
         }
-        runDeviationMapCompute(true);
+        runDeviationMapCompute(!!deviationResultActive);
     }
     function _syncDeviationWireframeCtrl() {
         if (!deviationWireframeCtrl) return;
@@ -7623,6 +7628,15 @@ function cancelDeviationMapMode() {
     render();
 }
 
+function cancelDeviationMapCompute() {
+    if (deviationComputeAbortController) {
+        deviationComputeAbortController.abort();
+        deviationComputeAbortController = null;
+    }
+    const overlay = document.getElementById('deviationOverlay');
+    if (overlay) overlay.style.display = 'none';
+}
+
 function runDeviationMapCompute(isRecompute = false) {
     const scan = deviationScanObject;
     const ref = deviationRefObject;
@@ -7634,10 +7648,12 @@ function runDeviationMapCompute(isRecompute = false) {
 
     const isBidirectional = deviationGui.comparisonMode === 'bidirectional';
 
-    if (isRecompute) {
-        _clearActiveDeviationBoth();
-        clearDeviationProbes();
+    if (deviationComputeAbortController) {
+        deviationComputeAbortController.abort();
     }
+    const controller = new AbortController();
+    deviationComputeAbortController = controller;
+    const generation = ++deviationComputeGeneration;
 
     let overlay = document.getElementById('deviationOverlay');
     if (!overlay) {
@@ -7646,8 +7662,10 @@ function runDeviationMapCompute(isRecompute = false) {
         overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:99999;color:#fff;font-size:18px;font-family:sans-serif;gap:8px;';
         document.body.appendChild(overlay);
     }
-    overlay.innerHTML = '<div id="deviationOverlayTitle">Computing deviation map… please wait</div><div id="deviationOverlayProgress" style="font-size:14px;opacity:0.85;">0 %</div>';
+    overlay.innerHTML = '<div id="deviationOverlayTitle">Computing deviation map… please wait</div><div id="deviationOverlayProgress" style="font-size:14px;opacity:0.85;">0 %</div><button id="deviationOverlayCancel" type="button" style="margin-top:8px;padding:8px 20px;font-size:14px;cursor:pointer;border:1px solid rgba(255,255,255,0.5);border-radius:4px;background:rgba(255,255,255,0.12);color:#fff;">Cancel</button>';
     overlay.style.display = 'flex';
+    const cancelBtn = overlay.querySelector('#deviationOverlayCancel');
+    if (cancelBtn) cancelBtn.onclick = cancelDeviationMapCompute;
 
     const progressEl = overlay.querySelector('#deviationOverlayProgress');
     const titleEl = overlay.querySelector('#deviationOverlayTitle');
@@ -7657,6 +7675,7 @@ function runDeviationMapCompute(isRecompute = false) {
         tolerance: deviationGui.tolerance,
         useNormalFilter: deviationGui.useNormalFilter,
         minNormalDot: angleDegToNormalDot(deviationGui.normalAngleDeg),
+        signal: controller.signal,
         onProgress(p) {
             if (progressEl) progressEl.textContent = `${Math.round(p * 100)} %`;
             if (titleEl && isBidirectional) {
@@ -7685,10 +7704,18 @@ function runDeviationMapCompute(isRecompute = false) {
             if (isBidirectional) {
                 const result = await computeBidirectionalDeviationMap(scan, ref, computeOptions);
 
+                if (generation !== deviationComputeGeneration) return;
+                if (result.cancelled || controller.signal.aborted) return;
+
                 if (result.error || !result.stats || !result.aToB?.stats || !result.bToA?.stats) {
                     alert(result.error || 'Bidirectional deviation map computation failed.');
                     if (deviationMapMode) cancelDeviationMapMode();
                     return;
+                }
+
+                if (isRecompute) {
+                    _clearActiveDeviationBoth();
+                    clearDeviationProbes();
                 }
 
                 applyDeviationColors(scan, result.aToB.distancesByMesh, tolerance, withinToleranceOpacity);
@@ -7726,10 +7753,18 @@ function runDeviationMapCompute(isRecompute = false) {
             } else {
                 const result = await computeDeviationMap(scan, ref, computeOptions);
 
+                if (generation !== deviationComputeGeneration) return;
+                if (result.cancelled || controller.signal.aborted) return;
+
                 if (result.error || !result.stats) {
                     alert(result.error || 'Deviation map computation failed.');
                     if (deviationMapMode) cancelDeviationMapMode();
                     return;
+                }
+
+                if (isRecompute) {
+                    _clearActiveDeviationBoth();
+                    clearDeviationProbes();
                 }
 
                 applyDeviationColors(scan, result.distancesByMesh, tolerance, withinToleranceOpacity);
@@ -7778,6 +7813,9 @@ function runDeviationMapCompute(isRecompute = false) {
             alert(err?.message || 'Deviation map computation failed.');
             if (deviationMapMode) cancelDeviationMapMode();
         } finally {
+            if (deviationComputeAbortController === controller) {
+                deviationComputeAbortController = null;
+            }
             if (needsPoseRestore) {
                 applyDisplayPoses(deviationPoseState);
                 render();

@@ -589,16 +589,27 @@ export function mergeDistancesByMesh(mapA, mapB) {
 /**
  * @param {THREE.Object3D} objA
  * @param {THREE.Object3D} objB
- * @param {{ batchSize?: number, onProgress?: (p: number) => void, tolerance?: number, useNormalFilter?: boolean, minNormalDot?: number }} [options]
- * @returns {Promise<{ aToB: object, bToA: object|null, stats: object|null, maxDistance: number, error: string|null }>}
+ * @param {{ batchSize?: number, onProgress?: (p: number) => void, tolerance?: number, useNormalFilter?: boolean, minNormalDot?: number, signal?: AbortSignal }} [options]
+ * @returns {Promise<{ aToB: object, bToA: object|null, stats: object|null, maxDistance: number, error: string|null, cancelled?: boolean }>}
  */
 export async function computeBidirectionalDeviationMap(objA, objB, options = {}) {
     const onProgress = options.onProgress ?? (() => {});
+    const signal = options.signal;
 
     const aToB = await computeDeviationMap(objA, objB, {
         ...options,
         onProgress: (p) => onProgress(p * 0.5),
     });
+    if (aToB.cancelled || signal?.aborted) {
+        return {
+            aToB,
+            bToA: null,
+            stats: null,
+            maxDistance: 0,
+            error: null,
+            cancelled: true,
+        };
+    }
     if (aToB.error || !aToB.stats) {
         return {
             aToB,
@@ -613,6 +624,16 @@ export async function computeBidirectionalDeviationMap(objA, objB, options = {})
         ...options,
         onProgress: (p) => onProgress(0.5 + p * 0.5),
     });
+    if (bToA.cancelled || signal?.aborted) {
+        return {
+            aToB,
+            bToA,
+            stats: null,
+            maxDistance: 0,
+            error: null,
+            cancelled: true,
+        };
+    }
     if (bToA.error || !bToA.stats) {
         return {
             aToB,
@@ -636,8 +657,8 @@ export async function computeBidirectionalDeviationMap(objA, objB, options = {})
 /**
  * @param {THREE.Object3D} scanRoot
  * @param {THREE.Object3D} refRoot
- * @param {{ batchSize?: number, onProgress?: (p: number) => void, tolerance?: number, useNormalFilter?: boolean, minNormalDot?: number }} [options]
- * @returns {Promise<{ distancesByMesh: Map<THREE.Mesh, Float32Array>, stats: object, maxDistance: number, error: string|null }>}
+ * @param {{ batchSize?: number, onProgress?: (p: number) => void, tolerance?: number, useNormalFilter?: boolean, minNormalDot?: number, signal?: AbortSignal }} [options]
+ * @returns {Promise<{ distancesByMesh: Map<THREE.Mesh, Float32Array>, stats: object, maxDistance: number, error: string|null, cancelled?: boolean }>}
  */
 export function computeDeviationMap(scanRoot, refRoot, options = {}) {
     const batchSize = options.batchSize ?? DEVIATION_DEFAULTS.batchSize;
@@ -645,9 +666,23 @@ export function computeDeviationMap(scanRoot, refRoot, options = {}) {
     const tolerance = options.tolerance ?? DEVIATION_DEFAULTS.tolerance;
     const useNormalFilter = options.useNormalFilter ?? DEVIATION_DEFAULTS.useNormalFilter;
     const minNormalDot = options.minNormalDot ?? angleDegToNormalDot(DEVIATION_DEFAULTS.normalAngleDeg);
+    const signal = options.signal;
+
+    const cancelledResult = () => ({
+        cancelled: true,
+        distancesByMesh: new Map(),
+        stats: null,
+        maxDistance: 0,
+        error: null,
+    });
 
     return new Promise((resolve) => {
         try {
+            if (signal?.aborted) {
+                resolve(cancelledResult());
+                return;
+            }
+
             scanRoot.updateWorldMatrix(true, true);
             refRoot.updateWorldMatrix(true, true);
 
@@ -681,6 +716,12 @@ export function computeDeviationMap(scanRoot, refRoot, options = {}) {
             let currentMatrix = null;
 
             const processBatch = () => {
+                if (signal?.aborted) {
+                    refGeom.dispose();
+                    resolve(cancelledResult());
+                    return;
+                }
+
                 const end = Math.min(processed + batchSize, totalVertices);
                 while (processed < end) {
                     if (!currentMesh || vertexIndex >= currentPos.count) {
@@ -717,6 +758,11 @@ export function computeDeviationMap(scanRoot, refRoot, options = {}) {
                 onProgress(totalVertices > 0 ? processed / totalVertices : 1);
 
                 if (processed < totalVertices) {
+                    if (signal?.aborted) {
+                        refGeom.dispose();
+                        resolve(cancelledResult());
+                        return;
+                    }
                     setTimeout(processBatch, 0);
                 } else {
                     refGeom.dispose();
