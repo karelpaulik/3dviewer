@@ -2,12 +2,19 @@
 // Strategy:
 //   - HTML navigation: network-first (always try to get fresh version)
 //   - Assets (JS, CSS, images, draco, models): cache-first, update in background
+//   - AR session model: dedicated cache (bedobe-ar-v1), written by the page
 //   - Cross-origin requests (analytics, CDN): pass through, do not cache
 
 const CACHE_NAME = 'bedobe-v1';
+const AR_CACHE = 'bedobe-ar-v1';
+const AR_MODEL_SUFFIX = '/ar-session/current.glb';
 
 // Pre-cache shell on install
 const PRECACHE_URLS = ['/', '/index.html'];
+
+function isArModelRequest(url) {
+    return url.pathname.endsWith(AR_MODEL_SUFFIX);
+}
 
 self.addEventListener('install', event => {
     event.waitUntil(
@@ -17,12 +24,14 @@ self.addEventListener('install', event => {
     self.skipWaiting();
 });
 
-// Remove old caches on activate
+// Remove old caches on activate (keep app + AR caches)
 self.addEventListener('activate', event => {
     event.waitUntil(
         caches.keys().then(keys =>
             Promise.all(
-                keys.filter(key => key !== CACHE_NAME).map(key => caches.delete(key))
+                keys
+                    .filter(key => key !== CACHE_NAME && key !== AR_CACHE)
+                    .map(key => caches.delete(key))
             )
         )
     );
@@ -36,6 +45,23 @@ self.addEventListener('fetch', event => {
     if (req.method !== 'GET') return;
     const url = new URL(req.url);
     if (url.origin !== self.location.origin) return;
+
+    // AR model: serve from dedicated cache (Scene Viewer needs a real HTTPS URL)
+    if (isArModelRequest(url)) {
+        event.respondWith(
+            caches.open(AR_CACHE).then(cache =>
+                cache.match(req).then(cached => {
+                    if (cached) return cached;
+                    return new Response('AR model not published', {
+                        status: 404,
+                        statusText: 'AR model not found',
+                        headers: { 'Content-Type': 'text/plain' },
+                    });
+                })
+            )
+        );
+        return;
+    }
 
     const isNavigation = req.mode === 'navigate';
 
