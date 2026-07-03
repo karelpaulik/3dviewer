@@ -1,5 +1,5 @@
 ﻿//main.js
-//asdff
+//asdf
 import * as THREE from 'three';
 import gsap from 'gsap';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
