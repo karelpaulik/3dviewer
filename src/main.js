@@ -35,8 +35,6 @@ import { initDocumentsGui, importDocumentsFromGltfScene, getDocumentsStore, flus
 import { initAttachmentsGui, importAttachmentsFromGltfScene, getAttachmentsStore, addImageAttachmentFromBlob, clearAttachmentsStore } from './attachmentsUtils.js';
 import { initLocalFileAccess, openLocalGlbFile, saveLocalGlbFile, saveLocalGlbFileAs, clearCurrentLocalFileHandle, waitForLaunchQueueSignal, wasLaunchedWithFile } from './localFileAccess.js';
 import { captureScreenFromDisplayMedia } from './viewportCapture.js';
-import { initAr, launchAr, getArOverlayElement } from './arUtils.js';
-import { prepareArExportGroup } from './arExportUtils.js';
 import { openHelp } from './helpUtils.js';
 import { openBomDialog } from './bomUtils.js';
 import {
@@ -458,7 +456,7 @@ document.body.appendChild(viewHelperContainer);
 
 // Wrapper reference for hit-testing (toolbar + panels + outliner)
 let outlinerPanelEl = null;
-const guiWrapper = { contains(el) { const arOverlay = getArOverlayElement(); return guiToolbar.contains(el) || Object.values(guiPanels).some(p => p.gui && p.gui.domElement.style.display !== 'none' && p.gui.domElement.contains(el)) || (outlinerPanelEl && outlinerPanelEl.contains(el)) || statusBar.contains(el) || statusCircleDetectEl.contains(el) || fsBtn.contains(el) || sectionBtn.contains(el) || solidSectionBtn.contains(el) || showSectionMeshBtn.contains(el) || crossSectionLinesBtn.contains(el) || viewHelperContainer.contains(el) || (_deviationLegendEl && _deviationLegendEl.contains(el)) || (arOverlay && arOverlay.contains(el)); } };
+const guiWrapper = { contains(el) { return guiToolbar.contains(el) || Object.values(guiPanels).some(p => p.gui && p.gui.domElement.style.display !== 'none' && p.gui.domElement.contains(el)) || (outlinerPanelEl && outlinerPanelEl.contains(el)) || statusBar.contains(el) || statusCircleDetectEl.contains(el) || fsBtn.contains(el) || sectionBtn.contains(el) || solidSectionBtn.contains(el) || showSectionMeshBtn.contains(el) || crossSectionLinesBtn.contains(el) || viewHelperContainer.contains(el) || (_deviationLegendEl && _deviationLegendEl.contains(el)); } };
 
 let guiView = null;
 let guiAssembly = null;
@@ -2023,10 +2021,6 @@ function init() {
     initAnnotations(scene, render);
     initAnnotations3d(scene, render);
     initCadDim3d(scene);
-    initAr({
-        hasModels: () => loadedModels.length > 0,
-        getGlbBuffer: () => buildArGlbArrayBuffer({ draco: false }),
-    });
 
     // Register CSS2D<->CSS3D annotation converters
     setConvertTo3dFn((annotation, renderFn) => {
@@ -2248,7 +2242,6 @@ function addMainGui() {
     const folderProp = new GUI({ container: guiContainer, title: 'View' });
     guiView = folderProp;
         folderProp.add({ fn: fitView }, 'fn').name('Fit View');
-        folderProp.add({ fn: launchAr }, 'fn').name('View in AR');
         folderProp.add({ fn: showHiddenObjects }, 'fn').name('Show hidden objects');
         folderProp.add({ fn: toggleHiddenObjects }, 'fn').name('Switch hidden objects');
         folderProp.add(viewProp, 'wireframe').name('Wireframe').onChange(function(value){ toggleWireframeAll(value); }).listen();
@@ -9793,37 +9786,6 @@ async function compressGlbWithDraco(result) {
     const gltfDoc = await io.readBinary(new Uint8Array(result));
     await gltfDoc.transform(dracoDefaults.useCustomSettings ? draco({ ...dracoDefaults }) : draco());
     return io.writeBinary(gltfDoc);
-}
-
-async function buildArGlbArrayBuffer({ draco = false, finalName = null } = {}) {
-    if (loadedModels.length === 0) {
-        console.warn('Žádné modely k exportu pro AR.');
-        return null;
-    }
-
-    const resolvedName = (finalName || getDefaultGlbExportName()).replace(/\.glb$/i, '') + '.glb';
-
-    if (draco) showDracoOverlay();
-
-    try {
-        const group = buildAllModelsExportGroup(resolvedName);
-        const stats = prepareArExportGroup(group);
-        let result = await parseExportGroupToArrayBuffer(group);
-
-        if (draco) {
-            await new Promise(resolve => setTimeout(resolve, 50));
-            try {
-                result = await compressGlbWithDraco(result);
-            } catch (err) {
-                console.error('Chyba při Draco kompresi (AR):', err);
-                console.warn('AR export uložen bez Draco komprese.');
-            }
-        }
-
-        return { buffer: result, suggestedName: resolvedName, stats };
-    } finally {
-        if (draco) hideDracoOverlay();
-    }
 }
 
 async function buildAllModelsGlbArrayBuffer({ draco = false, finalName = null } = {}) {
