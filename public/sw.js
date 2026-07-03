@@ -51,11 +51,22 @@ self.addEventListener('fetch', event => {
         event.respondWith(
             caches.open(AR_CACHE).then(cache =>
                 cache.match(req).then(cached => {
-                    if (cached) return cached;
+                    if (cached) {
+                        const headers = new Headers(cached.headers);
+                        headers.set('Access-Control-Allow-Origin', '*');
+                        return cached.blob().then(body => new Response(body, {
+                            status: cached.status,
+                            statusText: cached.statusText,
+                            headers,
+                        }));
+                    }
                     return new Response('AR model not published', {
                         status: 404,
                         statusText: 'AR model not found',
-                        headers: { 'Content-Type': 'text/plain' },
+                        headers: {
+                            'Content-Type': 'text/plain',
+                            'Access-Control-Allow-Origin': '*',
+                        },
                     });
                 })
             )

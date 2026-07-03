@@ -36,6 +36,7 @@ import { initAttachmentsGui, importAttachmentsFromGltfScene, getAttachmentsStore
 import { initLocalFileAccess, openLocalGlbFile, saveLocalGlbFile, saveLocalGlbFileAs, clearCurrentLocalFileHandle, waitForLaunchQueueSignal, wasLaunchedWithFile } from './localFileAccess.js';
 import { captureScreenFromDisplayMedia } from './viewportCapture.js';
 import { initAr, launchAr, getArOverlayElement } from './arUtils.js';
+import { prepareArExportGroup } from './arExportUtils.js';
 import { openHelp } from './helpUtils.js';
 import { openBomDialog } from './bomUtils.js';
 import {
@@ -2024,7 +2025,7 @@ function init() {
     initCadDim3d(scene);
     initAr({
         hasModels: () => loadedModels.length > 0,
-        getGlbBuffer: () => buildAllModelsGlbArrayBuffer({ draco: false }),
+        getGlbBuffer: () => buildArGlbArrayBuffer({ draco: false }),
     });
 
     // Register CSS2D<->CSS3D annotation converters
@@ -9792,6 +9793,37 @@ async function compressGlbWithDraco(result) {
     const gltfDoc = await io.readBinary(new Uint8Array(result));
     await gltfDoc.transform(dracoDefaults.useCustomSettings ? draco({ ...dracoDefaults }) : draco());
     return io.writeBinary(gltfDoc);
+}
+
+async function buildArGlbArrayBuffer({ draco = false, finalName = null } = {}) {
+    if (loadedModels.length === 0) {
+        console.warn('Žádné modely k exportu pro AR.');
+        return null;
+    }
+
+    const resolvedName = (finalName || getDefaultGlbExportName()).replace(/\.glb$/i, '') + '.glb';
+
+    if (draco) showDracoOverlay();
+
+    try {
+        const group = buildAllModelsExportGroup(resolvedName);
+        const stats = prepareArExportGroup(group);
+        let result = await parseExportGroupToArrayBuffer(group);
+
+        if (draco) {
+            await new Promise(resolve => setTimeout(resolve, 50));
+            try {
+                result = await compressGlbWithDraco(result);
+            } catch (err) {
+                console.error('Chyba při Draco kompresi (AR):', err);
+                console.warn('AR export uložen bez Draco komprese.');
+            }
+        }
+
+        return { buffer: result, suggestedName: resolvedName, stats };
+    } finally {
+        if (draco) hideDracoOverlay();
+    }
 }
 
 async function buildAllModelsGlbArrayBuffer({ draco = false, finalName = null } = {}) {

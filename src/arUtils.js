@@ -2,6 +2,8 @@
 
 const AR_CACHE = 'bedobe-ar-v1';
 const AR_MODEL_PATH = 'ar-session/current.glb';
+const AR_MAX_BYTES = 45 * 1024 * 1024;
+const AR_MAX_TRIANGLES = 600000;
 
 let overlayEl = null;
 let modelViewerEl = null;
@@ -24,10 +26,7 @@ function isIOS() {
 }
 
 function getArModes() {
-    // Android: WebXR in-browser only. Scene Viewer is a separate app and cannot read
-    // SW cache or blob URLs — it needs a public HTTP file on the server.
-    // HTTPS src served via SW works for WebXR in the same browser tab.
-    if (isAndroid()) return 'webxr';
+    if (isAndroid()) return 'scene-viewer';
     if (isIOS()) return 'quick-look';
     return 'webxr scene-viewer quick-look';
 }
@@ -38,6 +37,27 @@ function isMobileArPlatform() {
 
 function canPublishArModel() {
     return location.protocol === 'https:' && 'serviceWorker' in navigator && 'caches' in window;
+}
+
+async function publishArModelGlb(arrayBuffer) {
+    const modelUrl = new URL(AR_MODEL_PATH, document.baseURI);
+    modelUrl.searchParams.set('v', String(Date.now()));
+    const url = modelUrl.href;
+
+    const cache = await caches.open(AR_CACHE);
+    await cache.put(url, new Response(arrayBuffer, {
+        headers: {
+            'Content-Type': 'model/gltf-binary',
+            'Access-Control-Allow-Origin': '*',
+        },
+    }));
+
+    const probe = await fetch(url, { cache: 'no-store' });
+    if (!probe.ok) {
+        throw new Error(`AR model publish failed (${probe.status})`);
+    }
+
+    return url;
 }
 
 async function resolveArModelUrl(arrayBuffer) {
@@ -56,22 +76,6 @@ async function resolveArModelUrl(arrayBuffer) {
         new Blob([arrayBuffer], { type: 'model/gltf-binary' })
     );
     return currentBlobUrl;
-}
-
-async function publishArModelGlb(arrayBuffer) {
-    const modelUrl = new URL(AR_MODEL_PATH, document.baseURI).href;
-    const cache = await caches.open(AR_CACHE);
-    await cache.put(modelUrl, new Response(arrayBuffer, {
-        headers: { 'Content-Type': 'model/gltf-binary' },
-    }));
-
-    // Verify the SW route serves the model in-browser before handing off to model-viewer.
-    const probe = await fetch(modelUrl, { cache: 'no-store' });
-    if (!probe.ok) {
-        throw new Error(`AR model publish failed (${probe.status})`);
-    }
-
-    return modelUrl;
 }
 
 async function cleanupArModelUrl() {
@@ -139,6 +143,7 @@ function revealModelPreview() {
 
 function onArStatus(event) {
     const status = event.detail?.status;
+    console.log('[AR] ar-status:', status, event.detail);
     if (status === 'session-started') {
         sessionActive = true;
         setLoading(false);
@@ -157,9 +162,15 @@ function onArStatus(event) {
     }
 }
 
+function onModelViewerError(event) {
+    console.error('[AR] model-viewer error:', event);
+    setHint('Failed to load model preview. The export may be too complex for AR.');
+}
+
 function unmountModelViewer() {
     if (!modelViewerEl) return;
     modelViewerEl.removeEventListener('ar-status', onArStatus);
+    modelViewerEl.removeEventListener('error', onModelViewerError);
     modelViewerEl.remove();
     modelViewerEl = null;
 }
@@ -170,14 +181,15 @@ function mountModelViewer(modelUrl) {
     const viewer = document.createElement('model-viewer');
     viewer.toggleAttribute('ar', true);
     viewer.setAttribute('ar-modes', getArModes());
-    viewer.setAttribute('ar-scale', 'auto');
+    viewer.setAttribute('ar-scale', 'fixed');
     viewer.setAttribute('ar-placement', 'floor');
     viewer.toggleAttribute('camera-controls', true);
     viewer.setAttribute('touch-action', 'pan-y');
-    viewer.setAttribute('shadow-intensity', '1');
+    viewer.setAttribute('shadow-intensity', '0.8');
     viewer.setAttribute('environment-image', 'neutral');
-    viewer.setAttribute('reveal', 'auto');
+    viewer.setAttribute('reveal', 'interaction');
     viewer.setAttribute('loading', 'eager');
+    viewer.setAttribute('interaction-prompt', 'auto');
     viewer.setAttribute('alt', '3D model');
     viewer.src = modelUrl;
 
@@ -189,6 +201,7 @@ function mountModelViewer(modelUrl) {
     viewer.appendChild(arButton);
 
     viewer.addEventListener('ar-status', onArStatus);
+    viewer.addEventListener('error', onModelViewerError);
     overlayEl.appendChild(viewer);
     modelViewerEl = viewer;
 }
@@ -213,12 +226,28 @@ function updateArHint() {
         return;
     }
     if (isAndroid()) {
-        setHint('Tap "View in AR" to place the model in your space (WebXR).');
+        setHint('Drag to rotate the preview. Tap "View in AR" to open Google Scene Viewer.');
     } else if (isIOS()) {
-        setHint('Tap "View in AR" to open AR Quick Look.');
+        setHint('Drag to rotate the preview. Tap "View in AR" for AR Quick Look.');
     } else {
-        setHint('Use "View in AR" for WebXR, or open this page on a phone over HTTPS.');
+        setHint('Drag to rotate the preview. Tap "View in AR" for WebXR.');
     }
+}
+
+function confirmArComplexity(built) {
+    const bytes = built.buffer?.byteLength ?? 0;
+    const triangles = built.stats?.triangleCount ?? 0;
+    const parts = [];
+    if (bytes > AR_MAX_BYTES) {
+        parts.push(`${(bytes / (1024 * 1024)).toFixed(1)} MB file size`);
+    }
+    if (triangles > AR_MAX_TRIANGLES) {
+        parts.push(`${Math.round(triangles / 1000)}k triangles`);
+    }
+    if (parts.length === 0) return true;
+    return window.confirm(
+        `This model is heavy for AR (${parts.join(', ')}). AR may fail or be slow.\n\nContinue anyway?`
+    );
 }
 
 export function isArSessionActive() {
@@ -291,6 +320,13 @@ export async function launchAr() {
             await closeAr();
             return;
         }
+
+        if (!confirmArComplexity(built)) {
+            await closeAr();
+            return;
+        }
+
+        console.log('[AR] export stats:', built.stats, 'bytes:', built.buffer.byteLength);
 
         await cleanupArModelUrl();
         currentModelUrl = await resolveArModelUrl(built.buffer);
