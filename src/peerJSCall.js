@@ -19,8 +19,8 @@ export const PEER_SERVER_PRESETS = [
 export const PEER_CUSTOM_PRESET = 'Custom';
 
 const DEFAULT_PEER_HOST = '0.peerjs.com';
-const STORAGE_KEY = 'bedobe-peer-host';
-const STORAGE_KEY_CUSTOM = 'bedobe-peer-custom-host';
+const STORAGE_KEY = 'meshbex-peer-host';
+const STORAGE_KEY_CUSTOM = 'meshbex-peer-custom-host';
 
 let _dialog = null;
 let _videoGrid = null;
@@ -636,7 +636,7 @@ async function startScreenShare() {
         _localStream.addTrack(track);
         await refreshOutboundCalls();
         updateLocalPreview();
-        setStatus('Sharing screen — prefer sharing the Bedobe tab');
+        setStatus('Sharing screen — prefer sharing the Meshbex tab');
         updateMediaButtons();
     } catch (err) {
         alert(err.message || 'Screen sharing was cancelled.');

@@ -20,8 +20,8 @@ export const JITSI_SERVER_PRESETS = [
 export const JITSI_CUSTOM_PRESET = 'Custom';
 
 const DEFAULT_JITSI_DOMAIN = 'meet.jit.si';
-const STORAGE_KEY = 'bedobe-jitsi-domain';
-const STORAGE_KEY_CUSTOM = 'bedobe-jitsi-custom-domain';
+const STORAGE_KEY = 'meshbex-jitsi-domain';
+const STORAGE_KEY_CUSTOM = 'meshbex-jitsi-custom-domain';
 
 let _dialog = null;
 let _iframe = null;

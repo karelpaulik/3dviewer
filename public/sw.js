@@ -1,10 +1,10 @@
-// Bedobe CAD Explorer – Service Worker
+// Meshbex CAD Explorer – Service Worker
 // Strategy:
 //   - HTML navigation: network-first (always try to get fresh version)
 //   - Assets (JS, CSS, images, draco, models): cache-first, update in background
 //   - Cross-origin requests (analytics, CDN): pass through, do not cache
 
-const CACHE_NAME = 'bedobe-v1';
+const CACHE_NAME = 'meshbex-v1';
 
 // Pre-cache shell on install
 const PRECACHE_URLS = ['/', '/index.html'];

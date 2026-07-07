@@ -234,7 +234,7 @@ document.body.appendChild(guiContainer);
 // Status bar (footer)
 const statusBar = document.createElement('div');
 statusBar.id = 'status-bar';
-statusBar.innerHTML = `<span class="status-left"></span><span class="status-right"><span class="status-brand"><i>BE &amp; DO BETTER</i></span><span>info@meshbex</span><span class="status-copy">&copy; 2026 Bedobe</span><span class="status-version">v${__APP_VERSION__}</span></span>`;
+statusBar.innerHTML = `<span class="status-left"></span><span class="status-right"><span class="status-brand"><i>BE &amp; DO BETTER</i></span><span>info@meshbex</span><span class="status-copy">&copy; 2026 Meshbex</span><span class="status-version">v${__APP_VERSION__}</span></span>`;
 document.body.appendChild(statusBar);
 
 // Mode + Selection indicator elements (in .status-left)

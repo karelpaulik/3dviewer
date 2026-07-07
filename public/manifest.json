@@ -1,6 +1,6 @@
 {
-  "name": "Bedobe CAD Explorer",
-  "short_name": "Bedobe",
+  "name": "Meshbex CAD Explorer",
+  "short_name": "Meshbex",
   "description": "Interactive 3D CAD viewer with assembly, cross-section and HTML export.",
   "start_url": "./",
   "display": "standalone",

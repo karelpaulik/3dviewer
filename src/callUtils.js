@@ -8,7 +8,7 @@ export const DOMAIN_RE = /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9](
 
 export function generateRoomId() {
     const suffix = crypto.randomUUID().replace(/-/g, '').slice(0, 10);
-    return `bedobe-${suffix}`;
+    return `meshbex-${suffix}`;
 }
 
 export function sanitizeRoomId(roomId) {
