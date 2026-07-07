@@ -234,7 +234,7 @@ document.body.appendChild(guiContainer);
 // Status bar (footer)
 const statusBar = document.createElement('div');
 statusBar.id = 'status-bar';
-statusBar.innerHTML = `<span class="status-left"></span><span class="status-right"><span class="status-brand"><i>BE &amp; DO BETTER</i></span><span>info@bedobe.eu</span><span class="status-copy">&copy; 2026 Bedobe</span><span class="status-version">v${__APP_VERSION__}</span></span>`;
+statusBar.innerHTML = `<span class="status-left"></span><span class="status-right"><span class="status-brand"><i>BE &amp; DO BETTER</i></span><span>info@meshbex</span><span class="status-copy">&copy; 2026 Bedobe</span><span class="status-version">v${__APP_VERSION__}</span></span>`;
 document.body.appendChild(statusBar);
 
 // Mode + Selection indicator elements (in .status-left)
@@ -10571,7 +10571,7 @@ function addHelpGui() {
         <p>CAD Explorer</p>
         <p><strong>Created by International CAD developers community</strong></p>
         <p>BEDOBE is a web-based CAD Explorer, assembly workflow editor, and document editor built with Three.js. It allows you to load various 3D models, explore their structure, create documentation, create step-by-step assembly instructions with smooth animations and much much more.</p>
-        <p><a href="mailto:info@bedobe.eu">info@bedobe.eu</a></p>
+        <p><a href="mailto:info@meshbex.com">info@meshbex.com</a></p>
         <p>The goal of the project is to provide a publicly available <strong>CAD explorer</strong> for everyone.</p>
         <form method="dialog"><button>OK</button></form>
     `;
