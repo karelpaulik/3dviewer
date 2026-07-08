@@ -234,7 +234,7 @@ document.body.appendChild(guiContainer);
 // Status bar (footer)
 const statusBar = document.createElement('div');
 statusBar.id = 'status-bar';
-statusBar.innerHTML = `<span class="status-left"></span><span class="status-right"><span class="status-brand"><i>BE &amp; DO BETTER</i></span><span>info@meshbex</span><span class="status-copy">&copy; 2026 Meshbex</span><span class="status-version">v${__APP_VERSION__}</span></span>`;
+statusBar.innerHTML = `<span class="status-left"></span><span class="status-right"><span>info@meshbex</span><span class="status-copy">&copy; 2026 Meshbex</span><span class="status-version">v${__APP_VERSION__}</span></span>`;
 document.body.appendChild(statusBar);
 
 // Mode + Selection indicator elements (in .status-left)
@@ -10549,7 +10549,7 @@ function addHelpGui() {
     const welcomeDialog = document.createElement('dialog');
     welcomeDialog.id = 'welcome-dialog';
     welcomeDialog.innerHTML = `
-        <h2>MESHBEX</h2>
+        <h2>MeshBex</h2>
         <p><strong>Welcome to the 3D model exploration and documentation platform.</strong></p>
         <p>The goal of the project is to provide a publicly available <strong>CAD explorer</strong> for everyone.</p>
         <form method="dialog"><button>Start</button></form>
@@ -10567,7 +10567,7 @@ function addHelpGui() {
     const aboutDialog = document.createElement('dialog');
     aboutDialog.id = 'about-dialog';
     aboutDialog.innerHTML = `
-        <h2>MESHBEX</h2>
+        <h2>MeshBex</h2>
         <p>CAD Explorer</p>
         <p><strong>Created by International CAD developers community</strong></p>
         <p>MESHBEX is a web-based CAD Explorer, assembly workflow editor, and document editor built with Three.js. It allows you to load various 3D models, explore their structure, create documentation, create step-by-step assembly instructions with smooth animations and much much more.</p>

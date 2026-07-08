@@ -846,9 +846,6 @@ canvas {
 	flex-wrap: nowrap;
 }
 
-.status-brand {
-	color: rgba(255,255,255,0.65);
-}
 .status-copy {
 	color: rgba(255,255,255,0.40);
 }
