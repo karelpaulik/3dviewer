@@ -25,7 +25,7 @@ import { updateCrossSectionLines as updateCrossSectionLinesCore, updateSectionCr
 import { exportToHTML, exportToHTMLDraco, exportToHTMLObfuscated, exportToHTMLObfuscatedDraco } from './htmlExport.js';
 import { initOutliner, toggleOutliner, rebuildTree, highlightObject as outlinerHighlight, updateVisibilityIcon, updateSelectableIcon, updateObjectLabel, isOutlinerOpen, navigateOutliner, highlightGroupObjects, clearGroupHighlights, setNavigationPosition, setOnTreeRebuild } from './sceneOutliner.js';
 import { computeModelStats } from './modelInfoUtils.js';
-import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements, isSelectDimActive, setSelectDimActive, deleteSelectedDimension, initSelectDimension, updateSelectDimensionCamera, reconstructMeasurements, stripMeasurementVisuals, setMeasurementsVisible, setMeasurementDepthTest, removeMeasurementsForOwner, isCadDimActive, setCadDimActive, getCadDimStep, getCadDimAxis, addCadDimPoint, updateCadDimPreview, updateCadDimHoverPreview, cycleCadDimAxis, placeCadDim, clearCadDimMeasurements, removeCadDimMeasurementsForOwner, getSelectedCadDim, setCadDimLabelMode, setCadDimDragMode, selectDimTouchStart, selectDimTouchMove, selectDimTouchEnd, registerLabelForSelection, getSelectedCadDim3d, getCadDimMeasurements, deleteCadDimByRef, convertCadDim3dTo2d, getFlatDimDefaults, applyDefaultsToAllFlatDim, setDimMarkerFixedSize, setDimMarkerFixedScreenPx, setDimMarkerWorldSize, setDimMarkerColor, getDimMarkerSettings } from './measurementUtils.js';
+import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements, isSelectDimActive, setSelectDimActive, refreshLabelEditListeners, hasSelectedDimension, deselectSelectedDimension, deleteSelectedDimension, initSelectDimension, updateSelectDimensionCamera, reconstructMeasurements, stripMeasurementVisuals, setMeasurementsVisible, setMeasurementDepthTest, removeMeasurementsForOwner, isCadDimActive, setCadDimActive, getCadDimStep, getCadDimAxis, addCadDimPoint, updateCadDimPreview, updateCadDimHoverPreview, cycleCadDimAxis, placeCadDim, clearCadDimMeasurements, removeCadDimMeasurementsForOwner, getSelectedCadDim, setCadDimLabelMode, setCadDimDragMode, selectDimTouchStart, selectDimTouchMove, selectDimTouchEnd, registerLabelForSelection, getSelectedCadDim3d, getCadDimMeasurements, deleteCadDimByRef, convertCadDim3dTo2d, getFlatDimDefaults, applyDefaultsToAllFlatDim, setDimMarkerFixedSize, setDimMarkerFixedScreenPx, setDimMarkerWorldSize, setDimMarkerColor, getDimMarkerSettings } from './measurementUtils.js';
 import { detectCircleCenterFromHit, clearCircleDetectionCache } from './circleDetectionUtils.js';
 import { removeEdgeOverlays, updateMeshEdgeOverlays, stripEdgeOverlays } from './edgeDisplayUtils.js';
 import { initAnnotations, isAnnotationActive, setAnnotationActive, addAnnotationPoint, getAnnotationPendingPoint, updateAnnotationPreview, updateAnnotationMarkerScales, setAnnotationsVisible, clearAnnotations, stripAnnotationVisuals, reconstructAnnotations, setAnnotationDepthTest, removeAnnotationsForOwner, getAnnotations, isAddLeaderLineActive, cancelAddLeaderLine, commitAddLeaderLine, deleteAnnotationByRef, setConvertTo3dFn, reconstructAnnotationFromRec, getFlatAnnDefaults, applyDefaultsToAllFlatAnnotations, setAnnMarkerFixedSize, setAnnMarkerFixedScreenPx, setAnnMarkerWorldSize, setAnnMarkerColor, getAnnMarkerSettings } from './annotationUtils.js';
@@ -275,7 +275,6 @@ statusModeEl.className = 'status-select mode-navigate';
     ['cadDim3d',     'Add Dim (3D)'],
     ['annotation',   'Add Annotation (Flat)'],
     ['annotation3d', 'Add Annotation (3D)'],
-    ['selectDim',    'Edit Labels'],
     ['assemblyEdit', 'Assembly Edit'],
 ].forEach(([val, label]) => {
     const opt = document.createElement('option');
@@ -290,7 +289,6 @@ statusModeEl.addEventListener('change', function() {
     if (viewProp.angleMode)           { viewProp.angleMode = false;           setAngleActive(false); }
     if (viewProp.cadDimMode)          { viewProp.cadDimMode = false;          setCadDimActive(false);   orbitControls.enabled = true; _updateCadDimHintUI(); }
     if (viewProp.cadDim3dMode)        { viewProp.cadDim3dMode = false;        setCadDim3dActive(false); orbitControls.enabled = true; _updateCadDim3dHintUI(); }
-    if (viewProp.selectDimensionMode) { viewProp.selectDimensionMode = false; setSelectDimActive(false); }
     if (viewProp.annotationMode)      { viewProp.annotationMode = false;      setAnnotationActive(false); }
     if (viewProp.annotation3dMode)    { viewProp.annotation3dMode = false;    setAnnotation3dActive(false); }
     viewProp.isSelectAllowed = true;
@@ -299,13 +297,13 @@ statusModeEl.addEventListener('change', function() {
         case 'angle':        viewProp.angleMode = true;           setAngleActive(true);        viewProp.isSelectAllowed = false; break;
         case 'cadDim':       viewProp.cadDimMode = true;          setCadDimActive(true);       viewProp.isSelectAllowed = false; break;
         case 'cadDim3d':     viewProp.cadDim3dMode = true;        setCadDim3dActive(true);     viewProp.isSelectAllowed = false; break;
-        case 'selectDim':    viewProp.selectDimensionMode = true; setSelectDimActive(true);    viewProp.isSelectAllowed = false; break;
         case 'annotation':   viewProp.annotationMode = true;      setAnnotationActive(true);   viewProp.isSelectAllowed = false; break;
         case 'annotation3d': viewProp.annotation3dMode = true;    setAnnotation3dActive(true); viewProp.isSelectAllowed = false; break;
     }
     const _circleDetectModes = ['measure', 'angle', 'cadDim', 'cadDim3d'];
     statusCircleDetectEl.style.display = _circleDetectModes.includes(val) ? '' : 'none';
     _syncModeBtns();
+    _syncLabelEditState();
     _modeIndicatorCache = '';
     render();
 });
@@ -347,6 +345,7 @@ statusSelEl.addEventListener('change', function() {
         viewProp.isSelectAllowed = true;
         viewProp.cadSelection = (val === 'detailed') ? 'Detailed' : 'CAD';
     }
+    _syncLabelEditState();
     _modeIndicatorCache = '';
     render();
 });
@@ -582,6 +581,20 @@ function _syncModeBtns() {
             ctrl.domElement.classList.remove('mode-active');
         }
     }
+}
+
+function _isAddAnnotationModeActive() {
+    return viewProp.measureMode || viewProp.angleMode
+        || viewProp.cadDimMode || viewProp.cadDim3dMode
+        || viewProp.annotationMode || viewProp.annotation3dMode;
+}
+
+function _syncLabelEditState() {
+    setSelectDimActive(!_isAddAnnotationModeActive() && viewProp.isSelectAllowed);
+}
+
+function _afterLabelReconstruct() {
+    refreshLabelEditListeners();
 }
 
 // --- CAD Dimension 3D hint overlay (created in init) ---
@@ -1130,7 +1143,6 @@ const viewProp = {
     angleMode: false, // Angle measurement mode (4 points → 2 lines → projected angles)
     cadDimMode: false,   // CAD-style dimension (CSS2D, 2 pts + axis-aligned placement mode)
     cadDim3dMode: false, // CAD-style dimension (CSS3D label, same interaction as cadDimMode)
-    selectDimensionMode: false, // Select dimension mode – click label to select, drag to move, Delete to remove
     detectCircleCenter: false, // Snap measurement points to detected circle centers
     showMeasurements: true, // Toggle visibility of all measurement visuals
     annotationMode: false,   // CSS2D annotation (note) mode
@@ -1527,6 +1539,7 @@ outlinerPanelEl = initOutliner({
         reconstructAnnotations3d(clone, render);
         reconstructMeasurements(clone, render);
         reconstructCadDim3d(clone);
+        _afterLabelReconstruct();
         // Object3D.clone() JSON-copies userData; Euler initRotation loses .x/.y/.z (only _x/_y/_z).
         refreshInitTransformUserData(clone);
         // Sync loadedModels if cloned at root level
@@ -1965,12 +1978,6 @@ function init() {
                     _updateCadDim3dHintUI();
                     render();
                 }
-                if (viewProp.selectDimensionMode) {
-                    viewProp.selectDimensionMode = false;
-                    setSelectDimActive(false);
-                    viewProp.isSelectAllowed = true;
-                    render();
-                }
                 if (viewProp.annotationMode) {
                     viewProp.annotationMode = false;
                     setAnnotationActive(false);
@@ -2000,6 +2007,7 @@ function init() {
                 if (deviationProbeMode) {
                     cancelDeviationProbeMode();
                 }
+                _syncLabelEditState();
                 _syncModeBtns();
                 statusCircleDetectEl.style.display = 'none';
                 cancelAddLeaderLine();
@@ -2010,6 +2018,7 @@ function init() {
                     statusCircleDetectCb.checked = false;
                     render();
                 }
+                deselectSelectedDimension();
                 deselectObject();
                 selectionHistory.length = 0;
                 clearHistoryPreviewHelpers();
@@ -2019,7 +2028,7 @@ function init() {
                 }
                 break;
             case 'Delete':
-                if (viewProp.selectDimensionMode && isSelectDimActive()) {
+                if (isSelectDimActive() && hasSelectedDimension()) {
                     deleteSelectedDimension(render);
                 } else if (selectedObjects.length > 0) {
                     removeSelectedGroup();
@@ -2198,6 +2207,7 @@ function init() {
     setDeviationProbeLabelScale(deviationGui.labelScale);
     setDeviationProbeMarkerScale(deviationGui.markerScale);
     initSelectDimension(currentCamera, render, orbitControls);
+    _syncLabelEditState();
     initAnnotations(scene, render);
     initAnnotations3d(scene, render);
     initCadDim3d(scene);
@@ -4495,6 +4505,7 @@ function bakeSelectedObjectLocation() {
     reconstructAnnotations(obj, render);
     reconstructAnnotations3d(obj, render);
     reconstructCadDim3d(obj);
+    _afterLabelReconstruct();
 
     // Geometry was rebaked above; rebuild edge overlays so they stay aligned with the new surface.
     refreshEdgeOverlaysAfterSceneChange();
@@ -6063,6 +6074,7 @@ function loadGlbModel(model, name, scale, colored) {
                     reconstructAnnotations(mdl, render);
                     reconstructAnnotations3d(mdl, render);
                     reconstructCadDim3d(mdl);
+                    _afterLabelReconstruct();
                 }
 
                 rebuildTree(loadedModels);
@@ -6113,6 +6125,7 @@ function loadGlbModel(model, name, scale, colored) {
                 reconstructAnnotations(gltf.scene, render);
                 reconstructAnnotations3d(gltf.scene, render);
                 reconstructCadDim3d(gltf.scene);
+                _afterLabelReconstruct();
                 
                 rebuildTree(loadedModels);
                 refreshEdgeOverlaysAfterSceneChange();
@@ -7134,7 +7147,6 @@ function updateModeIndicator() {
     else if (vp.angleMode)           { modeVal = 'angle';        modeCls = 'mode-active'; }
     else if (vp.cadDimMode)          { modeVal = 'cadDim';       modeCls = 'mode-active'; }
     else if (vp.cadDim3dMode)        { modeVal = 'cadDim3d';     modeCls = 'mode-active'; }
-    else if (vp.selectDimensionMode) { modeVal = 'selectDim';    modeCls = 'mode-active'; }
     else if (vp.annotationMode)      { modeVal = 'annotation';   modeCls = 'mode-active'; }
     else if (vp.annotation3dMode)    { modeVal = 'annotation3d'; modeCls = 'mode-active'; }
     else                             { modeVal = 'navigate';     modeCls = 'mode-navigate'; }
@@ -7746,6 +7758,7 @@ function startDeviationProbeMode() {
     setDeviationProbeLabelScale(deviationGui.labelScale);
     setDeviationProbeMarkerScale(deviationGui.markerScale);
     viewProp.isSelectAllowed = false;
+    _syncLabelEditState();
     _updateDeviationProbeHintUI();
     render();
 }
@@ -7766,6 +7779,7 @@ function cancelDeviationProbeMode() {
     deviationProbeMode = false;
     setDeviationProbeActive(false);
     viewProp.isSelectAllowed = true;
+    _syncLabelEditState();
     _updateDeviationProbeHintUI();
     _updateDeviationProbeStatusText('');
     render();
@@ -8717,8 +8731,8 @@ function onTouchStart( event ) {
         mouse.x = ndc.x;
         mouse.y = ndc.y;
 
-        // Edit Labels touch drag
-        if (viewProp.selectDimensionMode && isSelectDimActive()) {
+        // Label touch drag
+        if (isSelectDimActive()) {
             selectDimTouchStart(touch.clientX, touch.clientY);
         }
 
@@ -8742,8 +8756,8 @@ function onTouchMove( event ) {
         mouse.x = ndc.x;
         mouse.y = ndc.y;
 
-        // Edit Labels touch drag
-        if (viewProp.selectDimensionMode && isSelectDimActive()) {
+        // Label touch drag
+        if (isSelectDimActive()) {
             if (selectDimTouchMove(touch.clientX, touch.clientY)) {
                 event.preventDefault(); // prevent scroll while dragging a dim label
             }
@@ -8792,8 +8806,8 @@ function onTouchEnd( event ) {
         // Vypočítáme vzdálenost mezi počáteční a koncovou pozicí
         const dragDistance = touchStartPos.distanceTo(touchEndPos);
 
-        // End any active Edit Labels drag regardless of distance
-        if (viewProp.selectDimensionMode && isSelectDimActive()) {
+        // End any active label drag regardless of distance
+        if (isSelectDimActive()) {
             selectDimTouchEnd();
         }
 
@@ -11885,6 +11899,7 @@ function assemblyMoveStepDown() {
             e.stopPropagation();
             viewProp.isSelectAllowed = !viewProp.isSelectAllowed;
             chk.checked = viewProp.isSelectAllowed;
+            _syncLabelEditState();
             hideAll();
         });
         m.appendChild(itemSel);
@@ -12343,10 +12358,10 @@ function assemblyMoveStepDown() {
     // --- Shared trigger (mouse RMB + touch long-press) ---
     function triggerContextMenu(x, y) {
         if (isDocOverlayBlockingInput()) return;
-        if (viewProp.selectDimensionMode && isSelectDimActive() && getSelectedCadDim3d()) {
+        if (isSelectDimActive() && getSelectedCadDim3d()) {
             refreshCadDim3dMenu();
             showAt(menuCadDim3d, x, y);
-        } else if (viewProp.selectDimensionMode && isSelectDimActive() && getSelectedCadDim()) {
+        } else if (isSelectDimActive() && getSelectedCadDim()) {
             refreshCadDimMenu();
             showAt(menuCadDim, x, y);
         } else if (lastSelectedObject) {
@@ -12385,15 +12400,15 @@ function assemblyMoveStepDown() {
             return;
         }
 
-        // In Edit Labels mode with a CAD dim (CSS3D) selected – show cadDim3d label menu
-        if (viewProp.selectDimensionMode && isSelectDimActive() && getSelectedCadDim3d()) {
+        // CAD dim (CSS3D) selected – show cadDim3d label menu
+        if (isSelectDimActive() && getSelectedCadDim3d()) {
             refreshCadDim3dMenu();
             showAt(menuCadDim3d, event.clientX, event.clientY);
             return;
         }
 
-        // In Edit Labels mode with a CAD dim selected – show cadDim label menu
-        if (viewProp.selectDimensionMode && isSelectDimActive() && getSelectedCadDim()) {
+        // CAD dim selected – show cadDim label menu
+        if (isSelectDimActive() && getSelectedCadDim()) {
             refreshCadDimMenu();
             showAt(menuCadDim, event.clientX, event.clientY);
             return;

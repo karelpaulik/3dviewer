@@ -1317,59 +1317,96 @@ export function isSelectDimActive() {
     return _selectDimActive;
 }
 
+export function hasSelectedDimension() {
+    return _selectedDim !== null;
+}
+
+export function deselectSelectedDimension() {
+    _deselectDim();
+}
+
+function _attachLabelMousedownListeners() {
+    for (const m of _measurements) {
+        if (!m.label?.element) continue;
+        m.label.element.removeEventListener('mousedown', _onLabelMouseDown);
+        m.label.element.addEventListener('mousedown', _onLabelMouseDown);
+    }
+    for (const m of _angleMeasurements) {
+        if (!m.label?.element) continue;
+        m.label.element.removeEventListener('mousedown', _onLabelMouseDown);
+        m.label.element.addEventListener('mousedown', _onLabelMouseDown);
+    }
+    for (const m of _cadDimMeasurements) {
+        if (!m.label?.element) continue;
+        m.label.element.removeEventListener('mousedown', _onLabelMouseDown);
+        m.label.element.addEventListener('mousedown', _onLabelMouseDown);
+    }
+    for (const a of getAnnotations()) {
+        if (!a.label?.element) continue;
+        a.label.element.removeEventListener('mousedown', _onLabelMouseDown);
+        a.label.element.addEventListener('mousedown', _onLabelMouseDown);
+    }
+    for (const a of getAnnotations3d()) {
+        if (!a.label?.element) continue;
+        a.label.element.removeEventListener('mousedown', _onLabelMouseDown);
+        a.label.element.addEventListener('mousedown', _onLabelMouseDown);
+    }
+    for (const m of getCadDim3dMeasurements()) {
+        if (!m.label?.element) continue;
+        m.label.element.removeEventListener('mousedown', _onLabelMouseDown);
+        m.label.element.addEventListener('mousedown', _onLabelMouseDown);
+    }
+}
+
+function _detachLabelMousedownListeners() {
+    for (const m of _measurements) {
+        if (m.label?.element) m.label.element.removeEventListener('mousedown', _onLabelMouseDown);
+    }
+    for (const m of _angleMeasurements) {
+        if (m.label?.element) m.label.element.removeEventListener('mousedown', _onLabelMouseDown);
+    }
+    for (const m of _cadDimMeasurements) {
+        if (m.label?.element) m.label.element.removeEventListener('mousedown', _onLabelMouseDown);
+    }
+    for (const a of getAnnotations()) {
+        if (a.label?.element) a.label.element.removeEventListener('mousedown', _onLabelMouseDown);
+    }
+    for (const a of getAnnotations3d()) {
+        if (a.label?.element) a.label.element.removeEventListener('mousedown', _onLabelMouseDown);
+    }
+    for (const m of getCadDim3dMeasurements()) {
+        if (m.label?.element) m.label.element.removeEventListener('mousedown', _onLabelMouseDown);
+    }
+}
+
+/** Re-apply pointer-events and mousedown handlers after labels are created (e.g. GLB load). */
+export function refreshLabelEditListeners() {
+    if (!_selectDimActive) return;
+    _setLabelPointerEvents(true);
+    _attachLabelMousedownListeners();
+}
+
 export function setSelectDimActive(val) {
+    if (val === _selectDimActive) {
+        if (val) refreshLabelEditListeners();
+        return;
+    }
     _selectDimActive = val;
     _setLabelPointerEvents(val);
     if (!val) {
         _deselectDim();
         _isDraggingLabel = false;
     }
-    // Add / remove global listeners
     if (val) {
         document.addEventListener('mousemove', _onDocumentMouseMove);
         document.addEventListener('mouseup', _onDocumentMouseUp);
         window.addEventListener('click', _onCanvasClick, true);
-        // Attach mousedown to all existing labels
-        for (const m of _measurements) {
-            m.label.element.addEventListener('mousedown', _onLabelMouseDown);
-        }
-        for (const m of _angleMeasurements) {
-            m.label.element.addEventListener('mousedown', _onLabelMouseDown);
-        }
-        for (const m of _cadDimMeasurements) {
-            m.label.element.addEventListener('mousedown', _onLabelMouseDown);
-        }
-        for (const a of getAnnotations()) {
-            a.label.element.addEventListener('mousedown', _onLabelMouseDown);
-        }
-        for (const a of getAnnotations3d()) {
-            a.label.element.addEventListener('mousedown', _onLabelMouseDown);
-        }
-        for (const m of getCadDim3dMeasurements()) {
-            if (m.label && m.label.element) m.label.element.addEventListener('mousedown', _onLabelMouseDown);
-        }
+        _attachLabelMousedownListeners();
     } else {
         document.removeEventListener('mousemove', _onDocumentMouseMove);
         document.removeEventListener('mouseup', _onDocumentMouseUp);
         window.removeEventListener('click', _onCanvasClick, true);
-        for (const m of _measurements) {
-            m.label.element.removeEventListener('mousedown', _onLabelMouseDown);
-        }
-        for (const m of _angleMeasurements) {
-            m.label.element.removeEventListener('mousedown', _onLabelMouseDown);
-        }
-        for (const m of _cadDimMeasurements) {
-            m.label.element.removeEventListener('mousedown', _onLabelMouseDown);
-        }
-        for (const a of getAnnotations()) {
-            a.label.element.removeEventListener('mousedown', _onLabelMouseDown);
-        }
-        for (const a of getAnnotations3d()) {
-            a.label.element.removeEventListener('mousedown', _onLabelMouseDown);
-        }
-        for (const m of getCadDim3dMeasurements()) {
-            if (m.label && m.label.element) m.label.element.removeEventListener('mousedown', _onLabelMouseDown);
-        }
+        _detachLabelMousedownListeners();
     }
 }
 
@@ -1383,7 +1420,7 @@ export function deleteSelectedDimension(renderFn) {
 
 /**
  * Attach mousedown (selection) listener to a newly created annotation label,
- * if Edit labels mode is currently active. Call after creating an annotation
+ * when label edit is active (Navigate). Call after creating an annotation
  * programmatically (e.g. after CSS2D<->CSS3D conversion).
  */
 export function registerLabelForSelection(annotation) {
@@ -1395,7 +1432,7 @@ export function registerLabelForSelection(annotation) {
 
 /**
  * Touch equivalents for the select-dim drag system.
- * Call from touch handlers in main.js when selectDimensionMode is active.
+ * Call from touch handlers in main.js when label edit is active.
  */
 export function selectDimTouchStart(clientX, clientY) {
     if (!_selectDimActive) return false;
@@ -1842,7 +1879,7 @@ export function setCadDimLabelMode(meas, mode, renderFn) {
 }
 
 /**
- * Toggle whether dragging in Edit Labels mode moves the whole dimension (mode 0)
+ * Toggle whether dragging with label edit active moves the whole dimension (mode 0)
  * or only the label with a leader line to the dim-line midpoint (mode 1).
  */
 export function setCadDimDragMode(meas, mode, renderFn) {

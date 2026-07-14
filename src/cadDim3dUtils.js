@@ -172,7 +172,7 @@ function _makeLabel3d(text, position, scaleMultiplier, textColor, bgColor) {
     div.style.cssText = 'color:' + tc + ';background:' + bg + ';padding:2px 8px;border-radius:3px;font-size:11px;white-space:nowrap;line-height:1.4;pointer-events:none;user-select:none;';
     const label = new CSS3DObject(div);
     // CSS3DObject constructor forcefully sets pointerEvents='auto' — override it back to none.
-    // _setLabelPointerEvents() will re-enable 'auto' for specific labels in Edit Labels mode.
+    // _setLabelPointerEvents() will re-enable 'auto' for specific labels when label edit is active.
     div.style.pointerEvents = 'none';
     label.position.copy(position);
     const s = LABEL_SCALE * (scaleMultiplier || LABEL_SCALE_DEFAULT);
