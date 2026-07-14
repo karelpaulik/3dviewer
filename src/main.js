@@ -944,8 +944,7 @@ const viewProp = {
     rStep: 30,               // krok sliderů Rx/Ry/Rz (°)
     sStep: 0.1,              // krok slideru Scale
     wireframe: false,       // Wireframe přepínač
-    showSharpEdges: true,
-    showTangentialEdges: false,
+    showSharpEdges: false,
     edgeAngleThreshold: 12,
     showAxesHelper: false, // Zobrazit / skrýt axes helper
     axesHelperSize: 100,   // Velikost axes helperu
@@ -2244,7 +2243,7 @@ function toggleWireframeAll(value) {
 let edgeThresholdDebounceTimer = null;
 
 function edgesDisplayActive() {
-    return viewProp.showSharpEdges || viewProp.showTangentialEdges;
+    return viewProp.showSharpEdges;
 }
 
 function updateEdgeOverlays() {
@@ -2253,8 +2252,6 @@ function updateEdgeOverlays() {
         removeEdgeOverlays(mesh);
         if (edgesDisplayActive()) {
             updateMeshEdgeOverlays(mesh, {
-                showSharp: viewProp.showSharpEdges,
-                showTangential: viewProp.showTangentialEdges,
                 thresholdDeg: viewProp.edgeAngleThreshold,
             });
         }
@@ -2283,17 +2280,6 @@ function addMainGui() {
         folderProp.add({ fn: showHiddenObjects }, 'fn').name('Show hidden objects');
         folderProp.add({ fn: toggleHiddenObjects }, 'fn').name('Switch hidden objects');
         folderProp.add(viewProp, 'wireframe').name('Wireframe').onChange(function(value){ toggleWireframeAll(value); }).listen();
-        const edgesFolder = folderProp.addFolder('Edges');
-        edgesFolder.add(viewProp, 'showSharpEdges').name('Sharp edges').onChange(function() {
-            updateEdgeOverlays();
-        }).listen();
-        edgesFolder.add(viewProp, 'showTangentialEdges').name('Tangential edges').onChange(function() {
-            updateEdgeOverlays();
-        }).listen();
-        edgesFolder.add(viewProp, 'edgeAngleThreshold', 1, 45, 1).name('Angle threshold (°)').onChange(function() {
-            scheduleEdgeThresholdUpdate();
-        }).listen();
-        edgesFolder.close();
         folderProp.add(viewProp, 'xrayOnSelect').name('X-ray on select').onChange(function(value) {
             if (!value) {
                 lastSelectedMeshes.forEach(child => { clearXray(child); });
@@ -2325,6 +2311,12 @@ function addMainGui() {
             setCadDim3dDepthTest(!value);
             render();
         });
+        folderProp.add(viewProp, 'showSharpEdges').name('Sharp edges').onChange(function() {
+            updateEdgeOverlays();
+        }).listen();
+        folderProp.add(viewProp, 'edgeAngleThreshold', 1, 45, 1).name('Edge angle threshold').onChange(function() {
+            scheduleEdgeThresholdUpdate();
+        }).listen();
         const sectionFolder = folderProp.addFolder("Section view");   
             sectionCtrl = sectionFolder.add(viewProp, 'section').name('Section').onChange(function(value){ syncShowSectionMeshWithSection(); renderer.localClippingEnabled = value; viewProp.sectionGizmo = value; activateSectionGizmo(value); updateSectionCrossLines(); viewProp.solidSection = value; if (value) computeSolidSection(scene, meshObjects, viewProp, render); else clearSolidSection(scene, render); render(); sectionBtn.classList.toggle('active', value); solidSectionBtn.style.display = value ? 'block' : 'none'; showSectionMeshBtn.style.display = value ? 'block' : 'none'; crossSectionLinesBtn.style.display = value ? 'block' : 'none'; solidSectionBtn.classList.toggle('active', viewProp.solidSection); showSectionMeshBtn.classList.toggle('active', viewProp.showSectionMesh); crossSectionLinesBtn.classList.toggle('active', viewProp.sectionCrossLines); if (solidSectionCtrl) solidSectionCtrl.updateDisplay(); }).listen();
             sectionCrossLinesCtrl = sectionFolder.add(viewProp, 'sectionCrossLines').name('Cross Section Lines').onChange(function(value){updateSectionCrossLines(); crossSectionLinesBtn.classList.toggle('active', value); render(); }).listen();
