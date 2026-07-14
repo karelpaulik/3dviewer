@@ -29,6 +29,11 @@ export function openImageEditor(att, onSaveOverwrite, onSaveNew, onClose) {
     _launch(att, onSaveOverwrite, onSaveNew, onClose);
 }
 
+/** True when at least one image editor window is open (global undo should defer). */
+export function isImageEditorOpen() {
+    return _instances.length > 0;
+}
+
 // ── Shared toolbar state (global) ─────────────────────────────────────────────
 
 let _activeTool = 'pan';     // 'pan'|'crop'|'pen'|'text'|...

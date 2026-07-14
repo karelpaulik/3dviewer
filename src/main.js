@@ -32,7 +32,30 @@ import { initAnnotations, isAnnotationActive, setAnnotationActive, addAnnotation
 import { initAnnotations3d, isAnnotation3dActive, setAnnotation3dActive, addAnnotation3dPoint, getAnnotation3dPendingPoint, updateAnnotation3dPreview, updateAnnotation3dMarkerScales, updateAnnotation3dOrientations, setAnnotations3dVisible, clearAnnotations3d, stripAnnotation3dVisuals, reconstructAnnotations3d, setAnnotation3dDepthTest, removeAnnotations3dForOwner, isAddLeaderLine3dActive, cancelAddLeaderLine3d, commitAddLeaderLine3d, getAnnotation3dDefaults, deleteAnnotation3dByRef, setConvertTo2dFn, reconstructAnnotation3dFromRec, applyDefaultsToAllAnnotations3d, setAnn3dMarkerFixedSize, setAnn3dMarkerFixedScreenPx, setAnn3dMarkerWorldSize, setAnn3dMarkerColor } from './annotation3dUtils.js';
 import { initCadDim3d, isCadDim3dActive, getCadDim3dStep, getCadDim3dAxis, setCadDim3dActive, addCadDim3dPoint, updateCadDim3dPreview, updateCadDim3dHoverPreview, cycleCadDim3dAxis, placeCadDim3d, clearCadDim3dMeasurements, removeCadDim3dMeasurementsForOwner, setCadDim3dVisible, setCadDim3dDepthTest, updateCadDim3dOrientations, updateCadDim3dMarkerScales, reconstructCadDim3d, stripCadDim3dVisuals, setCadDim3dLabelMode, setCadDim3dDragMode, setCadDim3dOrientationMode, setCadDim3dRotate, setCadDim3dLabelScaleDialog, setCadDim3dMirrored, setCadDim3dTextColor, setCadDim3dBgColor, getCadDim3dDefaults, convertCadDimTo3d, applyDefaultsToAllCadDim3d, setCadDimMarkerFixedSize, setCadDimMarkerFixedScreenPx, setCadDimMarkerWorldSize, setCadDimMarkerColor } from './cadDim3dUtils.js';
 import { computeSolidSection, clearSolidSection } from './solidSectionUtils.js';
-import { initDocumentsGui, importDocumentsFromGltfScene, getDocumentsStore, flushDocumentEdits, isDocOverlayBlockingInput, setDocLabelOptions, clearDocumentsStore } from './documentsUtils.js';
+import { initDocumentsGui, importDocumentsFromGltfScene, getDocumentsStore, flushDocumentEdits, isDocOverlayBlockingInput, isDocumentEditorOpen, setDocLabelOptions, clearDocumentsStore } from './documentsUtils.js';
+import { isImageEditorOpen } from './imageEditorUtils.js';
+import {
+    initUndoManager,
+    pushCommand,
+    undo as undoScene,
+    redo as redoScene,
+    canUndo,
+    canRedo,
+    getUndoLabel,
+    getRedoLabel,
+    clearUndoHistory,
+} from './undoManager.js';
+import {
+    snapshotAssemblyState,
+    createTransformCommand,
+    createGroupTransformCommand,
+    buildGroupTransformTargets,
+    transformStateChanged,
+    captureRemoveSnapshot,
+    createRemoveObjectCommand,
+    captureVisibilitySnapshot,
+    createVisibilityCommand,
+} from './undoCommands.js';
 import { initAttachmentsGui, importAttachmentsFromGltfScene, getAttachmentsStore, addImageAttachmentFromBlob, clearAttachmentsStore } from './attachmentsUtils.js';
 import { initLocalFileAccess, openLocalGlbFile, saveLocalGlbFile, saveLocalGlbFileAs, clearCurrentLocalFileHandle, waitForLaunchQueueSignal, wasLaunchedWithFile } from './localFileAccess.js';
 import { captureScreenFromDisplayMedia } from './viewportCapture.js';
@@ -341,6 +364,24 @@ _statusLeft.appendChild(statusModeEl);
 _statusLeft.appendChild(statusSepEl);
 _statusLeft.appendChild(statusSelLabelEl);
 _statusLeft.appendChild(statusSelEl);
+const statusUndoSepEl = document.createElement('span');
+statusUndoSepEl.className = 'status-sep';
+statusUndoSepEl.textContent = '|';
+const statusUndoBtn = document.createElement('button');
+statusUndoBtn.type = 'button';
+statusUndoBtn.className = 'status-undo-btn';
+statusUndoBtn.textContent = '↩';
+statusUndoBtn.title = 'Undo (Ctrl+Z)';
+statusUndoBtn.addEventListener('click', () => undoScene());
+const statusRedoBtn = document.createElement('button');
+statusRedoBtn.type = 'button';
+statusRedoBtn.className = 'status-redo-btn';
+statusRedoBtn.textContent = '↪';
+statusRedoBtn.title = 'Redo (Ctrl+Y)';
+statusRedoBtn.addEventListener('click', () => redoScene());
+_statusLeft.appendChild(statusUndoSepEl);
+_statusLeft.appendChild(statusUndoBtn);
+_statusLeft.appendChild(statusRedoBtn);
 _statusLeft.appendChild(statusModelSepEl);
 _statusLeft.appendChild(statusModelInfoEl);
 _statusLeft.appendChild(statusDeviationProbeEl);
@@ -912,6 +953,132 @@ function updateModelInfoDisplay() {
     if (text === _modelInfoDisplayCache) return;
     _modelInfoDisplayCache = text;
     statusModelInfoEl.textContent = text;
+}
+
+// --- Global undo/redo (phase 1) ---
+
+function getUndoContext() {
+    return {
+        scene,
+        loadedModels,
+        meshObjects,
+        hiddenObjects,
+        temporarilyShownObjects,
+        assemblyData,
+        assemblyState,
+        assemblyAnchors,
+        groupHistory,
+        get groupHistoryIndex() { return groupHistoryIndex; },
+        set groupHistoryIndex(v) { groupHistoryIndex = v; },
+        viewProp,
+        normalsViewGui,
+        selectedObjects,
+        multiSelectionHelpers,
+        lastSelectedObject,
+        render,
+        rebuildTree,
+        updateVisibilityIcon,
+        insertChildAtIndex,
+        updateAssemblyGuiInfo,
+        computeSolidSection: () => computeSolidSection(scene, meshObjects, viewProp, render),
+        updateCrossSectionLines,
+        updateSectionCrossLines,
+        repairChainForObject,
+        refreshCrossSectionLinesAfterTransform,
+        createSectionMesh,
+        updateMeshEdgeOverlays,
+        updateVertexNormalsHelpers,
+        markModelStatsDirty,
+        updateHistoryInfo,
+        removeModel,
+        _updateDeviationComparisonDisplayPosesFromDrag,
+    };
+}
+
+function updateUndoStatusDisplay() {
+    const delegated = isDocumentEditorOpen() || isImageEditorOpen();
+    statusUndoBtn.disabled = delegated || !canUndo();
+    statusRedoBtn.disabled = delegated || !canRedo();
+    statusUndoBtn.title = delegated
+        ? 'Undo (use editor undo)'
+        : (canUndo() ? `Undo: ${getUndoLabel()} (Ctrl+Z)` : 'Undo (Ctrl+Z)');
+    statusRedoBtn.title = delegated
+        ? 'Redo (use editor redo)'
+        : (canRedo() ? `Redo: ${getRedoLabel()} (Ctrl+Y)` : 'Redo (Ctrl+Y)');
+}
+
+function initSceneUndo() {
+    initUndoManager({
+        onChange: updateUndoStatusDisplay,
+        shouldDelegate: () => isDocumentEditorOpen() || isImageEditorOpen(),
+    });
+    updateUndoStatusDisplay();
+}
+
+function _assemblyEditActive() {
+    return assemblyState.editMode && assemblyState.currentStepIndex >= 0;
+}
+
+function pushSingleTransformUndoIfChanged() {
+    if (!previousTransformState?.object) return;
+    const obj = previousTransformState.object;
+    const before = {
+        position: previousTransformState.position.clone(),
+        rotation: previousTransformState.rotation.clone(),
+        scale: previousTransformState.scale.clone(),
+    };
+    const after = {
+        position: obj.position.clone(),
+        rotation: obj.rotation.clone(),
+        scale: obj.scale.clone(),
+    };
+    if (!transformStateChanged(before, after)) return;
+
+    const ctx = getUndoContext();
+    let beforeAssembly = null;
+    let afterAssembly = null;
+    if (_assemblyEditActive()) {
+        beforeAssembly = snapshotAssemblyState(ctx);
+        recordAssemblyTransformation();
+        afterAssembly = snapshotAssemblyState(ctx);
+    }
+
+    pushCommand(createTransformCommand(ctx, {
+        label: `Transform ${obj.name || 'object'}`,
+        targets: [{ object: obj, before, after }],
+        beforeAssembly,
+        afterAssembly,
+    }));
+}
+
+function commitGroupTransformUndo() {
+    const targets = buildGroupTransformTargets(previousGroupTransformStates);
+    if (targets.length === 0) return;
+
+    const ctx = getUndoContext();
+    let beforeAssembly = null;
+    let afterAssembly = null;
+    if (_assemblyEditActive()) {
+        beforeAssembly = snapshotAssemblyState(ctx);
+        recordGroupTransformations();
+        afterAssembly = snapshotAssemblyState(ctx);
+    }
+
+    pushCommand(createGroupTransformCommand(ctx, {
+        label: 'Group transform',
+        targets,
+        beforeAssembly,
+        afterAssembly,
+    }));
+    savePreviousGroupTransformStates();
+}
+
+function commitDragTransformUndo() {
+    if (viewProp.isGroupTransformActive && previousGroupTransformStates.length > 0) {
+        commitGroupTransformUndo();
+        return;
+    }
+    pushSingleTransformUndoIfChanged();
 }
 
 const viewProp = {
@@ -1665,14 +1832,8 @@ function init() {
                 // Zaokrouhlení floating-point nepřesností blízkých nule
                 roundObjectTransformNearZero(transformControls.object);
                 roundObjectTransformNearZero(lastSelectedObject);
-                // Zaznamenat transformaci v assembly edit modu
-                if (assemblyState.editMode && assemblyState.currentStepIndex >= 0) {
-                    if (viewProp.isGroupTransformActive && previousGroupTransformStates.length > 0) {
-                        recordGroupTransformations();
-                    } else if (previousTransformState && transformControls.object) {
-                        recordAssemblyTransformation();
-                    }
-                }
+                // Zaznamenat transformaci v assembly edit modu + globální undo
+                commitDragTransformUndo();
                 // Přepočítáme BoxHelpery po dokončení skupinové transformace
                 if (viewProp.isGroupTransformActive) {
                     multiSelectionHelpers.forEach((h, i) => {
@@ -1743,6 +1904,20 @@ function init() {
 
         if ((event.ctrlKey || event.metaKey) && !event.altKey) {
             const modKey = event.key.toLowerCase();
+            if (modKey === 'z' && !event.shiftKey) {
+                if (!isDocumentEditorOpen() && !isImageEditorOpen()) {
+                    event.preventDefault();
+                    undoScene();
+                }
+                return;
+            }
+            if (modKey === 'y' || (modKey === 'z' && event.shiftKey)) {
+                if (!isDocumentEditorOpen() && !isImageEditorOpen()) {
+                    event.preventDefault();
+                    redoScene();
+                }
+                return;
+            }
             if (modKey === 'o') {
                 event.preventDefault();
                 openLocalGlbFile();
@@ -2016,6 +2191,7 @@ function init() {
     addAttachmentsGui();
     addHelpGui();
     addCallGui();
+    initSceneUndo();
     applyToolbarPreferences(); // Apply initial toolbar CSS from viewProp defaults
     initMeasurement(scene);
     initDeviationProbe(scene);
@@ -3385,17 +3561,13 @@ function refreshSelectedObjGui(obj) {
     const folder2 = selectedFolder.addFolder("Location");
         folder2.add(viewProp, 'locationKeepOpen').name('Keep open');
         folder2.add({ fn() { if (lastSelectedObject) setDefPosRotScale(lastSelectedObject); } }, 'fn').name('Reset init. location');
-        folder2.add({ fn() { if (lastSelectedObject && previousTransformState) undoLastTransform(lastSelectedObject); } }, 'fn').name('Undo last transform');
 
         // Capture "before" state when the object is selected (TransformControl is already attached).
         savePreviousTransformState();
 
         // Called by every Location slider after the user releases.
         function _onGuiLocationFinish() {
-            if (assemblyState.editMode && assemblyState.currentStepIndex >= 0) {
-                recordAssemblyTransformation();
-            }
-            // Refresh baseline so the next slider interaction has a correct "before".
+            pushSingleTransformUndoIfChanged();
             savePreviousTransformState();
         }
 
@@ -3598,15 +3770,13 @@ function refreshGroupGui() {
             saved.forEach(obj => setDefPosRotScale(obj));
             activateMultiSelect();
         } }, 'fn').name('Reset init. location (all)');
-        folder2.add({ fn() { undoLastTransform(pivotObject); } }, 'fn').name('Undo last transform');
 
         // Save pivot's current state as the "before" baseline for undo.
         savePreviousTransformState();
+        savePreviousGroupTransformStates();
 
         function _onGroupGuiLocationFinish() {
-            if (assemblyState.editMode && assemblyState.currentStepIndex >= 0) {
-                recordGroupTransformations();
-            }
+            commitGroupTransformUndo();
             savePreviousTransformState();
         }
 
@@ -4568,12 +4738,16 @@ function savePreviousTransformState() {
     // Pokud je aktivní single-select pivot, ukládáme stav skutečného objektu (ne pivotu).
     // Pivot je jen gizmo helper – GUI sliders a undo musí pracovat s originálem.
     const obj = (singleSelectPivot && lastSelectedObject) ? lastSelectedObject : transformControls.object;
+    saveTransformStateForObject(obj);
+}
+
+function saveTransformStateForObject(obj) {
     if (!obj) return;
     previousTransformState = {
         object: obj,
         position: obj.position.clone(),
         rotation: obj.rotation.clone(),
-        scale: obj.scale.clone()
+        scale: obj.scale.clone(),
     };
 }
 
@@ -4584,21 +4758,6 @@ function savePreviousGroupTransformStates() {
         obj.updateWorldMatrix(true, false);
         return { object: obj, worldMatrix: obj.matrixWorld.clone() };
     });
-}
-
-function undoLastTransform(obj) {
-    if (!obj || !previousTransformState || previousTransformState.object !== obj) {
-        console.log("Nothing to undo.");
-        return;
-    }
-    
-    obj.position.copy(previousTransformState.position);
-    obj.rotation.copy(previousTransformState.rotation);
-    obj.scale.copy(previousTransformState.scale);
-    
-    console.log("Transformation undone.");
-    previousTransformState = null; // Vymažeme uložený stav
-    render();
 }
 
 function createSectionMesh(mesh) {
@@ -6201,6 +6360,7 @@ function clearSceneFully() {
 
     rebuildTree(loadedModels);
     render();
+    clearUndoHistory();
 }
 
 function clearSceneKeepDocs() {
@@ -6243,6 +6403,7 @@ function clearSceneKeepDocs() {
 
         rebuildTree(loadedModels);
         render();
+        clearUndoHistory();
     } catch(err) {
         console.log('Error: clearSceneKeepDocs ' + err.message);
     }
@@ -6250,6 +6411,7 @@ function clearSceneKeepDocs() {
 
 function removeModel(part, skipConfirm = false, options = {}) {
     if (!skipConfirm && !confirm('Do you really want to permanently remove object?')) return;
+    const removeSnap = captureRemoveSnapshot(getUndoContext(), part);
     try {				
         deselectObject();
 
@@ -6334,6 +6496,10 @@ function removeModel(part, skipConfirm = false, options = {}) {
 
         purgeObjectFromGroupHistory(part);
 
+        if (!options.skipUndo) {
+            pushCommand(createRemoveObjectCommand(getUndoContext(), removeSnap));
+        }
+
         // Aktualizujeme GUI assembly po vyčištění dat
         if (!options.skipSceneRebuild && _assemblyFolderRef) updateAssemblyGuiInfo();
 
@@ -6362,6 +6528,7 @@ function removeModel(part, skipConfirm = false, options = {}) {
 
 function hideObject(part) {
     try {
+        const visSnap = captureVisibilitySnapshot(part, getUndoContext());
         // Skryjeme objekt nastavením visibility na false
         part.visible = false;
         
@@ -6395,6 +6562,8 @@ function hideObject(part) {
 
         if (normalsViewGui.showVertexAllNormals || normalsViewGui.showVertexNormals) updateVertexNormalsHelpers();
         else render();
+
+        pushCommand(createVisibilityCommand(getUndoContext(), visSnap));
     } catch(err) {
         console.log("Error: hideObject " + err.message);
     }
@@ -8373,7 +8542,7 @@ function onClick( event ) {
 
             // Apply translation in world space, then convert back to parent-local space
             const obj = faceSnapSourceObject;
-            savePreviousTransformState(); // for undo
+            saveTransformStateForObject(obj);
             obj.updateWorldMatrix(true, false);
             const worldPos = new THREE.Vector3().setFromMatrixPosition(obj.matrixWorld);
             worldPos.add(worldTranslation);
@@ -8389,10 +8558,7 @@ function onClick( event ) {
             if (viewProp.showCrossSection) updateCrossSectionLines();
             if (viewProp.sectionCrossLines) updateSectionCrossLines();
 
-            // Record in assembly edit mode
-            if (assemblyState.editMode && assemblyState.currentStepIndex >= 0 && previousTransformState) {
-                recordAssemblyTransformation();
-            }
+            pushSingleTransformUndoIfChanged();
 
             cancelFaceSnapMode();
         }
@@ -8451,7 +8617,7 @@ function onClick( event ) {
             const worldTranslation = new THREE.Vector3().subVectors(targetPoint, ptpSnapSourcePoint);
 
             const obj = ptpSnapSourceObject;
-            savePreviousTransformState();
+            saveTransformStateForObject(obj);
             obj.updateWorldMatrix(true, false);
             const worldPos = new THREE.Vector3().setFromMatrixPosition(obj.matrixWorld);
             worldPos.add(worldTranslation);
@@ -8467,9 +8633,7 @@ function onClick( event ) {
             if (viewProp.showCrossSection) updateCrossSectionLines();
             if (viewProp.sectionCrossLines) updateSectionCrossLines();
 
-            if (assemblyState.editMode && assemblyState.currentStepIndex >= 0 && previousTransformState) {
-                recordAssemblyTransformation();
-            }
+            pushSingleTransformUndoIfChanged();
 
             cancelPtpSnapMode();
         }
@@ -11805,10 +11969,6 @@ function assemblyMoveStepDown() {
 
         subLoc.appendChild(simpleItem('Reset init. location', () => {
             if (lastSelectedObject) setDefPosRotScale(lastSelectedObject);
-            hideAll();
-        }));
-        subLoc.appendChild(simpleItem('Undo last transform', () => {
-            if (lastSelectedObject && previousTransformState) undoLastTransform(lastSelectedObject);
             hideAll();
         }));
         subLoc.appendChild(separator());
