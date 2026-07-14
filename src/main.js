@@ -26,7 +26,8 @@ import { exportToHTML, exportToHTMLDraco, exportToHTMLObfuscated, exportToHTMLOb
 import { initOutliner, toggleOutliner, rebuildTree, highlightObject as outlinerHighlight, updateVisibilityIcon, updateSelectableIcon, updateObjectLabel, isOutlinerOpen, navigateOutliner, highlightGroupObjects, clearGroupHighlights, setNavigationPosition, setOnTreeRebuild } from './sceneOutliner.js';
 import { computeModelStats } from './modelInfoUtils.js';
 import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements, isSelectDimActive, setSelectDimActive, deleteSelectedDimension, initSelectDimension, updateSelectDimensionCamera, reconstructMeasurements, stripMeasurementVisuals, setMeasurementsVisible, setMeasurementDepthTest, removeMeasurementsForOwner, isCadDimActive, setCadDimActive, getCadDimStep, getCadDimAxis, addCadDimPoint, updateCadDimPreview, updateCadDimHoverPreview, cycleCadDimAxis, placeCadDim, clearCadDimMeasurements, removeCadDimMeasurementsForOwner, getSelectedCadDim, setCadDimLabelMode, setCadDimDragMode, selectDimTouchStart, selectDimTouchMove, selectDimTouchEnd, registerLabelForSelection, getSelectedCadDim3d, getCadDimMeasurements, deleteCadDimByRef, convertCadDim3dTo2d, getFlatDimDefaults, applyDefaultsToAllFlatDim, setDimMarkerFixedSize, setDimMarkerFixedScreenPx, setDimMarkerWorldSize, setDimMarkerColor, getDimMarkerSettings } from './measurementUtils.js';
-import { detectCircleCenterFromHit } from './circleDetectionUtils.js';
+import { detectCircleCenterFromHit, clearCircleDetectionCache } from './circleDetectionUtils.js';
+import { removeEdgeOverlays, updateMeshEdgeOverlays } from './edgeDisplayUtils.js';
 import { initAnnotations, isAnnotationActive, setAnnotationActive, addAnnotationPoint, getAnnotationPendingPoint, updateAnnotationPreview, updateAnnotationMarkerScales, setAnnotationsVisible, clearAnnotations, stripAnnotationVisuals, reconstructAnnotations, setAnnotationDepthTest, removeAnnotationsForOwner, getAnnotations, isAddLeaderLineActive, cancelAddLeaderLine, commitAddLeaderLine, deleteAnnotationByRef, setConvertTo3dFn, reconstructAnnotationFromRec, getFlatAnnDefaults, applyDefaultsToAllFlatAnnotations, setAnnMarkerFixedSize, setAnnMarkerFixedScreenPx, setAnnMarkerWorldSize, setAnnMarkerColor, getAnnMarkerSettings } from './annotationUtils.js';
 import { initAnnotations3d, isAnnotation3dActive, setAnnotation3dActive, addAnnotation3dPoint, getAnnotation3dPendingPoint, updateAnnotation3dPreview, updateAnnotation3dMarkerScales, updateAnnotation3dOrientations, setAnnotations3dVisible, clearAnnotations3d, stripAnnotation3dVisuals, reconstructAnnotations3d, setAnnotation3dDepthTest, removeAnnotations3dForOwner, isAddLeaderLine3dActive, cancelAddLeaderLine3d, commitAddLeaderLine3d, getAnnotation3dDefaults, deleteAnnotation3dByRef, setConvertTo2dFn, reconstructAnnotation3dFromRec, applyDefaultsToAllAnnotations3d, setAnn3dMarkerFixedSize, setAnn3dMarkerFixedScreenPx, setAnn3dMarkerWorldSize, setAnn3dMarkerColor } from './annotation3dUtils.js';
 import { initCadDim3d, isCadDim3dActive, getCadDim3dStep, getCadDim3dAxis, setCadDim3dActive, addCadDim3dPoint, updateCadDim3dPreview, updateCadDim3dHoverPreview, cycleCadDim3dAxis, placeCadDim3d, clearCadDim3dMeasurements, removeCadDim3dMeasurementsForOwner, setCadDim3dVisible, setCadDim3dDepthTest, updateCadDim3dOrientations, updateCadDim3dMarkerScales, reconstructCadDim3d, stripCadDim3dVisuals, setCadDim3dLabelMode, setCadDim3dDragMode, setCadDim3dOrientationMode, setCadDim3dRotate, setCadDim3dLabelScaleDialog, setCadDim3dMirrored, setCadDim3dTextColor, setCadDim3dBgColor, getCadDim3dDefaults, convertCadDimTo3d, applyDefaultsToAllCadDim3d, setCadDimMarkerFixedSize, setCadDimMarkerFixedScreenPx, setCadDimMarkerWorldSize, setCadDimMarkerColor } from './cadDim3dUtils.js';
@@ -943,6 +944,9 @@ const viewProp = {
     rStep: 30,               // krok sliderů Rx/Ry/Rz (°)
     sStep: 0.1,              // krok slideru Scale
     wireframe: false,       // Wireframe přepínač
+    showSharpEdges: true,
+    showTangentialEdges: false,
+    edgeAngleThreshold: 12,
     showAxesHelper: false, // Zobrazit / skrýt axes helper
     axesHelperSize: 100,   // Velikost axes helperu
     showCameraHelper: false, // Zobrazit / skrýt camera helper (frustum perspektivní kamery)
@@ -1366,7 +1370,7 @@ outlinerPanelEl = initOutliner({
             }
         }
         rebuildTree(loadedModels, true);
-        render();
+        refreshEdgeOverlaysAfterSceneChange();
     },
     onSortChildren: (obj, recursive, descending) => {
         function sortNode(node) {
@@ -2236,6 +2240,39 @@ function toggleWireframeAll(value) {
     render();
 }
 
+let edgeThresholdDebounceTimer = null;
+
+function edgesDisplayActive() {
+    return viewProp.showSharpEdges || viewProp.showTangentialEdges;
+}
+
+function updateEdgeOverlays() {
+    for (const mesh of meshObjects) {
+        if (!mesh.isMesh) continue;
+        removeEdgeOverlays(mesh);
+        if (edgesDisplayActive()) {
+            updateMeshEdgeOverlays(mesh, {
+                showSharp: viewProp.showSharpEdges,
+                showTangential: viewProp.showTangentialEdges,
+                thresholdDeg: viewProp.edgeAngleThreshold,
+            });
+        }
+    }
+    render();
+}
+
+function refreshEdgeOverlaysAfterSceneChange() {
+    if (edgesDisplayActive()) updateEdgeOverlays();
+}
+
+function scheduleEdgeThresholdUpdate() {
+    if (edgeThresholdDebounceTimer) clearTimeout(edgeThresholdDebounceTimer);
+    edgeThresholdDebounceTimer = setTimeout(() => {
+        edgeThresholdDebounceTimer = null;
+        if (edgesDisplayActive()) updateEdgeOverlays();
+    }, 300);
+}
+
 //GUI----------------------------------------------------------------------------------------------------------------
 function addMainGui() {
     //View
@@ -2245,6 +2282,17 @@ function addMainGui() {
         folderProp.add({ fn: showHiddenObjects }, 'fn').name('Show hidden objects');
         folderProp.add({ fn: toggleHiddenObjects }, 'fn').name('Switch hidden objects');
         folderProp.add(viewProp, 'wireframe').name('Wireframe').onChange(function(value){ toggleWireframeAll(value); }).listen();
+        const edgesFolder = folderProp.addFolder('Edges');
+        edgesFolder.add(viewProp, 'showSharpEdges').name('Sharp edges').onChange(function() {
+            updateEdgeOverlays();
+        }).listen();
+        edgesFolder.add(viewProp, 'showTangentialEdges').name('Tangential edges').onChange(function() {
+            updateEdgeOverlays();
+        }).listen();
+        edgesFolder.add(viewProp, 'edgeAngleThreshold', 1, 45, 1).name('Angle threshold (°)').onChange(function() {
+            scheduleEdgeThresholdUpdate();
+        }).listen();
+        edgesFolder.close();
         folderProp.add(viewProp, 'xrayOnSelect').name('X-ray on select').onChange(function(value) {
             if (!value) {
                 lastSelectedMeshes.forEach(child => { clearXray(child); });
@@ -2781,7 +2829,11 @@ function addMainGui() {
         if (geometryOpAffectsDeviationPair(obj)) {
             alert(`Normals updated on ${result.count} mesh(es). Recompute deviation map if one is active.`);
         }
-        if (normalsViewGui.showVertexAllNormals || normalsViewGui.showVertexNormals) updateVertexNormalsHelpers();
+        meshes.forEach(mesh => {
+            if (mesh.geometry) clearCircleDetectionCache(mesh.geometry);
+        });
+        if (edgesDisplayActive()) updateEdgeOverlays();
+        else if (normalsViewGui.showVertexAllNormals || normalsViewGui.showVertexNormals) updateVertexNormalsHelpers();
         else render();
     }
     geometryOpsFolder.add({ fn() {
@@ -5763,7 +5815,7 @@ function loadStlModel(model, name, scale, colored) {
                 meshObjects.push(mesh);
                 loadedModels.push(mesh);
                 rebuildTree(loadedModels);
-                render();
+                refreshEdgeOverlaysAfterSceneChange();
                 resolve(mesh);	
 
                 lastSelectedObject=mesh;  
@@ -5905,7 +5957,7 @@ function loadGlbModel(model, name, scale, colored) {
                 reconstructCadDim3d(gltf.scene);
                 
                 rebuildTree(loadedModels);
-                render();
+                refreshEdgeOverlaysAfterSceneChange();
                 resolve(gltf.scene);
             }
         }, undefined, function (error) {
@@ -5928,7 +5980,7 @@ function addParametricPrimitive(type, parentObj) {
     registerParametricMesh(mesh, parent, scene, loadedModels, meshObjects);
     rebuildTree(loadedModels, true);
     selectObject(mesh);
-    render();
+    refreshEdgeOverlaysAfterSceneChange();
 }
 
 function cleanupModel() {
@@ -6214,6 +6266,7 @@ function removeModel(part, skipConfirm = false, options = {}) {
         const removedObjects = new Set();
         part.traverse(obj => {
             removedObjects.add(obj);
+            if (obj.isMesh) removeEdgeOverlays(obj);
             const mi = meshObjects.indexOf(obj);
             if (mi !== -1) meshObjects.splice(mi, 1);
             const hi = hiddenObjects.indexOf(obj);
@@ -7912,7 +7965,7 @@ function registerBooleanResultMesh(mesh) {
     rebuildTree(loadedModels);
     if (_assemblyFolderRef) updateAssemblyGuiInfo();
     selectObject(mesh);
-    render();
+    refreshEdgeOverlaysAfterSceneChange();
 }
 
 function runBooleanAndRegister() {
@@ -8970,7 +9023,7 @@ function importObjFile() {
             rebuildTree(loadedModels);
             if (!fileNameInput.value) fileNameInput.value = object.name;
             fitView();
-            render();
+            refreshEdgeOverlaysAfterSceneChange();
             cleanup();
             console.log(`[Import] OBJ "${objFile.name}" loaded successfully.`);
         } catch (err) {
@@ -9022,7 +9075,7 @@ function import3mfFile() {
             rebuildTree(loadedModels);
             if (!fileNameInput.value) fileNameInput.value = object.name;
             fitView();
-            render();
+            refreshEdgeOverlaysAfterSceneChange();
             console.log(`[Import] 3MF "${file.name}" loaded successfully.`);
         }, undefined, function(err) {
             URL.revokeObjectURL(url);
@@ -9170,7 +9223,7 @@ function importFbxFile() {
             rebuildTree(loadedModels);
             if (!fileNameInput.value) fileNameInput.value = object.name;
             fitView();
-            render();
+            refreshEdgeOverlaysAfterSceneChange();
             cleanup();
             console.log(`[Import] FBX "${fbxFile.name}" loaded successfully.`);
 
@@ -9318,7 +9371,7 @@ function importStpFile() {
             rebuildTree(loadedModels);
             if (!fileNameInput.value) fileNameInput.value = root.name;
             fitView();
-            render();
+            refreshEdgeOverlaysAfterSceneChange();
             hideToast();
             console.log(`[Import] STP "${file.name}" loaded successfully (${result.meshes.length} meshes).`);
         } catch (err) {
@@ -9447,7 +9500,7 @@ function importIgesFile() {
             rebuildTree(loadedModels);
             if (!fileNameInput.value) fileNameInput.value = root.name;
             fitView();
-            render();
+            refreshEdgeOverlaysAfterSceneChange();
             hideToast();
             console.log(`[Import] IGES "${file.name}" loaded successfully (${result.meshes.length} meshes).`);
         } catch (err) {
@@ -10261,6 +10314,7 @@ function separateMesh(meshToSeparate, { geometries } = {}) {
     removeCadDim3dMeasurementsForOwner(meshToSeparate);
 
     meshToSeparate.traverse(obj => {
+        if (obj.isMesh) removeEdgeOverlays(obj);
         const mi = meshObjects.indexOf(obj);
         if (mi !== -1) meshObjects.splice(mi, 1);
         const hi = hiddenObjects.indexOf(obj);
@@ -10324,7 +10378,7 @@ function separateMesh(meshToSeparate, { geometries } = {}) {
         computeSolidSection(scene, meshObjects, viewProp, render);
     }
     selectObject(group, { outlinerScroll: false });
-    render();
+    refreshEdgeOverlaysAfterSceneChange();
 }
 
 function mergeChildMeshes(containerObject) {
@@ -10363,6 +10417,7 @@ function mergeChildMeshes(containerObject) {
     const wasRoot = lmIdx !== -1;
 
     containerObject.traverse(obj => {
+        if (obj.isMesh) removeEdgeOverlays(obj);
         const mi = meshObjects.indexOf(obj);
         if (mi !== -1) meshObjects.splice(mi, 1);
         const hi = hiddenObjects.indexOf(obj);
@@ -10412,7 +10467,7 @@ function mergeChildMeshes(containerObject) {
     rebuildTree(loadedModels, true);
     if (_assemblyFolderRef) updateAssemblyGuiInfo();
     selectObject(newMesh, { outlinerScroll: false });
-    render();
+    refreshEdgeOverlaysAfterSceneChange();
 }
 
 
