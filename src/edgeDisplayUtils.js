@@ -2,9 +2,6 @@
 import * as THREE from 'three';
 import { getMeshEdgeData } from './edgeDetectionUtils.js';
 
-const SHARP_OVERLAY_KEY = '_edgeOverlaySharp';
-const TANGENTIAL_OVERLAY_KEY = '_edgeOverlayTangential';
-
 const DEFAULT_SHARP_COLOR = 0x000000;
 const DEFAULT_TANGENTIAL_COLOR = 0x888888;
 
@@ -44,7 +41,7 @@ export function buildEdgeLineGeometry(geometry, { sharpOnly = false, smoothOnly 
     return lineGeometry;
 }
 
-function _createLineSegments(geometry, color, renderOrder) {
+function _createLineSegments(geometry, color, renderOrder, type) {
     const material = new THREE.LineBasicMaterial({
         color,
         linewidth: 1,
@@ -53,6 +50,13 @@ function _createLineSegments(geometry, color, renderOrder) {
     const lines = new THREE.LineSegments(geometry, material);
     lines.renderOrder = renderOrder;
     lines.frustumCulled = false;
+    // Purely visual overlay – must never be hit by raycasting (picking, measurements, etc.)
+    // or exported/cloned as if it were real model geometry. Bookkeeping is done via this
+    // marker on the object itself (not via mesh.userData, which THREE clones through a
+    // JSON round-trip and would corrupt a live object reference stored there).
+    lines.raycast = () => {};
+    lines.userData._isEdgeOverlay = true;
+    lines.userData._edgeOverlayType = type;
     return lines;
 }
 
@@ -73,7 +77,7 @@ export function createEdgeOverlay(mesh, type, thresholdDeg, color) {
     if (!lineGeometry) return null;
 
     const lineColor = color ?? (sharpOnly ? DEFAULT_SHARP_COLOR : DEFAULT_TANGENTIAL_COLOR);
-    return _createLineSegments(lineGeometry, lineColor, (mesh.renderOrder || 0) + 1);
+    return _createLineSegments(lineGeometry, lineColor, (mesh.renderOrder || 0) + 1, type);
 }
 
 /**
@@ -83,13 +87,31 @@ export function createEdgeOverlay(mesh, type, thresholdDeg, color) {
 export function removeEdgeOverlays(mesh) {
     if (!mesh) return;
 
-    for (const key of [SHARP_OVERLAY_KEY, TANGENTIAL_OVERLAY_KEY]) {
-        const overlay = mesh.userData[key];
-        if (!overlay) continue;
+    const overlays = mesh.children.filter(child => child.userData && child.userData._isEdgeOverlay);
+    for (const overlay of overlays) {
         mesh.remove(overlay);
         overlay.geometry?.dispose();
         overlay.material?.dispose();
-        delete mesh.userData[key];
+    }
+}
+
+/**
+ * Remove and dispose edge overlay objects found anywhere under root (e.g. before
+ * cloning or exporting a scene/object, mirroring stripMeasurementVisuals/stripAnnotationVisuals).
+ * @param {THREE.Object3D} root
+ */
+export function stripEdgeOverlays(root) {
+    if (!root) return;
+    const toRemove = [];
+    root.traverse(function (child) {
+        if (child.userData && child.userData._isEdgeOverlay) {
+            toRemove.push(child);
+        }
+    });
+    for (const obj of toRemove) {
+        if (obj.parent) obj.parent.remove(obj);
+        obj.geometry?.dispose();
+        obj.material?.dispose();
     }
 }
 
@@ -109,17 +131,11 @@ export function updateMeshEdgeOverlays(mesh, {
 
     if (showSharp) {
         const overlay = createEdgeOverlay(mesh, 'sharp', thresholdDeg, sharpColor);
-        if (overlay) {
-            mesh.userData[SHARP_OVERLAY_KEY] = overlay;
-            mesh.add(overlay);
-        }
+        if (overlay) mesh.add(overlay);
     }
 
     if (showTangential) {
         const overlay = createEdgeOverlay(mesh, 'tangential', thresholdDeg, tangentialColor);
-        if (overlay) {
-            mesh.userData[TANGENTIAL_OVERLAY_KEY] = overlay;
-            mesh.add(overlay);
-        }
+        if (overlay) mesh.add(overlay);
     }
 }

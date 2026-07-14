@@ -27,7 +27,7 @@ import { initOutliner, toggleOutliner, rebuildTree, highlightObject as outlinerH
 import { computeModelStats } from './modelInfoUtils.js';
 import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements, isSelectDimActive, setSelectDimActive, deleteSelectedDimension, initSelectDimension, updateSelectDimensionCamera, reconstructMeasurements, stripMeasurementVisuals, setMeasurementsVisible, setMeasurementDepthTest, removeMeasurementsForOwner, isCadDimActive, setCadDimActive, getCadDimStep, getCadDimAxis, addCadDimPoint, updateCadDimPreview, updateCadDimHoverPreview, cycleCadDimAxis, placeCadDim, clearCadDimMeasurements, removeCadDimMeasurementsForOwner, getSelectedCadDim, setCadDimLabelMode, setCadDimDragMode, selectDimTouchStart, selectDimTouchMove, selectDimTouchEnd, registerLabelForSelection, getSelectedCadDim3d, getCadDimMeasurements, deleteCadDimByRef, convertCadDim3dTo2d, getFlatDimDefaults, applyDefaultsToAllFlatDim, setDimMarkerFixedSize, setDimMarkerFixedScreenPx, setDimMarkerWorldSize, setDimMarkerColor, getDimMarkerSettings } from './measurementUtils.js';
 import { detectCircleCenterFromHit, clearCircleDetectionCache } from './circleDetectionUtils.js';
-import { removeEdgeOverlays, updateMeshEdgeOverlays } from './edgeDisplayUtils.js';
+import { removeEdgeOverlays, updateMeshEdgeOverlays, stripEdgeOverlays } from './edgeDisplayUtils.js';
 import { initAnnotations, isAnnotationActive, setAnnotationActive, addAnnotationPoint, getAnnotationPendingPoint, updateAnnotationPreview, updateAnnotationMarkerScales, setAnnotationsVisible, clearAnnotations, stripAnnotationVisuals, reconstructAnnotations, setAnnotationDepthTest, removeAnnotationsForOwner, getAnnotations, isAddLeaderLineActive, cancelAddLeaderLine, commitAddLeaderLine, deleteAnnotationByRef, setConvertTo3dFn, reconstructAnnotationFromRec, getFlatAnnDefaults, applyDefaultsToAllFlatAnnotations, setAnnMarkerFixedSize, setAnnMarkerFixedScreenPx, setAnnMarkerWorldSize, setAnnMarkerColor, getAnnMarkerSettings } from './annotationUtils.js';
 import { initAnnotations3d, isAnnotation3dActive, setAnnotation3dActive, addAnnotation3dPoint, getAnnotation3dPendingPoint, updateAnnotation3dPreview, updateAnnotation3dMarkerScales, updateAnnotation3dOrientations, setAnnotations3dVisible, clearAnnotations3d, stripAnnotation3dVisuals, reconstructAnnotations3d, setAnnotation3dDepthTest, removeAnnotations3dForOwner, isAddLeaderLine3dActive, cancelAddLeaderLine3d, commitAddLeaderLine3d, getAnnotation3dDefaults, deleteAnnotation3dByRef, setConvertTo2dFn, reconstructAnnotation3dFromRec, applyDefaultsToAllAnnotations3d, setAnn3dMarkerFixedSize, setAnn3dMarkerFixedScreenPx, setAnn3dMarkerWorldSize, setAnn3dMarkerColor } from './annotation3dUtils.js';
 import { initCadDim3d, isCadDim3dActive, getCadDim3dStep, getCadDim3dAxis, setCadDim3dActive, addCadDim3dPoint, updateCadDim3dPreview, updateCadDim3dHoverPreview, cycleCadDim3dAxis, placeCadDim3d, clearCadDim3dMeasurements, removeCadDim3dMeasurementsForOwner, setCadDim3dVisible, setCadDim3dDepthTest, updateCadDim3dOrientations, updateCadDim3dMarkerScales, reconstructCadDim3d, stripCadDim3dVisuals, setCadDim3dLabelMode, setCadDim3dDragMode, setCadDim3dOrientationMode, setCadDim3dRotate, setCadDim3dLabelScaleDialog, setCadDim3dMirrored, setCadDim3dTextColor, setCadDim3dBgColor, getCadDim3dDefaults, convertCadDimTo3d, applyDefaultsToAllCadDim3d, setCadDimMarkerFixedSize, setCadDimMarkerFixedScreenPx, setCadDimMarkerWorldSize, setCadDimMarkerColor } from './cadDim3dUtils.js';
@@ -1356,6 +1356,7 @@ outlinerPanelEl = initOutliner({
         stripAnnotation3dVisuals(clone);
         stripMeasurementVisuals(clone);
         stripCadDim3dVisuals(clone);
+        stripEdgeOverlays(clone);
         reconstructAnnotations(clone, render);
         reconstructAnnotations3d(clone, render);
         reconstructMeasurements(clone, render);
@@ -4326,12 +4327,15 @@ function bakeSelectedObjectLocation() {
     stripAnnotationVisuals(obj);     removeAnnotationsForOwner(obj);
     stripAnnotation3dVisuals(obj);   removeAnnotations3dForOwner(obj);
     stripCadDim3dVisuals(obj);       removeCadDim3dMeasurementsForOwner(obj);
+    stripEdgeOverlays(obj);
 
     reconstructMeasurements(obj, render);
     reconstructAnnotations(obj, render);
     reconstructAnnotations3d(obj, render);
     reconstructCadDim3d(obj);
 
+    // Geometry was rebaked above; rebuild edge overlays so they stay aligned with the new surface.
+    refreshEdgeOverlaysAfterSceneChange();
     render();
 }
 
@@ -4384,6 +4388,9 @@ function bakeWholeModelRotation() {
         model.rotation.set(0, 0, 0);
         model.updateMatrixWorld(true);
     });
+    // Geometrie meshů byla nahrazena zapečenou verzí; edge overlaye by ukazovaly
+    // hrany podle staré geometrie, proto je nutné je přepočítat.
+    refreshEdgeOverlaysAfterSceneChange();
     render();
 }
 
@@ -9797,6 +9804,7 @@ function buildAllModelsExportGroup(finalName) {
     stripAnnotationVisuals(group);
     stripAnnotation3dVisuals(group);
     stripCadDim3dVisuals(group);
+    stripEdgeOverlays(group);
 
     return group;
 }
@@ -9964,6 +9972,7 @@ function exportSelectedObject() {
         stripAnnotationVisuals(group);
         stripAnnotation3dVisuals(group);
         stripCadDim3dVisuals(group);
+        stripEdgeOverlays(group);
 
         exporter.parse(group, function(result) {
             saveArrayBuffer(result, finalName);
@@ -10018,6 +10027,7 @@ function exportSelectedObject() {
     stripAnnotationVisuals(clone);
     stripAnnotation3dVisuals(clone);
     stripCadDim3dVisuals(clone);
+    stripEdgeOverlays(clone);
 
     // Apply world transform to the clone so it appears in the same position after re-import
     // Aplikujeme world transform na klon, aby se po importu zobrazil ve stejné pozici
@@ -10108,6 +10118,7 @@ async function exportSelectedObjectDraco() {
         stripAnnotationVisuals(groupDraco);
         stripAnnotation3dVisuals(groupDraco);
         stripCadDim3dVisuals(groupDraco);
+        stripEdgeOverlays(groupDraco);
 
         exporter.parse(groupDraco, function(result) {
             setTimeout(async () => {
@@ -10213,6 +10224,7 @@ async function exportSelectedObjectDraco() {
     stripAnnotationVisuals(clone);
     stripAnnotation3dVisuals(clone);
     stripCadDim3dVisuals(clone);
+    stripEdgeOverlays(clone);
 
     lastSelectedObject.updateWorldMatrix(true, false);
     const worldPos = new THREE.Vector3();
@@ -10389,6 +10401,7 @@ function mergeChildMeshes(containerObject) {
     stripAnnotationVisuals(containerObject);
     stripAnnotation3dVisuals(containerObject);
     stripCadDim3dVisuals(containerObject);
+    stripEdgeOverlays(containerObject);
     removeMeasurementsForOwner(containerObject);
     removeAnnotationsForOwner(containerObject);
     removeAnnotations3dForOwner(containerObject);
