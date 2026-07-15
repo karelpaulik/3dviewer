@@ -1,4 +1,12 @@
-// Local GLB open/save via File System Access API + File Handling launchQueue.
+// Local GLB open/save via File System Access API + File Handling launchQueue + Web Share Target.
+
+import {
+    SHARE_CACHE_KEY,
+    SHARE_CACHE_NAME,
+    SHARE_TARGET_QUERY_ERROR,
+    SHARE_TARGET_QUERY_PARAM,
+    SHARE_TARGET_QUERY_VALUE,
+} from './shareTargetConstants.js';
 
 const GLB_PICKER_TYPES = [{
     description: 'GLB Model',
@@ -11,13 +19,23 @@ const GLB_PICKER_TYPES = [{
 let currentFileHandle = null;
 let currentFileName = null;
 let launchedWithFile = false;
+let sharedWithFile = false;
 let launchQueueSettled = false;
+let shareTargetSettled = false;
 const pendingLaunchHandles = [];
+/** @type {File | null} */
+let pendingSharedFile = null;
 
 /** @type {(() => void) | null} */
 let _launchQueueSettledResolve = null;
 const launchQueueSettledPromise = new Promise(resolve => {
     _launchQueueSettledResolve = resolve;
+});
+
+/** @type {(() => void) | null} */
+let _shareTargetSettledResolve = null;
+const shareTargetSettledPromise = new Promise(resolve => {
+    _shareTargetSettledResolve = resolve;
 });
 
 /** @type {{
@@ -36,11 +54,74 @@ function settleLaunchQueue() {
     _launchQueueSettledResolve?.();
 }
 
+function settleShareTargetProbe() {
+    if (shareTargetSettled) return;
+    shareTargetSettled = true;
+    _shareTargetSettledResolve?.();
+}
+
 function markLaunchedWithFile() {
     launchedWithFile = true;
     const dlg = document.getElementById('welcome-dialog');
     if (dlg?.open) dlg.close();
 }
+
+function markSharedWithFile() {
+    sharedWithFile = true;
+    const dlg = document.getElementById('welcome-dialog');
+    if (dlg?.open) dlg.close();
+}
+
+function clearShareTargetQuery() {
+    const url = new URL(location.href);
+    if (!url.searchParams.has(SHARE_TARGET_QUERY_PARAM)) return;
+    url.searchParams.delete(SHARE_TARGET_QUERY_PARAM);
+    history.replaceState(null, '', url.pathname + url.search + url.hash);
+}
+
+async function probeShareTargetCache() {
+    const params = new URLSearchParams(location.search);
+    const target = params.get(SHARE_TARGET_QUERY_PARAM);
+
+    if (target === SHARE_TARGET_QUERY_ERROR) {
+        clearShareTargetQuery();
+        alert('Could not open the shared file. Only .glb models are supported.');
+        settleShareTargetProbe();
+        return;
+    }
+
+    if (target !== SHARE_TARGET_QUERY_VALUE) {
+        settleShareTargetProbe();
+        return;
+    }
+
+    try {
+        const cache = await caches.open(SHARE_CACHE_NAME);
+        const response = await cache.match(SHARE_CACHE_KEY);
+        if (!response) {
+            console.warn('[ShareTarget] No cached file found for share launch.');
+            clearShareTargetQuery();
+            settleShareTargetProbe();
+            return;
+        }
+
+        const blob = await response.blob();
+        await cache.delete(SHARE_CACHE_KEY);
+        const fileName = response.headers.get('x-filename') || 'shared.glb';
+        pendingSharedFile = new File([blob], fileName, {
+            type: blob.type || 'model/gltf-binary',
+        });
+        markSharedWithFile();
+    } catch (err) {
+        console.error('[ShareTarget] Failed to read shared file from cache:', err);
+        clearShareTargetQuery();
+        alert('Could not open the shared file: ' + (err.message || err));
+    }
+
+    settleShareTargetProbe();
+}
+
+void probeShareTargetCache();
 
 async function processPendingLaunchHandles() {
     if (!_callbacks.loadGlbFile || pendingLaunchHandles.length === 0) return;
@@ -51,6 +132,31 @@ async function processPendingLaunchHandles() {
         } catch (err) {
             console.error('[FileHandling] Failed to open file:', err);
         }
+    }
+}
+
+async function openGlbFromSharedFile(file) {
+    clearCurrentLocalFileHandle();
+    currentFileName = file.name;
+    markSharedWithFile();
+
+    await _callbacks.loadGlbFile?.(file);
+    _callbacks.updateFileUi?.(file.name);
+    clearShareTargetQuery();
+    console.log(`[Share] GLB "${file.name}" loaded from share target.`);
+}
+
+export async function consumeSharedGlbIfPresent() {
+    if (!pendingSharedFile) return;
+    const file = pendingSharedFile;
+    pendingSharedFile = null;
+
+    try {
+        await openGlbFromSharedFile(file);
+    } catch (err) {
+        console.error('[ShareTarget] Failed to open shared GLB:', err);
+        alert('Could not open the shared file: ' + (err.message || err));
+        clearShareTargetQuery();
     }
 }
 
@@ -72,12 +178,30 @@ export function wasLaunchedWithFile() {
     return launchedWithFile;
 }
 
+export function wasOpenedWithExternalFile() {
+    return launchedWithFile || sharedWithFile;
+}
+
 /** Wait until launchQueue consumer runs, or timeout on normal app start. */
 export async function waitForLaunchQueueSignal(timeoutMs = 150) {
     if (launchQueueSettled) return;
     await Promise.race([
         launchQueueSettledPromise,
         new Promise(resolve => setTimeout(resolve, timeoutMs)),
+    ]);
+}
+
+/** Wait until launchQueue and share-target probe complete, or timeout. */
+export async function waitForExternalFileSignal(timeoutMs = 150) {
+    const needsShareWait = new URLSearchParams(location.search).has(SHARE_TARGET_QUERY_PARAM);
+    const effectiveTimeout = needsShareWait ? Math.max(timeoutMs, 3000) : timeoutMs;
+
+    await Promise.race([
+        Promise.all([
+            launchQueueSettled ? Promise.resolve() : launchQueueSettledPromise,
+            shareTargetSettled ? Promise.resolve() : shareTargetSettledPromise,
+        ]),
+        new Promise(resolve => setTimeout(resolve, effectiveTimeout)),
     ]);
 }
 
@@ -109,6 +233,7 @@ export function clearCurrentLocalFileHandle() {
 export function initLocalFileAccess(callbacks) {
     _callbacks = callbacks || {};
     void processPendingLaunchHandles();
+    void consumeSharedGlbIfPresent();
 }
 
 async function openGlbFromHandle(handle, { replaceScene }) {

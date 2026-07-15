@@ -57,7 +57,7 @@ import {
     createVisibilityCommand,
 } from './undoCommands.js';
 import { initAttachmentsGui, importAttachmentsFromGltfScene, getAttachmentsStore, addImageAttachmentFromBlob, clearAttachmentsStore } from './attachmentsUtils.js';
-import { initLocalFileAccess, openLocalGlbFile, saveLocalGlbFile, saveLocalGlbFileAs, clearCurrentLocalFileHandle, waitForLaunchQueueSignal, wasLaunchedWithFile } from './localFileAccess.js';
+import { initLocalFileAccess, openLocalGlbFile, saveLocalGlbFile, saveLocalGlbFileAs, clearCurrentLocalFileHandle, waitForExternalFileSignal, wasOpenedWithExternalFile } from './localFileAccess.js';
 import { captureScreenFromDisplayMedia } from './viewportCapture.js';
 import { openHelp } from './helpUtils.js';
 import { openBomDialog } from './bomUtils.js';
@@ -10654,8 +10654,8 @@ function addHelpGui() {
     welcomeDialog.addEventListener('click', e => { if (e.target === welcomeDialog) welcomeDialog.close(); });
     document.body.appendChild(welcomeDialog);
     void (async () => {
-        await waitForLaunchQueueSignal();
-        if (!wasLaunchedWithFile()) {
+        await waitForExternalFileSignal();
+        if (!wasOpenedWithExternalFile()) {
             welcomeDialog.showModal();
         }
     })();
