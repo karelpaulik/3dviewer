@@ -34,5 +34,18 @@
       },
       "launch_type": "multiple-clients"
     }
-  ]
+  ],
+  "share_target": {
+    "action": "./share-glb",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "files": [
+        {
+          "name": "glb",
+          "accept": ["model/gltf-binary", ".glb", "application/octet-stream"]
+        }
+      ]
+    }
+  }
 }
