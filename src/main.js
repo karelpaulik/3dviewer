@@ -1962,27 +1962,31 @@ function init() {
                 break;
             case 'q':
             case 'Q':
-                toggleTransformSpace();
+                if (isTransformGizmoActive()) toggleTransformSpace();
                 break;
-
-
 
             case 'r':
             case 'R':
-                transformControls.setMode( 'rotate' );
-                viewProp.transformMode = 'rotate';
+                if (isTransformGizmoActive()) {
+                    transformControls.setMode( 'rotate' );
+                    viewProp.transformMode = 'rotate';
+                }
                 break;
 
             case 's':
             case 'S':
-                transformControls.setMode( 'scale' );
-                viewProp.transformMode = 'scale';
+                if (isTransformGizmoActive()) {
+                    transformControls.setMode( 'scale' );
+                    viewProp.transformMode = 'scale';
+                }
                 break;
 
             case 't':
             case 'T':
-                transformControls.setMode( 'translate' );
-                viewProp.transformMode = 'translate';
+                if (isTransformGizmoActive()) {
+                    transformControls.setMode( 'translate' );
+                    viewProp.transformMode = 'translate';
+                }
                 break;
 
             case '/':
@@ -1997,31 +2001,43 @@ function init() {
 
             case '+':
             case '=':
-                transformControls.setSize( transformControls.size + 0.1 );
+                if (isTransformGizmoActive()) {
+                    transformControls.setSize( transformControls.size + 0.1 );
+                }
                 break;
 
             case '-':
             case '_':
-                transformControls.setSize( Math.max( transformControls.size - 0.1, 0.1 ) );
+                if (isTransformGizmoActive()) {
+                    transformControls.setSize( Math.max( transformControls.size - 0.1, 0.1 ) );
+                }
                 break;
 
             case 'x':
             case 'X':
-                transformControls.showX = ! transformControls.showX;
+                if (isTransformGizmoActive()) {
+                    transformControls.showX = ! transformControls.showX;
+                }
                 break;
 
             case 'y':
             case 'Y':
-                transformControls.showY = ! transformControls.showY;
+                if (isTransformGizmoActive()) {
+                    transformControls.showY = ! transformControls.showY;
+                }
                 break;
 
             case 'z':
             case 'Z':
-                transformControls.showZ = ! transformControls.showZ;
+                if (isTransformGizmoActive()) {
+                    transformControls.showZ = ! transformControls.showZ;
+                }
                 break;
 
             case ' ':
-                transformControls.enabled = ! transformControls.enabled;
+                if (isTransformGizmoPresent()) {
+                    transformControls.enabled = ! transformControls.enabled;
+                }
                 break;
 
             case 'm':
@@ -4490,13 +4506,16 @@ function syncGroupPivotOrientation() {
     });
 }
 
-function isTransformGizmoActive() {
+function isTransformGizmoPresent() {
     if (!transformControls) return false;
     const helper = transformControls.getHelper();
     return !!transformControls.object
-        && transformControls.enabled
         && helper.visible
         && (!!lastSelectedObject || viewProp.isGroupTransformActive);
+}
+
+function isTransformGizmoActive() {
+    return isTransformGizmoPresent() && transformControls.enabled;
 }
 
 function updateTransformSpaceGizmoLabel() {
