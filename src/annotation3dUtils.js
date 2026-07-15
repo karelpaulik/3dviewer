@@ -15,9 +15,16 @@ let _previewMarker = null;
 let _previewLine = null;
 let _renderFn = null;
 let _dialogOpen = false;
+
+export function isAnnotation3dDialogOpen() {
+    return _dialogOpen;
+}
 let _pendingAddLeaderAnnotation = null;  // Annotation waiting for add-leader-line click
 let _currentCamera = null;               // Updated each frame via updateAnnotation3dOrientations()
 let _convertTo2dFn = null;               // set from main.js to avoid circular dep
+let _onSessionComplete = null;
+
+export function setAnnotation3dOnSessionComplete(fn) { _onSessionComplete = fn; }
 
 const MARKER_RADIUS = 1;
 const MARKER_PREVIEW_COLOR = 0x88ccee;
@@ -641,7 +648,9 @@ export function addAnnotation3dPoint(point, ownerObject, renderFn) {
         _hidePreview();
         if (renderFn) renderFn();
 
-        _editAnnotation(annotation, renderFn);
+        _editAnnotation(annotation, renderFn).finally(() => {
+            if (_onSessionComplete) _onSessionComplete();
+        });
     }
 }
 

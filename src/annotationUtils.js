@@ -14,8 +14,15 @@ let _previewMarker = null;  // Hover preview sphere (follows cursor)
 let _previewLine = null;    // Dashed line from pending point to cursor
 let _renderFn = null;
 let _dialogOpen = false;     // Guard flag to prevent click-through from dialog
+
+export function isAnnotationDialogOpen() {
+    return _dialogOpen;
+}
 let _pendingAddLeaderAnnotation = null; // Annotation waiting for a new leader-line anchor click
 let _convertTo3dFn = null;  // set from main.js to avoid circular dep
+let _onSessionComplete = null;
+
+export function setAnnotationOnSessionComplete(fn) { _onSessionComplete = fn; }
 
 const MARKER_RADIUS = 1;
 const MARKER_PREVIEW_COLOR = 0x88cc88;
@@ -551,7 +558,9 @@ export function addAnnotationPoint(point, ownerObject, renderFn) {
         if (renderFn) renderFn();
 
         // Open edit dialog for the newly created annotation
-        _editAnnotation(annotation, renderFn);
+        _editAnnotation(annotation, renderFn).finally(() => {
+            if (_onSessionComplete) _onSessionComplete();
+        });
     }
 }
 

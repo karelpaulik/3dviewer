@@ -9,6 +9,9 @@ import { CSS3DObject } from 'three/addons/renderers/CSS3DRenderer.js';
 // --- Private state ---
 let _scene = null;
 let _cadDim3dActive = false;
+let _onCadDim3dSessionComplete = null;
+
+export function setCadDim3dOnSessionComplete(fn) { _onCadDim3dSessionComplete = fn; }
 let _cadDim3dStep   = 0;       // 0: wait p1, 1: wait p2, 2: place dim line
 let _cadDim3dP1World = null;   // THREE.Vector3 (world space)
 let _cadDim3dP2World = null;
@@ -897,6 +900,7 @@ export function placeCadDim3d(renderFn) {
     _cadP2LastOffsetPoint3d = null;
 
     if (renderFn) renderFn();
+    if (_onCadDim3dSessionComplete) _onCadDim3dSessionComplete();
 }
 
 /** Remove all CSS3D CAD dimension measurements from the scene. */

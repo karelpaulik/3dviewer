@@ -25,12 +25,12 @@ import { updateCrossSectionLines as updateCrossSectionLinesCore, updateSectionCr
 import { exportToHTML, exportToHTMLDraco, exportToHTMLObfuscated, exportToHTMLObfuscatedDraco } from './htmlExport.js';
 import { initOutliner, toggleOutliner, rebuildTree, highlightObject as outlinerHighlight, updateVisibilityIcon, updateSelectableIcon, updateObjectLabel, isOutlinerOpen, navigateOutliner, highlightGroupObjects, clearGroupHighlights, setNavigationPosition, setOnTreeRebuild } from './sceneOutliner.js';
 import { computeModelStats } from './modelInfoUtils.js';
-import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements, isSelectDimActive, setSelectDimActive, refreshLabelEditListeners, hasSelectedDimension, deselectSelectedDimension, deleteSelectedDimension, initSelectDimension, updateSelectDimensionCamera, reconstructMeasurements, stripMeasurementVisuals, setMeasurementsVisible, setMeasurementDepthTest, removeMeasurementsForOwner, isCadDimActive, setCadDimActive, getCadDimStep, getCadDimAxis, addCadDimPoint, updateCadDimPreview, updateCadDimHoverPreview, cycleCadDimAxis, placeCadDim, clearCadDimMeasurements, removeCadDimMeasurementsForOwner, getSelectedCadDim, setCadDimLabelMode, setCadDimDragMode, selectDimTouchStart, selectDimTouchMove, selectDimTouchEnd, registerLabelForSelection, getSelectedCadDim3d, getCadDimMeasurements, deleteCadDimByRef, convertCadDim3dTo2d, getFlatDimDefaults, applyDefaultsToAllFlatDim, setDimMarkerFixedSize, setDimMarkerFixedScreenPx, setDimMarkerWorldSize, setDimMarkerColor, getDimMarkerSettings } from './measurementUtils.js';
+import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements, isSelectDimActive, setSelectDimActive, refreshLabelEditListeners, hasSelectedDimension, deselectSelectedDimension, deleteSelectedDimension, initSelectDimension, updateSelectDimensionCamera, reconstructMeasurements, stripMeasurementVisuals, setMeasurementsVisible, setMeasurementDepthTest, removeMeasurementsForOwner, isCadDimActive, setCadDimActive, getCadDimStep, getCadDimAxis, addCadDimPoint, updateCadDimPreview, updateCadDimHoverPreview, cycleCadDimAxis, placeCadDim, clearCadDimMeasurements, removeCadDimMeasurementsForOwner, getSelectedCadDim, setCadDimLabelMode, setCadDimDragMode, selectDimTouchStart, selectDimTouchMove, selectDimTouchEnd, registerLabelForSelection, getSelectedCadDim3d, getCadDimMeasurements, deleteCadDimByRef, convertCadDim3dTo2d, getFlatDimDefaults, applyDefaultsToAllFlatDim, setDimMarkerFixedSize, setDimMarkerFixedScreenPx, setDimMarkerWorldSize, setDimMarkerColor, getDimMarkerSettings, setMeasureOnSessionComplete, setAngleOnSessionComplete, setCadDimOnSessionComplete } from './measurementUtils.js';
 import { detectCircleCenterFromHit, clearCircleDetectionCache } from './circleDetectionUtils.js';
 import { removeEdgeOverlays, updateMeshEdgeOverlays, stripEdgeOverlays } from './edgeDisplayUtils.js';
-import { initAnnotations, isAnnotationActive, setAnnotationActive, addAnnotationPoint, getAnnotationPendingPoint, updateAnnotationPreview, updateAnnotationMarkerScales, setAnnotationsVisible, clearAnnotations, stripAnnotationVisuals, reconstructAnnotations, setAnnotationDepthTest, removeAnnotationsForOwner, getAnnotations, isAddLeaderLineActive, cancelAddLeaderLine, commitAddLeaderLine, deleteAnnotationByRef, setConvertTo3dFn, reconstructAnnotationFromRec, getFlatAnnDefaults, applyDefaultsToAllFlatAnnotations, setAnnMarkerFixedSize, setAnnMarkerFixedScreenPx, setAnnMarkerWorldSize, setAnnMarkerColor, getAnnMarkerSettings } from './annotationUtils.js';
-import { initAnnotations3d, isAnnotation3dActive, setAnnotation3dActive, addAnnotation3dPoint, getAnnotation3dPendingPoint, updateAnnotation3dPreview, updateAnnotation3dMarkerScales, updateAnnotation3dOrientations, setAnnotations3dVisible, clearAnnotations3d, stripAnnotation3dVisuals, reconstructAnnotations3d, setAnnotation3dDepthTest, removeAnnotations3dForOwner, isAddLeaderLine3dActive, cancelAddLeaderLine3d, commitAddLeaderLine3d, getAnnotation3dDefaults, deleteAnnotation3dByRef, setConvertTo2dFn, reconstructAnnotation3dFromRec, applyDefaultsToAllAnnotations3d, setAnn3dMarkerFixedSize, setAnn3dMarkerFixedScreenPx, setAnn3dMarkerWorldSize, setAnn3dMarkerColor } from './annotation3dUtils.js';
-import { initCadDim3d, isCadDim3dActive, getCadDim3dStep, getCadDim3dAxis, setCadDim3dActive, addCadDim3dPoint, updateCadDim3dPreview, updateCadDim3dHoverPreview, cycleCadDim3dAxis, placeCadDim3d, clearCadDim3dMeasurements, removeCadDim3dMeasurementsForOwner, setCadDim3dVisible, setCadDim3dDepthTest, updateCadDim3dOrientations, updateCadDim3dMarkerScales, reconstructCadDim3d, stripCadDim3dVisuals, setCadDim3dLabelMode, setCadDim3dDragMode, setCadDim3dOrientationMode, setCadDim3dRotate, setCadDim3dLabelScaleDialog, setCadDim3dMirrored, setCadDim3dTextColor, setCadDim3dBgColor, getCadDim3dDefaults, convertCadDimTo3d, applyDefaultsToAllCadDim3d, setCadDimMarkerFixedSize, setCadDimMarkerFixedScreenPx, setCadDimMarkerWorldSize, setCadDimMarkerColor } from './cadDim3dUtils.js';
+import { initAnnotations, isAnnotationActive, setAnnotationActive, addAnnotationPoint, getAnnotationPendingPoint, updateAnnotationPreview, updateAnnotationMarkerScales, setAnnotationsVisible, clearAnnotations, stripAnnotationVisuals, reconstructAnnotations, setAnnotationDepthTest, removeAnnotationsForOwner, getAnnotations, isAddLeaderLineActive, cancelAddLeaderLine, commitAddLeaderLine, deleteAnnotationByRef, setConvertTo3dFn, reconstructAnnotationFromRec, getFlatAnnDefaults, applyDefaultsToAllFlatAnnotations, setAnnMarkerFixedSize, setAnnMarkerFixedScreenPx, setAnnMarkerWorldSize, setAnnMarkerColor, getAnnMarkerSettings, setAnnotationOnSessionComplete, isAnnotationDialogOpen } from './annotationUtils.js';
+import { initAnnotations3d, isAnnotation3dActive, setAnnotation3dActive, addAnnotation3dPoint, getAnnotation3dPendingPoint, updateAnnotation3dPreview, updateAnnotation3dMarkerScales, updateAnnotation3dOrientations, setAnnotations3dVisible, clearAnnotations3d, stripAnnotation3dVisuals, reconstructAnnotations3d, setAnnotation3dDepthTest, removeAnnotations3dForOwner, isAddLeaderLine3dActive, cancelAddLeaderLine3d, commitAddLeaderLine3d, getAnnotation3dDefaults, deleteAnnotation3dByRef, setConvertTo2dFn, reconstructAnnotation3dFromRec, applyDefaultsToAllAnnotations3d, setAnn3dMarkerFixedSize, setAnn3dMarkerFixedScreenPx, setAnn3dMarkerWorldSize, setAnn3dMarkerColor, setAnnotation3dOnSessionComplete, isAnnotation3dDialogOpen } from './annotation3dUtils.js';
+import { initCadDim3d, isCadDim3dActive, getCadDim3dStep, getCadDim3dAxis, setCadDim3dActive, addCadDim3dPoint, updateCadDim3dPreview, updateCadDim3dHoverPreview, cycleCadDim3dAxis, placeCadDim3d, clearCadDim3dMeasurements, removeCadDim3dMeasurementsForOwner, setCadDim3dVisible, setCadDim3dDepthTest, updateCadDim3dOrientations, updateCadDim3dMarkerScales, reconstructCadDim3d, stripCadDim3dVisuals, setCadDim3dLabelMode, setCadDim3dDragMode, setCadDim3dOrientationMode, setCadDim3dRotate, setCadDim3dLabelScaleDialog, setCadDim3dMirrored, setCadDim3dTextColor, setCadDim3dBgColor, getCadDim3dDefaults, convertCadDimTo3d, applyDefaultsToAllCadDim3d, setCadDimMarkerFixedSize, setCadDimMarkerFixedScreenPx, setCadDimMarkerWorldSize, setCadDimMarkerColor, setCadDim3dOnSessionComplete } from './cadDim3dUtils.js';
 import { computeSolidSection, clearSolidSection } from './solidSectionUtils.js';
 import { initDocumentsGui, importDocumentsFromGltfScene, getDocumentsStore, flushDocumentEdits, isDocOverlayBlockingInput, isDocumentEditorOpen, setDocLabelOptions, clearDocumentsStore } from './documentsUtils.js';
 import { isImageEditorOpen } from './imageEditorUtils.js';
@@ -163,6 +163,14 @@ import {
     clientDragToScreenRect,
     createBoxSelectOverlay,
 } from './boxSelectionUtils.js';
+import {
+    initToolsPanel,
+    setInteractionMode,
+    syncToolsPanelUI,
+    getActiveInteractionMode,
+    finishToolSession,
+    MODE_LABELS,
+} from './toolsPanelUtils.js';
 
 // Proměnné globálního rozsahu----------------------------------------------------------------------------------------
 let container, stats;
@@ -265,60 +273,13 @@ document.body.appendChild(statusBar);
 const statusModeLabelEl = document.createElement('span');
 statusModeLabelEl.className = 'status-label';
 statusModeLabelEl.textContent = 'Mode:';
-const statusModeEl = document.createElement('select');
-statusModeEl.className = 'status-select mode-navigate';
-[
-    ['navigate',     'Navigate'],
-    ['measure',      'Add Measure'],
-    ['angle',        'Add Measure Angle'],
-    ['cadDim',       'Add Dim (Flat)'],
-    ['cadDim3d',     'Add Dim (3D)'],
-    ['annotation',   'Add Annotation (Flat)'],
-    ['annotation3d', 'Add Annotation (3D)'],
-    ['assemblyEdit', 'Assembly Edit'],
-].forEach(([val, label]) => {
-    const opt = document.createElement('option');
-    opt.value = val;
-    opt.textContent = label;
-    if (val === 'assemblyEdit') opt.disabled = true;
-    statusModeEl.appendChild(opt);
-});
-statusModeEl.addEventListener('change', function() {
-    const val = this.value;
-    if (viewProp.measureMode)         { viewProp.measureMode = false;         setMeasureActive(false); }
-    if (viewProp.angleMode)           { viewProp.angleMode = false;           setAngleActive(false); }
-    if (viewProp.cadDimMode)          { viewProp.cadDimMode = false;          setCadDimActive(false);   orbitControls.enabled = true; _updateCadDimHintUI(); }
-    if (viewProp.cadDim3dMode)        { viewProp.cadDim3dMode = false;        setCadDim3dActive(false); orbitControls.enabled = true; _updateCadDim3dHintUI(); }
-    if (viewProp.annotationMode)      { viewProp.annotationMode = false;      setAnnotationActive(false); }
-    if (viewProp.annotation3dMode)    { viewProp.annotation3dMode = false;    setAnnotation3dActive(false); }
-    viewProp.isSelectAllowed = true;
-    switch (val) {
-        case 'measure':      viewProp.measureMode = true;         setMeasureActive(true);     viewProp.isSelectAllowed = false; break;
-        case 'angle':        viewProp.angleMode = true;           setAngleActive(true);        viewProp.isSelectAllowed = false; break;
-        case 'cadDim':       viewProp.cadDimMode = true;          setCadDimActive(true);       viewProp.isSelectAllowed = false; break;
-        case 'cadDim3d':     viewProp.cadDim3dMode = true;        setCadDim3dActive(true);     viewProp.isSelectAllowed = false; break;
-        case 'annotation':   viewProp.annotationMode = true;      setAnnotationActive(true);   viewProp.isSelectAllowed = false; break;
-        case 'annotation3d': viewProp.annotation3dMode = true;    setAnnotation3dActive(true); viewProp.isSelectAllowed = false; break;
-    }
-    const _circleDetectModes = ['measure', 'angle', 'cadDim', 'cadDim3d'];
-    statusCircleDetectEl.style.display = _circleDetectModes.includes(val) ? '' : 'none';
-    _syncModeBtns();
-    _syncLabelEditState();
-    _modeIndicatorCache = '';
-    render();
-});
-// Detect circle center toggle (shown only for measure/angle/cadDim/cadDim3d modes)
-const statusCircleDetectEl = document.createElement('label');
-statusCircleDetectEl.id = 'circle-detect-btn';
-statusCircleDetectEl.className = 'status-circle-detect';
-statusCircleDetectEl.style.display = 'none';
-const statusCircleDetectCb = document.createElement('input');
-statusCircleDetectCb.type = 'checkbox';
-statusCircleDetectCb.addEventListener('change', function() {
-    viewProp.detectCircleCenter = this.checked;
-});
-statusCircleDetectEl.appendChild(statusCircleDetectCb);
-statusCircleDetectEl.appendChild(document.createTextNode('Detect circle center'));
+const statusModeDisplayEl = document.createElement('button');
+statusModeDisplayEl.type = 'button';
+statusModeDisplayEl.id = 'status-mode-display';
+statusModeDisplayEl.className = 'status-mode-display mode-navigate';
+statusModeDisplayEl.textContent = MODE_LABELS.navigate;
+statusModeDisplayEl.title = 'Open Tools panel';
+statusModeDisplayEl.addEventListener('click', () => showGuiPanel('Tools'));
 const statusSepEl = document.createElement('span');
 statusSepEl.className = 'status-sep';
 statusSepEl.textContent = '|';
@@ -359,7 +320,7 @@ statusDeviationProbeEl.id = 'status-deviation-probe';
 statusDeviationProbeEl.className = 'status-deviation-probe';
 const _statusLeft = statusBar.querySelector('.status-left');
 _statusLeft.appendChild(statusModeLabelEl);
-_statusLeft.appendChild(statusModeEl);
+_statusLeft.appendChild(statusModeDisplayEl);
 _statusLeft.appendChild(statusSepEl);
 _statusLeft.appendChild(statusSelLabelEl);
 _statusLeft.appendChild(statusSelEl);
@@ -488,8 +449,6 @@ crossSectionLinesBtn.addEventListener('click', () => {
 });
 document.body.appendChild(crossSectionLinesBtn);
 
-document.body.appendChild(statusCircleDetectEl);
-
 // ViewHelper overlay – fixed bottom-right, above GUI panels
 const viewHelperContainer = document.createElement('div');
 viewHelperContainer.id = 'view-gizmo';
@@ -497,7 +456,7 @@ document.body.appendChild(viewHelperContainer);
 
 // Wrapper reference for hit-testing (toolbar + panels + outliner)
 let outlinerPanelEl = null;
-const guiWrapper = { contains(el) { return guiToolbar.contains(el) || Object.values(guiPanels).some(p => p.gui && p.gui.domElement.style.display !== 'none' && p.gui.domElement.contains(el)) || (outlinerPanelEl && outlinerPanelEl.contains(el)) || statusBar.contains(el) || statusCircleDetectEl.contains(el) || fsBtn.contains(el) || sectionBtn.contains(el) || solidSectionBtn.contains(el) || showSectionMeshBtn.contains(el) || crossSectionLinesBtn.contains(el) || viewHelperContainer.contains(el) || (_deviationLegendEl && _deviationLegendEl.contains(el)); } };
+const guiWrapper = { contains(el) { return guiToolbar.contains(el) || Object.values(guiPanels).some(p => p.gui && p.gui.domElement.style.display !== 'none' && p.gui.domElement.contains(el)) || (outlinerPanelEl && outlinerPanelEl.contains(el)) || statusBar.contains(el) || fsBtn.contains(el) || sectionBtn.contains(el) || solidSectionBtn.contains(el) || showSectionMeshBtn.contains(el) || crossSectionLinesBtn.contains(el) || viewHelperContainer.contains(el) || (_deviationLegendEl && _deviationLegendEl.contains(el)); } };
 
 let guiView = null;
 let guiAssembly = null;
@@ -505,6 +464,7 @@ let guiAssembly = null;
 // --- Toolbar panel switching ---
 const guiPanels = {};   // { name: { gui, btn } }
 let activePanel = null; // currently visible panel name (excludes 'Selected')
+let toolsDeps = null;
 
 // Outliner toggle button (left-aligned in toolbar)
 const outlinerBtn = document.createElement('button');
@@ -525,7 +485,7 @@ fileNameInput.title = 'File name (default name for export)';
 guiToolbar.insertBefore(fileNameInput, outlinerBtn.nextSibling);
 
 // Pre-create all toolbar buttons in desired order: Selected, File, Edit, View, Tools, Assembly, Docs, Help
-['Selected', 'File', 'Edit', 'View', 'Assembly', 'Docs', 'Files', 'Call', 'Help'].forEach(name => {
+['Selected', 'File', 'Edit', 'View', 'Tools', 'Assembly', 'Docs', 'Files', 'Call', 'Help'].forEach(name => {
     const btn = document.createElement('button');
     btn.className = 'gui-toolbar-btn';
     btn.textContent = name;
@@ -561,32 +521,67 @@ function _updateCadDimHintUI(overrideAxis) {
     }
 }
 
-// --- Mode toggle button controllers (Tools panel) ---
-const _modeBtnCtrls = {};
-function _syncModeBtns() {
-    const entries = [
-        ['measure',      'measureMode'],
-        ['angle',        'angleMode'],
-        ['cadDim',       'cadDimMode'],
-        ['cadDim3d',     'cadDim3dMode'],
-        ['annotation',   'annotationMode'],
-        ['annotation3d', 'annotation3dMode'],
-    ];
-    for (const [key, prop] of entries) {
-        const ctrl = _modeBtnCtrls[key];
-        if (!ctrl) continue;
-        if (viewProp[prop]) {
-            ctrl.domElement.classList.add('mode-active');
-        } else {
-            ctrl.domElement.classList.remove('mode-active');
-        }
-    }
-}
-
 function _isAddAnnotationModeActive() {
     return viewProp.measureMode || viewProp.angleMode
         || viewProp.cadDimMode || viewProp.cadDim3dMode
         || viewProp.annotationMode || viewProp.annotation3dMode;
+}
+
+function _escapeKeyMatches(event) {
+    return event.key === 'Escape' || event.code === 'Escape';
+}
+
+function _shouldSkipGlobalEscape(event) {
+    if (isAnnotationDialogOpen() || isAnnotation3dDialogOpen()) return true;
+    if (isDocumentEditorOpen() || isImageEditorOpen()) return true;
+    const t = event.target;
+    if (!t || typeof t !== 'object') return false;
+    if (t.tagName === 'TEXTAREA' || t.isContentEditable) return true;
+    const root = t.getRootNode?.();
+    if (root instanceof ShadowRoot) return true;
+    return false;
+}
+
+function _handleEscapeKey() {
+    if (_isAddAnnotationModeActive()) {
+        setInteractionMode('navigate', toolsDeps);
+    }
+    if (faceSnapMode) {
+        cancelFaceSnapMode();
+    }
+    if (ptpSnapMode) {
+        cancelPtpSnapMode();
+    }
+    if (booleanMode) {
+        cancelBooleanMode();
+    }
+    if (deviationComputeAbortController) {
+        cancelDeviationMapCompute();
+    } else if (deviationMapMode) {
+        cancelDeviationMapMode();
+    }
+    if (deviationProbeMode) {
+        cancelDeviationProbeMode();
+    }
+    _syncLabelEditState();
+    syncToolsPanelUI(toolsDeps);
+    cancelAddLeaderLine();
+    cancelAddLeaderLine3d();
+    render();
+    deselectSelectedDimension();
+    deselectObject();
+    selectionHistory.length = 0;
+    clearHistoryPreviewHelpers();
+    if (selectedObjects.length > 0) {
+        addCurrentGroupToHistory();
+        clearMultiSelect();
+    }
+}
+
+function focusViewport() {
+    if (container && typeof container.focus === 'function') {
+        container.focus({ preventScroll: true });
+    }
 }
 
 function _syncLabelEditState() {
@@ -1149,6 +1144,7 @@ const viewProp = {
     annotation3dMode: false, // CSS3D annotation (note) mode
     showAnnotations: true, // Toggle visibility of all annotations
     showBehindModel: false, // Zobrazit kóty/poznámky i za modelem (depthTest off)
+    repeatTool: false, // Po dokončení nástroje znovu aktivovat stejný nástroj
     xrayOnSelect: false, // X-ray efekt při výběru objektu (depthTest off)
     orientedSelectionBox: 'local',
     splitLoosePartsToleranceMode: 'auto', // 'auto' | 'manual'
@@ -1646,6 +1642,7 @@ function init() {
     //container
     container = document.createElement( 'div' );
     container.id = 'viewer-container';
+    container.tabIndex = -1;
     document.body.appendChild( container );
 
     //renderer
@@ -1910,6 +1907,11 @@ function init() {
     window.addEventListener( 'touchstart', onTouchStart, { passive: false } );
     window.addEventListener( 'touchmove', onTouchMove, { passive: false } );
     window.addEventListener( 'touchend', onTouchEnd, { passive: false } );
+
+    document.addEventListener('keydown', function (event) {
+        if (!_escapeKeyMatches(event) || _shouldSkipGlobalEscape(event)) return;
+        _handleEscapeKey();
+    }, true);
     
     window.addEventListener( 'keydown', function ( event ) {
         const tag = event.target.tagName;
@@ -1949,84 +1951,6 @@ function init() {
         }
 
         switch ( event.key ) {
-            case 'Escape':
-                if (viewProp.measureMode) {
-                    viewProp.measureMode = false;
-                    setMeasureActive(false);
-                    viewProp.isSelectAllowed = true;
-                    render();
-                }
-                if (viewProp.angleMode) {
-                    viewProp.angleMode = false;
-                    setAngleActive(false);
-                    viewProp.isSelectAllowed = true;
-                    render();
-                }
-                if (viewProp.cadDimMode) {
-                    viewProp.cadDimMode = false;
-                    setCadDimActive(false);
-                    orbitControls.enabled = true;
-                    viewProp.isSelectAllowed = true;
-                    _updateCadDimHintUI();
-                    render();
-                }
-                if (viewProp.cadDim3dMode) {
-                    viewProp.cadDim3dMode = false;
-                    setCadDim3dActive(false);
-                    orbitControls.enabled = true;
-                    viewProp.isSelectAllowed = true;
-                    _updateCadDim3dHintUI();
-                    render();
-                }
-                if (viewProp.annotationMode) {
-                    viewProp.annotationMode = false;
-                    setAnnotationActive(false);
-                    viewProp.isSelectAllowed = true;
-                    render();
-                }
-                if (viewProp.annotation3dMode) {
-                    viewProp.annotation3dMode = false;
-                    setAnnotation3dActive(false);
-                    viewProp.isSelectAllowed = true;
-                    render();
-                }
-                if (faceSnapMode) {
-                    cancelFaceSnapMode();
-                }
-                if (ptpSnapMode) {
-                    cancelPtpSnapMode();
-                }
-                if (booleanMode) {
-                    cancelBooleanMode();
-                }
-                if (deviationComputeAbortController) {
-                    cancelDeviationMapCompute();
-                } else if (deviationMapMode) {
-                    cancelDeviationMapMode();
-                }
-                if (deviationProbeMode) {
-                    cancelDeviationProbeMode();
-                }
-                _syncLabelEditState();
-                _syncModeBtns();
-                statusCircleDetectEl.style.display = 'none';
-                cancelAddLeaderLine();
-                cancelAddLeaderLine3d();
-                render();
-                if (viewProp.detectCircleCenter) {
-                    viewProp.detectCircleCenter = false;
-                    statusCircleDetectCb.checked = false;
-                    render();
-                }
-                deselectSelectedDimension();
-                deselectObject();
-                selectionHistory.length = 0;
-                clearHistoryPreviewHelpers();
-                if (selectedObjects.length > 0) {
-                    addCurrentGroupToHistory();
-                    clearMultiSelect();
-                }
-                break;
             case 'Delete':
                 if (isSelectDimActive() && hasSelectedDimension()) {
                     deleteSelectedDimension(render);
@@ -2195,6 +2119,7 @@ function init() {
     } );
 
     addMainGui();
+    addToolsGui();
     addAssemblyGui();
     addDocumentsGui();
     addAttachmentsGui();
@@ -2480,23 +2405,6 @@ function addMainGui() {
         folderProp.add(viewProp, 'orientedSelectionBox', ['local', 'world']).name('Selection box').onChange(function(){ render(); }).listen();
         folderProp.addColor(viewProp, 'backgroundColor').name('Background').onChange(function(value){ scene.background = new THREE.Color(value); render(); });
         folderProp.add(viewProp, 'perspCam').name('Persp. camera').onChange(function(value){setCamera(); render(); });
-        folderProp.add(viewProp, 'showMeasurements').name('Show measurements').onChange(function(value) {
-            setMeasurementsVisible(value);
-            setCadDim3dVisible(value);
-            render();
-        });
-        folderProp.add(viewProp, 'showAnnotations').name('Show annotations').onChange(function(value) {
-            setAnnotationsVisible(value);
-            setAnnotations3dVisible(value);
-            render();
-        });
-        folderProp.add(viewProp, 'showBehindModel').name('Show behind model').onChange(function(value) {
-            setMeasurementDepthTest(!value);
-            setAnnotationDepthTest(!value);
-            setAnnotation3dDepthTest(!value);
-            setCadDim3dDepthTest(!value);
-            render();
-        });
         folderProp.add(viewProp, 'showSharpEdges').name('Sharp edges').onChange(function() {
             updateEdgeOverlays();
         }).listen();
@@ -2583,134 +2491,6 @@ function addMainGui() {
                     applyToolbarPreferences();
                 } }, 'fn').name('Set to default');
                 toolbarPrefFolder.close();
-            const _rotOpts = { '0°': 0, '90°': Math.PI / 2, '180°': Math.PI, '270°': 3 * Math.PI / 2 };
-            const _orientOpts = { 'Face camera': 'camera', 'XY plane': 'XY', 'XZ plane': 'XZ', 'YZ plane': 'YZ' };
-            const dimensionFolder = preferencesFolder.addFolder('Dimension');
-                const flatDimDefaultsFolder = dimensionFolder.addFolder('Dimension (Flat) defaults');
-                    const _flatDimDef = getFlatDimDefaults();
-                    flatDimDefaultsFolder.add(_flatDimDef, 'fontSize', 8, 24, 1).name('Size').listen();
-                    flatDimDefaultsFolder.addColor(_flatDimDef, 'textColor').name('Text color').listen();
-                    flatDimDefaultsFolder.addColor(_flatDimDef, 'bgColor').name('Background').listen();
-                    flatDimDefaultsFolder.add({ fn() { applyDefaultsToAllFlatDim(render); } }, 'fn').name('Apply to all existing');
-                    flatDimDefaultsFolder.close();
-                const cadDim3dDefaultsFolder = dimensionFolder.addFolder('Dimension (3D) defaults');
-                    const _cadDim3dDef = getCadDim3dDefaults();
-                    cadDim3dDefaultsFolder.add(_cadDim3dDef, 'labelScale', 0.01, 100, 0.01).name('Size').listen();
-                    cadDim3dDefaultsFolder.add(_cadDim3dDef, 'rotationCamera', _rotOpts).name('Rotation (Face camera)').listen();
-                    cadDim3dDefaultsFolder.add(_cadDim3dDef, 'rotationXY',     _rotOpts).name('Rotation (XY plane)').listen();
-                    cadDim3dDefaultsFolder.add(_cadDim3dDef, 'rotationXZ',     _rotOpts).name('Rotation (XZ plane)').listen();
-                    cadDim3dDefaultsFolder.add(_cadDim3dDef, 'rotationYZ',     _rotOpts).name('Rotation (YZ plane)').listen();
-                    cadDim3dDefaultsFolder.add(_cadDim3dDef, 'orientationMode', _orientOpts).name('Orientation').listen();
-                    cadDim3dDefaultsFolder.addColor(_cadDim3dDef, 'textColor').name('Text color').listen();
-                    cadDim3dDefaultsFolder.addColor(_cadDim3dDef, 'bgColor').name('Background').listen();
-                    cadDim3dDefaultsFolder.add({ fn() { applyDefaultsToAllCadDim3d(render); } }, 'fn').name('Apply to all existing');
-                    cadDim3dDefaultsFolder.close();
-                const dimMarkersFolder = dimensionFolder.addFolder('Dimension markers defaults');
-                    const _dimMarkerOpts = getDimMarkerSettings();
-                    // Sync cadDim3d to current settings (avoid mismatch between modules on first use)
-                    setCadDimMarkerFixedSize(_dimMarkerOpts.fixedSize);
-                    setCadDimMarkerFixedScreenPx(_dimMarkerOpts.fixedScreenPx);
-                    setCadDimMarkerWorldSize(_dimMarkerOpts.worldSize);
-                    setCadDimMarkerColor(_dimMarkerOpts.markerColor);
-                    dimMarkersFolder.add(_dimMarkerOpts, 'fixedSize').name('Fixed size').onChange(v => {
-                        setDimMarkerFixedSize(v);
-                        setCadDimMarkerFixedSize(v);
-                        render();
-                    }).listen();
-                    dimMarkersFolder.add(_dimMarkerOpts, 'fixedScreenPx', 1, 30, 0.5).name('Size – fixed (px)').onChange(v => {
-                        setDimMarkerFixedScreenPx(v);
-                        setCadDimMarkerFixedScreenPx(v);
-                        render();
-                    }).listen();
-                    dimMarkersFolder.add(_dimMarkerOpts, 'worldSize', 0.01, 100, 0.01).name('Size – free (world)').onChange(v => {
-                        setDimMarkerWorldSize(v);
-                        setCadDimMarkerWorldSize(v);
-                        render();
-                    }).listen();
-                    dimMarkersFolder.addColor(_dimMarkerOpts, 'markerColor').name('Color').onChange(v => {
-                        setDimMarkerColor(v);
-                        setCadDimMarkerColor(v);
-                        render();
-                    }).listen();
-                    dimMarkersFolder.close();
-                dimensionFolder.add({ fn() {
-                    Object.assign(_flatDimDef, { textColor: '#ffffff', bgColor: '#1976d2', fontSize: 11 });
-                    Object.assign(_cadDim3dDef, { labelScale: 5, rotationCamera: 0, rotationXY: 0, rotationXZ: 0, rotationYZ: 0, orientationMode: 'camera', textColor: '#ffffff', bgColor: '#1976d2' });
-                    Object.assign(_dimMarkerOpts, { fixedSize: false, fixedScreenPx: 3, worldSize: 5, markerColor: '#22aacc' });
-                    setDimMarkerFixedSize(_dimMarkerOpts.fixedSize);     setCadDimMarkerFixedSize(_dimMarkerOpts.fixedSize);
-                    setDimMarkerFixedScreenPx(_dimMarkerOpts.fixedScreenPx); setCadDimMarkerFixedScreenPx(_dimMarkerOpts.fixedScreenPx);
-                    setDimMarkerWorldSize(_dimMarkerOpts.worldSize);     setCadDimMarkerWorldSize(_dimMarkerOpts.worldSize);
-                    setDimMarkerColor(_dimMarkerOpts.markerColor);       setCadDimMarkerColor(_dimMarkerOpts.markerColor);
-                    render();
-                } }, 'fn').name('Set to default');
-                dimensionFolder.add({ fn() {
-                    applyDefaultsToAllFlatDim(render);
-                    applyDefaultsToAllCadDim3d(render);
-                } }, 'fn').name('Apply to existing');
-                dimensionFolder.close();
-            const annotationFolder = preferencesFolder.addFolder('Annotation');
-                const flatAnnDefaultsFolder = annotationFolder.addFolder('Annotation (Flat) defaults');
-                    const _flatAnnDef = getFlatAnnDefaults();
-                    flatAnnDefaultsFolder.add(_flatAnnDef, 'fontSize', 8, 24, 1).name('Size').listen();
-                    flatAnnDefaultsFolder.addColor(_flatAnnDef, 'textColor').name('Text color').listen();
-                    flatAnnDefaultsFolder.addColor(_flatAnnDef, 'bgColor').name('Background').listen();
-                    flatAnnDefaultsFolder.add({ fn() { applyDefaultsToAllFlatAnnotations(render); } }, 'fn').name('Apply to all existing');
-                    flatAnnDefaultsFolder.close();
-                const ann3dDefaultsFolder = annotationFolder.addFolder('Annotation (3D) defaults');
-                    const _ann3dDef = getAnnotation3dDefaults();
-                    ann3dDefaultsFolder.add(_ann3dDef, 'labelScale', 0.01, 100, 0.01).name('Size').listen();
-                    ann3dDefaultsFolder.add(_ann3dDef, 'rotationCamera', _rotOpts).name('Rotation (Face camera)').listen();
-                    ann3dDefaultsFolder.add(_ann3dDef, 'rotationXY',     _rotOpts).name('Rotation (XY plane)').listen();
-                    ann3dDefaultsFolder.add(_ann3dDef, 'rotationXZ',     _rotOpts).name('Rotation (XZ plane)').listen();
-                    ann3dDefaultsFolder.add(_ann3dDef, 'rotationYZ',     _rotOpts).name('Rotation (YZ plane)').listen();
-                    ann3dDefaultsFolder.add(_ann3dDef, 'orientationMode', _orientOpts).name('Orientation').listen();
-                    ann3dDefaultsFolder.addColor(_ann3dDef, 'textColor').name('Text color').listen();
-                    ann3dDefaultsFolder.addColor(_ann3dDef, 'bgColor').name('Background').listen();
-                    ann3dDefaultsFolder.add({ fn() { applyDefaultsToAllAnnotations3d(render); } }, 'fn').name('Apply to all existing');
-                    ann3dDefaultsFolder.close();
-                const annMarkersFolder = annotationFolder.addFolder('Annotation markers defaults');
-                    const _annMarkerOpts = getAnnMarkerSettings();
-                    // Sync annotation3d to current settings (avoid mismatch between modules on first use)
-                    setAnn3dMarkerFixedSize(_annMarkerOpts.fixedSize);
-                    setAnn3dMarkerFixedScreenPx(_annMarkerOpts.fixedScreenPx);
-                    setAnn3dMarkerWorldSize(_annMarkerOpts.worldSize);
-                    setAnn3dMarkerColor(_annMarkerOpts.markerColor);
-                    annMarkersFolder.add(_annMarkerOpts, 'fixedSize').name('Fixed size').onChange(v => {
-                        setAnnMarkerFixedSize(v);
-                        setAnn3dMarkerFixedSize(v);
-                        render();
-                    }).listen();
-                    annMarkersFolder.add(_annMarkerOpts, 'fixedScreenPx', 1, 30, 0.5).name('Size \u2013 fixed (px)').onChange(v => {
-                        setAnnMarkerFixedScreenPx(v);
-                        setAnn3dMarkerFixedScreenPx(v);
-                        render();
-                    }).listen();
-                    annMarkersFolder.add(_annMarkerOpts, 'worldSize', 0.01, 100, 0.01).name('Size \u2013 free (world)').onChange(v => {
-                        setAnnMarkerWorldSize(v);
-                        setAnn3dMarkerWorldSize(v);
-                        render();
-                    }).listen();
-                    annMarkersFolder.addColor(_annMarkerOpts, 'markerColor').name('Color').onChange(v => {
-                        setAnnMarkerColor(v);
-                        setAnn3dMarkerColor(v);
-                        render();
-                    }).listen();
-                    annMarkersFolder.close();
-                annotationFolder.add({ fn() {
-                    Object.assign(_flatAnnDef, { textColor: '#ffffff', bgColor: '#388e3c', fontSize: 11 });
-                    Object.assign(_ann3dDef, { labelScale: 5, rotationCamera: 0, rotationXY: 0, rotationXZ: 0, rotationYZ: 0, orientationMode: 'camera', textColor: '#ffffff', bgColor: '#388e3c' });
-                    Object.assign(_annMarkerOpts, { fixedSize: false, fixedScreenPx: 3, worldSize: 5, markerColor: '#44aa44' });
-                    setAnnMarkerFixedSize(_annMarkerOpts.fixedSize);     setAnn3dMarkerFixedSize(_annMarkerOpts.fixedSize);
-                    setAnnMarkerFixedScreenPx(_annMarkerOpts.fixedScreenPx); setAnn3dMarkerFixedScreenPx(_annMarkerOpts.fixedScreenPx);
-                    setAnnMarkerWorldSize(_annMarkerOpts.worldSize);     setAnn3dMarkerWorldSize(_annMarkerOpts.worldSize);
-                    setAnnMarkerColor(_annMarkerOpts.markerColor);       setAnn3dMarkerColor(_annMarkerOpts.markerColor);
-                    render();
-                } }, 'fn').name('Set to default');
-                annotationFolder.add({ fn() {
-                    applyDefaultsToAllFlatAnnotations(render);
-                    applyDefaultsToAllAnnotations3d(render);
-                } }, 'fn').name('Apply to existing');
-                annotationFolder.close();
             const docNameFolder = preferencesFolder.addFolder('Document name');
                 const _docLabelOpts = { showLastEditDate: true, showImportDate: false };
                 docNameFolder.add(_docLabelOpts, 'showLastEditDate').name('Show last edit date').onChange(v => setDocLabelOptions({ showLastEditDate: v }));
@@ -2851,16 +2631,6 @@ function addMainGui() {
             updateObjectLabel(obj);
         });
     } }, 'fn').name('Capitalize first letter');
-    editGui.add({ fn() {
-        if (!confirm('Clear all measurements/dimensions?')) return;
-        clearMeasurements(render);
-        clearCadDim3dMeasurements(render);
-    } }, 'fn').name('Clear measurements');
-    editGui.add({ fn() {
-        if (!confirm('Clear all annotations?')) return;
-        clearAnnotations(render);
-        clearAnnotations3d(render);
-    } }, 'fn').name('Clear annotations');
     editGui.add(viewProp, 'transformSpace').name('Transform: World space').onChange(function(value) {
         setTransformSpace(value);
     }).listen();
@@ -3318,6 +3088,77 @@ function addMainGui() {
             snapSlidersFolder.close();
             snapFolder.close();
     registerGuiPanel('Edit', editGui);
+}
+
+function addToolsGui() {
+    toolsDeps = {
+        viewProp,
+        assemblyState,
+        render,
+        orbitControls,
+        focusViewport,
+        setMeasureActive,
+        setAngleActive,
+        setCadDimActive,
+        setCadDim3dActive,
+        setAnnotationActive,
+        setAnnotation3dActive,
+        setMeasurementsVisible,
+        setCadDim3dVisible,
+        setAnnotationsVisible,
+        setAnnotations3dVisible,
+        setMeasurementDepthTest,
+        setAnnotationDepthTest,
+        setAnnotation3dDepthTest,
+        setCadDim3dDepthTest,
+        clearMeasurements,
+        clearAngleMeasurements,
+        clearCadDimMeasurements,
+        clearCadDim3dMeasurements,
+        clearAnnotations,
+        clearAnnotations3d,
+        getFlatDimDefaults,
+        getCadDim3dDefaults,
+        getDimMarkerSettings,
+        getFlatAnnDefaults,
+        getAnnotation3dDefaults,
+        getAnnMarkerSettings,
+        applyDefaultsToAllFlatDim,
+        applyDefaultsToAllCadDim3d,
+        applyDefaultsToAllFlatAnnotations,
+        applyDefaultsToAllAnnotations3d,
+        setDimMarkerFixedSize,
+        setDimMarkerFixedScreenPx,
+        setDimMarkerWorldSize,
+        setDimMarkerColor,
+        setCadDimMarkerFixedSize,
+        setCadDimMarkerFixedScreenPx,
+        setCadDimMarkerWorldSize,
+        setCadDimMarkerColor,
+        setAnnMarkerFixedSize,
+        setAnnMarkerFixedScreenPx,
+        setAnnMarkerWorldSize,
+        setAnnMarkerColor,
+        setAnn3dMarkerFixedSize,
+        setAnn3dMarkerFixedScreenPx,
+        setAnn3dMarkerWorldSize,
+        setAnn3dMarkerColor,
+        syncLabelEditState: _syncLabelEditState,
+        updateCadDimHintUI: _updateCadDimHintUI,
+        updateCadDim3dHintUI: _updateCadDim3dHintUI,
+        invalidateModeIndicatorCache: () => { _modeIndicatorCache = ''; },
+        isPtpSnapActive: () => ptpSnapMode,
+    };
+    const toolsGui = initToolsPanel(guiContainer, toolsDeps);
+    registerGuiPanel('Tools', toolsGui);
+
+    const onToolComplete = (toolId) => () => finishToolSession(toolsDeps, toolId);
+    setMeasureOnSessionComplete(onToolComplete('measure'));
+    setAngleOnSessionComplete(onToolComplete('angle'));
+    setCadDimOnSessionComplete(onToolComplete('cadDim'));
+    setCadDim3dOnSessionComplete(onToolComplete('cadDim3d'));
+    setAnnotationOnSessionComplete(onToolComplete('annotation'));
+    setAnnotation3dOnSessionComplete(onToolComplete('annotation3d'));
 }
 
 /** Update part.worldPos from the TransformControl gizmo (singleSelectPivot) world position. */
@@ -7140,18 +6981,10 @@ var _modeIndicatorCache = '';
 function updateModeIndicator() {
     const vp = viewProp;
 
-    // --- Mode ---
-    let modeVal, modeCls;
-    if (assemblyState.editMode)      { modeVal = 'assemblyEdit'; modeCls = 'mode-assembly'; }
-    else if (vp.measureMode)         { modeVal = 'measure';      modeCls = 'mode-active'; }
-    else if (vp.angleMode)           { modeVal = 'angle';        modeCls = 'mode-active'; }
-    else if (vp.cadDimMode)          { modeVal = 'cadDim';       modeCls = 'mode-active'; }
-    else if (vp.cadDim3dMode)        { modeVal = 'cadDim3d';     modeCls = 'mode-active'; }
-    else if (vp.annotationMode)      { modeVal = 'annotation';   modeCls = 'mode-active'; }
-    else if (vp.annotation3dMode)    { modeVal = 'annotation3d'; modeCls = 'mode-active'; }
-    else                             { modeVal = 'navigate';     modeCls = 'mode-navigate'; }
+    const modeVal = getActiveInteractionMode({ viewProp: vp, assemblyState });
+    const modeCls = modeVal === 'assemblyEdit' ? 'mode-assembly'
+        : (modeVal === 'navigate' ? 'mode-navigate' : 'mode-active');
 
-    // --- Selection ---
     let selVal, selCls;
     if (!vp.isSelectAllowed)             { selVal = 'none';     selCls = 'mode-noselect'; }
     else if (vp.cadSelection === 'Detailed') { selVal = 'detailed'; selCls = 'mode-select'; }
@@ -7161,11 +6994,12 @@ function updateModeIndicator() {
     if (key === _modeIndicatorCache) return;
     _modeIndicatorCache = key;
 
-    statusModeEl.value = modeVal;
-    statusModeEl.className = 'status-select ' + modeCls;
-    statusModeEl.disabled = assemblyState.editMode;
+    statusModeDisplayEl.textContent = MODE_LABELS[modeVal] ?? modeVal;
+    statusModeDisplayEl.className = 'status-mode-display ' + modeCls;
+    statusModeDisplayEl.disabled = assemblyState.editMode;
     statusSelEl.value = selVal;
     statusSelEl.className = 'status-select ' + selCls;
+    syncToolsPanelUI(toolsDeps);
 }
 
 function render() {   
@@ -7532,6 +7366,10 @@ function onMouseDown( event ) {
     mouseDownPos.y = event.clientY;
     isMouseDown = true;
 
+    if (!isMouseOnGUI(event)) {
+        focusViewport();
+    }
+
     const wantBoxSelect = event.button === 0
         && (event.shiftKey || boxSelectArmed)
         && isBoxSelectAllowed()
@@ -7645,7 +7483,7 @@ function startPtpSnapMode() {
     ptpSnapSourcePoint = null;
     ptpSnapSourceObject = null;
     clearPtpSnapDot();
-    statusCircleDetectEl.style.display = '';
+    syncToolsPanelUI(toolsDeps);
     _updatePtpSnapHintUI();
     render();
 }
@@ -7656,9 +7494,8 @@ function cancelPtpSnapMode() {
     ptpSnapSourcePoint = null;
     ptpSnapSourceObject = null;
     clearPtpSnapDot();
-    statusCircleDetectEl.style.display = 'none';
     viewProp.detectCircleCenter = false;
-    statusCircleDetectCb.checked = false;
+    syncToolsPanelUI(toolsDeps);
     _updatePtpSnapHintUI();
     render();
 }
@@ -10709,6 +10546,9 @@ function addAssemblyGui() {
         assemblyState.editMode = value;
         editControls.forEach(c => value ? c.enable() : c.disable());
         updateAssemblyStepHelpers();
+        syncToolsPanelUI(toolsDeps);
+        _modeIndicatorCache = '';
+        render();
         console.log(`[Assembly] Edit mode: ${value}`);
     }).listen();
     editFolder.add({ fn: function() {
@@ -10824,6 +10664,7 @@ function addHelpGui() {
     const panelHelpFolder = helpGui.addFolder('Panels');
     panelHelpFolder.add({ fn() { openHelp('/help/panel-edit.json'); } }, 'fn').name('✏️ Edit');
     panelHelpFolder.add({ fn() { openHelp('/help/panel-view.json'); } }, 'fn').name('🔭 View');
+    panelHelpFolder.add({ fn() { openHelp('/help/panel-tools.json'); } }, 'fn').name('🔧 Tools');
     panelHelpFolder.add({ fn() { openHelp('/help/panel-assembly.json'); } }, 'fn').name('🔩 Assembly');
     panelHelpFolder.add({ fn() { openHelp('/help/panel-docs.json'); } }, 'fn').name('📄 Docs');
     panelHelpFolder.add({ fn() { openHelp('/help/panel-files.json'); } }, 'fn').name('📎 Files');

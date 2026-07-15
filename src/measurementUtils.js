@@ -25,6 +25,14 @@ let _anglePreviewLine = null; // dashed preview line from last point to cursor
 let _angleMeasurements = []; // completed angle measurements
 let _angleOwner = null; // Owner object for angle measurement (set on first click)
 
+let _onMeasureSessionComplete = null;
+let _onAngleSessionComplete = null;
+let _onCadDimSessionComplete = null;
+
+export function setMeasureOnSessionComplete(fn) { _onMeasureSessionComplete = fn; }
+export function setAngleOnSessionComplete(fn) { _onAngleSessionComplete = fn; }
+export function setCadDimOnSessionComplete(fn) { _onCadDimSessionComplete = fn; }
+
 const ANGLE_LINE_COLOR = 0x4488ff;
 const ANGLE_MARKER_COLOR = 0x4488ff;
 const ANGLE_PREVIEW_COLOR = 0x88aaff;
@@ -237,6 +245,7 @@ export function addMeasurePoint(point, ownerObject, renderFn) {
         _pendingOwner = null;
         _hidePreview();
         if (renderFn) renderFn();
+        if (_onMeasureSessionComplete) _onMeasureSessionComplete();
     }
 }
 
@@ -720,6 +729,7 @@ export function addAnglePoint(point, ownerObject, renderFn) {
         _angleOwner = null;
         _hideAnglePreview();
         if (renderFn) renderFn();
+        if (_onAngleSessionComplete) _onAngleSessionComplete();
     } else {
         _hideAnglePreview();
         if (renderFn) renderFn();
@@ -2108,6 +2118,7 @@ export function placeCadDim(renderFn) {
     _cadP2LastOffsetPoint = null;
 
     if (renderFn) renderFn();
+    if (_onCadDimSessionComplete) _onCadDimSessionComplete();
 }
 
 function _removeSingleCadDim(m) {
