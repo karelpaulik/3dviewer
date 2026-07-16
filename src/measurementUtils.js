@@ -1,6 +1,7 @@
-// measurementUtils.js – Point-to-point measurement with CSS2D labels
+// measurementUtils.js – Point-to-point measurement with CSS2D/CSS3D labels
 import * as THREE from 'three';
 import { CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { CSS3DObject } from 'three/addons/renderers/CSS3DRenderer.js';
 import { getAnnotations, updateAnnotationLeaderLine, syncAnnotationLabelPos, deleteAnnotationByRef } from './annotationUtils.js';
 import { getAnnotations3d, updateAnnotation3dLeaderLine, syncAnnotation3dLabelPos, deleteAnnotation3dByRef } from './annotation3dUtils.js';
 import { getCadDim3dMeasurements, deleteCadDim3dByRef, rebuildCadDim3dVisuals, syncCadDim3dLabelPos, updateCadDim3dLeaderLine } from './cadDim3dUtils.js';
@@ -33,9 +34,45 @@ export function setMeasureOnSessionComplete(fn) { _onMeasureSessionComplete = fn
 export function setAngleOnSessionComplete(fn) { _onAngleSessionComplete = fn; }
 export function setCadDimOnSessionComplete(fn) { _onCadDimSessionComplete = fn; }
 
-const ANGLE_LINE_COLOR = 0x4488ff;
-const ANGLE_MARKER_COLOR = 0x4488ff;
-const ANGLE_PREVIEW_COLOR = 0x88aaff;
+const _distanceMarkerDefaults = { markerColor: '#ff4444' };
+const _angleMarkerDefaults    = { markerColor: '#4488ff' };
+
+function _lighterColorHex(hex) {
+    const c = new THREE.Color(hex);
+    c.r = Math.min(1, c.r + 0.27);
+    c.g = Math.min(1, c.g + 0.27);
+    c.b = Math.min(1, c.b + 0.27);
+    return '#' + c.getHexString();
+}
+
+function _applyDistanceMarkerColors() {
+    const color = _distanceMarkerDefaults.markerColor;
+    for (const m of _measurements) {
+        if (m.marker1?.material) m.marker1.material.color.set(color);
+        if (m.marker2?.material) m.marker2.material.color.set(color);
+        if (m.line?.material) m.line.material.color.set(color);
+    }
+    if (_pendingMarker?.material) _pendingMarker.material.color.set(color);
+    if (_previewMarker?.material) _previewMarker.material.color.set(_lighterColorHex(color));
+    if (_previewLine?.material) _previewLine.material.color.set(color);
+}
+
+function _applyAngleMarkerColors() {
+    const color = _angleMarkerDefaults.markerColor;
+    for (const m of _angleMeasurements) {
+        for (const mk of m.markers) {
+            if (mk?.material) mk.material.color.set(color);
+        }
+        if (m.line1?.material) m.line1.material.color.set(color);
+        if (m.line2?.material) m.line2.material.color.set(color);
+        if (m.midLine?.material) m.midLine.material.color.set(color);
+    }
+    for (const mk of _angleMarkers) {
+        if (mk?.material) mk.material.color.set(color);
+    }
+    if (_angleLine1?.material) _angleLine1.material.color.set(color);
+    if (_anglePreviewLine?.material) _anglePreviewLine.material.color.set(color);
+}
 
 // --- Select dimension state ---
 let _selectDimActive = false;
@@ -52,9 +89,6 @@ const SELECTED_BORDER = '2px solid #ffdd00';
 let _depthTestEnabled = true; // true = skryté za modelem (výchozí), false = vždy viditelné přes model
 
 const MARKER_RADIUS = 1;
-const MARKER_COLOR = 0xff4444;
-const LINE_COLOR = 0xff4444;
-const PREVIEW_COLOR = 0xff8888;
 const MARKER_SCREEN_SIZE = 5; // desired pixel-size (approximate)
 
 // --- Dimension marker size settings (shared with cadDim3dUtils via setters in main.js) ---
@@ -72,6 +106,19 @@ export function setDimMarkerFixedScreenPx(v) { _dimMarkerSettings.fixedScreenPx 
 export function setDimMarkerWorldSize(v)     { _dimMarkerSettings.worldSize = v; }
 export function setDimMarkerColor(v)         { _dimMarkerSettings.markerColor = v; _dimMarkerColor = v; _applyDimMarkerColor(); }
 export function getDimMarkerSettings()       { return _dimMarkerSettings; }
+
+// --- Measurement marker size settings (distance + angle, separate from CAD dimension markers) ---
+const _measurementMarkerSettings = {
+    fixedSize:     false,
+    fixedScreenPx: 3,
+    worldSize:     5,
+};
+
+export function getMeasurementMarkerSettings()       { return _measurementMarkerSettings; }
+export function setMeasurementMarkerFixedSize(v)     { _measurementMarkerSettings.fixedSize = v; }
+export function setMeasurementMarkerFixedScreenPx(v) { _measurementMarkerSettings.fixedScreenPx = v; }
+export function setMeasurementMarkerWorldSize(v)     { _measurementMarkerSettings.worldSize = v; }
+
 function _applyDimMarkerColor() {
     for (const m of _cadDimMeasurements) {
         for (const mk of [m.markerP1, m.markerP2, m.markerFoot1, m.markerFoot2]) {
@@ -102,6 +149,54 @@ const _angleLabelDefaults = {
     fontSize:  11,
 };
 
+const LABEL_SCALE = 0.2;
+let _defaultMeasurementLabelDim = '3d';
+
+const _measurement3dDefaults = {
+    labelScale:      5,
+    rotationCamera:  0,
+    rotationXY:      0,
+    rotationXZ:      0,
+    rotationYZ:      0,
+    orientationMode: 'camera',
+};
+
+export function getDefaultMeasurementLabelDim() { return _defaultMeasurementLabelDim; }
+export function setDefaultMeasurementLabelDim(v) { _defaultMeasurementLabelDim = v; }
+export function getMeasurement3dDefaults() { return _measurement3dDefaults; }
+
+function _defaultMeasurement3dRotation(mode) {
+    const m = mode || _measurement3dDefaults.orientationMode;
+    if (m === 'XY') return _measurement3dDefaults.rotationXY;
+    if (m === 'XZ') return _measurement3dDefaults.rotationXZ;
+    if (m === 'YZ') return _measurement3dDefaults.rotationYZ;
+    return _measurement3dDefaults.rotationCamera;
+}
+
+function _initMeasurement3dFields(meas, rec) {
+    const def = _measurement3dDefaults;
+    meas.labelScale = rec?.labelScale ?? def.labelScale;
+    meas.orientationMode = rec?.orientationMode ?? def.orientationMode;
+    meas.rotationAngle = rec?.rotationAngle ?? _defaultMeasurement3dRotation(meas.orientationMode);
+}
+
+function _initMeasurementLabelDim(meas, labelDim, rec) {
+    meas.labelDim = labelDim;
+    if (labelDim === '3d') _initMeasurement3dFields(meas, rec);
+}
+
+function _measurementLabelDimUserData(meas) {
+    if (meas.labelDim === '3d') {
+        return {
+            labelDim: '3d',
+            labelScale: meas.labelScale,
+            orientationMode: meas.orientationMode,
+            rotationAngle: meas.rotationAngle,
+        };
+    }
+    return { labelDim: '2d' };
+}
+
 function _measurementLabelDefaults(type) {
     return type === 'angle' ? _angleLabelDefaults : _distanceLabelDefaults;
 }
@@ -118,6 +213,14 @@ function _applyMeasurementLabelElementStyle(el, textColor, bgColor, fontSize) {
 
 function _getMeasurementLabelStyle(meas, type) {
     const def = _measurementLabelDefaults(type);
+    if (meas.labelDim === '3d') {
+        const ls = meas.labelScale ?? _measurement3dDefaults.labelScale;
+        return {
+            textColor: meas._textColor ?? def.textColor,
+            bgColor: meas._bgColor ?? def.bgColor,
+            fontSize: Math.round(ls * 2.2),
+        };
+    }
     return {
         textColor: meas._textColor ?? def.textColor,
         bgColor: meas._bgColor ?? def.bgColor,
@@ -125,10 +228,79 @@ function _getMeasurementLabelStyle(meas, type) {
     };
 }
 
+function _applyMeasurement3dScale(meas) {
+    if (!meas.label || meas.labelDim !== '3d') return;
+    const s = LABEL_SCALE * (meas.labelScale ?? _measurement3dDefaults.labelScale);
+    const owner = meas.ownerObject || _scene;
+    if (owner) {
+        owner.updateWorldMatrix(true, false);
+        const ws = new THREE.Vector3();
+        owner.matrixWorld.decompose(new THREE.Vector3(), new THREE.Quaternion(), ws);
+        const ix = ws.x !== 0 ? s / ws.x : s;
+        const iy = ws.y !== 0 ? s / ws.y : s;
+        const iz = ws.z !== 0 ? s / ws.z : s;
+        meas.label.scale.set(ix, iy, iz);
+    } else {
+        meas.label.scale.setScalar(s);
+    }
+}
+
+function _applyMeasurement3dOrientation(meas, camera) {
+    if (!meas.label || meas.labelDim !== '3d' || !camera) return;
+    const owner = meas.ownerObject || _scene;
+    const ownerWorldQuat = new THREE.Quaternion();
+    owner.getWorldQuaternion(ownerWorldQuat);
+    const ownerWorldQuatInv = ownerWorldQuat.clone().invert();
+
+    let targetWorldQuat;
+    const mode = meas.orientationMode || 'camera';
+    if (mode === 'camera') {
+        const labelWorldPos = new THREE.Vector3();
+        meas.label.getWorldPosition(labelWorldPos);
+        const m = new THREE.Matrix4();
+        m.lookAt(camera.position, labelWorldPos, camera.up);
+        targetWorldQuat = new THREE.Quaternion().setFromRotationMatrix(m);
+    } else if (mode === 'XY') {
+        targetWorldQuat = new THREE.Quaternion();
+    } else if (mode === 'XZ') {
+        targetWorldQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
+    } else {
+        targetWorldQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2);
+    }
+
+    const rotAngle = meas.rotationAngle || 0;
+    if (rotAngle !== 0) {
+        const rotQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), rotAngle);
+        targetWorldQuat.multiply(rotQ);
+    }
+
+    meas.label.quaternion.copy(ownerWorldQuatInv).multiply(targetWorldQuat);
+}
+
+export function updateMeasurement3dOrientations(camera) {
+    if (camera) _currentCamera = camera;
+    for (const m of _measurements) {
+        if (m.labelDim === '3d') {
+            _applyMeasurement3dScale(m);
+            _applyMeasurement3dOrientation(m, camera);
+        }
+    }
+    for (const m of _angleMeasurements) {
+        if (m.labelDim === '3d') {
+            _applyMeasurement3dScale(m);
+            _applyMeasurement3dOrientation(m, camera);
+        }
+    }
+}
+
 function _applyMeasurementLabelStyle(meas, type) {
     if (!meas?.label?.element) return;
     const s = _getMeasurementLabelStyle(meas, type);
     _applyMeasurementLabelElementStyle(meas.label.element, s.textColor, s.bgColor, s.fontSize);
+    if (meas.labelDim === '3d') {
+        _applyMeasurement3dScale(meas);
+        if (_currentCamera) _applyMeasurement3dOrientation(meas, _currentCamera);
+    }
 }
 
 function _findMeasurementUserDataRec(meas, type) {
@@ -146,9 +318,15 @@ function _syncMeasurementLabelStyleToUserData(meas, type) {
     const rec = _findMeasurementUserDataRec(meas, type);
     if (!rec) return;
     const s = _getMeasurementLabelStyle(meas, type);
-    rec.textColor = s.textColor;
-    rec.bgColor = s.bgColor;
-    rec.fontSize = s.fontSize;
+    rec.textColor = meas._textColor ?? s.textColor;
+    rec.bgColor = meas._bgColor ?? s.bgColor;
+    rec.fontSize = meas._fontSize ?? s.fontSize;
+    Object.assign(rec, _measurementLabelDimUserData(meas));
+    if (meas.labelDim !== '3d') {
+        delete rec.labelScale;
+        delete rec.orientationMode;
+        delete rec.rotationAngle;
+    }
 }
 
 function _initMeasurementLabelFields(meas, type) {
@@ -180,11 +358,50 @@ export function applyDefaultsToAllFlatDim(renderFn) {
     if (renderFn) renderFn();
 }
 
+export function getDistanceLabelDefaults() { return _distanceLabelDefaults; }
+export function getAngleLabelDefaults() { return _angleLabelDefaults; }
+export function getDistanceMarkerDefaults() { return _distanceMarkerDefaults; }
+export function getAngleMarkerDefaults() { return _angleMarkerDefaults; }
+
+export function setDistanceMarkerColor(v) {
+    _distanceMarkerDefaults.markerColor = v;
+    _applyDistanceMarkerColors();
+}
+
+export function setAngleMarkerColor(v) {
+    _angleMarkerDefaults.markerColor = v;
+    _applyAngleMarkerColors();
+}
+
+export function applyDefaultsToAllDistanceMeasurements(renderFn) {
+    for (const meas of _measurements) {
+        meas._textColor = _distanceLabelDefaults.textColor;
+        meas._bgColor = _distanceLabelDefaults.bgColor;
+        meas._fontSize = _distanceLabelDefaults.fontSize;
+        _applyMeasurementLabelStyle(meas, 'distance');
+        _syncMeasurementLabelStyleToUserData(meas, 'distance');
+    }
+    _applyDistanceMarkerColors();
+    if (renderFn) renderFn();
+}
+
+export function applyDefaultsToAllAngleMeasurements(renderFn) {
+    for (const meas of _angleMeasurements) {
+        meas._textColor = _angleLabelDefaults.textColor;
+        meas._bgColor = _angleLabelDefaults.bgColor;
+        meas._fontSize = _angleLabelDefaults.fontSize;
+        _applyMeasurementLabelStyle(meas, 'angle');
+        _syncMeasurementLabelStyleToUserData(meas, 'angle');
+    }
+    _applyAngleMarkerColors();
+    if (renderFn) renderFn();
+}
+
 // --- Helpers ---
 
 function _createMarker(position) {
     const geo = new THREE.SphereGeometry(MARKER_RADIUS, 12, 12);
-    const mat = new THREE.MeshBasicMaterial({ color: MARKER_COLOR, depthTest: _depthTestEnabled });
+    const mat = new THREE.MeshBasicMaterial({ color: _distanceMarkerDefaults.markerColor, depthTest: _depthTestEnabled });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.renderOrder = _depthTestEnabled ? 0 : 999;
     mesh.position.copy(position);
@@ -194,11 +411,88 @@ function _createMarker(position) {
 
 function _createLine(p1, p2) {
     const geo = new THREE.BufferGeometry().setFromPoints([p1, p2]);
-    const mat = new THREE.LineBasicMaterial({ color: LINE_COLOR, depthTest: _depthTestEnabled });
+    const mat = new THREE.LineBasicMaterial({ color: _distanceMarkerDefaults.markerColor, depthTest: _depthTestEnabled });
     const line = new THREE.Line(geo, mat);
     line.renderOrder = _depthTestEnabled ? 0 : 999;
     line.userData._isMeasurement = true;
     return line;
+}
+
+function _createLabel3d(text, position, style, measOpts) {
+    const s = style;
+    const labelScale = measOpts?.labelScale ?? _measurement3dDefaults.labelScale;
+    const div = document.createElement('div');
+    div.className = 'measurement-label measurement-label-3d';
+    div.innerHTML = text;
+    div.style.cssText = _measurementLabelBaseCss(s.textColor, s.bgColor, s.fontSize);
+    const label = new CSS3DObject(div);
+    div.style.pointerEvents = 'none';
+    label.position.copy(position);
+    label.userData._isMeasurement = true;
+    label.scale.setScalar(LABEL_SCALE * labelScale);
+    return label;
+}
+
+function _createMeasurementLabel(text, position, style, type, labelDim, measOpts) {
+    if (labelDim === '3d') return _createLabel3d(text, position, style, measOpts);
+    if (type === 'angle') return _createAngleLabel(text, position, style);
+    return _createLabel(text, position, style);
+}
+
+function _buildDistanceLabelText(dist, p1w, p2w) {
+    const dx = Math.abs(p2w.x - p1w.x);
+    const dy = Math.abs(p2w.y - p1w.y);
+    const dz = Math.abs(p2w.z - p1w.z);
+    const dXY = Math.sqrt(dx * dx + dy * dy);
+    const dXZ = Math.sqrt(dx * dx + dz * dz);
+    const dYZ = Math.sqrt(dy * dy + dz * dz);
+    return dist.toFixed(2)
+        + '<br><span style="font-size:10px;opacity:0.85;">Δx ' + dx.toFixed(2) + ' &nbsp;ΔYZ ' + dYZ.toFixed(2)
+        + '<br>Δy ' + dy.toFixed(2) + ' &nbsp;ΔXZ ' + dXZ.toFixed(2)
+        + '<br>Δz ' + dz.toFixed(2) + ' &nbsp;ΔXY ' + dXY.toFixed(2) + '</span>';
+}
+
+function _buildDistanceLabelTextFromMeas(meas) {
+    const owner = meas.ownerObject || _scene;
+    owner.updateWorldMatrix(true, false);
+    const p1w = owner.localToWorld(meas.p1.clone());
+    const p2w = owner.localToWorld(meas.p2.clone());
+    return _buildDistanceLabelText(meas.distance, p1w, p2w);
+}
+
+function _buildAngleLabelText(v1, v2) {
+    const dot3d = v1.dot(v2) / (v1.length() * v2.length());
+    const a3D = THREE.MathUtils.radToDeg(Math.acos(Math.max(-1, Math.min(1, dot3d))));
+    const aXY = _angleBetweenProjections(v1, v2, 'z');
+    const aYZ = _angleBetweenProjections(v1, v2, 'x');
+    const aXZ = _angleBetweenProjections(v1, v2, 'y');
+    let labelText = '<b>Angle</b><br>';
+    labelText += '3D: ' + a3D.toFixed(1) + '°<br>';
+    labelText += '<span style="font-size:10px;opacity:0.85;">';
+    labelText += 'XY: ' + (aXY !== null ? aXY.toFixed(1) + '°' : 'N/A') + '<br>';
+    labelText += 'YZ: ' + (aYZ !== null ? aYZ.toFixed(1) + '°' : 'N/A') + '<br>';
+    labelText += 'XZ: ' + (aXZ !== null ? aXZ.toFixed(1) + '°' : 'N/A');
+    labelText += '</span>';
+    return labelText;
+}
+
+function _buildAngleLabelTextFromMeas(meas) {
+    const owner = meas.ownerObject || _scene;
+    owner.updateWorldMatrix(true, false);
+    const p0w = owner.localToWorld(meas.points[0].clone());
+    const p1w = owner.localToWorld(meas.points[1].clone());
+    const p2w = owner.localToWorld(meas.points[2].clone());
+    const p3w = owner.localToWorld(meas.points[3].clone());
+    const v1 = new THREE.Vector3().subVectors(p1w, p0w);
+    const v2 = new THREE.Vector3().subVectors(p3w, p2w);
+    return _buildAngleLabelText(v1, v2);
+}
+
+function _finalizeMeasurementLabel(meas, type) {
+    if (meas.labelDim === '3d') {
+        _applyMeasurement3dScale(meas);
+        if (_currentCamera) _applyMeasurement3dOrientation(meas, _currentCamera);
+    }
 }
 
 function _createLabel(text, position, style) {
@@ -294,18 +588,20 @@ export function addMeasurePoint(point, ownerObject, renderFn) {
         const dXY = Math.sqrt(dx * dx + dy * dy);
         const dXZ = Math.sqrt(dx * dx + dz * dz);
         const dYZ = Math.sqrt(dy * dy + dz * dz);
-        const labelText = dist.toFixed(2)
-            + '<br><span style="font-size:10px;opacity:0.85;">Δx ' + dx.toFixed(2) + ' &nbsp;ΔYZ ' + dYZ.toFixed(2)
-            + '<br>Δy ' + dy.toFixed(2) + ' &nbsp;ΔXZ ' + dXZ.toFixed(2)
-            + '<br>Δz ' + dz.toFixed(2) + ' &nbsp;ΔXY ' + dXY.toFixed(2) + '</span>';
-        const label = _createLabel(labelText, midPoint);
+        const labelText = _buildDistanceLabelText(dist, p1world, p2world);
+        const labelDim = getDefaultMeasurementLabelDim();
+        const meas = { line: null, label: null, marker1, marker2, p1, p2, distance: dist, ownerObject: owner1 };
+        _initMeasurementLabelFields(meas, 'distance');
+        _initMeasurementLabelDim(meas, labelDim, null);
+        const labelStyle = _getMeasurementLabelStyle(meas, 'distance');
+        const label = _createMeasurementLabel(labelText, midPoint, labelStyle, 'distance', labelDim, meas);
 
         owner1.add(marker2);
         owner1.add(line);
         owner1.add(label);
-
-        const meas = { line, label, marker1, marker2, p1, p2, distance: dist, ownerObject: owner1 };
-        _initMeasurementLabelFields(meas, 'distance');
+        meas.line = line;
+        meas.label = label;
+        _finalizeMeasurementLabel(meas, 'distance');
         _measurements.push(meas);
 
         // Store measurement data in ownerObject.userData for GLB export
@@ -317,6 +613,7 @@ export function addMeasurePoint(point, ownerObject, renderFn) {
             distance: dist,
             labelPos: { x: midPoint.x, y: midPoint.y, z: midPoint.z },
             ..._measurementLabelStyleUserData(meas),
+            ..._measurementLabelDimUserData(meas),
         });
 
         // Reset pending state and hide preview
@@ -537,7 +834,7 @@ export function updateMeasurePreview(point) {
     // Show / move preview marker
     if (!_previewMarker) {
         const geo = new THREE.SphereGeometry(MARKER_RADIUS, 12, 12);
-        const mat = new THREE.MeshBasicMaterial({ color: PREVIEW_COLOR, depthTest: false, transparent: true, opacity: 0.7 });
+        const mat = new THREE.MeshBasicMaterial({ color: _lighterColorHex(_distanceMarkerDefaults.markerColor), depthTest: false, transparent: true, opacity: 0.7 });
         _previewMarker = new THREE.Mesh(geo, mat);
         _previewMarker.renderOrder = 999;
         _previewMarker.userData._isMeasurement = true;
@@ -553,7 +850,7 @@ export function updateMeasurePreview(point) {
             _previewLine.material.dispose();
         }
         const geo = new THREE.BufferGeometry().setFromPoints([_pendingPoint, point]);
-        const mat = new THREE.LineDashedMaterial({ color: LINE_COLOR, dashSize: 4, gapSize: 3, depthTest: false });
+        const mat = new THREE.LineDashedMaterial({ color: _distanceMarkerDefaults.markerColor, dashSize: 4, gapSize: 3, depthTest: false });
         _previewLine = new THREE.Line(geo, mat);
         _previewLine.computeLineDistances();
         _previewLine.renderOrder = 999;
@@ -576,46 +873,51 @@ export function updateMeasurePreview(point) {
 export function updateMarkerScales(camera) {
     if (!camera) return;
 
-    const markers = [];
+    const measMarkers = [];
     for (const m of _measurements) {
-        markers.push(m.marker1, m.marker2);
+        measMarkers.push(m.marker1, m.marker2);
     }
-    if (_pendingMarker) markers.push(_pendingMarker);
-    if (_previewMarker) markers.push(_previewMarker);
+    if (_pendingMarker) measMarkers.push(_pendingMarker);
+    if (_previewMarker) measMarkers.push(_previewMarker);
 
-    // Include angle measurement markers
     for (const m of _angleMeasurements) {
-        markers.push(...m.markers);
+        measMarkers.push(...m.markers);
     }
-    markers.push(..._angleMarkers);
+    measMarkers.push(..._angleMarkers);
 
-    // Include CAD dimension markers
+    const cadMarkers = [];
     for (const m of _cadDimMeasurements) {
-        markers.push(m.markerP1, m.markerP2, m.markerFoot1, m.markerFoot2);
+        cadMarkers.push(m.markerP1, m.markerP2, m.markerFoot1, m.markerFoot2);
     }
-    if (_cadPendingMarker) markers.push(_cadPendingMarker);
-    if (_cadHoverMarker) markers.push(_cadHoverMarker);
-    if (_cadP2FootMarker1) markers.push(_cadP2FootMarker1);
-    if (_cadP2FootMarker2) markers.push(_cadP2FootMarker2);
+    if (_cadPendingMarker) cadMarkers.push(_cadPendingMarker);
+    if (_cadHoverMarker) cadMarkers.push(_cadHoverMarker);
+    if (_cadP2FootMarker1) cadMarkers.push(_cadP2FootMarker1);
+    if (_cadP2FootMarker2) cadMarkers.push(_cadP2FootMarker2);
 
+    _scaleMarkerList(measMarkers, camera, _measurementMarkerSettings);
+    _scaleMarkerList(cadMarkers, camera, _dimMarkerSettings);
+}
+
+function _scaleMarkerList(markers, camera, settings) {
     if (markers.length === 0) return;
 
     const worldPos = new THREE.Vector3();
     const parentWorldScale = new THREE.Vector3();
     for (const marker of markers) {
+        if (!marker) continue;
         let scale;
-        if (_dimMarkerSettings.fixedSize) {
+        if (settings.fixedSize) {
             marker.getWorldPosition(worldPos);
             const dist = camera.position.distanceTo(worldPos);
             if (camera.isPerspectiveCamera) {
                 const vFov = THREE.MathUtils.degToRad(camera.fov);
-                scale = (dist * Math.tan(vFov * 0.5) * 2) / window.innerHeight * _dimMarkerSettings.fixedScreenPx;
+                scale = (dist * Math.tan(vFov * 0.5) * 2) / window.innerHeight * settings.fixedScreenPx;
             } else {
                 const viewHeight = (camera.top - camera.bottom) / camera.zoom;
-                scale = viewHeight / window.innerHeight * _dimMarkerSettings.fixedScreenPx;
+                scale = viewHeight / window.innerHeight * settings.fixedScreenPx;
             }
         } else {
-            scale = _dimMarkerSettings.worldSize;
+            scale = settings.worldSize;
         }
         if (marker.parent) {
             marker.parent.getWorldScale(parentWorldScale);
@@ -630,7 +932,7 @@ export function updateMarkerScales(camera) {
 
 function _createAngleMarker(position) {
     const geo = new THREE.SphereGeometry(MARKER_RADIUS, 12, 12);
-    const mat = new THREE.MeshBasicMaterial({ color: ANGLE_MARKER_COLOR, depthTest: _depthTestEnabled });
+    const mat = new THREE.MeshBasicMaterial({ color: _angleMarkerDefaults.markerColor, depthTest: _depthTestEnabled });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.renderOrder = _depthTestEnabled ? 0 : 999;
     mesh.position.copy(position);
@@ -640,7 +942,7 @@ function _createAngleMarker(position) {
 
 function _createAngleLine(p1, p2) {
     const geo = new THREE.BufferGeometry().setFromPoints([p1, p2]);
-    const mat = new THREE.LineBasicMaterial({ color: ANGLE_LINE_COLOR, depthTest: _depthTestEnabled });
+    const mat = new THREE.LineBasicMaterial({ color: _angleMarkerDefaults.markerColor, depthTest: _depthTestEnabled });
     const line = new THREE.Line(geo, mat);
     line.renderOrder = _depthTestEnabled ? 0 : 999;
     line.userData._isMeasurement = true;
@@ -752,21 +1054,7 @@ export function addAnglePoint(point, ownerObject, renderFn) {
         const v1 = new THREE.Vector3().subVectors(p1w, p0w);
         const v2 = new THREE.Vector3().subVectors(p3w, p2w);
 
-        // 3D angle between direction vectors
-        const dot3d = v1.dot(v2) / (v1.length() * v2.length());
-        const a3D = THREE.MathUtils.radToDeg(Math.acos(Math.max(-1, Math.min(1, dot3d))));
-
-        const aXY = _angleBetweenProjections(v1, v2, 'z');
-        const aYZ = _angleBetweenProjections(v1, v2, 'x');
-        const aXZ = _angleBetweenProjections(v1, v2, 'y');
-
-        let labelText = '<b>Angle</b><br>';
-        labelText += '3D: ' + a3D.toFixed(1) + '°<br>';
-        labelText += '<span style="font-size:10px;opacity:0.85;">';
-        labelText += 'XY: ' + (aXY !== null ? aXY.toFixed(1) + '°' : 'N/A') + '<br>';
-        labelText += 'YZ: ' + (aYZ !== null ? aYZ.toFixed(1) + '°' : 'N/A') + '<br>';
-        labelText += 'XZ: ' + (aXZ !== null ? aXZ.toFixed(1) + '°' : 'N/A');
-        labelText += '</span>';
+        const labelText = _buildAngleLabelText(v1, v2);
 
         // Place label at midpoint of the two lines' midpoints (local space)
         const mid1 = new THREE.Vector3().addVectors(_anglePoints[0], _anglePoints[1]).multiplyScalar(0.5);
@@ -775,25 +1063,28 @@ export function addAnglePoint(point, ownerObject, renderFn) {
 
         // Connecting line between midpoints of the two lines (local space)
         const geoMid = new THREE.BufferGeometry().setFromPoints([mid1, mid2]);
-        const matMid = new THREE.LineDashedMaterial({ color: ANGLE_LINE_COLOR, dashSize: 3, gapSize: 2, depthTest: _depthTestEnabled, transparent: true, opacity: 0.5 });
+        const matMid = new THREE.LineDashedMaterial({ color: _angleMarkerDefaults.markerColor, dashSize: 3, gapSize: 2, depthTest: _depthTestEnabled, transparent: true, opacity: 0.5 });
         const midLine = new THREE.Line(geoMid, matMid);
         midLine.computeLineDistances();
         midLine.renderOrder = _depthTestEnabled ? 0 : 999;
         midLine.userData._isMeasurement = true;
         owner.add(midLine);
 
-        const label = _createAngleLabel(labelText, labelPos);
-        owner.add(label);
-
-        // Store for cleanup
-        const storedMarkers = _angleMarkers.slice();
+        const labelDim = getDefaultMeasurementLabelDim();
         const meas = {
-            line1: _angleLine1, line2, midLine, label,
-            markers: storedMarkers,
+            line1: _angleLine1, line2, midLine, label: null,
+            markers: null,
             points: _anglePoints.slice(),
             ownerObject: owner
         };
         _initMeasurementLabelFields(meas, 'angle');
+        _initMeasurementLabelDim(meas, labelDim, null);
+        const labelStyle = _getMeasurementLabelStyle(meas, 'angle');
+        const label = _createMeasurementLabel(labelText, labelPos, labelStyle, 'angle', labelDim, meas);
+        owner.add(label);
+        meas.label = label;
+        meas.markers = _angleMarkers.slice();
+        _finalizeMeasurementLabel(meas, 'angle');
         _angleMeasurements.push(meas);
 
         // Store measurement data in ownerObject.userData for GLB export
@@ -803,6 +1094,7 @@ export function addAnglePoint(point, ownerObject, renderFn) {
             points: _anglePoints.map(pt => ({ x: pt.x, y: pt.y, z: pt.z })),
             labelPos: { x: labelPos.x, y: labelPos.y, z: labelPos.z },
             ..._measurementLabelStyleUserData(meas),
+            ..._measurementLabelDimUserData(meas),
         });
 
         // Reset pending state
@@ -831,7 +1123,7 @@ export function updateAnglePreview(point) {
         if (_angleActive && point) {
             if (!_previewMarker) {
                 const geo = new THREE.SphereGeometry(MARKER_RADIUS, 12, 12);
-                const mat = new THREE.MeshBasicMaterial({ color: ANGLE_PREVIEW_COLOR, depthTest: false, transparent: true, opacity: 0.7 });
+                const mat = new THREE.MeshBasicMaterial({ color: _lighterColorHex(_angleMarkerDefaults.markerColor), depthTest: false, transparent: true, opacity: 0.7 });
                 _previewMarker = new THREE.Mesh(geo, mat);
                 _previewMarker.renderOrder = 999;
                 _previewMarker.userData._isMeasurement = true;
@@ -845,7 +1137,7 @@ export function updateAnglePreview(point) {
     // Show preview marker
     if (!_previewMarker) {
         const geo = new THREE.SphereGeometry(MARKER_RADIUS, 12, 12);
-        const mat = new THREE.MeshBasicMaterial({ color: ANGLE_PREVIEW_COLOR, depthTest: false, transparent: true, opacity: 0.7 });
+        const mat = new THREE.MeshBasicMaterial({ color: _lighterColorHex(_angleMarkerDefaults.markerColor), depthTest: false, transparent: true, opacity: 0.7 });
         _previewMarker = new THREE.Mesh(geo, mat);
         _previewMarker.renderOrder = 999;
         _previewMarker.userData._isMeasurement = true;
@@ -862,7 +1154,7 @@ export function updateAnglePreview(point) {
         owner.updateWorldMatrix(true, false);
         const lastPointWorld = owner.localToWorld(lastPoint.clone());
         const geo = new THREE.BufferGeometry().setFromPoints([lastPointWorld, point]);
-        const mat = new THREE.LineDashedMaterial({ color: ANGLE_LINE_COLOR, dashSize: 4, gapSize: 3, depthTest: false });
+        const mat = new THREE.LineDashedMaterial({ color: _angleMarkerDefaults.markerColor, dashSize: 4, gapSize: 3, depthTest: false });
         _anglePreviewLine = new THREE.Line(geo, mat);
         _anglePreviewLine.computeLineDistances();
         _anglePreviewLine.renderOrder = 999;
@@ -1611,33 +1903,29 @@ function _reconstructDistance(owner, rec) {
     // Compute deltas in world space for label
     const p1w = owner.localToWorld(p1.clone());
     const p2w = owner.localToWorld(p2.clone());
-    const dx = Math.abs(p2w.x - p1w.x);
-    const dy = Math.abs(p2w.y - p1w.y);
-    const dz = Math.abs(p2w.z - p1w.z);
-    const dXY = Math.sqrt(dx * dx + dy * dy);
-    const dXZ = Math.sqrt(dx * dx + dz * dz);
-    const dYZ = Math.sqrt(dy * dy + dz * dz);
-    const labelText = dist.toFixed(2)
-        + '<br><span style="font-size:10px;opacity:0.85;">Δx ' + dx.toFixed(2) + ' &nbsp;ΔYZ ' + dYZ.toFixed(2)
-        + '<br>Δy ' + dy.toFixed(2) + ' &nbsp;ΔXZ ' + dXZ.toFixed(2)
-        + '<br>Δz ' + dz.toFixed(2) + ' &nbsp;ΔXY ' + dXY.toFixed(2) + '</span>';
+    const labelText = _buildDistanceLabelText(dist, p1w, p2w);
     const labelStyle = {
         textColor: rec.textColor || _distanceLabelDefaults.textColor,
         bgColor: rec.bgColor || _distanceLabelDefaults.bgColor,
         fontSize: rec.fontSize != null ? rec.fontSize : _distanceLabelDefaults.fontSize,
     };
-    const label = _createLabel(labelText, labelPos, labelStyle);
+    const labelDim = rec.labelDim || '2d';
+    const meas = { line: null, label: null, marker1, marker2, p1, p2, distance: dist, ownerObject: owner };
+    meas._textColor = labelStyle.textColor;
+    meas._bgColor = labelStyle.bgColor;
+    meas._fontSize = labelStyle.fontSize;
+    _initMeasurementLabelDim(meas, labelDim, rec);
+    const label = _createMeasurementLabel(labelText, labelPos, labelStyle, 'distance', labelDim, meas);
 
     owner.add(marker1);
     owner.add(marker2);
     owner.add(line);
     owner.add(label);
+    meas.line = line;
+    meas.label = label;
+    _finalizeMeasurementLabel(meas, 'distance');
 
     const defaultMid = new THREE.Vector3().addVectors(p1, p2).multiplyScalar(0.5);
-    const meas = { line, label, marker1, marker2, p1, p2, distance: dist, ownerObject: owner };
-    meas._textColor = labelStyle.textColor;
-    meas._bgColor = labelStyle.bgColor;
-    meas._fontSize = labelStyle.fontSize;
     // If label was dragged from its default midpoint, restore anchor + leader line
     if (labelPos.distanceTo(defaultMid) > 1e-4) {
         meas._labelAnchor = defaultMid.clone();
@@ -1671,26 +1959,13 @@ function _reconstructAngle(owner, rec) {
     const p3w = owner.localToWorld(pts[3].clone());
     const v1 = new THREE.Vector3().subVectors(p1w, p0w);
     const v2 = new THREE.Vector3().subVectors(p3w, p2w);
-
-    const dot3d = v1.dot(v2) / (v1.length() * v2.length());
-    const a3D = THREE.MathUtils.radToDeg(Math.acos(Math.max(-1, Math.min(1, dot3d))));
-    const aXY = _angleBetweenProjections(v1, v2, 'z');
-    const aYZ = _angleBetweenProjections(v1, v2, 'x');
-    const aXZ = _angleBetweenProjections(v1, v2, 'y');
-
-    let labelText = '<b>Angle</b><br>';
-    labelText += '3D: ' + a3D.toFixed(1) + '°<br>';
-    labelText += '<span style="font-size:10px;opacity:0.85;">';
-    labelText += 'XY: ' + (aXY !== null ? aXY.toFixed(1) + '°' : 'N/A') + '<br>';
-    labelText += 'YZ: ' + (aYZ !== null ? aYZ.toFixed(1) + '°' : 'N/A') + '<br>';
-    labelText += 'XZ: ' + (aXZ !== null ? aXZ.toFixed(1) + '°' : 'N/A');
-    labelText += '</span>';
+    const labelText = _buildAngleLabelText(v1, v2);
 
     // Midpoints and connecting line
     const mid1 = new THREE.Vector3().addVectors(pts[0], pts[1]).multiplyScalar(0.5);
     const mid2 = new THREE.Vector3().addVectors(pts[2], pts[3]).multiplyScalar(0.5);
     const geoMid = new THREE.BufferGeometry().setFromPoints([mid1, mid2]);
-    const matMid = new THREE.LineDashedMaterial({ color: ANGLE_LINE_COLOR, dashSize: 3, gapSize: 2, depthTest: _depthTestEnabled, transparent: true, opacity: 0.5 });
+    const matMid = new THREE.LineDashedMaterial({ color: _angleMarkerDefaults.markerColor, dashSize: 3, gapSize: 2, depthTest: _depthTestEnabled, transparent: true, opacity: 0.5 });
     const midLine = new THREE.Line(geoMid, matMid);
     midLine.computeLineDistances();
     midLine.renderOrder = _depthTestEnabled ? 0 : 999;
@@ -1706,11 +1981,9 @@ function _reconstructAngle(owner, rec) {
         bgColor: rec.bgColor || _angleLabelDefaults.bgColor,
         fontSize: rec.fontSize != null ? rec.fontSize : _angleLabelDefaults.fontSize,
     };
-    const label = _createAngleLabel(labelText, labelPos, labelStyle);
-    owner.add(label);
-
+    const labelDim = rec.labelDim || '2d';
     const angleMeas = {
-        line1, line2, midLine, label,
+        line1, line2, midLine, label: null,
         markers,
         points: pts,
         ownerObject: owner
@@ -1718,6 +1991,11 @@ function _reconstructAngle(owner, rec) {
     angleMeas._textColor = labelStyle.textColor;
     angleMeas._bgColor = labelStyle.bgColor;
     angleMeas._fontSize = labelStyle.fontSize;
+    _initMeasurementLabelDim(angleMeas, labelDim, rec);
+    const label = _createMeasurementLabel(labelText, labelPos, labelStyle, 'angle', labelDim, angleMeas);
+    owner.add(label);
+    angleMeas.label = label;
+    _finalizeMeasurementLabel(angleMeas, 'angle');
     // If label was dragged from its default position, restore anchor + leader line
     if (labelPos.distanceTo(defaultLabelPos) > 1e-4) {
         angleMeas._labelAnchor = defaultLabelPos.clone();
@@ -2038,8 +2316,86 @@ export function setSelectedMeasurementFontSize(size, renderFn) {
     const type = getSelectedDistance() ? 'distance' : (getSelectedAngle() ? 'angle' : null);
     const meas = type === 'distance' ? getSelectedDistance() : (type === 'angle' ? getSelectedAngle() : null);
     if (!meas || !type || !Number.isFinite(size)) return;
-    meas._fontSize = size;
+    if (meas.labelDim === '3d') {
+        meas.labelScale = size / 2.2;
+    } else {
+        meas._fontSize = size;
+    }
     _applyMeasurementLabelStyle(meas, type);
+    _syncMeasurementLabelStyleToUserData(meas, type);
+    if (renderFn) renderFn();
+}
+
+function _swapMeasurementLabel(meas, type, newDim, renderFn) {
+    const owner = meas.ownerObject || _scene;
+    const labelPos = meas.label.position.clone();
+    const labelText = meas.label.element?.innerHTML
+        || (type === 'distance' ? _buildDistanceLabelTextFromMeas(meas) : _buildAngleLabelTextFromMeas(meas));
+    const style = _getMeasurementLabelStyle(meas, type);
+    const wasSelected = _selectedDim === meas;
+    const hadAnchor = meas._labelAnchor ? meas._labelAnchor.clone() : null;
+
+    owner.remove(meas.label);
+    if (meas.label.element) meas.label.element.remove();
+
+    meas.labelDim = newDim;
+    if (newDim === '3d') {
+        _initMeasurement3dFields(meas, null);
+    }
+
+    const label = _createMeasurementLabel(labelText, labelPos, style, type, newDim, meas);
+    owner.add(label);
+    meas.label = label;
+
+    if (hadAnchor) {
+        meas._labelAnchor = hadAnchor;
+        _updateLeaderLine(meas, labelPos);
+    }
+
+    _finalizeMeasurementLabel(meas, type);
+    _syncMeasurementLabelStyleToUserData(meas, type);
+
+    if (wasSelected) {
+        _selectDim(meas, type);
+    }
+    if (_selectDimActive) {
+        registerLabelForSelection(meas);
+    }
+
+    if (renderFn) renderFn();
+}
+
+export function convertMeasurementTo3d(meas, type, renderFn) {
+    if (!meas || meas.labelDim === '3d') return;
+    _swapMeasurementLabel(meas, type, '3d', renderFn);
+}
+
+export function convertMeasurementToFlat(meas, type, renderFn) {
+    if (!meas || meas.labelDim !== '3d') return;
+    _swapMeasurementLabel(meas, type, '2d', renderFn);
+}
+
+export function getSelectedMeasurementLabelDim() {
+    const type = getSelectedDistance() ? 'distance' : (getSelectedAngle() ? 'angle' : null);
+    const meas = type === 'distance' ? getSelectedDistance() : (type === 'angle' ? getSelectedAngle() : null);
+    if (!meas) return null;
+    return meas.labelDim || '2d';
+}
+
+export function setSelectedMeasurementLabelDim(dim, renderFn) {
+    const type = getSelectedDistance() ? 'distance' : (getSelectedAngle() ? 'angle' : null);
+    const meas = type === 'distance' ? getSelectedDistance() : (type === 'angle' ? getSelectedAngle() : null);
+    if (!meas || !type) return;
+    if (dim === '3d') convertMeasurementTo3d(meas, type, renderFn);
+    else convertMeasurementToFlat(meas, type, renderFn);
+}
+
+export function setSelectedMeasurementOrientationMode(mode, renderFn) {
+    const type = getSelectedDistance() ? 'distance' : (getSelectedAngle() ? 'angle' : null);
+    const meas = type === 'distance' ? getSelectedDistance() : (type === 'angle' ? getSelectedAngle() : null);
+    if (!meas || !type || meas.labelDim !== '3d') return;
+    meas.orientationMode = mode;
+    if (_currentCamera) _applyMeasurement3dOrientation(meas, _currentCamera);
     _syncMeasurementLabelStyleToUserData(meas, type);
     if (renderFn) renderFn();
 }

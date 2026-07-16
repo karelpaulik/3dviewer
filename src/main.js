@@ -26,7 +26,7 @@ import { exportToHTML, exportToHTMLDraco, exportToHTMLObfuscated, exportToHTMLOb
 import { initOutliner, toggleOutliner, rebuildTree, highlightObject as outlinerHighlight, updateVisibilityIcon, updateSelectableIcon, updateObjectLabel, isOutlinerOpen, navigateOutliner, highlightGroupObjects, clearGroupHighlights, setNavigationPosition, setOnTreeRebuild } from './sceneOutliner.js';
 import { positionContextMenu } from './uiMenuUtils.js';
 import { computeModelStats } from './modelInfoUtils.js';
-import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements, isSelectDimActive, setSelectDimActive, refreshLabelEditListeners, hasSelectedDimension, deselectSelectedDimension, deleteSelectedDimension, resetSelectedMeasurementLabel, getSelectedMeasurementLabelStyle, setSelectedMeasurementTextColor, setSelectedMeasurementBgColor, setSelectedMeasurementFontSize, initSelectDimension, updateSelectDimensionCamera, reconstructMeasurements, stripMeasurementVisuals, setMeasurementsVisible, setMeasurementDepthTest, removeMeasurementsForOwner, isCadDimActive, setCadDimActive, getCadDimStep, getCadDimAxis, addCadDimPoint, updateCadDimPreview, updateCadDimHoverPreview, cycleCadDimAxis, placeCadDim, clearCadDimMeasurements, removeCadDimMeasurementsForOwner, getSelectedCadDim, setCadDimLabelMode, setCadDimDragMode, selectDimTouchStart, selectDimTouchMove, selectDimTouchEnd, registerLabelForSelection, getSelectedCadDim3d, getSelectedAnnotation, getSelectedAnnotation3d, getSelectedDistance, getSelectedAngle, getCadDimMeasurements, deleteCadDimByRef, convertCadDim3dTo2d, getFlatDimDefaults, applyDefaultsToAllFlatDim, setDimMarkerFixedSize, setDimMarkerFixedScreenPx, setDimMarkerWorldSize, setDimMarkerColor, getDimMarkerSettings, setMeasureOnSessionComplete, setAngleOnSessionComplete, setCadDimOnSessionComplete } from './measurementUtils.js';
+import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, updateMeasurement3dOrientations, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements, isSelectDimActive, setSelectDimActive, refreshLabelEditListeners, hasSelectedDimension, deselectSelectedDimension, deleteSelectedDimension, resetSelectedMeasurementLabel, getSelectedMeasurementLabelStyle, getSelectedMeasurementLabelDim, setSelectedMeasurementLabelDim, setSelectedMeasurementOrientationMode, setSelectedMeasurementTextColor, setSelectedMeasurementBgColor, setSelectedMeasurementFontSize, initSelectDimension, updateSelectDimensionCamera, reconstructMeasurements, stripMeasurementVisuals, setMeasurementsVisible, setMeasurementDepthTest, removeMeasurementsForOwner, isCadDimActive, setCadDimActive, getCadDimStep, getCadDimAxis, addCadDimPoint, updateCadDimPreview, updateCadDimHoverPreview, cycleCadDimAxis, placeCadDim, clearCadDimMeasurements, removeCadDimMeasurementsForOwner, getSelectedCadDim, setCadDimLabelMode, setCadDimDragMode, selectDimTouchStart, selectDimTouchMove, selectDimTouchEnd, registerLabelForSelection, getSelectedCadDim3d, getSelectedAnnotation, getSelectedAnnotation3d, getSelectedDistance, getSelectedAngle, getCadDimMeasurements, deleteCadDimByRef, convertCadDim3dTo2d, getFlatDimDefaults, applyDefaultsToAllFlatDim, getDistanceLabelDefaults, getAngleLabelDefaults, getDistanceMarkerDefaults, getAngleMarkerDefaults, applyDefaultsToAllDistanceMeasurements, applyDefaultsToAllAngleMeasurements, setDistanceMarkerColor, setAngleMarkerColor, getMeasurementMarkerSettings, setMeasurementMarkerFixedSize, setMeasurementMarkerFixedScreenPx, setMeasurementMarkerWorldSize, getDefaultMeasurementLabelDim, setDefaultMeasurementLabelDim, getMeasurement3dDefaults, setDimMarkerFixedSize, setDimMarkerFixedScreenPx, setDimMarkerWorldSize, setDimMarkerColor, getDimMarkerSettings, setMeasureOnSessionComplete, setAngleOnSessionComplete, setCadDimOnSessionComplete } from './measurementUtils.js';
 import { detectCircleCenterFromHit, clearCircleDetectionCache } from './circleDetectionUtils.js';
 import { removeEdgeOverlays, updateMeshEdgeOverlays, stripEdgeOverlays } from './edgeDisplayUtils.js';
 import { initAnnotations, isAnnotationActive, setAnnotationActive, addAnnotationPoint, getAnnotationPendingPoint, updateAnnotationPreview, updateAnnotationMarkerScales, setAnnotationsVisible, clearAnnotations, stripAnnotationVisuals, reconstructAnnotations, setAnnotationDepthTest, removeAnnotationsForOwner, getAnnotations, isAddLeaderLineActive, cancelAddLeaderLine, commitAddLeaderLine, deleteAnnotationByRef, setConvertTo3dFn, reconstructAnnotationFromRec, getFlatAnnDefaults, applyDefaultsToAllFlatAnnotations, setAnnMarkerFixedSize, setAnnMarkerFixedScreenPx, setAnnMarkerWorldSize, setAnnMarkerColor, getAnnMarkerSettings, setAnnotationOnSessionComplete, isAnnotationDialogOpen, showAnnotationContextMenu } from './annotationUtils.js';
@@ -3156,6 +3156,18 @@ function addToolsGui() {
         applyDefaultsToAllCadDim3d,
         applyDefaultsToAllFlatAnnotations,
         applyDefaultsToAllAnnotations3d,
+        getDistanceLabelDefaults,
+        getAngleLabelDefaults,
+        getDistanceMarkerDefaults,
+        getAngleMarkerDefaults,
+        applyDefaultsToAllDistanceMeasurements,
+        applyDefaultsToAllAngleMeasurements,
+        setDistanceMarkerColor,
+        setAngleMarkerColor,
+        getMeasurementMarkerSettings,
+        setMeasurementMarkerFixedSize,
+        setMeasurementMarkerFixedScreenPx,
+        setMeasurementMarkerWorldSize,
         setDimMarkerFixedSize,
         setDimMarkerFixedScreenPx,
         setDimMarkerWorldSize,
@@ -7335,6 +7347,7 @@ function render() {
     updateAnnotationMarkerScales(currentCamera);
     updateAnnotation3dMarkerScales(currentCamera);
     updateAnnotation3dOrientations(currentCamera);
+    updateMeasurement3dOrientations(currentCamera);
     updateCadDim3dMarkerScales(currentCamera);
     updateCadDim3dOrientations(currentCamera);
 
@@ -9564,67 +9577,135 @@ function importIgesFile() {
 
 // ===== Settings Import from GLB ===============================================================
 
-// Apply 3D dimension defaults, 3D annotation defaults, and section settings
+const _EXPORT_SETTING_KEYS = [
+    'cadDim3dDefaults',
+    'annotation3dDefaults',
+    'flatDimDefaults',
+    'flatAnnDefaults',
+    'dimMarkerSettings',
+    'annMarkerSettings',
+    'distanceLabelDefaults',
+    'angleLabelDefaults',
+    'distanceMarkerDefaults',
+    'angleMarkerDefaults',
+    'measurementMarkerSettings',
+    'measurementLabelDimDefault',
+    'measurement3dDefaults',
+    'sectionSettings',
+];
+
+function embedAppSettingsToUserData(userData) {
+    userData.cadDim3dDefaults = { ...getCadDim3dDefaults() };
+    userData.annotation3dDefaults = { ...getAnnotation3dDefaults() };
+    userData.flatDimDefaults = { ...getFlatDimDefaults() };
+    userData.flatAnnDefaults = { ...getFlatAnnDefaults() };
+    userData.dimMarkerSettings = { ...getDimMarkerSettings() };
+    userData.annMarkerSettings = { ...getAnnMarkerSettings() };
+    userData.distanceLabelDefaults = { ...getDistanceLabelDefaults() };
+    userData.angleLabelDefaults = { ...getAngleLabelDefaults() };
+    userData.distanceMarkerDefaults = { ...getDistanceMarkerDefaults() };
+    userData.angleMarkerDefaults = { ...getAngleMarkerDefaults() };
+    userData.measurementMarkerSettings = { ...getMeasurementMarkerSettings() };
+    userData.measurementLabelDimDefault = getDefaultMeasurementLabelDim();
+    userData.measurement3dDefaults = { ...getMeasurement3dDefaults() };
+    userData.sectionSettings = {
+        section:           viewProp.section,
+        px:                viewProp.px,
+        py:                viewProp.py,
+        pz:                viewProp.pz,
+        sectionCrossLines: viewProp.sectionCrossLines,
+        crossSectionColor: viewProp.crossSectionColor,
+        capColor:          viewProp.capColor,
+        showSectionMesh:   viewProp.showSectionMesh,
+    };
+}
+
+function _collectExportSettingsFromScene(gltfScene) {
+    const collected = {};
+    gltfScene.traverse(node => {
+        for (const key of _EXPORT_SETTING_KEYS) {
+            if (collected[key] == null && node.userData[key] != null) {
+                collected[key] = node.userData[key];
+                delete node.userData[key];
+            }
+        }
+    });
+    return collected;
+}
+
+// Apply dimension/annotation/measurement defaults and section settings
 // stored in a node's userData during a previous GLB export.
 // GLTFLoader wraps the exported group as a child of gltf.scene, so we traverse.
 function importSettingsFromGltfScene(gltfScene) {
-    let cadDim3dDef = null;
-    let ann3dDef = null;
-    let sectionSett = null;
-    let dimMarkerSett = null;
-    let annMarkerSett = null;
+    const s = _collectExportSettingsFromScene(gltfScene);
 
-    gltfScene.traverse(node => {
-        if (!cadDim3dDef && node.userData.cadDim3dDefaults) {
-            cadDim3dDef = node.userData.cadDim3dDefaults;
-            delete node.userData.cadDim3dDefaults;
-        }
-        if (!ann3dDef && node.userData.annotation3dDefaults) {
-            ann3dDef = node.userData.annotation3dDefaults;
-            delete node.userData.annotation3dDefaults;
-        }
-        if (!sectionSett && node.userData.sectionSettings) {
-            sectionSett = node.userData.sectionSettings;
-            delete node.userData.sectionSettings;
-        }
-        if (!dimMarkerSett && node.userData.dimMarkerSettings) {
-            dimMarkerSett = node.userData.dimMarkerSettings;
-            delete node.userData.dimMarkerSettings;
-        }
-        if (!annMarkerSett && node.userData.annMarkerSettings) {
-            annMarkerSett = node.userData.annMarkerSettings;
-            delete node.userData.annMarkerSettings;
-        }
-    });
-
-    if (cadDim3dDef) {
-        Object.assign(getCadDim3dDefaults(), cadDim3dDef);
+    if (s.cadDim3dDefaults) {
+        Object.assign(getCadDim3dDefaults(), s.cadDim3dDefaults);
     }
 
-    if (ann3dDef) {
-        Object.assign(getAnnotation3dDefaults(), ann3dDef);
+    if (s.annotation3dDefaults) {
+        Object.assign(getAnnotation3dDefaults(), s.annotation3dDefaults);
     }
 
-    if (dimMarkerSett) {
-        const s = dimMarkerSett;
-        if (s.fixedSize    !== undefined) { setDimMarkerFixedSize(s.fixedSize);          setCadDimMarkerFixedSize(s.fixedSize); }
-        if (s.fixedScreenPx !== undefined){ setDimMarkerFixedScreenPx(s.fixedScreenPx);  setCadDimMarkerFixedScreenPx(s.fixedScreenPx); }
-        if (s.worldSize    !== undefined) { setDimMarkerWorldSize(s.worldSize);           setCadDimMarkerWorldSize(s.worldSize); }
-        if (s.markerColor  !== undefined) { setDimMarkerColor(s.markerColor);             setCadDimMarkerColor(s.markerColor); }
+    if (s.flatDimDefaults) {
+        Object.assign(getFlatDimDefaults(), s.flatDimDefaults);
     }
 
-    if (annMarkerSett) {
-        const s = annMarkerSett;
-        if (s.fixedSize    !== undefined) { setAnnMarkerFixedSize(s.fixedSize);          setAnn3dMarkerFixedSize(s.fixedSize); }
-        if (s.fixedScreenPx !== undefined){ setAnnMarkerFixedScreenPx(s.fixedScreenPx);  setAnn3dMarkerFixedScreenPx(s.fixedScreenPx); }
-        if (s.worldSize    !== undefined) { setAnnMarkerWorldSize(s.worldSize);           setAnn3dMarkerWorldSize(s.worldSize); }
-        if (s.markerColor  !== undefined) { setAnnMarkerColor(s.markerColor);             setAnn3dMarkerColor(s.markerColor); }
+    if (s.flatAnnDefaults) {
+        Object.assign(getFlatAnnDefaults(), s.flatAnnDefaults);
     }
 
-    if (sectionSett) {
-        const s = sectionSett;
+    if (s.dimMarkerSettings) {
+        const m = s.dimMarkerSettings;
+        if (m.fixedSize    !== undefined) { setDimMarkerFixedSize(m.fixedSize);          setCadDimMarkerFixedSize(m.fixedSize); }
+        if (m.fixedScreenPx !== undefined){ setDimMarkerFixedScreenPx(m.fixedScreenPx);  setCadDimMarkerFixedScreenPx(m.fixedScreenPx); }
+        if (m.worldSize    !== undefined) { setDimMarkerWorldSize(m.worldSize);           setCadDimMarkerWorldSize(m.worldSize); }
+        if (m.markerColor  !== undefined) { setDimMarkerColor(m.markerColor);             setCadDimMarkerColor(m.markerColor); }
+    }
+
+    if (s.annMarkerSettings) {
+        const m = s.annMarkerSettings;
+        if (m.fixedSize    !== undefined) { setAnnMarkerFixedSize(m.fixedSize);          setAnn3dMarkerFixedSize(m.fixedSize); }
+        if (m.fixedScreenPx !== undefined){ setAnnMarkerFixedScreenPx(m.fixedScreenPx);  setAnn3dMarkerFixedScreenPx(m.fixedScreenPx); }
+        if (m.worldSize    !== undefined) { setAnnMarkerWorldSize(m.worldSize);           setAnn3dMarkerWorldSize(m.worldSize); }
+        if (m.markerColor  !== undefined) { setAnnMarkerColor(m.markerColor);             setAnn3dMarkerColor(m.markerColor); }
+    }
+
+    if (s.distanceLabelDefaults) {
+        Object.assign(getDistanceLabelDefaults(), s.distanceLabelDefaults);
+    }
+
+    if (s.angleLabelDefaults) {
+        Object.assign(getAngleLabelDefaults(), s.angleLabelDefaults);
+    }
+
+    if (s.distanceMarkerDefaults?.markerColor !== undefined) {
+        setDistanceMarkerColor(s.distanceMarkerDefaults.markerColor);
+    }
+
+    if (s.angleMarkerDefaults?.markerColor !== undefined) {
+        setAngleMarkerColor(s.angleMarkerDefaults.markerColor);
+    }
+
+    if (s.measurementMarkerSettings) {
+        const m = s.measurementMarkerSettings;
+        if (m.fixedSize     !== undefined) setMeasurementMarkerFixedSize(m.fixedSize);
+        if (m.fixedScreenPx !== undefined) setMeasurementMarkerFixedScreenPx(m.fixedScreenPx);
+        if (m.worldSize     !== undefined) setMeasurementMarkerWorldSize(m.worldSize);
+    }
+
+    if (s.measurementLabelDimDefault) {
+        setDefaultMeasurementLabelDim(s.measurementLabelDimDefault);
+    }
+
+    if (s.measurement3dDefaults) {
+        Object.assign(getMeasurement3dDefaults(), s.measurement3dDefaults);
+    }
+
+    if (s.sectionSettings) {
+        const sec = s.sectionSettings;
         const scalarKeys = ['px', 'py', 'pz', 'sectionCrossLines', 'crossSectionColor', 'capColor', 'showSectionMesh'];
-        scalarKeys.forEach(k => { if (s[k] !== undefined) viewProp[k] = s[k]; });
+        scalarKeys.forEach(k => { if (sec[k] !== undefined) viewProp[k] = sec[k]; });
 
         // Apply clip plane positions
         clipPlanes[0].constant = viewProp.px;
@@ -9632,10 +9713,10 @@ function importSettingsFromGltfScene(gltfScene) {
         clipPlanes[2].constant = viewProp.pz;
 
         // Apply section on/off
-        if (s.section !== undefined) {
-            viewProp.section = s.section;
-            renderer.localClippingEnabled = s.section;
-            if (s.section) {
+        if (sec.section !== undefined) {
+            viewProp.section = sec.section;
+            renderer.localClippingEnabled = sec.section;
+            if (sec.section) {
                 viewProp.sectionGizmo = true;
                 activateSectionGizmo(true);
             }
@@ -9831,20 +9912,7 @@ function buildAllModelsExportGroup(finalName) {
         getAttachmentsStore(),
         attachmentCompressionDefaults
     );
-    group.userData.cadDim3dDefaults = { ...getCadDim3dDefaults() };
-    group.userData.annotation3dDefaults = { ...getAnnotation3dDefaults() };
-    group.userData.dimMarkerSettings = { ...getDimMarkerSettings() };
-    group.userData.annMarkerSettings = { ...getAnnMarkerSettings() };
-    group.userData.sectionSettings = {
-        section:           viewProp.section,
-        px:                viewProp.px,
-        py:                viewProp.py,
-        pz:                viewProp.pz,
-        sectionCrossLines: viewProp.sectionCrossLines,
-        crossSectionColor: viewProp.crossSectionColor,
-        capColor:          viewProp.capColor,
-        showSectionMesh:   viewProp.showSectionMesh,
-    };
+    embedAppSettingsToUserData(group.userData);
 
     assemblyClearUserData();
     stripMeasurementVisuals(group);
@@ -9986,18 +10054,7 @@ function exportSelectedObject() {
         const exporter = new GLTFExporter();
         const group = new THREE.Group();
         group.userData._appExportRoot = true;
-        group.userData.cadDim3dDefaults = { ...getCadDim3dDefaults() };
-        group.userData.annotation3dDefaults = { ...getAnnotation3dDefaults() };
-        group.userData.sectionSettings = {
-            section:           viewProp.section,
-            px:                viewProp.px,
-            py:                viewProp.py,
-            pz:                viewProp.pz,
-            sectionCrossLines: viewProp.sectionCrossLines,
-            crossSectionColor: viewProp.crossSectionColor,
-            capColor:          viewProp.capColor,
-            showSectionMesh:   viewProp.showSectionMesh,
-        };
+        embedAppSettingsToUserData(group.userData);
 
         selectedObjects.forEach(obj => {
             const clone = obj.clone(true);
@@ -10052,19 +10109,7 @@ function exportSelectedObject() {
     const exporter = new GLTFExporter();
     const clone = lastSelectedObject.clone(true);
 
-    // Embed 3D dimension defaults, 3D annotation defaults, section settings
-    clone.userData.cadDim3dDefaults = { ...getCadDim3dDefaults() };
-    clone.userData.annotation3dDefaults = { ...getAnnotation3dDefaults() };
-    clone.userData.sectionSettings = {
-        section:           viewProp.section,
-        px:                viewProp.px,
-        py:                viewProp.py,
-        pz:                viewProp.pz,
-        sectionCrossLines: viewProp.sectionCrossLines,
-        crossSectionColor: viewProp.crossSectionColor,
-        capColor:          viewProp.capColor,
-        showSectionMesh:   viewProp.showSectionMesh,
-    };
+    embedAppSettingsToUserData(clone.userData);
 
     // Clean up originals — clone already carries the assembly data
     assemblyClearUserData();
@@ -10132,18 +10177,7 @@ async function exportSelectedObjectDraco() {
         const exporter = new GLTFExporter();
         const groupDraco = new THREE.Group();
         groupDraco.userData._appExportRoot = true;
-        groupDraco.userData.cadDim3dDefaults = { ...getCadDim3dDefaults() };
-        groupDraco.userData.annotation3dDefaults = { ...getAnnotation3dDefaults() };
-        groupDraco.userData.sectionSettings = {
-            section:           viewProp.section,
-            px:                viewProp.px,
-            py:                viewProp.py,
-            pz:                viewProp.pz,
-            sectionCrossLines: viewProp.sectionCrossLines,
-            crossSectionColor: viewProp.crossSectionColor,
-            capColor:          viewProp.capColor,
-            showSectionMesh:   viewProp.showSectionMesh,
-        };
+        embedAppSettingsToUserData(groupDraco.userData);
 
         selectedObjects.forEach(obj => {
             const clone = obj.clone(true);
@@ -10252,18 +10286,7 @@ async function exportSelectedObjectDraco() {
     const exporter = new GLTFExporter();
     const clone = lastSelectedObject.clone(true);
 
-    clone.userData.cadDim3dDefaults = { ...getCadDim3dDefaults() };
-    clone.userData.annotation3dDefaults = { ...getAnnotation3dDefaults() };
-    clone.userData.sectionSettings = {
-        section:           viewProp.section,
-        px:                viewProp.px,
-        py:                viewProp.py,
-        pz:                viewProp.pz,
-        sectionCrossLines: viewProp.sectionCrossLines,
-        crossSectionColor: viewProp.crossSectionColor,
-        capColor:          viewProp.capColor,
-        showSectionMesh:   viewProp.showSectionMesh,
-    };
+    embedAppSettingsToUserData(clone.userData);
 
     assemblyClearUserData();
 
@@ -11750,8 +11773,21 @@ function assemblyMoveStepDown() {
         const it = document.createElement('div');
         it.className = 'ctx-item';
         it.textContent = text;
-        it.addEventListener('click', fn);
+        it.addEventListener('mousedown', (e) => { e.stopPropagation(); });
+        it.addEventListener('click', (e) => {
+            e.stopPropagation();
+            _suppressNextClick = true;
+            fn();
+        });
         return it;
+    }
+
+    function attachCtxMenuClickShield(menu) {
+        menu.addEventListener('mousedown', (e) => { e.stopPropagation(); });
+        menu.addEventListener('click', (e) => {
+            e.stopPropagation();
+            _suppressNextClick = true;
+        });
     }
 
     // --- Build empty-space menu ---
@@ -12204,6 +12240,34 @@ function assemblyMoveStepDown() {
 
         m.appendChild(separator());
 
+        const itemToggleDim = simpleItem('⇄ Convert to 3D (oriented)', () => {
+            const dim = getSelectedMeasurementLabelDim();
+            setSelectedMeasurementLabelDim(dim === '3d' ? '2d' : '3d', render);
+            hideAll();
+        });
+        m.appendChild(itemToggleDim);
+
+        const orientSep = separator();
+        m.appendChild(orientSep);
+
+        const ORIENT_MODES_MEAS = [
+            { key: 'camera', label: 'Face camera' },
+            { key: 'XY',     label: 'XY plane'    },
+            { key: 'XZ',     label: 'XZ plane'    },
+            { key: 'YZ',     label: 'YZ plane'    },
+        ];
+        const orientItems = {};
+        for (const mode of ORIENT_MODES_MEAS) {
+            const item = simpleItem(mode.label, () => {
+                setSelectedMeasurementOrientationMode(mode.key, render);
+                hideAll();
+            });
+            orientItems[mode.key] = item;
+            m.appendChild(item);
+        }
+
+        m.appendChild(separator());
+
         const colorRow = (labelText, onInput) => {
             const el = document.createElement('div');
             el.style.cssText = 'padding:2px 12px;display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:default;';
@@ -12258,6 +12322,9 @@ function assemblyMoveStepDown() {
         m._inpTextColor = inpTextColor;
         m._inpBgColor = inpBgColor;
         m._inpFontSize = inpFontSize;
+        m._itemToggleDim = itemToggleDim;
+        m._orientSep = orientSep;
+        m._orientItems = orientItems;
 
         return m;
     }
@@ -12268,6 +12335,29 @@ function assemblyMoveStepDown() {
         if (getSelectedDistance()) lbl.textContent = 'Distance measurement';
         else if (getSelectedAngle()) lbl.textContent = 'Angle measurement';
         else lbl.textContent = 'Measurement';
+
+        const labelDim = getSelectedMeasurementLabelDim();
+        const is3d = labelDim === '3d';
+        if (labelDim) {
+            menuMeasurement._itemToggleDim.textContent = is3d
+                ? '⇄ Convert to Flat (screen-aligned)'
+                : '⇄ Convert to 3D (oriented)';
+        }
+
+        for (const item of Object.values(menuMeasurement._orientItems)) {
+            item.style.display = is3d ? '' : 'none';
+        }
+        if (menuMeasurement._orientSep) {
+            menuMeasurement._orientSep.style.display = is3d ? '' : 'none';
+        }
+
+        const meas = getSelectedDistance() || getSelectedAngle();
+        if (is3d && meas) {
+            const currentOrient = meas.orientationMode || 'camera';
+            for (const [key, item] of Object.entries(menuMeasurement._orientItems)) {
+                item.style.fontWeight = key === currentOrient ? 'bold' : '';
+            }
+        }
 
         const style = getSelectedMeasurementLabelStyle();
         if (!style) return;
@@ -12283,6 +12373,7 @@ function assemblyMoveStepDown() {
     const menuCadDim   = createCadDimMenu();
     const menuCadDim3d = createCadDim3dMenu();
     const menuMeasurement = createMeasurementMenu();
+    [menuEmpty, menuObject, menuCadDim, menuCadDim3d, menuMeasurement].forEach(attachCtxMenuClickShield);
     document.body.appendChild(menuEmpty);
     document.body.appendChild(menuObject);
     document.body.appendChild(menuCadDim);

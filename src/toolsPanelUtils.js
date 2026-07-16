@@ -372,6 +372,73 @@ function _buildAnnotationDefaultsFolder(parentFolder, deps) {
     annotationFolder.close();
 }
 
+function _buildMeasurementDefaultsFolder(parentFolder, deps) {
+    const measurementFolder = parentFolder.addFolder('Measurement defaults');
+
+    const distanceDefaultsFolder = measurementFolder.addFolder('Measure (Distance) defaults');
+    const _distanceLabelDef = deps.getDistanceLabelDefaults();
+    distanceDefaultsFolder.add(_distanceLabelDef, 'fontSize', 8, 24, 1).name('Size').listen();
+    distanceDefaultsFolder.addColor(_distanceLabelDef, 'textColor').name('Text color').listen();
+    distanceDefaultsFolder.addColor(_distanceLabelDef, 'bgColor').name('Background').listen();
+    distanceDefaultsFolder.add({ fn() { deps.applyDefaultsToAllDistanceMeasurements(deps.render); } }, 'fn').name('Apply to all existing');
+    distanceDefaultsFolder.close();
+
+    const angleDefaultsFolder = measurementFolder.addFolder('Angle defaults');
+    const _angleLabelDef = deps.getAngleLabelDefaults();
+    angleDefaultsFolder.add(_angleLabelDef, 'fontSize', 8, 24, 1).name('Size').listen();
+    angleDefaultsFolder.addColor(_angleLabelDef, 'textColor').name('Text color').listen();
+    angleDefaultsFolder.addColor(_angleLabelDef, 'bgColor').name('Background').listen();
+    angleDefaultsFolder.add({ fn() { deps.applyDefaultsToAllAngleMeasurements(deps.render); } }, 'fn').name('Apply to all existing');
+    angleDefaultsFolder.close();
+
+    const measMarkersFolder = measurementFolder.addFolder('Measurement markers defaults');
+    const _measMarkerSizeOpts = deps.getMeasurementMarkerSettings();
+    const _distanceMarkerOpts = deps.getDistanceMarkerDefaults();
+    const _angleMarkerOpts = deps.getAngleMarkerDefaults();
+    deps.setDistanceMarkerColor(_distanceMarkerOpts.markerColor);
+    deps.setAngleMarkerColor(_angleMarkerOpts.markerColor);
+    measMarkersFolder.add(_measMarkerSizeOpts, 'fixedSize').name('Fixed size').onChange(v => {
+        deps.setMeasurementMarkerFixedSize(v);
+        deps.render();
+    }).listen();
+    measMarkersFolder.add(_measMarkerSizeOpts, 'fixedScreenPx', 1, 30, 0.5).name('Size – fixed (px)').onChange(v => {
+        deps.setMeasurementMarkerFixedScreenPx(v);
+        deps.render();
+    }).listen();
+    measMarkersFolder.add(_measMarkerSizeOpts, 'worldSize', 0.01, 100, 0.01).name('Size – free (world)').onChange(v => {
+        deps.setMeasurementMarkerWorldSize(v);
+        deps.render();
+    }).listen();
+    measMarkersFolder.addColor(_distanceMarkerOpts, 'markerColor').name('Distance marker color').onChange(v => {
+        deps.setDistanceMarkerColor(v);
+        deps.render();
+    }).listen();
+    measMarkersFolder.addColor(_angleMarkerOpts, 'markerColor').name('Angle marker color').onChange(v => {
+        deps.setAngleMarkerColor(v);
+        deps.render();
+    }).listen();
+    measMarkersFolder.close();
+
+    measurementFolder.add({ fn() {
+        Object.assign(_distanceLabelDef, { textColor: '#ffffff', bgColor: '#c82828', fontSize: 11 });
+        Object.assign(_angleLabelDef, { textColor: '#ffffff', bgColor: '#2850c8', fontSize: 11 });
+        Object.assign(_distanceMarkerOpts, { markerColor: '#ff4444' });
+        Object.assign(_angleMarkerOpts, { markerColor: '#4488ff' });
+        Object.assign(_measMarkerSizeOpts, { fixedSize: false, fixedScreenPx: 3, worldSize: 5 });
+        deps.setMeasurementMarkerFixedSize(_measMarkerSizeOpts.fixedSize);
+        deps.setMeasurementMarkerFixedScreenPx(_measMarkerSizeOpts.fixedScreenPx);
+        deps.setMeasurementMarkerWorldSize(_measMarkerSizeOpts.worldSize);
+        deps.setDistanceMarkerColor(_distanceMarkerOpts.markerColor);
+        deps.setAngleMarkerColor(_angleMarkerOpts.markerColor);
+        deps.render();
+    } }, 'fn').name('Set to default');
+    measurementFolder.add({ fn() {
+        deps.applyDefaultsToAllDistanceMeasurements(deps.render);
+        deps.applyDefaultsToAllAngleMeasurements(deps.render);
+    } }, 'fn').name('Apply to existing');
+    measurementFolder.close();
+}
+
 /**
  * @param {HTMLElement} container
  * @param {object} deps
@@ -444,6 +511,7 @@ export function initToolsPanel(container, deps) {
 
     _buildDimensionDefaultsFolder(toolsGui, deps);
     _buildAnnotationDefaultsFolder(toolsGui, deps);
+    _buildMeasurementDefaultsFolder(toolsGui, deps);
 
     syncToolsPanelUI(deps);
     return toolsGui;
