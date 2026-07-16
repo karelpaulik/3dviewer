@@ -16,6 +16,7 @@ import {
 import { openImageEditor, autoArrangeImageEditors } from './imageEditorUtils.js';
 import { runOcr, runOcrWithProgress, showOcrResultDialog } from './ocrUtils.js';
 import { openPdfPageManager } from './pdfPageManagerUtils.js';
+import { normalizeAttachmentFromGltf } from './attachmentCompressionUtils.js';
 
 let attachmentsStore = []; // [{ id, name, mimeType, data (base64 string), size, addedAt }]
 let _guiRef = null;
@@ -51,7 +52,7 @@ export function importAttachmentsFromGltfScene(gltfScene) {
     if (!attachments) return;
     attachments.forEach(att => {
         if (!attachmentsStore.find(a => a.id === att.id)) {
-            attachmentsStore.push(att);
+            attachmentsStore.push(normalizeAttachmentFromGltf(att));
         }
     });
     refreshAttachmentsGui();

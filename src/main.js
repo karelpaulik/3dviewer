@@ -57,6 +57,7 @@ import {
     createVisibilityCommand,
 } from './undoCommands.js';
 import { initAttachmentsGui, importAttachmentsFromGltfScene, getAttachmentsStore, addImageAttachmentFromBlob, clearAttachmentsStore } from './attachmentsUtils.js';
+import { serializeAttachmentsForExport } from './attachmentCompressionUtils.js';
 import { initLocalFileAccess, openLocalGlbFile, saveLocalGlbFile, saveLocalGlbFileAs, clearCurrentLocalFileHandle, waitForExternalFileSignal, wasOpenedWithExternalFile } from './localFileAccess.js';
 import { captureScreenFromDisplayMedia } from './viewportCapture.js';
 import { openHelp } from './helpUtils.js';
@@ -1191,6 +1192,12 @@ const dracoDefaults = {
     quantizeGeneric:  12,            // bits
 };
 const dracoInitDefaults = { ...dracoDefaults };
+
+const attachmentCompressionDefaults = {
+    enabled: true,
+    minBytes: 4096,
+};
+const attachmentCompressionInitDefaults = { ...attachmentCompressionDefaults };
 
 const extent = {
     pn: -1000,
@@ -2512,7 +2519,7 @@ function addMainGui() {
                 docNameFolder.add(_docLabelOpts, 'showLastEditDate').name('Show last edit date').onChange(v => setDocLabelOptions({ showLastEditDate: v }));
                 docNameFolder.add(_docLabelOpts, 'showImportDate').name('Show import date').onChange(v => setDocLabelOptions({ showImportDate: v }));
                 docNameFolder.close();
-            const dracoCompFolder = preferencesFolder.addFolder('Export Compression');
+            const dracoCompFolder = preferencesFolder.addFolder('GLB Draco Compression');
                 const _dracoMethodOpts = { 'Edgebreaker': 'edgebreaker', 'Sequential': 'sequential' };
                 dracoCompFolder.add(dracoDefaults, 'useCustomSettings').name('Use custom settings').listen();
                 dracoCompFolder.add(dracoDefaults, 'method', _dracoMethodOpts).name('Method').listen();
@@ -2525,6 +2532,11 @@ function addMainGui() {
                 dracoCompFolder.add(dracoDefaults, 'quantizeGeneric', 1, 16, 1).name('Quantize generic (bits)').listen();
                 dracoCompFolder.add({ fn() { Object.assign(dracoDefaults, dracoInitDefaults); } }, 'fn').name('Set to default');
                 dracoCompFolder.close();
+            const attachmentCompFolder = preferencesFolder.addFolder('Attachments Compression');
+                attachmentCompFolder.add(attachmentCompressionDefaults, 'enabled').name('Compress attachments in GLB').listen();
+                attachmentCompFolder.add(attachmentCompressionDefaults, 'minBytes', 0, 64000, 1024).name('Min size to compress (bytes)').listen();
+                attachmentCompFolder.add({ fn() { Object.assign(attachmentCompressionDefaults, attachmentCompressionInitDefaults); } }, 'fn').name('Set to default');
+                attachmentCompFolder.close();
             preferencesFolder.close();
 
     // Sync toggle when fullscreen is exited externally (e.g. F11)
@@ -9809,7 +9821,10 @@ function buildAllModelsExportGroup(finalName) {
 
     group.userData._appExportRoot = true;
     group.userData.documents = getDocumentsStore().map(d => ({ ...d }));
-    group.userData.attachments = getAttachmentsStore().map(a => ({ ...a }));
+    group.userData.attachments = serializeAttachmentsForExport(
+        getAttachmentsStore(),
+        attachmentCompressionDefaults
+    );
     group.userData.cadDim3dDefaults = { ...getCadDim3dDefaults() };
     group.userData.annotation3dDefaults = { ...getAnnotation3dDefaults() };
     group.userData.dimMarkerSettings = { ...getDimMarkerSettings() };
