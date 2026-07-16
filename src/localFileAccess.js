@@ -3,6 +3,8 @@
 import {
     SHARE_CACHE_KEY,
     SHARE_CACHE_NAME,
+    SHARE_CACHE_NAME_KEY,
+    SHARE_TARGET_MESSAGE_TYPE,
     SHARE_TARGET_QUERY_ERROR,
     SHARE_TARGET_QUERY_PARAM,
     SHARE_TARGET_QUERY_VALUE,
@@ -79,6 +81,57 @@ function clearShareTargetQuery() {
     history.replaceState(null, '', url.pathname + url.search + url.hash);
 }
 
+function normalizeSharedFileName(name) {
+    const base = (name || 'shared').trim() || 'shared';
+    return /\.glb$/i.test(base) ? base : `${base}.glb`;
+}
+
+async function readSharedFileFromCache() {
+    const cache = await caches.open(SHARE_CACHE_NAME);
+    const response = await cache.match(SHARE_CACHE_KEY);
+    if (!response) return null;
+
+    const nameResponse = await cache.match(SHARE_CACHE_NAME_KEY);
+    const blob = await response.blob();
+    await cache.delete(SHARE_CACHE_KEY);
+    if (nameResponse) await cache.delete(SHARE_CACHE_NAME_KEY);
+
+    let fileName = nameResponse ? await nameResponse.text() : response.headers.get('x-filename');
+    fileName = normalizeSharedFileName(fileName || 'shared.glb');
+
+    return new File([blob], fileName, {
+        type: blob.type || 'model/gltf-binary',
+    });
+}
+
+async function tryConsumePendingSharedFile() {
+    if (!pendingSharedFile || !_callbacks.loadGlbFile) return;
+    await consumeSharedGlbIfPresent();
+}
+
+async function loadPendingShareFromCache(maxRetries = 8, delayMs = 250) {
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+            const file = await readSharedFileFromCache();
+            if (file) {
+                pendingSharedFile = file;
+                markSharedWithFile();
+                await tryConsumePendingSharedFile();
+                return true;
+            }
+        } catch (err) {
+            console.error('[ShareTarget] Failed to read shared file from cache:', err);
+            break;
+        }
+
+        if (attempt < maxRetries - 1) {
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+        }
+    }
+
+    return false;
+}
+
 async function probeShareTargetCache() {
     const params = new URLSearchParams(location.search);
     const target = params.get(SHARE_TARGET_QUERY_PARAM);
@@ -95,30 +148,25 @@ async function probeShareTargetCache() {
         return;
     }
 
-    try {
-        const cache = await caches.open(SHARE_CACHE_NAME);
-        const response = await cache.match(SHARE_CACHE_KEY);
-        if (!response) {
-            console.warn('[ShareTarget] No cached file found for share launch.');
-            clearShareTargetQuery();
-            settleShareTargetProbe();
-            return;
-        }
-
-        const blob = await response.blob();
-        await cache.delete(SHARE_CACHE_KEY);
-        const fileName = response.headers.get('x-filename') || 'shared.glb';
-        pendingSharedFile = new File([blob], fileName, {
-            type: blob.type || 'model/gltf-binary',
-        });
-        markSharedWithFile();
-    } catch (err) {
-        console.error('[ShareTarget] Failed to read shared file from cache:', err);
+    const loaded = await loadPendingShareFromCache();
+    if (!loaded) {
+        console.warn('[ShareTarget] No cached file found for share launch.');
         clearShareTargetQuery();
-        alert('Could not open the shared file: ' + (err.message || err));
     }
 
     settleShareTargetProbe();
+}
+
+function handleShareTargetMessage() {
+    void loadPendingShareFromCache();
+}
+
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.addEventListener('message', (event) => {
+        if (event.data?.type === SHARE_TARGET_MESSAGE_TYPE) {
+            handleShareTargetMessage();
+        }
+    });
 }
 
 void probeShareTargetCache();
@@ -233,7 +281,7 @@ export function clearCurrentLocalFileHandle() {
 export function initLocalFileAccess(callbacks) {
     _callbacks = callbacks || {};
     void processPendingLaunchHandles();
-    void consumeSharedGlbIfPresent();
+    void tryConsumePendingSharedFile();
 }
 
 async function openGlbFromHandle(handle, { replaceScene }) {
