@@ -1,4 +1,5 @@
 // sceneOutliner.js – Scene hierarchy panel (left side, collapsible, resizable)
+import { positionFixedMenu, resetMenuScrollStyles } from './uiMenuUtils.js';
 
 /** @type {HTMLDivElement} */
 let panelEl = null;
@@ -55,8 +56,6 @@ export function setOnTreeRebuild(cb) {
     _onTreeRebuild = cb;
 }
 
-const MENU_MARGIN = 8;
-
 const PRIMITIVE_TYPES = [
     ['box', 'Box'],
     ['sphere', 'Sphere'],
@@ -65,59 +64,6 @@ const PRIMITIVE_TYPES = [
     ['plane', 'Plane'],
     ['torus', 'Torus']
 ];
-
-function resetMenuScrollStyles(menu) {
-    menu.style.maxHeight = '';
-    menu.style.overflowY = '';
-    menu.classList.remove('outliner-ctx-scroll');
-}
-
-/**
- * Position a fixed menu within the viewport; enable vertical scroll when taller than viewport.
- * @param {HTMLElement} menu
- * @param {number} x
- * @param {number} y
- * @param {DOMRect|null} [anchorRect] flyout anchor — prefer opening to the right of this rect
- */
-function positionFixedMenu(menu, x, y, anchorRect = null) {
-    resetMenuScrollStyles(menu);
-    menu.style.display = 'block';
-
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    const maxAllowedH = vh - MENU_MARGIN * 2;
-
-    let effectiveH = menu.offsetHeight;
-    if (menu.offsetHeight > maxAllowedH) {
-        effectiveH = maxAllowedH;
-        menu.style.maxHeight = maxAllowedH + 'px';
-        menu.style.overflowY = 'auto';
-        menu.classList.add('outliner-ctx-scroll');
-    }
-
-    const mw = menu.offsetWidth;
-    let left = x;
-    let top = y;
-
-    if (anchorRect) {
-        left = anchorRect.right + 2;
-        top = anchorRect.top;
-        if (left + mw > vw - MENU_MARGIN) {
-            left = anchorRect.left - mw - 2;
-        }
-    } else if (left + mw > vw - MENU_MARGIN) {
-        left = vw - mw - MENU_MARGIN;
-    }
-
-    if (top + effectiveH > vh - MENU_MARGIN) {
-        top = vh - effectiveH - MENU_MARGIN;
-    }
-    if (top < MENU_MARGIN) top = MENU_MARGIN;
-    if (left < MENU_MARGIN) left = MENU_MARGIN;
-
-    menu.style.left = left + 'px';
-    menu.style.top = top + 'px';
-}
 
 function hidePrimitiveFlyout() {
     if (flyoutHideTimer) {

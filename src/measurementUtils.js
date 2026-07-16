@@ -1856,6 +1856,14 @@ export function getSelectedCadDim3d() {
     return (_selectedDimType === 'cadDim3d') ? _selectedDim : null;
 }
 
+export function getSelectedAnnotation() {
+    return (_selectedDimType === 'annotation') ? _selectedDim : null;
+}
+
+export function getSelectedAnnotation3d() {
+    return (_selectedDimType === 'annotation3d') ? _selectedDim : null;
+}
+
 /**
  * Change the label mode of a placed CAD dimension and rebuild its label.
  * labelMode: 0 = simple (axis: value), 1 = full (like point-to-point)

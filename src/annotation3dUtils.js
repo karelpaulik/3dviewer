@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { CSS3DObject } from 'three/addons/renderers/CSS3DRenderer.js';
 import { showAnnotationTextDialog } from './annotationUtils.js';
+import { positionContextMenu } from './uiMenuUtils.js';
 
 // --- Private state ---
 let _scene = null;
@@ -359,17 +360,21 @@ function _attachHandlers(annotation, renderFn) {
     annotation.label.element.addEventListener('contextmenu', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        _showAnnotation3dContextMenu(annotation, e.clientX, e.clientY, renderFn);
+        showAnnotation3dContextMenu(annotation, e.clientX, e.clientY, renderFn, null, annotation.label.element);
     });
 }
 
-function _showAnnotation3dContextMenu(annotation, x, y, renderFn) {
+export function showAnnotation3dContextMenu(annotation, x, y, renderFn, menuBounds = null, anchorEl = null) {
     const existing = document.getElementById('_annotation3d-ctx-menu');
     if (existing) existing.remove();
 
+    const anchorRect = anchorEl ? anchorEl.getBoundingClientRect() : null;
+    const posX = anchorRect ? anchorRect.right : x;
+    const posY = anchorRect ? anchorRect.top : y;
+
     const menu = document.createElement('div');
     menu.id = '_annotation3d-ctx-menu';
-    menu.style.cssText = `position:fixed;left:${x}px;top:${y}px;background:#2a2a2a;color:#fff;border:1px solid #555;border-radius:5px;padding:4px 0;z-index:200000;min-width:180px;box-shadow:0 4px 16px rgba(0,0,0,0.5);font-family:sans-serif;font-size:12px;`;
+    menu.style.cssText = 'position:fixed;background:#2a2a2a;color:#fff;border:1px solid #555;border-radius:5px;padding:4px 0;z-index:200000;min-width:180px;box-shadow:0 4px 16px rgba(0,0,0,0.5);font-family:sans-serif;font-size:12px;';
 
     const item = (label, cb) => {
         const el = document.createElement('div');
@@ -523,6 +528,10 @@ function _showAnnotation3dContextMenu(annotation, x, y, renderFn) {
     }
 
     document.body.appendChild(menu);
+    positionContextMenu(menu, posX, posY, {
+        bounds: menuBounds ?? undefined,
+        anchorRect,
+    });
 
     const close = (e) => {
         if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('mousedown', close, true); }

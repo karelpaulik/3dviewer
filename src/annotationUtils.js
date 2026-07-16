@@ -1,6 +1,7 @@
 // annotationUtils.js – Annotation (note) system with CSS2D labels
 import * as THREE from 'three';
 import { CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { positionContextMenu } from './uiMenuUtils.js';
 
 // --- Private state ---
 let _scene = null;
@@ -314,14 +315,18 @@ function _deleteAnnotation(annotation, renderFn) {
     if (renderFn) renderFn();
 }
 
-function _showAnnotationContextMenu(annotation, x, y, renderFn) {
+export function showAnnotationContextMenu(annotation, x, y, renderFn, menuBounds = null, anchorEl = null) {
     // Remove any existing context menu
     const existing = document.getElementById('_annotation-ctx-menu');
     if (existing) existing.remove();
 
+    const anchorRect = anchorEl ? anchorEl.getBoundingClientRect() : null;
+    const posX = anchorRect ? anchorRect.right : x;
+    const posY = anchorRect ? anchorRect.top : y;
+
     const menu = document.createElement('div');
     menu.id = '_annotation-ctx-menu';
-    menu.style.cssText = `position:fixed;left:${x}px;top:${y}px;background:#2a2a2a;color:#fff;border:1px solid #555;border-radius:5px;padding:4px 0;z-index:200000;min-width:170px;box-shadow:0 4px 16px rgba(0,0,0,0.5);font-family:sans-serif;font-size:12px;`;
+    menu.style.cssText = 'position:fixed;background:#2a2a2a;color:#fff;border:1px solid #555;border-radius:5px;padding:4px 0;z-index:200000;min-width:170px;box-shadow:0 4px 16px rgba(0,0,0,0.5);font-family:sans-serif;font-size:12px;';
 
     const item = (label, cb) => {
         const el = document.createElement('div');
@@ -439,6 +444,10 @@ function _showAnnotationContextMenu(annotation, x, y, renderFn) {
     item('🗑 Delete annotation', () => { _deleteAnnotation(annotation, renderFn); });
 
     document.body.appendChild(menu);
+    positionContextMenu(menu, posX, posY, {
+        bounds: menuBounds ?? undefined,
+        anchorRect,
+    });
 
     // Close on click anywhere outside
     const close = (e) => {
@@ -547,7 +556,7 @@ export function addAnnotationPoint(point, ownerObject, renderFn) {
         label.element.addEventListener('contextmenu', (e) => {
             e.preventDefault();
             e.stopPropagation();
-            _showAnnotationContextMenu(annotation, e.clientX, e.clientY, renderFn);
+            showAnnotationContextMenu(annotation, e.clientX, e.clientY, renderFn, null, annotation.label.element);
         });
 
         // Reset pending state
@@ -961,7 +970,7 @@ function _reconstructAnnotation(owner, rec, renderFn) {
     label.element.addEventListener('contextmenu', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        _showAnnotationContextMenu(annotation, e.clientX, e.clientY, renderFn);
+        showAnnotationContextMenu(annotation, e.clientX, e.clientY, renderFn, null, annotation.label.element);
     });
     return annotation;
 }

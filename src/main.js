@@ -24,12 +24,13 @@ import ZipLoader from 'zip-loader';
 import { updateCrossSectionLines as updateCrossSectionLinesCore, updateSectionCrossLines as updateSectionCrossLinesCore } from './crossSectionUtils.js';
 import { exportToHTML, exportToHTMLDraco, exportToHTMLObfuscated, exportToHTMLObfuscatedDraco } from './htmlExport.js';
 import { initOutliner, toggleOutliner, rebuildTree, highlightObject as outlinerHighlight, updateVisibilityIcon, updateSelectableIcon, updateObjectLabel, isOutlinerOpen, navigateOutliner, highlightGroupObjects, clearGroupHighlights, setNavigationPosition, setOnTreeRebuild } from './sceneOutliner.js';
+import { positionContextMenu } from './uiMenuUtils.js';
 import { computeModelStats } from './modelInfoUtils.js';
-import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements, isSelectDimActive, setSelectDimActive, refreshLabelEditListeners, hasSelectedDimension, deselectSelectedDimension, deleteSelectedDimension, initSelectDimension, updateSelectDimensionCamera, reconstructMeasurements, stripMeasurementVisuals, setMeasurementsVisible, setMeasurementDepthTest, removeMeasurementsForOwner, isCadDimActive, setCadDimActive, getCadDimStep, getCadDimAxis, addCadDimPoint, updateCadDimPreview, updateCadDimHoverPreview, cycleCadDimAxis, placeCadDim, clearCadDimMeasurements, removeCadDimMeasurementsForOwner, getSelectedCadDim, setCadDimLabelMode, setCadDimDragMode, selectDimTouchStart, selectDimTouchMove, selectDimTouchEnd, registerLabelForSelection, getSelectedCadDim3d, getCadDimMeasurements, deleteCadDimByRef, convertCadDim3dTo2d, getFlatDimDefaults, applyDefaultsToAllFlatDim, setDimMarkerFixedSize, setDimMarkerFixedScreenPx, setDimMarkerWorldSize, setDimMarkerColor, getDimMarkerSettings, setMeasureOnSessionComplete, setAngleOnSessionComplete, setCadDimOnSessionComplete } from './measurementUtils.js';
+import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements, isSelectDimActive, setSelectDimActive, refreshLabelEditListeners, hasSelectedDimension, deselectSelectedDimension, deleteSelectedDimension, initSelectDimension, updateSelectDimensionCamera, reconstructMeasurements, stripMeasurementVisuals, setMeasurementsVisible, setMeasurementDepthTest, removeMeasurementsForOwner, isCadDimActive, setCadDimActive, getCadDimStep, getCadDimAxis, addCadDimPoint, updateCadDimPreview, updateCadDimHoverPreview, cycleCadDimAxis, placeCadDim, clearCadDimMeasurements, removeCadDimMeasurementsForOwner, getSelectedCadDim, setCadDimLabelMode, setCadDimDragMode, selectDimTouchStart, selectDimTouchMove, selectDimTouchEnd, registerLabelForSelection, getSelectedCadDim3d, getSelectedAnnotation, getSelectedAnnotation3d, getCadDimMeasurements, deleteCadDimByRef, convertCadDim3dTo2d, getFlatDimDefaults, applyDefaultsToAllFlatDim, setDimMarkerFixedSize, setDimMarkerFixedScreenPx, setDimMarkerWorldSize, setDimMarkerColor, getDimMarkerSettings, setMeasureOnSessionComplete, setAngleOnSessionComplete, setCadDimOnSessionComplete } from './measurementUtils.js';
 import { detectCircleCenterFromHit, clearCircleDetectionCache } from './circleDetectionUtils.js';
 import { removeEdgeOverlays, updateMeshEdgeOverlays, stripEdgeOverlays } from './edgeDisplayUtils.js';
-import { initAnnotations, isAnnotationActive, setAnnotationActive, addAnnotationPoint, getAnnotationPendingPoint, updateAnnotationPreview, updateAnnotationMarkerScales, setAnnotationsVisible, clearAnnotations, stripAnnotationVisuals, reconstructAnnotations, setAnnotationDepthTest, removeAnnotationsForOwner, getAnnotations, isAddLeaderLineActive, cancelAddLeaderLine, commitAddLeaderLine, deleteAnnotationByRef, setConvertTo3dFn, reconstructAnnotationFromRec, getFlatAnnDefaults, applyDefaultsToAllFlatAnnotations, setAnnMarkerFixedSize, setAnnMarkerFixedScreenPx, setAnnMarkerWorldSize, setAnnMarkerColor, getAnnMarkerSettings, setAnnotationOnSessionComplete, isAnnotationDialogOpen } from './annotationUtils.js';
-import { initAnnotations3d, isAnnotation3dActive, setAnnotation3dActive, addAnnotation3dPoint, getAnnotation3dPendingPoint, updateAnnotation3dPreview, updateAnnotation3dMarkerScales, updateAnnotation3dOrientations, setAnnotations3dVisible, clearAnnotations3d, stripAnnotation3dVisuals, reconstructAnnotations3d, setAnnotation3dDepthTest, removeAnnotations3dForOwner, isAddLeaderLine3dActive, cancelAddLeaderLine3d, commitAddLeaderLine3d, getAnnotation3dDefaults, deleteAnnotation3dByRef, setConvertTo2dFn, reconstructAnnotation3dFromRec, applyDefaultsToAllAnnotations3d, setAnn3dMarkerFixedSize, setAnn3dMarkerFixedScreenPx, setAnn3dMarkerWorldSize, setAnn3dMarkerColor, setAnnotation3dOnSessionComplete, isAnnotation3dDialogOpen } from './annotation3dUtils.js';
+import { initAnnotations, isAnnotationActive, setAnnotationActive, addAnnotationPoint, getAnnotationPendingPoint, updateAnnotationPreview, updateAnnotationMarkerScales, setAnnotationsVisible, clearAnnotations, stripAnnotationVisuals, reconstructAnnotations, setAnnotationDepthTest, removeAnnotationsForOwner, getAnnotations, isAddLeaderLineActive, cancelAddLeaderLine, commitAddLeaderLine, deleteAnnotationByRef, setConvertTo3dFn, reconstructAnnotationFromRec, getFlatAnnDefaults, applyDefaultsToAllFlatAnnotations, setAnnMarkerFixedSize, setAnnMarkerFixedScreenPx, setAnnMarkerWorldSize, setAnnMarkerColor, getAnnMarkerSettings, setAnnotationOnSessionComplete, isAnnotationDialogOpen, showAnnotationContextMenu } from './annotationUtils.js';
+import { initAnnotations3d, isAnnotation3dActive, setAnnotation3dActive, addAnnotation3dPoint, getAnnotation3dPendingPoint, updateAnnotation3dPreview, updateAnnotation3dMarkerScales, updateAnnotation3dOrientations, setAnnotations3dVisible, clearAnnotations3d, stripAnnotation3dVisuals, reconstructAnnotations3d, setAnnotation3dDepthTest, removeAnnotations3dForOwner, isAddLeaderLine3dActive, cancelAddLeaderLine3d, commitAddLeaderLine3d, getAnnotation3dDefaults, deleteAnnotation3dByRef, setConvertTo2dFn, reconstructAnnotation3dFromRec, applyDefaultsToAllAnnotations3d, setAnn3dMarkerFixedSize, setAnn3dMarkerFixedScreenPx, setAnn3dMarkerWorldSize, setAnn3dMarkerColor, setAnnotation3dOnSessionComplete, isAnnotation3dDialogOpen, showAnnotation3dContextMenu } from './annotation3dUtils.js';
 import { initCadDim3d, isCadDim3dActive, getCadDim3dStep, getCadDim3dAxis, setCadDim3dActive, addCadDim3dPoint, updateCadDim3dPreview, updateCadDim3dHoverPreview, cycleCadDim3dAxis, placeCadDim3d, clearCadDim3dMeasurements, removeCadDim3dMeasurementsForOwner, setCadDim3dVisible, setCadDim3dDepthTest, updateCadDim3dOrientations, updateCadDim3dMarkerScales, reconstructCadDim3d, stripCadDim3dVisuals, setCadDim3dLabelMode, setCadDim3dDragMode, setCadDim3dOrientationMode, setCadDim3dRotate, setCadDim3dLabelScaleDialog, setCadDim3dMirrored, setCadDim3dTextColor, setCadDim3dBgColor, getCadDim3dDefaults, convertCadDimTo3d, applyDefaultsToAllCadDim3d, setCadDimMarkerFixedSize, setCadDimMarkerFixedScreenPx, setCadDimMarkerWorldSize, setCadDimMarkerColor, setCadDim3dOnSessionComplete } from './cadDim3dUtils.js';
 import { computeSolidSection, clearSolidSection } from './solidSectionUtils.js';
 import { initDocumentsGui, importDocumentsFromGltfScene, getDocumentsStore, flushDocumentEdits, isDocOverlayBlockingInput, isDocumentEditorOpen, setDocLabelOptions, clearDocumentsStore } from './documentsUtils.js';
@@ -6625,6 +6626,11 @@ function getViewportSize() {
     };
 }
 
+function getMenuBounds() {
+    const vp = getViewportSize();
+    return { left: vp.offsetLeft, top: vp.offsetTop, width: vp.width, height: vp.height };
+}
+
 function applyOverlayRendererSize(cssRenderer, width, height) {
     cssRenderer.setSize(width, height);
     const el = cssRenderer.domElement;
@@ -12199,15 +12205,9 @@ function assemblyMoveStepDown() {
 
     function showAt(menu, x, y) {
         hideAll();
-        menu.style.left = x + 'px';
-        menu.style.top  = y + 'px';
         menu.classList.remove('hidden');
         activeMenu = menu;
-        // keep inside viewport
-        const r = menu.getBoundingClientRect();
-        const vp = getViewportSize();
-        if (r.right  > vp.offsetLeft + vp.width)  menu.style.left = (x - r.width)  + 'px';
-        if (r.bottom > vp.offsetTop + vp.height) menu.style.top  = (y - r.height) + 'px';
+        positionContextMenu(menu, x, y, { bounds: getMenuBounds() });
     }
 
     function refreshObjectInputs(obj) {
@@ -12233,12 +12233,19 @@ function assemblyMoveStepDown() {
     // --- Shared trigger (mouse RMB + touch long-press) ---
     function triggerContextMenu(x, y) {
         if (isDocOverlayBlockingInput()) return;
+        const menuBounds = getMenuBounds();
         if (isSelectDimActive() && getSelectedCadDim3d()) {
             refreshCadDim3dMenu();
             showAt(menuCadDim3d, x, y);
         } else if (isSelectDimActive() && getSelectedCadDim()) {
             refreshCadDimMenu();
             showAt(menuCadDim, x, y);
+        } else if (isSelectDimActive() && getSelectedAnnotation3d()) {
+            hideAll();
+            showAnnotation3dContextMenu(getSelectedAnnotation3d(), x, y, render, menuBounds);
+        } else if (isSelectDimActive() && getSelectedAnnotation()) {
+            hideAll();
+            showAnnotationContextMenu(getSelectedAnnotation(), x, y, render, menuBounds);
         } else if (lastSelectedObject) {
             refreshObjectInputs(lastSelectedObject);
             showAt(menuObject, x, y);
@@ -12286,6 +12293,20 @@ function assemblyMoveStepDown() {
         if (isSelectDimActive() && getSelectedCadDim()) {
             refreshCadDimMenu();
             showAt(menuCadDim, event.clientX, event.clientY);
+            return;
+        }
+
+        // Annotation (3D) selected – show annotation menu
+        if (isSelectDimActive() && getSelectedAnnotation3d()) {
+            hideAll();
+            showAnnotation3dContextMenu(getSelectedAnnotation3d(), event.clientX, event.clientY, render, getMenuBounds());
+            return;
+        }
+
+        // Annotation (flat) selected – show annotation menu
+        if (isSelectDimActive() && getSelectedAnnotation()) {
+            hideAll();
+            showAnnotationContextMenu(getSelectedAnnotation(), event.clientX, event.clientY, render, getMenuBounds());
             return;
         }
 
