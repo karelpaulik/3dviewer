@@ -533,6 +533,17 @@ function _escapeKeyMatches(event) {
     return event.key === 'Escape' || event.code === 'Escape';
 }
 
+function _isTextEditingKeyTarget(event) {
+    const path = event.composedPath?.() ?? [];
+    for (const el of path) {
+        if (!(el instanceof HTMLElement)) continue;
+        if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT' || el.isContentEditable) return true;
+    }
+    const t = event.target;
+    return t instanceof HTMLElement
+        && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT' || t.isContentEditable);
+}
+
 function _shouldSkipGlobalEscape(event) {
     if (isAnnotationDialogOpen() || isAnnotation3dDialogOpen()) return true;
     if (isDocumentEditorOpen() || isImageEditorOpen()) return true;
@@ -1922,8 +1933,7 @@ function init() {
     }, true);
     
     window.addEventListener( 'keydown', function ( event ) {
-        const tag = event.target.tagName;
-        if (tag === 'TEXTAREA' || tag === 'INPUT' || event.target.isContentEditable) return;
+        if (_isTextEditingKeyTarget(event)) return;
 
         if ((event.ctrlKey || event.metaKey) && !event.altKey) {
             const modKey = event.key.toLowerCase();
