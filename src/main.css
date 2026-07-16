@@ -1277,6 +1277,36 @@ a, button, input, select {
     overflow-y: auto;
 }
 
+/* Measurement menu – match annotation context menu look */
+.ctx-menu.ctx-menu-annotation-style {
+    background: #2a2a2a;
+    color: #fff;
+    border: 1px solid #555;
+    border-radius: 5px;
+    padding: 4px 0;
+    min-width: 170px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+    font-family: sans-serif;
+    font-size: 12px;
+}
+
+.ctx-menu.ctx-menu-annotation-style .ctx-item:hover {
+    background: #444;
+}
+
+.ctx-menu.ctx-menu-annotation-style .ctx-separator {
+    margin: 3px 0;
+    background: #444;
+}
+
+.ctx-menu.ctx-menu-annotation-style .ctx-label {
+    color: #fff;
+    padding: 1px 12px;
+    font-size: 12px;
+    text-transform: none;
+    letter-spacing: normal;
+}
+
 .ctx-item {
     display: flex;
     align-items: center;

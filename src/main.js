@@ -26,7 +26,7 @@ import { exportToHTML, exportToHTMLDraco, exportToHTMLObfuscated, exportToHTMLOb
 import { initOutliner, toggleOutliner, rebuildTree, highlightObject as outlinerHighlight, updateVisibilityIcon, updateSelectableIcon, updateObjectLabel, isOutlinerOpen, navigateOutliner, highlightGroupObjects, clearGroupHighlights, setNavigationPosition, setOnTreeRebuild } from './sceneOutliner.js';
 import { positionContextMenu } from './uiMenuUtils.js';
 import { computeModelStats } from './modelInfoUtils.js';
-import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements, isSelectDimActive, setSelectDimActive, refreshLabelEditListeners, hasSelectedDimension, deselectSelectedDimension, deleteSelectedDimension, initSelectDimension, updateSelectDimensionCamera, reconstructMeasurements, stripMeasurementVisuals, setMeasurementsVisible, setMeasurementDepthTest, removeMeasurementsForOwner, isCadDimActive, setCadDimActive, getCadDimStep, getCadDimAxis, addCadDimPoint, updateCadDimPreview, updateCadDimHoverPreview, cycleCadDimAxis, placeCadDim, clearCadDimMeasurements, removeCadDimMeasurementsForOwner, getSelectedCadDim, setCadDimLabelMode, setCadDimDragMode, selectDimTouchStart, selectDimTouchMove, selectDimTouchEnd, registerLabelForSelection, getSelectedCadDim3d, getSelectedAnnotation, getSelectedAnnotation3d, getCadDimMeasurements, deleteCadDimByRef, convertCadDim3dTo2d, getFlatDimDefaults, applyDefaultsToAllFlatDim, setDimMarkerFixedSize, setDimMarkerFixedScreenPx, setDimMarkerWorldSize, setDimMarkerColor, getDimMarkerSettings, setMeasureOnSessionComplete, setAngleOnSessionComplete, setCadDimOnSessionComplete } from './measurementUtils.js';
+import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements, isSelectDimActive, setSelectDimActive, refreshLabelEditListeners, hasSelectedDimension, deselectSelectedDimension, deleteSelectedDimension, resetSelectedMeasurementLabel, getSelectedMeasurementLabelStyle, setSelectedMeasurementTextColor, setSelectedMeasurementBgColor, setSelectedMeasurementFontSize, initSelectDimension, updateSelectDimensionCamera, reconstructMeasurements, stripMeasurementVisuals, setMeasurementsVisible, setMeasurementDepthTest, removeMeasurementsForOwner, isCadDimActive, setCadDimActive, getCadDimStep, getCadDimAxis, addCadDimPoint, updateCadDimPreview, updateCadDimHoverPreview, cycleCadDimAxis, placeCadDim, clearCadDimMeasurements, removeCadDimMeasurementsForOwner, getSelectedCadDim, setCadDimLabelMode, setCadDimDragMode, selectDimTouchStart, selectDimTouchMove, selectDimTouchEnd, registerLabelForSelection, getSelectedCadDim3d, getSelectedAnnotation, getSelectedAnnotation3d, getSelectedDistance, getSelectedAngle, getCadDimMeasurements, deleteCadDimByRef, convertCadDim3dTo2d, getFlatDimDefaults, applyDefaultsToAllFlatDim, setDimMarkerFixedSize, setDimMarkerFixedScreenPx, setDimMarkerWorldSize, setDimMarkerColor, getDimMarkerSettings, setMeasureOnSessionComplete, setAngleOnSessionComplete, setCadDimOnSessionComplete } from './measurementUtils.js';
 import { detectCircleCenterFromHit, clearCircleDetectionCache } from './circleDetectionUtils.js';
 import { removeEdgeOverlays, updateMeshEdgeOverlays, stripEdgeOverlays } from './edgeDisplayUtils.js';
 import { initAnnotations, isAnnotationActive, setAnnotationActive, addAnnotationPoint, getAnnotationPendingPoint, updateAnnotationPreview, updateAnnotationMarkerScales, setAnnotationsVisible, clearAnnotations, stripAnnotationVisuals, reconstructAnnotations, setAnnotationDepthTest, removeAnnotationsForOwner, getAnnotations, isAddLeaderLineActive, cancelAddLeaderLine, commitAddLeaderLine, deleteAnnotationByRef, setConvertTo3dFn, reconstructAnnotationFromRec, getFlatAnnDefaults, applyDefaultsToAllFlatAnnotations, setAnnMarkerFixedSize, setAnnMarkerFixedScreenPx, setAnnMarkerWorldSize, setAnnMarkerColor, getAnnMarkerSettings, setAnnotationOnSessionComplete, isAnnotationDialogOpen, showAnnotationContextMenu } from './annotationUtils.js';
@@ -11947,7 +11947,7 @@ function assemblyMoveStepDown() {
             el.style.cssText = 'padding:2px 12px;display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:default;';
             const span = document.createElement('span');
             span.textContent = labelText;
-            span.style.fontSize = '13px';
+            span.style.fontSize = '12px';
             const inp = document.createElement('input');
             inp.type = 'color';
             inp.style.cssText = 'width:26px;height:18px;border:none;padding:0;cursor:pointer;background:none;';
@@ -12105,7 +12105,7 @@ function assemblyMoveStepDown() {
             el.style.cssText = 'padding:2px 12px;display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:default;';
             const span = document.createElement('span');
             span.textContent = labelText;
-            span.style.fontSize = '13px';
+            span.style.fontSize = '12px';
             const inp = document.createElement('input');
             inp.type = 'color';
             inp.style.cssText = 'width:26px;height:18px;border:none;padding:0;cursor:pointer;background:none;';
@@ -12184,22 +12184,117 @@ function assemblyMoveStepDown() {
         }
     }
 
+    // --- Distance / angle measurement menu ---
+    function createMeasurementMenu() {
+        const m = document.createElement('div');
+        m.className = 'ctx-menu ctx-menu-annotation-style hidden';
+
+        const lbl = document.createElement('div');
+        lbl.className = 'ctx-label';
+        lbl.id = 'ctx-measurement-label';
+        lbl.textContent = 'Measurement';
+        m.appendChild(lbl);
+
+        m.appendChild(separator());
+
+        m.appendChild(simpleItem('Reset label position', () => {
+            resetSelectedMeasurementLabel(render);
+            hideAll();
+        }));
+
+        m.appendChild(separator());
+
+        const colorRow = (labelText, onInput) => {
+            const el = document.createElement('div');
+            el.style.cssText = 'padding:2px 12px;display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:default;';
+            const span = document.createElement('span');
+            span.textContent = labelText;
+            span.style.fontSize = '12px';
+            const inp = document.createElement('input');
+            inp.type = 'color';
+            inp.style.cssText = 'width:26px;height:18px;border:none;padding:0;cursor:pointer;background:none;';
+            inp.addEventListener('mousedown', e => e.stopPropagation());
+            inp.addEventListener('click', e => e.stopPropagation());
+            inp.addEventListener('input', e => { e.stopPropagation(); onInput(inp.value); });
+            el.appendChild(span); el.appendChild(inp);
+            m.appendChild(el);
+            return inp;
+        };
+        const sizeRow = (labelText, onInput) => {
+            const el = document.createElement('div');
+            el.style.cssText = 'padding:2px 12px;display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:default;';
+            const span = document.createElement('span');
+            span.textContent = labelText;
+            span.style.fontSize = '12px';
+            const inp = document.createElement('input');
+            inp.type = 'number';
+            inp.min = '6'; inp.max = '32'; inp.step = '1';
+            inp.style.cssText = 'width:46px;font-size:12px;background:#333;color:#fff;border:1px solid #555;border-radius:3px;padding:1px 3px;';
+            inp.addEventListener('mousedown', e => e.stopPropagation());
+            inp.addEventListener('click', e => e.stopPropagation());
+            inp.addEventListener('change', e => { e.stopPropagation(); onInput(parseInt(e.target.value)); });
+            el.appendChild(span); el.appendChild(inp);
+            m.appendChild(el);
+            return inp;
+        };
+
+        const inpTextColor = colorRow('Text color', (color) => {
+            setSelectedMeasurementTextColor(color, render);
+        });
+        const inpBgColor = colorRow('Background', (color) => {
+            setSelectedMeasurementBgColor(color, render);
+        });
+        const inpFontSize = sizeRow('Size', (size) => {
+            setSelectedMeasurementFontSize(size, render);
+        });
+
+        m.appendChild(separator());
+
+        m.appendChild(simpleItem('Delete measurement', () => {
+            deleteSelectedDimension(render);
+            hideAll();
+        }));
+
+        m._inpTextColor = inpTextColor;
+        m._inpBgColor = inpBgColor;
+        m._inpFontSize = inpFontSize;
+
+        return m;
+    }
+
+    function refreshMeasurementMenu() {
+        const lbl = document.getElementById('ctx-measurement-label');
+        if (!lbl) return;
+        if (getSelectedDistance()) lbl.textContent = 'Distance measurement';
+        else if (getSelectedAngle()) lbl.textContent = 'Angle measurement';
+        else lbl.textContent = 'Measurement';
+
+        const style = getSelectedMeasurementLabelStyle();
+        if (!style) return;
+        menuMeasurement._inpTextColor.value = style.textColor;
+        menuMeasurement._inpBgColor.value = style.bgColor;
+        menuMeasurement._inpFontSize.value = style.fontSize;
+    }
+
     // --- State ---
     let activeMenu = null;
     const menuEmpty    = createEmptyMenu();
     const menuObject   = createObjectMenu();
     const menuCadDim   = createCadDimMenu();
     const menuCadDim3d = createCadDim3dMenu();
+    const menuMeasurement = createMeasurementMenu();
     document.body.appendChild(menuEmpty);
     document.body.appendChild(menuObject);
     document.body.appendChild(menuCadDim);
     document.body.appendChild(menuCadDim3d);
+    document.body.appendChild(menuMeasurement);
 
     function hideAll() {
         menuEmpty.classList.add('hidden');
         menuObject.classList.add('hidden');
         menuCadDim.classList.add('hidden');
         menuCadDim3d.classList.add('hidden');
+        menuMeasurement.classList.add('hidden');
         activeMenu = null;
     }
 
@@ -12246,6 +12341,9 @@ function assemblyMoveStepDown() {
         } else if (isSelectDimActive() && getSelectedAnnotation()) {
             hideAll();
             showAnnotationContextMenu(getSelectedAnnotation(), x, y, render, menuBounds);
+        } else if (isSelectDimActive() && (getSelectedDistance() || getSelectedAngle())) {
+            refreshMeasurementMenu();
+            showAt(menuMeasurement, x, y);
         } else if (lastSelectedObject) {
             refreshObjectInputs(lastSelectedObject);
             showAt(menuObject, x, y);
@@ -12307,6 +12405,13 @@ function assemblyMoveStepDown() {
         if (isSelectDimActive() && getSelectedAnnotation()) {
             hideAll();
             showAnnotationContextMenu(getSelectedAnnotation(), event.clientX, event.clientY, render, getMenuBounds());
+            return;
+        }
+
+        // Distance / angle measurement selected
+        if (isSelectDimActive() && (getSelectedDistance() || getSelectedAngle())) {
+            refreshMeasurementMenu();
+            showAt(menuMeasurement, event.clientX, event.clientY);
             return;
         }
 

@@ -90,6 +90,82 @@ const _flatDimDefaults = {
     fontSize:  11,
 };
 
+const _distanceLabelDefaults = {
+    textColor: '#ffffff',
+    bgColor:   '#c82828',
+    fontSize:  11,
+};
+
+const _angleLabelDefaults = {
+    textColor: '#ffffff',
+    bgColor:   '#2850c8',
+    fontSize:  11,
+};
+
+function _measurementLabelDefaults(type) {
+    return type === 'angle' ? _angleLabelDefaults : _distanceLabelDefaults;
+}
+
+function _measurementLabelBaseCss(textColor, bgColor, fontSize) {
+    return `color:${textColor};background:${bgColor};padding:2px 6px;border-radius:3px;font-size:${fontSize}px;pointer-events:none;white-space:nowrap;line-height:1.4;`;
+}
+
+function _applyMeasurementLabelElementStyle(el, textColor, bgColor, fontSize) {
+    el.style.color = textColor;
+    el.style.background = bgColor;
+    el.style.fontSize = fontSize + 'px';
+}
+
+function _getMeasurementLabelStyle(meas, type) {
+    const def = _measurementLabelDefaults(type);
+    return {
+        textColor: meas._textColor ?? def.textColor,
+        bgColor: meas._bgColor ?? def.bgColor,
+        fontSize: meas._fontSize ?? def.fontSize,
+    };
+}
+
+function _applyMeasurementLabelStyle(meas, type) {
+    if (!meas?.label?.element) return;
+    const s = _getMeasurementLabelStyle(meas, type);
+    _applyMeasurementLabelElementStyle(meas.label.element, s.textColor, s.bgColor, s.fontSize);
+}
+
+function _findMeasurementUserDataRec(meas, type) {
+    const owner = meas.ownerObject || _scene;
+    if (!owner?.userData?.measurements) return null;
+    return owner.userData.measurements.find(d => {
+        if (d.type !== type) return false;
+        if (type === 'distance') return Math.abs(d.p1.x - meas.p1.x) < 1e-6;
+        if (type === 'angle') return Math.abs(d.points[0].x - meas.points[0].x) < 1e-6;
+        return false;
+    }) || null;
+}
+
+function _syncMeasurementLabelStyleToUserData(meas, type) {
+    const rec = _findMeasurementUserDataRec(meas, type);
+    if (!rec) return;
+    const s = _getMeasurementLabelStyle(meas, type);
+    rec.textColor = s.textColor;
+    rec.bgColor = s.bgColor;
+    rec.fontSize = s.fontSize;
+}
+
+function _initMeasurementLabelFields(meas, type) {
+    const def = _measurementLabelDefaults(type);
+    meas._textColor = def.textColor;
+    meas._bgColor = def.bgColor;
+    meas._fontSize = def.fontSize;
+}
+
+function _measurementLabelStyleUserData(meas) {
+    return {
+        textColor: meas._textColor,
+        bgColor: meas._bgColor,
+        fontSize: meas._fontSize,
+    };
+}
+
 export function getFlatDimDefaults() { return _flatDimDefaults; }
 
 export function applyDefaultsToAllFlatDim(renderFn) {
@@ -125,11 +201,12 @@ function _createLine(p1, p2) {
     return line;
 }
 
-function _createLabel(text, position) {
+function _createLabel(text, position, style) {
+    const s = style || _distanceLabelDefaults;
     const div = document.createElement('div');
     div.className = 'measurement-label';
     div.innerHTML = text;
-    div.style.cssText = 'color:#fff;background:rgba(200,40,40,0.85);padding:2px 6px;border-radius:3px;font-size:11px;pointer-events:none;white-space:nowrap;line-height:1.4;';
+    div.style.cssText = _measurementLabelBaseCss(s.textColor, s.bgColor, s.fontSize);
     const label = new CSS2DObject(div);
     label.position.copy(position);
     label.userData._isMeasurement = true;
@@ -227,7 +304,9 @@ export function addMeasurePoint(point, ownerObject, renderFn) {
         owner1.add(line);
         owner1.add(label);
 
-        _measurements.push({ line, label, marker1, marker2, p1, p2, distance: dist, ownerObject: owner1 });
+        const meas = { line, label, marker1, marker2, p1, p2, distance: dist, ownerObject: owner1 };
+        _initMeasurementLabelFields(meas, 'distance');
+        _measurements.push(meas);
 
         // Store measurement data in ownerObject.userData for GLB export
         if (!owner1.userData.measurements) owner1.userData.measurements = [];
@@ -236,7 +315,8 @@ export function addMeasurePoint(point, ownerObject, renderFn) {
             p1: { x: p1.x, y: p1.y, z: p1.z },
             p2: { x: p2.x, y: p2.y, z: p2.z },
             distance: dist,
-            labelPos: { x: midPoint.x, y: midPoint.y, z: midPoint.z }
+            labelPos: { x: midPoint.x, y: midPoint.y, z: midPoint.z },
+            ..._measurementLabelStyleUserData(meas),
         });
 
         // Reset pending state and hide preview
@@ -567,11 +647,12 @@ function _createAngleLine(p1, p2) {
     return line;
 }
 
-function _createAngleLabel(text, position) {
+function _createAngleLabel(text, position, style) {
+    const s = style || _angleLabelDefaults;
     const div = document.createElement('div');
     div.className = 'measurement-label';
     div.innerHTML = text;
-    div.style.cssText = 'color:#fff;background:rgba(40,80,200,0.85);padding:2px 6px;border-radius:3px;font-size:11px;pointer-events:none;white-space:nowrap;line-height:1.4;';
+    div.style.cssText = _measurementLabelBaseCss(s.textColor, s.bgColor, s.fontSize);
     const label = new CSS2DObject(div);
     label.position.copy(position);
     label.userData._isMeasurement = true;
@@ -706,19 +787,22 @@ export function addAnglePoint(point, ownerObject, renderFn) {
 
         // Store for cleanup
         const storedMarkers = _angleMarkers.slice();
-        _angleMeasurements.push({
+        const meas = {
             line1: _angleLine1, line2, midLine, label,
             markers: storedMarkers,
             points: _anglePoints.slice(),
             ownerObject: owner
-        });
+        };
+        _initMeasurementLabelFields(meas, 'angle');
+        _angleMeasurements.push(meas);
 
         // Store measurement data in ownerObject.userData for GLB export
         if (!owner.userData.measurements) owner.userData.measurements = [];
         owner.userData.measurements.push({
             type: 'angle',
             points: _anglePoints.map(pt => ({ x: pt.x, y: pt.y, z: pt.z })),
-            labelPos: { x: labelPos.x, y: labelPos.y, z: labelPos.z }
+            labelPos: { x: labelPos.x, y: labelPos.y, z: labelPos.z },
+            ..._measurementLabelStyleUserData(meas),
         });
 
         // Reset pending state
@@ -1537,7 +1621,12 @@ function _reconstructDistance(owner, rec) {
         + '<br><span style="font-size:10px;opacity:0.85;">Δx ' + dx.toFixed(2) + ' &nbsp;ΔYZ ' + dYZ.toFixed(2)
         + '<br>Δy ' + dy.toFixed(2) + ' &nbsp;ΔXZ ' + dXZ.toFixed(2)
         + '<br>Δz ' + dz.toFixed(2) + ' &nbsp;ΔXY ' + dXY.toFixed(2) + '</span>';
-    const label = _createLabel(labelText, labelPos);
+    const labelStyle = {
+        textColor: rec.textColor || _distanceLabelDefaults.textColor,
+        bgColor: rec.bgColor || _distanceLabelDefaults.bgColor,
+        fontSize: rec.fontSize != null ? rec.fontSize : _distanceLabelDefaults.fontSize,
+    };
+    const label = _createLabel(labelText, labelPos, labelStyle);
 
     owner.add(marker1);
     owner.add(marker2);
@@ -1546,6 +1635,9 @@ function _reconstructDistance(owner, rec) {
 
     const defaultMid = new THREE.Vector3().addVectors(p1, p2).multiplyScalar(0.5);
     const meas = { line, label, marker1, marker2, p1, p2, distance: dist, ownerObject: owner };
+    meas._textColor = labelStyle.textColor;
+    meas._bgColor = labelStyle.bgColor;
+    meas._fontSize = labelStyle.fontSize;
     // If label was dragged from its default midpoint, restore anchor + leader line
     if (labelPos.distanceTo(defaultMid) > 1e-4) {
         meas._labelAnchor = defaultMid.clone();
@@ -1609,7 +1701,12 @@ function _reconstructAngle(owner, rec) {
     const labelPos = rec.labelPos
         ? new THREE.Vector3(rec.labelPos.x, rec.labelPos.y, rec.labelPos.z)
         : defaultLabelPos.clone();
-    const label = _createAngleLabel(labelText, labelPos);
+    const labelStyle = {
+        textColor: rec.textColor || _angleLabelDefaults.textColor,
+        bgColor: rec.bgColor || _angleLabelDefaults.bgColor,
+        fontSize: rec.fontSize != null ? rec.fontSize : _angleLabelDefaults.fontSize,
+    };
+    const label = _createAngleLabel(labelText, labelPos, labelStyle);
     owner.add(label);
 
     const angleMeas = {
@@ -1618,6 +1715,9 @@ function _reconstructAngle(owner, rec) {
         points: pts,
         ownerObject: owner
     };
+    angleMeas._textColor = labelStyle.textColor;
+    angleMeas._bgColor = labelStyle.bgColor;
+    angleMeas._fontSize = labelStyle.fontSize;
     // If label was dragged from its default position, restore anchor + leader line
     if (labelPos.distanceTo(defaultLabelPos) > 1e-4) {
         angleMeas._labelAnchor = defaultLabelPos.clone();
@@ -1862,6 +1962,86 @@ export function getSelectedAnnotation() {
 
 export function getSelectedAnnotation3d() {
     return (_selectedDimType === 'annotation3d') ? _selectedDim : null;
+}
+
+export function getSelectedDistance() {
+    return (_selectedDimType === 'distance') ? _selectedDim : null;
+}
+
+export function getSelectedAngle() {
+    return (_selectedDimType === 'angle') ? _selectedDim : null;
+}
+
+function _defaultMeasurementLabelPos(meas, type) {
+    if (type === 'distance') {
+        return new THREE.Vector3().addVectors(meas.p1, meas.p2).multiplyScalar(0.5);
+    }
+    if (type === 'angle') {
+        const mid1 = new THREE.Vector3().addVectors(meas.points[0], meas.points[1]).multiplyScalar(0.5);
+        const mid2 = new THREE.Vector3().addVectors(meas.points[2], meas.points[3]).multiplyScalar(0.5);
+        return new THREE.Vector3().addVectors(mid1, mid2).multiplyScalar(0.5);
+    }
+    return null;
+}
+
+/**
+ * Reset the selected distance/angle label to its default position and remove the leader line.
+ */
+export function resetSelectedMeasurementLabel(renderFn) {
+    if (!_selectedDim || (_selectedDimType !== 'distance' && _selectedDimType !== 'angle')) return;
+    const meas = _selectedDim;
+    const type = _selectedDimType;
+    const defaultPos = _defaultMeasurementLabelPos(meas, type);
+    if (!defaultPos || !meas.label) return;
+
+    meas.label.position.copy(defaultPos);
+    meas._labelAnchor = null;
+    _removeLeaderLine(meas);
+
+    const owner = meas.ownerObject || _scene;
+    const rec = _findMeasurementUserDataRec(meas, type);
+    if (rec) {
+        rec.labelPos = { x: defaultPos.x, y: defaultPos.y, z: defaultPos.z };
+    }
+
+    if (renderFn) renderFn();
+}
+
+export function getSelectedMeasurementLabelStyle() {
+    const type = getSelectedDistance() ? 'distance' : (getSelectedAngle() ? 'angle' : null);
+    const meas = type === 'distance' ? getSelectedDistance() : (type === 'angle' ? getSelectedAngle() : null);
+    if (!meas || !type) return null;
+    return _getMeasurementLabelStyle(meas, type);
+}
+
+export function setSelectedMeasurementTextColor(color, renderFn) {
+    const type = getSelectedDistance() ? 'distance' : (getSelectedAngle() ? 'angle' : null);
+    const meas = type === 'distance' ? getSelectedDistance() : (type === 'angle' ? getSelectedAngle() : null);
+    if (!meas || !type) return;
+    meas._textColor = color;
+    _applyMeasurementLabelStyle(meas, type);
+    _syncMeasurementLabelStyleToUserData(meas, type);
+    if (renderFn) renderFn();
+}
+
+export function setSelectedMeasurementBgColor(color, renderFn) {
+    const type = getSelectedDistance() ? 'distance' : (getSelectedAngle() ? 'angle' : null);
+    const meas = type === 'distance' ? getSelectedDistance() : (type === 'angle' ? getSelectedAngle() : null);
+    if (!meas || !type) return;
+    meas._bgColor = color;
+    _applyMeasurementLabelStyle(meas, type);
+    _syncMeasurementLabelStyleToUserData(meas, type);
+    if (renderFn) renderFn();
+}
+
+export function setSelectedMeasurementFontSize(size, renderFn) {
+    const type = getSelectedDistance() ? 'distance' : (getSelectedAngle() ? 'angle' : null);
+    const meas = type === 'distance' ? getSelectedDistance() : (type === 'angle' ? getSelectedAngle() : null);
+    if (!meas || !type || !Number.isFinite(size)) return;
+    meas._fontSize = size;
+    _applyMeasurementLabelStyle(meas, type);
+    _syncMeasurementLabelStyleToUserData(meas, type);
+    if (renderFn) renderFn();
 }
 
 /**
