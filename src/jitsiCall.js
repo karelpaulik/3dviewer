@@ -19,7 +19,7 @@ export const JITSI_SERVER_PRESETS = [
 ];
 export const JITSI_CUSTOM_PRESET = 'Custom';
 
-const DEFAULT_JITSI_DOMAIN = 'meet.jit.si';
+const DEFAULT_JITSI_DOMAIN = 'jitsi.riot.im';
 const STORAGE_KEY = 'meshbex-jitsi-domain';
 const STORAGE_KEY_CUSTOM = 'meshbex-jitsi-custom-domain';
 
