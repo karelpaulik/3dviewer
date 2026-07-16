@@ -18,14 +18,12 @@
 		<meta name="theme-color" content="#72645b">
 		<script>
 			if ('serviceWorker' in navigator) {
-				window.addEventListener('load', () => {
-					navigator.serviceWorker.register('/sw.js').catch(err => {
-						console.warn('SW registration failed:', err);
-					});
+				navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(err => {
+					console.warn('SW registration failed:', err);
 				});
 			}
 		</script>
-		<script type="module" crossorigin src="./assets/index-Dtrd4R9x.js"></script>
+		<script type="module" crossorigin src="./assets/index-C1ZiY59N.js"></script>
 		<link rel="stylesheet" crossorigin href="./assets/index-DV7nF4JI.css">
 	</head>
 	<body id="body">

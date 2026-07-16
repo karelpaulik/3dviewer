@@ -11,18 +11,49 @@ const CACHE_NAME = 'meshbex-v1';
 const SHARE_ACTION_SUFFIX = '/share-glb';
 const SHARE_CACHE_NAME = 'meshbex-share-v1';
 const SHARE_CACHE_KEY = 'pending-glb';
+const SHARE_CACHE_NAME_KEY = 'pending-glb-name';
 const SHARE_FORM_FIELD_NAME = 'glb';
 const SHARE_TARGET_QUERY_PARAM = 'share-target';
 const SHARE_TARGET_QUERY_VALUE = 'glb';
 const SHARE_TARGET_QUERY_ERROR = 'error';
+const SHARE_TARGET_MESSAGE_TYPE = 'meshbex-share-glb';
 
 const PRESERVED_CACHES = [CACHE_NAME, SHARE_CACHE_NAME];
 
 // Pre-cache shell on install
 const PRECACHE_URLS = ['/', '/index.html'];
 
-function isValidGlbShareFile(file) {
-    return file instanceof File && /\.glb$/i.test(file.name || '');
+function isFileLike(value) {
+    return value != null && typeof value.arrayBuffer === 'function' && value.size > 0;
+}
+
+function isGlbLikeShareFile(file) {
+    if (!isFileLike(file)) return false;
+    const name = file.name || '';
+    if (/\.glb$/i.test(name)) return true;
+    const type = (file.type || '').toLowerCase();
+    return type === 'model/gltf-binary'
+        || type === 'application/octet-stream'
+        || type === 'application/gltf-buffer';
+}
+
+function extractShareFile(formData) {
+    const primary = formData.get(SHARE_FORM_FIELD_NAME);
+    if (isGlbLikeShareFile(primary)) return primary;
+
+    for (const [, value] of formData.entries()) {
+        if (isGlbLikeShareFile(value)) return value;
+    }
+
+    // Android file managers often omit extension/MIME – accept the declared field if non-empty.
+    if (isFileLike(primary)) return primary;
+
+    return null;
+}
+
+function normalizeSharedFileName(name) {
+    const base = (name || 'shared').trim() || 'shared';
+    return /\.glb$/i.test(base) ? base : `${base}.glb`;
 }
 
 function buildShareRedirectUrl(baseUrl, shareTargetValue) {
@@ -31,19 +62,33 @@ function buildShareRedirectUrl(baseUrl, shareTargetValue) {
     return redirect.href;
 }
 
+async function notifyShareClients() {
+    const clientList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const client of clientList) {
+        client.postMessage({ type: SHARE_TARGET_MESSAGE_TYPE });
+    }
+}
+
+async function storeSharedFile(file) {
+    const fileName = normalizeSharedFileName(file.name);
+    const headers = new Headers();
+    headers.set('x-filename', fileName);
+    const cache = await caches.open(SHARE_CACHE_NAME);
+    await cache.put(SHARE_CACHE_KEY, new Response(file, { headers }));
+    await cache.put(SHARE_CACHE_NAME_KEY, new Response(fileName));
+}
+
 async function handleShareTargetPost(request, url) {
     try {
         const formData = await request.formData();
-        const file = formData.get(SHARE_FORM_FIELD_NAME);
-        if (!isValidGlbShareFile(file)) {
-            console.warn('[ShareTarget] Rejected share: not a .glb file.');
+        const file = extractShareFile(formData);
+        if (!file) {
+            console.warn('[ShareTarget] Rejected share: no GLB file in form data.');
             return Response.redirect(buildShareRedirectUrl(url, SHARE_TARGET_QUERY_ERROR), 303);
         }
 
-        const headers = new Headers();
-        headers.set('x-filename', file.name);
-        const cache = await caches.open(SHARE_CACHE_NAME);
-        await cache.put(SHARE_CACHE_KEY, new Response(file, { headers }));
+        await storeSharedFile(file);
+        await notifyShareClients();
 
         return Response.redirect(buildShareRedirectUrl(url, SHARE_TARGET_QUERY_VALUE), 303);
     } catch (err) {
