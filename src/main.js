@@ -1158,6 +1158,7 @@ const viewProp = {
     showAnnotations: true, // Toggle visibility of all annotations
     showBehindModel: false, // Zobrazit kóty/poznámky i za modelem (depthTest off)
     repeatTool: false, // Po dokončení nástroje znovu aktivovat stejný nástroj
+    toolsLabelMode: '3d', // Flat / 3D režim pro všechny nástroje v panelu Tools
     xrayOnSelect: false, // X-ray efekt při výběru objektu (depthTest off)
     orientedSelectionBox: 'local',
     splitLoosePartsToleranceMode: 'auto', // 'auto' | 'manual'
@@ -3194,6 +3195,7 @@ function addToolsGui() {
         setAnn3dMarkerFixedScreenPx,
         setAnn3dMarkerWorldSize,
         setAnn3dMarkerColor,
+        setDefaultMeasurementLabelDim,
         syncLabelEditState: _syncLabelEditState,
         updateCadDimHintUI: _updateCadDimHintUI,
         updateCadDim3dHintUI: _updateCadDim3dHintUI,
@@ -3206,10 +3208,10 @@ function addToolsGui() {
     const onToolComplete = (toolId) => () => finishToolSession(toolsDeps, toolId);
     setMeasureOnSessionComplete(onToolComplete('measure'));
     setAngleOnSessionComplete(onToolComplete('angle'));
-    setCadDimOnSessionComplete(onToolComplete('cadDim'));
-    setCadDim3dOnSessionComplete(onToolComplete('cadDim3d'));
+    setCadDimOnSessionComplete(onToolComplete('dimension'));
+    setCadDim3dOnSessionComplete(onToolComplete('dimension'));
     setAnnotationOnSessionComplete(onToolComplete('annotation'));
-    setAnnotation3dOnSessionComplete(onToolComplete('annotation3d'));
+    setAnnotation3dOnSessionComplete(onToolComplete('annotation'));
 }
 
 /** Update part.worldPos from the TransformControl gizmo (singleSelectPivot) world position. */
@@ -9706,6 +9708,7 @@ function importSettingsFromGltfScene(gltfScene) {
 
     if (s.measurementLabelDimDefault) {
         setDefaultMeasurementLabelDim(s.measurementLabelDimDefault);
+        viewProp.toolsLabelMode = s.measurementLabelDimDefault === '2d' ? 'flat' : '3d';
     }
 
     if (s.measurement3dDefaults) {

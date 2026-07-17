@@ -6,22 +6,20 @@ export const MODE_LABELS = {
     navigate: 'Navigate',
     measure: 'Add Measure',
     angle: 'Add Measure Angle',
-    cadDim: 'Add Dim (Flat)',
-    cadDim3d: 'Add Dim (3D)',
-    annotation: 'Add Annotation (Flat)',
-    annotation3d: 'Add Annotation (3D)',
+    dimension: 'Add Dimension',
+    annotation: 'Add Annotation',
     assemblyEdit: 'Assembly Edit',
 };
 
-const CIRCLE_DETECT_MODES = new Set(['measure', 'angle', 'cadDim', 'cadDim3d']);
+const LABEL_MODE_OPTS = { Flat: 'flat', '3D': '3d' };
+
+const CIRCLE_DETECT_MODES = new Set(['measure', 'angle', 'dimension']);
 
 const TOOL_BUTTONS = [
     ['measure', 'Measure'],
     ['angle', 'Angle'],
-    ['cadDim', 'Dim (Flat)'],
-    ['cadDim3d', 'Dim (3D)'],
-    ['annotation', 'Annotation (Flat)'],
-    ['annotation3d', 'Annotation (3D)'],
+    ['dimension', 'Dimension'],
+    ['annotation', 'Annotation'],
 ];
 
 let _deps = null;
@@ -35,15 +33,28 @@ export function getToolsGui() {
     return _toolsGui;
 }
 
+function _applyLabelMode(deps, mode) {
+    deps.setDefaultMeasurementLabelDim?.(mode === '3d' ? '3d' : '2d');
+}
+
+function _resolveInternalToolId(logicalId, labelMode) {
+    switch (logicalId) {
+        case 'dimension':
+            return labelMode === '3d' ? 'cadDim3d' : 'cadDim';
+        case 'annotation':
+            return labelMode === '3d' ? 'annotation3d' : 'annotation';
+        default:
+            return logicalId;
+    }
+}
+
 export function getActiveInteractionMode(deps) {
     const { viewProp, assemblyState } = deps;
     if (assemblyState?.editMode) return 'assemblyEdit';
     if (viewProp.measureMode) return 'measure';
     if (viewProp.angleMode) return 'angle';
-    if (viewProp.cadDimMode) return 'cadDim';
-    if (viewProp.cadDim3dMode) return 'cadDim3d';
-    if (viewProp.annotationMode) return 'annotation';
-    if (viewProp.annotation3dMode) return 'annotation3d';
+    if (viewProp.cadDimMode || viewProp.cadDim3dMode) return 'dimension';
+    if (viewProp.annotationMode || viewProp.annotation3dMode) return 'annotation';
     return 'navigate';
 }
 
@@ -99,18 +110,10 @@ export function deactivateTool(deps) {
     _syncAfterModeChange(deps, 'navigate');
 }
 
-export function activateTool(toolId, deps) {
-    if (!deps) deps = _deps;
-    if (!deps) return;
+function _activateInternalTool(internalId, deps) {
+    const { viewProp } = deps;
 
-    const { viewProp, assemblyState } = deps;
-    if (assemblyState?.editMode) return;
-
-    _clearAllToolModes(deps);
-    viewProp.isSelectAllowed = false;
-    _lastActivatedToolId = toolId;
-
-    switch (toolId) {
+    switch (internalId) {
         case 'measure':
             viewProp.measureMode = true;
             deps.setMeasureActive(true);
@@ -138,13 +141,41 @@ export function activateTool(toolId, deps) {
         default:
             break;
     }
+}
+
+function _onLabelModeChange(deps, mode) {
+    _applyLabelMode(deps, mode);
+    const active = getActiveInteractionMode(deps);
+    if (active === 'dimension' || active === 'annotation') {
+        activateTool(active, deps);
+    } else {
+        deps.invalidateModeIndicatorCache?.();
+        deps.render?.();
+    }
+}
+
+export function activateTool(logicalId, deps) {
+    if (!deps) deps = _deps;
+    if (!deps) return;
+
+    const { viewProp, assemblyState } = deps;
+    if (assemblyState?.editMode) return;
+
+    const labelMode = viewProp.toolsLabelMode || '3d';
+    _applyLabelMode(deps, labelMode);
+    const internalId = _resolveInternalToolId(logicalId, labelMode);
+
+    _clearAllToolModes(deps);
+    viewProp.isSelectAllowed = false;
+    _lastActivatedToolId = logicalId;
+    _activateInternalTool(internalId, deps);
 
     if (document.activeElement?.blur && document.activeElement !== document.body) {
         document.activeElement.blur();
     }
     deps.focusViewport?.();
 
-    _syncAfterModeChange(deps, toolId);
+    _syncAfterModeChange(deps, logicalId);
 }
 
 export function finishToolSession(deps, toolId) {
@@ -452,6 +483,10 @@ export function initToolsPanel(container, deps) {
     _toolsGui = toolsGui;
 
     const toolsFolder = toolsGui.addFolder('Tools');
+    _applyLabelMode(deps, deps.viewProp.toolsLabelMode || '3d');
+    toolsFolder.add(deps.viewProp, 'toolsLabelMode', LABEL_MODE_OPTS)
+        .name('Label mode')
+        .onChange((mode) => _onLabelModeChange(deps, mode));
     for (const [toolId, label] of TOOL_BUTTONS) {
         const ctrl = toolsFolder.add({ fn() { activateTool(toolId, deps); } }, 'fn').name(label);
         _modeBtnCtrls[toolId] = ctrl;
