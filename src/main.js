@@ -913,7 +913,7 @@ let deviationPoseState = null;
 let deviationComputeAbortController = null;
 let deviationComputeGeneration = 0;
 const deviationGui = {
-    comparisonMode: 'unidirectional',
+    comparisonMode: 'bidirectional',
     tolerance: DEVIATION_DEFAULTS.tolerance,
     withinToleranceOpacity: DEVIATION_DEFAULTS.withinToleranceOpacity,
     referenceWireframe: DEVIATION_DEFAULTS.referenceWireframe,
