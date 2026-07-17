@@ -11954,7 +11954,7 @@ function assemblyMoveStepDown() {
     // --- CAD dim label-mode menu ---
     function createCadDimMenu() {
         const m = document.createElement('div');
-        m.className = 'ctx-menu hidden';
+        m.className = 'ctx-menu ctx-menu-annotation-style hidden';
 
         const lbl = document.createElement('div');
         lbl.className = 'ctx-label';
@@ -12084,7 +12084,7 @@ function assemblyMoveStepDown() {
     // --- CAD dim 3D label-mode menu ---
     function createCadDim3dMenu() {
         const m = document.createElement('div');
-        m.className = 'ctx-menu hidden';
+        m.className = 'ctx-menu ctx-menu-annotation-style hidden';
 
         const lbl = document.createElement('div');
         lbl.className = 'ctx-label';

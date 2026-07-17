@@ -1,8 +1,119 @@
-// uiMenuUtils.js – shared context-menu positioning (clamp, scroll, anchor)
+// uiMenuUtils.js – shared context-menu positioning (clamp, scroll, anchor) and tool menu DOM helpers
 
 export const MENU_MARGIN = 8;
 
 const DEFAULT_SCROLL_CLASS = 'ctx-menu-scroll';
+
+const CTX_INPUT_ROW_STYLE = 'padding:2px 12px;display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:default;';
+
+/**
+ * @param {string} id
+ * @param {string} title
+ * @returns {HTMLDivElement}
+ */
+export function createToolContextMenu(id, title) {
+    const menu = document.createElement('div');
+    menu.id = id;
+    menu.className = 'ctx-menu ctx-menu-annotation-style';
+    const lbl = document.createElement('div');
+    lbl.className = 'ctx-label';
+    lbl.textContent = title;
+    menu.appendChild(lbl);
+    menu.appendChild(createCtxMenuSeparator());
+    return menu;
+}
+
+/**
+ * @returns {HTMLDivElement}
+ */
+export function createCtxMenuSeparator() {
+    const el = document.createElement('div');
+    el.className = 'ctx-separator';
+    return el;
+}
+
+/**
+ * @param {string} label
+ * @param {() => void} onClick
+ * @param {{ onClose?: () => void }} [opts]
+ * @returns {HTMLDivElement}
+ */
+export function createCtxMenuItem(label, onClick, opts = {}) {
+    const el = document.createElement('div');
+    el.className = 'ctx-item';
+    el.textContent = label;
+    el.addEventListener('mousedown', (e) => e.stopPropagation());
+    el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        opts.onClose?.();
+        onClick();
+    });
+    return el;
+}
+
+/**
+ * @param {string} labelText
+ * @param {string} currentVal
+ * @param {(color: string) => void} onInput
+ * @returns {HTMLDivElement}
+ */
+export function createCtxMenuColorRow(labelText, currentVal, onInput) {
+    const el = document.createElement('div');
+    el.style.cssText = CTX_INPUT_ROW_STYLE;
+    const span = document.createElement('span');
+    span.textContent = labelText;
+    span.style.fontSize = '12px';
+    const inp = document.createElement('input');
+    inp.type = 'color';
+    inp.value = currentVal;
+    inp.style.cssText = 'width:26px;height:18px;border:none;padding:0;cursor:pointer;background:none;';
+    inp.addEventListener('mousedown', (e) => e.stopPropagation());
+    inp.addEventListener('click', (e) => e.stopPropagation());
+    inp.addEventListener('input', (e) => { e.stopPropagation(); onInput(inp.value); });
+    el.appendChild(span);
+    el.appendChild(inp);
+    return el;
+}
+
+/**
+ * @param {string} labelText
+ * @param {number} currentVal
+ * @param {(size: number) => void} onInput
+ * @returns {HTMLDivElement}
+ */
+export function createCtxMenuSizeRow(labelText, currentVal, onInput) {
+    const el = document.createElement('div');
+    el.style.cssText = CTX_INPUT_ROW_STYLE;
+    const span = document.createElement('span');
+    span.textContent = labelText;
+    span.style.fontSize = '12px';
+    const inp = document.createElement('input');
+    inp.type = 'number';
+    inp.min = '6';
+    inp.max = '32';
+    inp.step = '1';
+    inp.value = String(currentVal);
+    inp.style.cssText = 'width:46px;font-size:12px;background:#333;color:#fff;border:1px solid #555;border-radius:3px;padding:1px 3px;';
+    inp.addEventListener('mousedown', (e) => e.stopPropagation());
+    inp.addEventListener('click', (e) => e.stopPropagation());
+    inp.addEventListener('change', (e) => { e.stopPropagation(); onInput(parseInt(e.target.value, 10)); });
+    el.appendChild(span);
+    el.appendChild(inp);
+    return el;
+}
+
+/**
+ * @param {HTMLElement} menu
+ */
+export function attachCtxMenuOutsideClose(menu) {
+    const close = (e) => {
+        if (!menu.contains(e.target)) {
+            menu.remove();
+            document.removeEventListener('mousedown', close, true);
+        }
+    };
+    setTimeout(() => document.addEventListener('mousedown', close, true), 0);
+}
 
 /**
  * @param {HTMLElement} menu

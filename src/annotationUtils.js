@@ -1,7 +1,7 @@
 // annotationUtils.js – Annotation (note) system with CSS2D labels
 import * as THREE from 'three';
 import { CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
-import { positionContextMenu } from './uiMenuUtils.js';
+import { positionContextMenu, createToolContextMenu, createCtxMenuSeparator, createCtxMenuItem, createCtxMenuColorRow, createCtxMenuSizeRow, attachCtxMenuOutsideClose } from './uiMenuUtils.js';
 
 // --- Private state ---
 let _scene = null;
@@ -316,7 +316,6 @@ function _deleteAnnotation(annotation, renderFn) {
 }
 
 export function showAnnotationContextMenu(annotation, x, y, renderFn, menuBounds = null, anchorEl = null) {
-    // Remove any existing context menu
     const existing = document.getElementById('_annotation-ctx-menu');
     if (existing) existing.remove();
 
@@ -324,136 +323,76 @@ export function showAnnotationContextMenu(annotation, x, y, renderFn, menuBounds
     const posX = anchorRect ? anchorRect.right : x;
     const posY = anchorRect ? anchorRect.top : y;
 
-    const menu = document.createElement('div');
-    menu.id = '_annotation-ctx-menu';
-    menu.style.cssText = 'position:fixed;background:#2a2a2a;color:#fff;border:1px solid #555;border-radius:5px;padding:4px 0;z-index:200000;min-width:170px;box-shadow:0 4px 16px rgba(0,0,0,0.5);font-family:sans-serif;font-size:12px;';
+    const menu = createToolContextMenu('_annotation-ctx-menu', 'Annotation');
+    const closeMenu = () => menu.remove();
 
-    const item = (label, cb) => {
-        const el = document.createElement('div');
-        el.textContent = label;
-        el.style.cssText = 'padding:1px 12px;cursor:pointer;';
-        el.addEventListener('mouseenter', () => el.style.background = '#444');
-        el.addEventListener('mouseleave', () => el.style.background = '');
-        el.addEventListener('mousedown', (e) => { e.stopPropagation(); });
-        el.addEventListener('click', (e) => { e.stopPropagation(); menu.remove(); cb(); });
-        menu.appendChild(el);
-    };
-
-    const sep = () => {
-        const el = document.createElement('div');
-        el.style.cssText = 'height:1px;background:#444;margin:3px 0;';
-        menu.appendChild(el);
-    };
-
-    item('➕ Add leader line', () => {
+    menu.appendChild(createCtxMenuItem('➕ Add leader line', () => {
         _pendingAddLeaderAnnotation = annotation;
         if (_renderFn) _renderFn();
-    });
+    }, { onClose: closeMenu }));
 
     if (annotation.leaderLines.length > 1) {
-        sep();
+        menu.appendChild(createCtxMenuSeparator());
         annotation.leaderLines.forEach((ll, idx) => {
-            const el = document.createElement('div');
-            el.textContent = `✕ Remove leader line ${idx + 1}`;
-            el.style.cssText = 'padding:1px 12px;cursor:pointer;';
             const origColor = ll.marker.material.color.getHex();
+            const el = createCtxMenuItem(`✕ Remove leader line ${idx + 1}`, () => {
+                ll.marker.material.color.setHex(origColor);
+                removeAnnotationLeaderLine(annotation, idx, renderFn);
+            }, { onClose: closeMenu });
             el.addEventListener('mouseenter', () => {
-                el.style.background = '#444';
                 ll.marker.material.color.setHex(0xff4400);
                 if (renderFn) renderFn();
             });
             el.addEventListener('mouseleave', () => {
-                el.style.background = '';
                 ll.marker.material.color.setHex(origColor);
                 if (renderFn) renderFn();
-            });
-            el.addEventListener('mousedown', (e) => { e.stopPropagation(); });
-            el.addEventListener('click', (e) => {
-                e.stopPropagation();
-                ll.marker.material.color.setHex(origColor);
-                menu.remove();
-                removeAnnotationLeaderLine(annotation, idx, renderFn);
             });
             menu.appendChild(el);
         });
     } else if (annotation.leaderLines.length === 1) {
-        item('✕ Remove leader line', () => {
+        menu.appendChild(createCtxMenuItem('✕ Remove leader line', () => {
             removeAnnotationLeaderLine(annotation, 0, renderFn);
-        });
+        }, { onClose: closeMenu }));
     }
 
-    sep();
-
-    // Text color, Background, Size
-    const colorPickerRow = (labelText, currentVal, onInput) => {
-        const el = document.createElement('div');
-        el.style.cssText = 'padding:2px 12px;display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:default;';
-        const span = document.createElement('span');
-        span.textContent = labelText;
-        span.style.fontSize = '12px';
-        const inp = document.createElement('input');
-        inp.type = 'color';
-        inp.value = currentVal;
-        inp.style.cssText = 'width:26px;height:18px;border:none;padding:0;cursor:pointer;background:none;';
-        inp.addEventListener('mousedown', e => e.stopPropagation());
-        inp.addEventListener('click', e => e.stopPropagation());
-        inp.addEventListener('input', e => { e.stopPropagation(); onInput(inp.value); });
-        el.appendChild(span); el.appendChild(inp);
-        menu.appendChild(el);
-    };
-    const sizePickerRow = (labelText, currentVal, onInput) => {
-        const el = document.createElement('div');
-        el.style.cssText = 'padding:2px 12px;display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:default;';
-        const span = document.createElement('span');
-        span.textContent = labelText;
-        span.style.fontSize = '12px';
-        const inp = document.createElement('input');
-        inp.type = 'number';
-        inp.min = '6'; inp.max = '32'; inp.step = '1';
-        inp.value = currentVal;
-        inp.style.cssText = 'width:46px;font-size:12px;background:#333;color:#fff;border:1px solid #555;border-radius:3px;padding:1px 3px;';
-        inp.addEventListener('mousedown', e => e.stopPropagation());
-        inp.addEventListener('click', e => e.stopPropagation());
-        inp.addEventListener('change', e => { e.stopPropagation(); onInput(parseInt(e.target.value)); });
-        el.appendChild(span); el.appendChild(inp);
-        menu.appendChild(el);
-    };
-
-    colorPickerRow('Text color', annotation._textColor || _flatAnnDefaults.textColor, (color) => {
+    menu.appendChild(createCtxMenuSeparator());
+    menu.appendChild(createCtxMenuColorRow('Text color', annotation._textColor || _flatAnnDefaults.textColor, (color) => {
         annotation._textColor = color;
         if (annotation.label) annotation.label.element.style.color = color;
         if (renderFn) renderFn();
-    });
-    colorPickerRow('Background', annotation._bgColor || _flatAnnDefaults.bgColor, (color) => {
+    }));
+    menu.appendChild(createCtxMenuColorRow('Background', annotation._bgColor || _flatAnnDefaults.bgColor, (color) => {
         annotation._bgColor = color;
         if (annotation.label) annotation.label.element.style.background = color;
         if (renderFn) renderFn();
-    });
-    sizePickerRow('Size', annotation._fontSize != null ? annotation._fontSize : _flatAnnDefaults.fontSize, (size) => {
+    }));
+    menu.appendChild(createCtxMenuSizeRow('Size', annotation._fontSize != null ? annotation._fontSize : _flatAnnDefaults.fontSize, (size) => {
         annotation._fontSize = size;
         if (annotation.label) annotation.label.element.style.fontSize = size + 'px';
         if (renderFn) renderFn();
-    });
+    }));
 
-    sep();
-    item('✏ Edit text', () => { _editAnnotation(annotation, renderFn); });
+    menu.appendChild(createCtxMenuSeparator());
+    menu.appendChild(createCtxMenuItem('✏ Edit text', () => {
+        _editAnnotation(annotation, renderFn);
+    }, { onClose: closeMenu }));
+
+    menu.appendChild(createCtxMenuSeparator());
     if (_convertTo3dFn) {
-        sep();
-        item('⇄ Convert to 3D annotation', () => { _convertTo3dFn(annotation, renderFn); });
+        menu.appendChild(createCtxMenuItem('Convert to 3D annotation', () => {
+            _convertTo3dFn(annotation, renderFn);
+        }, { onClose: closeMenu }));
     }
-    item('🗑 Delete annotation', () => { _deleteAnnotation(annotation, renderFn); });
+    menu.appendChild(createCtxMenuItem('Delete annotation', () => {
+        _deleteAnnotation(annotation, renderFn);
+    }, { onClose: closeMenu }));
 
     document.body.appendChild(menu);
     positionContextMenu(menu, posX, posY, {
         bounds: menuBounds ?? undefined,
         anchorRect,
     });
-
-    // Close on click anywhere outside
-    const close = (e) => {
-        if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('mousedown', close, true); }
-    };
-    setTimeout(() => document.addEventListener('mousedown', close, true), 0);
+    attachCtxMenuOutsideClose(menu);
 }
 
 // --- Public API ---
