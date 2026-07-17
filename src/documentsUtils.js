@@ -461,20 +461,20 @@ function _applyDocLayoutMode() {
 
     const bgWrap = _overlayEl.querySelector('.doc-bg-wrap');
     const btnNav3d = _overlayEl.querySelector('.doc-btn-nav3d');
-    const header = _overlayEl.querySelector('.doc-header');
+    const headerWrap = _overlayEl.querySelector('.doc-header-wrap');
 
     if (mode === 'side') {
         if (bgWrap) bgWrap.style.display = 'none';
         if (btnNav3d) btnNav3d.style.display = 'none';
         _overlayEl.style.pointerEvents = '';
-        if (header) header.style.pointerEvents = '';
+        if (headerWrap) headerWrap.style.pointerEvents = '';
         _applySidePanelWidth();
     } else {
         if (bgWrap) bgWrap.style.display = '';
         if (btnNav3d) btnNav3d.style.display = '';
         _overlayEl.style.width = '';
         _overlayEl.style.pointerEvents = _nav3d ? 'none' : '';
-        if (header) header.style.pointerEvents = _nav3d ? 'auto' : '';
+        if (headerWrap) headerWrap.style.pointerEvents = _nav3d ? 'auto' : '';
         if (btnNav3d) btnNav3d.style.pointerEvents = 'auto';
     }
 }
@@ -1398,9 +1398,15 @@ function _buildEditorOverlay() {
     overlay.className = 'doc-overlay';
     overlay.style.display = 'none';
 
-    // Header
-    const header = document.createElement('div');
-    header.className = 'doc-header';
+    // Header (two rows: actions, then title + layout)
+    const headerWrap = document.createElement('div');
+    headerWrap.className = 'doc-header-wrap';
+
+    const headerActions = document.createElement('div');
+    headerActions.className = 'doc-header-actions';
+
+    const headerMeta = document.createElement('div');
+    headerMeta.className = 'doc-header-meta';
 
     const titleInput = document.createElement('input');
     titleInput.type = 'text';
@@ -1513,7 +1519,7 @@ function _buildEditorOverlay() {
         overlay.style.pointerEvents = _nav3d ? 'none' : '';
         btnNav3d.classList.toggle('active', _nav3d);
         // Restore pointer events on the header itself so the button stays clickable
-        header.style.pointerEvents = _nav3d ? 'auto' : '';
+        headerWrap.style.pointerEvents = _nav3d ? 'auto' : '';
         btnNav3d.style.pointerEvents = 'auto';
     });
 
@@ -1522,7 +1528,7 @@ function _buildEditorOverlay() {
             _nav3d = false;
             overlay.style.pointerEvents = '';
             btnNav3d.classList.remove('active');
-            header.style.pointerEvents = '';
+            headerWrap.style.pointerEvents = '';
             btnNav3d.style.pointerEvents = 'auto';
         }
     });
@@ -1539,10 +1545,19 @@ function _buildEditorOverlay() {
     btnToc.innerHTML = '<svg width="16" height="12" viewBox="0 0 16 12" fill="currentColor"><rect y="0" width="16" height="2" rx="1"/><rect y="5" width="16" height="2" rx="1"/><rect y="10" width="16" height="2" rx="1"/></svg>';
     btnToc.style.display = 'none';
 
-    header.appendChild(btnToc);
-    header.appendChild(titleInput);
-    header.appendChild(bgWrap);
-    header.appendChild(btnNav3d);
+    headerActions.appendChild(btnToc);
+    headerActions.appendChild(btnEdit);
+    headerActions.appendChild(btnSave);
+    headerActions.appendChild(btnPrint);
+    headerActions.appendChild(btnExportPdf);
+    headerActions.appendChild(btnExportJson);
+    headerActions.appendChild(btnExportHtml);
+    headerActions.appendChild(btnDelete);
+    headerActions.appendChild(btnClose);
+
+    headerMeta.appendChild(titleInput);
+    headerMeta.appendChild(bgWrap);
+    headerMeta.appendChild(btnNav3d);
 
     // Font selector
     const fontWrap = document.createElement('span');
@@ -1568,7 +1583,7 @@ function _buildEditorOverlay() {
     });
     fontWrap.appendChild(fontLabel);
     fontWrap.appendChild(fontSelect);
-    header.appendChild(fontWrap);
+    headerMeta.appendChild(fontWrap);
 
     // Line height selector
     const lineHeightWrap = document.createElement('span');
@@ -1595,7 +1610,7 @@ function _buildEditorOverlay() {
     });
     lineHeightWrap.appendChild(lineHeightLabel);
     lineHeightWrap.appendChild(lineHeightSelect);
-    header.appendChild(lineHeightWrap);
+    headerMeta.appendChild(lineHeightWrap);
 
     // Paragraph spacing selector
     const paraSpacingWrap = document.createElement('span');
@@ -1622,7 +1637,7 @@ function _buildEditorOverlay() {
     });
     paraSpacingWrap.appendChild(paraSpacingLabel);
     paraSpacingWrap.appendChild(paraSpacingSelect);
-    header.appendChild(paraSpacingWrap);
+    headerMeta.appendChild(paraSpacingWrap);
 
     // Document width selector
     const docWidthWrap = document.createElement('span');
@@ -1649,7 +1664,7 @@ function _buildEditorOverlay() {
     });
     docWidthWrap.appendChild(docWidthLabel);
     docWidthWrap.appendChild(docWidthSelect);
-    header.appendChild(docWidthWrap);
+    headerMeta.appendChild(docWidthWrap);
 
     // Table border selector
     const tableBorderWrap = document.createElement('span');
@@ -1677,16 +1692,10 @@ function _buildEditorOverlay() {
     });
     tableBorderWrap.appendChild(tableBorderLabel);
     tableBorderWrap.appendChild(tableBorderSelect);
-    header.appendChild(tableBorderWrap);
+    headerMeta.appendChild(tableBorderWrap);
 
-    header.appendChild(btnEdit);
-    header.appendChild(btnSave);
-    header.appendChild(btnPrint);
-    header.appendChild(btnExportPdf);
-    header.appendChild(btnExportJson);
-    header.appendChild(btnExportHtml);
-    header.appendChild(btnDelete);
-    header.appendChild(btnClose);
+    headerWrap.appendChild(headerActions);
+    headerWrap.appendChild(headerMeta);
 
     // Toolbar
     const toolbar = document.createElement('div');
@@ -1894,7 +1903,7 @@ function _buildEditorOverlay() {
     splitter.addEventListener('touchstart', _onSideSplitterPointerDown, { passive: false });
 
     overlay.appendChild(splitter);
-    overlay.appendChild(header);
+    overlay.appendChild(headerWrap);
     overlay.appendChild(toolbar);
     overlay.appendChild(docBody);
 
