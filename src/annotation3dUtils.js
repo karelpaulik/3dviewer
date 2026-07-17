@@ -499,12 +499,6 @@ export function showAnnotation3dContextMenu(annotation, x, y, renderFn, menuBoun
         if (renderFn) renderFn();
     });
 
-    item('🗑 Delete annotation', () => { _deleteAnnotation(annotation, renderFn); });
-    if (_convertTo2dFn) {
-        sep();
-        item('⇄ Convert to Flat annotation', () => { _convertTo2dFn(annotation, renderFn); });
-    }
-
     sep();
     sectionLabel('Orientation:');
 
@@ -526,6 +520,12 @@ export function showAnnotation3dContextMenu(annotation, x, y, renderFn, menuBoun
         });
         menu.appendChild(el);
     }
+
+    sep();
+    if (_convertTo2dFn) {
+        item('Convert to Flat annotation', () => { _convertTo2dFn(annotation, renderFn); });
+    }
+    item('Delete annotation', () => { _deleteAnnotation(annotation, renderFn); });
 
     document.body.appendChild(menu);
     positionContextMenu(menu, posX, posY, {

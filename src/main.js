@@ -12253,15 +12253,7 @@ function assemblyMoveStepDown() {
 
         m.appendChild(separator());
 
-        const itemToggleDim = simpleItem('⇄ Convert to 3D (oriented)', () => {
-            const dim = getSelectedMeasurementLabelDim();
-            setSelectedMeasurementLabelDim(dim === '3d' ? '2d' : '3d', render);
-            hideAll();
-        });
-        m.appendChild(itemToggleDim);
-
         const orientSep = separator();
-        m.appendChild(orientSep);
 
         const ORIENT_MODES_MEAS = [
             { key: 'camera', label: 'Face camera' },
@@ -12278,6 +12270,7 @@ function assemblyMoveStepDown() {
             orientItems[mode.key] = item;
             m.appendChild(item);
         }
+        m.appendChild(orientSep);
 
         m.appendChild(separator());
 
@@ -12327,15 +12320,24 @@ function assemblyMoveStepDown() {
 
         m.appendChild(separator());
 
-        m.appendChild(simpleItem('Delete measurement', () => {
+        const itemToggleDim = simpleItem('Convert to 3D measurement', () => {
+            const dim = getSelectedMeasurementLabelDim();
+            setSelectedMeasurementLabelDim(dim === '3d' ? '2d' : '3d', render);
+            hideAll();
+        });
+        m.appendChild(itemToggleDim);
+
+        const itemDelete = simpleItem('Delete measurement', () => {
             deleteSelectedDimension(render);
             hideAll();
-        }));
+        });
+        m.appendChild(itemDelete);
 
         m._inpTextColor = inpTextColor;
         m._inpBgColor = inpBgColor;
         m._inpFontSize = inpFontSize;
         m._itemToggleDim = itemToggleDim;
+        m._itemDelete = itemDelete;
         m._orientSep = orientSep;
         m._orientItems = orientItems;
 
@@ -12345,17 +12347,21 @@ function assemblyMoveStepDown() {
     function refreshMeasurementMenu() {
         const lbl = document.getElementById('ctx-measurement-label');
         if (!lbl) return;
-        if (getSelectedDistance()) lbl.textContent = 'Distance measurement';
-        else if (getSelectedAngle()) lbl.textContent = 'Angle measurement';
+        const isDistance = !!getSelectedDistance();
+        const isAngle = !!getSelectedAngle();
+        if (isDistance) lbl.textContent = 'Distance measurement';
+        else if (isAngle) lbl.textContent = 'Angle measurement';
         else lbl.textContent = 'Measurement';
 
+        const kind = isAngle ? 'angle' : 'measurement';
         const labelDim = getSelectedMeasurementLabelDim();
         const is3d = labelDim === '3d';
         if (labelDim) {
             menuMeasurement._itemToggleDim.textContent = is3d
-                ? '⇄ Convert to Flat (screen-aligned)'
-                : '⇄ Convert to 3D (oriented)';
+                ? `Convert to Flat ${kind}`
+                : `Convert to 3D ${kind}`;
         }
+        menuMeasurement._itemDelete.textContent = `Delete ${kind}`;
 
         for (const item of Object.values(menuMeasurement._orientItems)) {
             item.style.display = is3d ? '' : 'none';
