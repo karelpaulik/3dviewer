@@ -12350,11 +12350,11 @@ function assemblyMoveStepDown() {
         if (!lbl) return;
         const isDistance = !!getSelectedDistance();
         const isAngle = !!getSelectedAngle();
-        if (isDistance) lbl.textContent = 'Distance measurement';
-        else if (isAngle) lbl.textContent = 'Angle measurement';
+        if (isDistance) lbl.textContent = 'Dist. measure';
+        else if (isAngle) lbl.textContent = 'Angle measure';
         else lbl.textContent = 'Measurement';
 
-        const kind = isAngle ? 'angle' : 'measurement';
+        const kind = isAngle ? 'angle measure' : 'dist. measure';
         const labelDim = getSelectedMeasurementLabelDim();
         const is3d = labelDim === '3d';
         if (labelDim) {

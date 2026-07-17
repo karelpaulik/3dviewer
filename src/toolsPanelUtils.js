@@ -4,10 +4,10 @@ import { GUI } from 'lil-gui';
 
 export const MODE_LABELS = {
     navigate: 'Navigate',
-    measure: 'Add Measure',
-    angle: 'Add Measure Angle',
-    dimension: 'Add Dimension',
-    annotation: 'Add Annotation',
+    measure: 'Measuring distance',
+    angle: 'Measuring angle',
+    dimension: 'Add dimension',
+    annotation: 'Add annotation',
     assemblyEdit: 'Assembly Edit',
 };
 
@@ -16,8 +16,8 @@ const LABEL_MODE_OPTS = { Flat: 'flat', '3D': '3d' };
 const CIRCLE_DETECT_MODES = new Set(['measure', 'angle', 'dimension']);
 
 const TOOL_BUTTONS = [
-    ['measure', 'Measure'],
-    ['angle', 'Angle'],
+    ['measure', 'Dist. measure'],
+    ['angle', 'Angle measure'],
     ['dimension', 'Dimension'],
     ['annotation', 'Annotation'],
 ];
@@ -406,7 +406,7 @@ function _buildAnnotationDefaultsFolder(parentFolder, deps) {
 function _buildMeasurementDefaultsFolder(parentFolder, deps) {
     const measurementFolder = parentFolder.addFolder('Measurement defaults');
 
-    const distanceDefaultsFolder = measurementFolder.addFolder('Measure (Distance) defaults');
+    const distanceDefaultsFolder = measurementFolder.addFolder('Dist. measure defaults');
     const _distanceLabelDef = deps.getDistanceLabelDefaults();
     distanceDefaultsFolder.add(_distanceLabelDef, 'fontSize', 8, 24, 1).name('Size').listen();
     distanceDefaultsFolder.addColor(_distanceLabelDef, 'textColor').name('Text color').listen();
@@ -414,7 +414,7 @@ function _buildMeasurementDefaultsFolder(parentFolder, deps) {
     distanceDefaultsFolder.add({ fn() { deps.applyDefaultsToAllDistanceMeasurements(deps.render); } }, 'fn').name('Apply to all existing');
     distanceDefaultsFolder.close();
 
-    const angleDefaultsFolder = measurementFolder.addFolder('Angle defaults');
+    const angleDefaultsFolder = measurementFolder.addFolder('Angle measure defaults');
     const _angleLabelDef = deps.getAngleLabelDefaults();
     angleDefaultsFolder.add(_angleLabelDef, 'fontSize', 8, 24, 1).name('Size').listen();
     angleDefaultsFolder.addColor(_angleLabelDef, 'textColor').name('Text color').listen();
