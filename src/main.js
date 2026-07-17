@@ -10735,6 +10735,7 @@ function addHelpGui() {
     const helpGui = new GUI({ container: guiContainer, title: 'Help' });
     helpGui.add({ fn() { openHelp('/help/guide-for-beginners.json'); } }, 'fn').name('📖 Guide for beginners');
     helpGui.add({ fn() { openHelp('/help/screen-layout.json'); } }, 'fn').name('🖥️ Screen layout');
+    helpGui.add({ fn() { openHelp('/help/controls.json'); } }, 'fn').name('🖱️ Mouse & keyboard');
     helpGui.add({ fn() { openHelp('/help/supported-file-formats.json'); } }, 'fn').name('📂 Supported File Formats');
     helpGui.add({ fn() { openHelp('/help/pwa-install.json'); } }, 'fn').name('📲 Install as Local App (PWA)');
     const panelHelpFolder = helpGui.addFolder('Panels');
