@@ -168,8 +168,27 @@ const _PDF_MARGIN_PT = (_PDF_MARGIN_MM / 25.4) * 72;
 const _PDF_CONTENT_W_PT = _PDF_A4_W_PT - 2 * _PDF_MARGIN_PT;
 const _PDF_CONTENT_H_PT = _PDF_A4_H_PT - 2 * _PDF_MARGIN_PT;
 const _PDF_RENDER_SCALE = 2;
+const DOC_OPEN_MODE_KEY = 'docOpenMode';
+const DOC_PANEL_WIDTH_KEY = 'docPanelWidthPct';
+const _DOC_OPEN_MODE_OPTS = { 'Side-by-side': 'side', 'Fullscreen': 'full' };
+const _DOC_MOBILE_BREAKPOINT = 768;
+const _DOC_PANEL_WIDTH_DEFAULT = 45;
+const _DOC_PANEL_WIDTH_MIN_PX = 280;
+const _DOC_PANEL_WIDTH_MAX_VW = 0.9;
 
 // ── State ─────────────────────────────────────────────────────────────────────
+
+const _docOpenPrefs = {
+    mode: (() => {
+        const stored = localStorage.getItem(DOC_OPEN_MODE_KEY);
+        return stored === 'full' ? 'full' : 'side';
+    })(),
+};
+
+let _sidePanelWidthPct = (() => {
+    const stored = parseFloat(localStorage.getItem(DOC_PANEL_WIDTH_KEY));
+    return Number.isFinite(stored) && stored > 0 ? stored : _DOC_PANEL_WIDTH_DEFAULT;
+})();
 
 let documentsStore = [];   // [{ id, title, content, createdAt, font }]
 let _guiRef = null;        // lil-gui folder reference (set by initDocumentsGui)
@@ -184,6 +203,7 @@ let _showLastEditDate = true;  // show (le. ...) in document button label
 let _showImportDate = false;    // show (imp. ...) in document button label
 let _pdfExporting = false;
 let _btnExportPdf = null;
+let _resizeLayoutTimer = null;
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
@@ -203,9 +223,11 @@ export function clearDocumentsStore() {
 }
 
 /** Returns true when the doc overlay is open and 3D model interaction should be suppressed.
- *  Always blocks while editing; in view mode blocks unless 3D navigation is toggled on. */
+ *  Side-by-side never blocks; fullscreen blocks while editing or in view unless 3D nav is on. */
 export function isDocOverlayBlockingInput() {
-    return _overlayEl !== null && _overlayEl.style.display !== 'none' && (_isEditMode || !_nav3d);
+    if (!_overlayEl || _overlayEl.style.display === 'none') return false;
+    if (_getEffectiveOpenMode() === 'side') return false;
+    return _isEditMode || !_nav3d;
 }
 
 /** True when a document is open in edit mode (TipTap active). */
@@ -261,6 +283,7 @@ export function importDocumentsFromGltfScene(gltfScene) {
 export function initDocumentsGui(gui) {
     _guiRef = gui;
     _buildEditorOverlay();
+    window.addEventListener('resize', _onDocLayoutResize);
     refreshDocumentsGui();
 }
 
@@ -274,6 +297,13 @@ export function refreshDocumentsGui() {
     // Destroy and re-add children folders (per-document) — none in this design
     const folders = [..._guiRef.folders];
     folders.forEach(f => f.destroy());
+
+    _guiRef.add(_docOpenPrefs, 'mode', _DOC_OPEN_MODE_OPTS)
+        .name('Open as')
+        .onChange(mode => {
+            localStorage.setItem(DOC_OPEN_MODE_KEY, mode);
+            _applyDocLayoutMode();
+        });
 
     // "New document" button
     _guiRef.add({ fn: _newDocument }, 'fn').name('+ New document');
@@ -402,6 +432,96 @@ function _showOverlay(doc, editMode) {
     });
 
     _overlayEl.style.display = 'flex';
+    _applyDocLayoutMode();
+}
+
+function _clampSidePanelWidthPx(widthPx) {
+    const minW = _DOC_PANEL_WIDTH_MIN_PX;
+    const maxW = window.innerWidth * _DOC_PANEL_WIDTH_MAX_VW;
+    return Math.max(minW, Math.min(maxW, widthPx));
+}
+
+function _applySidePanelWidth() {
+    if (!_overlayEl) return;
+    const widthPx = _clampSidePanelWidthPx((window.innerWidth * _sidePanelWidthPct) / 100);
+    _overlayEl.style.width = `${widthPx}px`;
+}
+
+function _getEffectiveOpenMode() {
+    if (window.innerWidth <= _DOC_MOBILE_BREAKPOINT) return 'full';
+    return _docOpenPrefs.mode === 'full' ? 'full' : 'side';
+}
+
+function _applyDocLayoutMode() {
+    if (!_overlayEl || _overlayEl.style.display === 'none') return;
+
+    const mode = _getEffectiveOpenMode();
+    _overlayEl.classList.remove('layout-side', 'layout-full');
+    _overlayEl.classList.add(mode === 'side' ? 'layout-side' : 'layout-full');
+
+    const bgWrap = _overlayEl.querySelector('.doc-bg-wrap');
+    const btnNav3d = _overlayEl.querySelector('.doc-btn-nav3d');
+    const header = _overlayEl.querySelector('.doc-header');
+
+    if (mode === 'side') {
+        if (bgWrap) bgWrap.style.display = 'none';
+        if (btnNav3d) btnNav3d.style.display = 'none';
+        _overlayEl.style.pointerEvents = '';
+        if (header) header.style.pointerEvents = '';
+        _applySidePanelWidth();
+    } else {
+        if (bgWrap) bgWrap.style.display = '';
+        if (btnNav3d) btnNav3d.style.display = '';
+        _overlayEl.style.width = '';
+        _overlayEl.style.pointerEvents = _nav3d ? 'none' : '';
+        if (header) header.style.pointerEvents = _nav3d ? 'auto' : '';
+        if (btnNav3d) btnNav3d.style.pointerEvents = 'auto';
+    }
+}
+
+function _onSideSplitterPointerDown(e) {
+    if (_getEffectiveOpenMode() !== 'side' || !_overlayEl) return;
+    if (e.button !== undefined && e.button !== 0) return;
+    e.preventDefault();
+
+    const splitter = _overlayEl.querySelector('.doc-side-splitter');
+    if (splitter) splitter.classList.add('dragging');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    const onMove = (ev) => {
+        if (ev.cancelable) ev.preventDefault();
+        const clientX = ev.touches ? ev.touches[0].clientX : ev.clientX;
+        const widthPx = _clampSidePanelWidthPx(window.innerWidth - clientX);
+        _sidePanelWidthPct = (widthPx / window.innerWidth) * 100;
+        _overlayEl.style.width = `${widthPx}px`;
+    };
+
+    const onUp = () => {
+        if (splitter) splitter.classList.remove('dragging');
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        localStorage.setItem(DOC_PANEL_WIDTH_KEY, String(_sidePanelWidthPct));
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        document.removeEventListener('touchmove', onMove);
+        document.removeEventListener('touchend', onUp);
+        document.removeEventListener('touchcancel', onUp);
+    };
+
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    document.addEventListener('touchmove', onMove, { passive: false });
+    document.addEventListener('touchend', onUp);
+    document.addEventListener('touchcancel', onUp);
+}
+
+function _onDocLayoutResize() {
+    if (_resizeLayoutTimer) clearTimeout(_resizeLayoutTimer);
+    _resizeLayoutTimer = setTimeout(() => {
+        _resizeLayoutTimer = null;
+        _applyDocLayoutMode();
+    }, 150);
 }
 
 // In read-only mode the ImageResize nodeview returns the bare container div (no wrapper).
@@ -1309,6 +1429,7 @@ function _buildEditorOverlay() {
             });
         }
         _isEditMode = true;
+        _applyDocLayoutMode();
     });
 
     const btnSave = document.createElement('button');
@@ -1325,6 +1446,7 @@ function _buildEditorOverlay() {
         overlay.querySelector('.doc-editor-toolbar').style.display = 'none';
         if (_editor) _editor.setEditable(false);
         _isEditMode = false;
+        _applyDocLayoutMode();
     });
 
     const btnPrint = document.createElement('button');
@@ -1763,6 +1885,15 @@ function _buildEditorOverlay() {
     });
     window.addEventListener('resize', _applyDocTocState);
 
+    const splitter = document.createElement('div');
+    splitter.className = 'doc-side-splitter';
+    splitter.title = 'Resize document panel';
+    splitter.setAttribute('role', 'separator');
+    splitter.setAttribute('aria-orientation', 'vertical');
+    splitter.addEventListener('mousedown', _onSideSplitterPointerDown);
+    splitter.addEventListener('touchstart', _onSideSplitterPointerDown, { passive: false });
+
+    overlay.appendChild(splitter);
     overlay.appendChild(header);
     overlay.appendChild(toolbar);
     overlay.appendChild(docBody);

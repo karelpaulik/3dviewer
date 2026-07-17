@@ -1942,6 +1942,62 @@ a, button, input, select {
     color: #ddd;
 }
 
+.doc-overlay.layout-side {
+    left: auto;
+    right: 0;
+    width: var(--doc-panel-width, 45%);
+    min-width: 280px;
+    max-width: 90vw;
+    box-shadow: -4px 0 16px rgba(0, 0, 0, 0.35);
+}
+
+.doc-side-splitter {
+    display: none;
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 8px;
+    cursor: col-resize;
+    z-index: 30;
+    touch-action: none;
+}
+
+.doc-overlay.layout-side > .doc-side-splitter {
+    display: block;
+}
+
+.doc-side-splitter::before {
+    content: '';
+    position: absolute;
+    left: 3px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: rgba(255, 255, 255, 0.25);
+    border-radius: 1px;
+    pointer-events: none;
+}
+
+.doc-side-splitter:hover::before,
+.doc-side-splitter.dragging::before {
+    background: rgba(85, 170, 255, 0.85);
+}
+
+@media (max-width: 768px) {
+    .doc-overlay.layout-side {
+        inset: 0;
+        width: auto;
+        min-width: unset;
+        max-width: none;
+        box-shadow: none;
+    }
+
+    .doc-side-splitter {
+        display: none !important;
+    }
+}
+
 /* Header row */
 .doc-header {
     display: flex;
