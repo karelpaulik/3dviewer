@@ -10734,6 +10734,7 @@ function addHelpGui() {
 
     const helpGui = new GUI({ container: guiContainer, title: 'Help' });
     helpGui.add({ fn() { openHelp('/help/guide-for-beginners.json'); } }, 'fn').name('📖 Guide for beginners');
+    helpGui.add({ fn() { openHelp('/help/users-guide-3d-models.json'); } }, 'fn').name('📖 Users guide - 3D Models');
     helpGui.add({ fn() { openHelp('/help/screen-layout.json'); } }, 'fn').name('🖥️ Screen layout');
     helpGui.add({ fn() { openHelp('/help/controls.json'); } }, 'fn').name('🖱️ Mouse & keyboard');
     helpGui.add({ fn() { openHelp('/help/supported-file-formats.json'); } }, 'fn').name('📂 Supported File Formats');
