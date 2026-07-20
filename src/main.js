@@ -40,12 +40,12 @@ import {
     syncSectionFromGizmo,
     syncGizmoFromViewProp,
     getSceneBBoxCenter,
-    initSinglePlaneDefaults,
     migrateLegacySectionPoint,
     migrateLegacySectionAngle,
     shouldUseClipIntersection,
     isSingleSectionMode,
     normalizeSectionMode,
+    SECTION_MODE_OPTIONS,
 } from './sectionPlaneUtils.js';
 import { initDocumentsGui, importDocumentsFromGltfScene, getDocumentsStore, flushDocumentEdits, isDocOverlayBlockingInput, isDocumentEditorOpen, setDocLabelOptions, clearDocumentsStore } from './documentsUtils.js';
 import { isImageEditorOpen } from './imageEditorUtils.js';
@@ -418,6 +418,8 @@ sectionBtn.addEventListener('click', () => {
     else clearSolidSection(scene, render);
     render();
     sectionBtn.classList.toggle('active', viewProp.section);
+    updateSectionViewportControlsVisibility();
+    syncSectionModeViewportSelect();
     solidSectionBtn.style.display = viewProp.section ? 'block' : 'none';
     showSectionMeshBtn.style.display = viewProp.section ? 'block' : 'none';
     crossSectionLinesBtn.style.display = viewProp.section ? 'block' : 'none'; // Add this line
@@ -477,6 +479,43 @@ crossSectionLinesBtn.addEventListener('click', () => {
 });
 document.body.appendChild(crossSectionLinesBtn);
 
+// Section mode select (visible only when section is active)
+const sectionModeSelect = document.createElement('select');
+sectionModeSelect.id = 'section-mode-select';
+sectionModeSelect.className = 'section-mode-select';
+sectionModeSelect.title = 'Section mode';
+SECTION_MODE_OPTIONS.forEach(({ value, shortLabel }) => {
+    const opt = document.createElement('option');
+    opt.value = value;
+    opt.textContent = shortLabel;
+    sectionModeSelect.appendChild(opt);
+});
+sectionModeSelect.addEventListener('change', function () {
+    setSectionMode(this.value);
+});
+document.body.appendChild(sectionModeSelect);
+
+const sectionResetBtn = document.createElement('button');
+sectionResetBtn.id = 'section-reset-btn';
+sectionResetBtn.title = 'Reset section';
+sectionResetBtn.textContent = '↺';
+sectionResetBtn.addEventListener('click', () => {
+    resetSection();
+});
+document.body.appendChild(sectionResetBtn);
+
+function updateSectionViewportControlsVisibility() {
+    const visible = viewProp.section ? 'block' : 'none';
+    sectionModeSelect.style.display = visible;
+    sectionResetBtn.style.display = visible;
+}
+
+function syncSectionModeViewportSelect() {
+    if (!sectionModeSelect) return;
+    const mode = normalizeSectionMode(viewProp.sectionMode);
+    if (sectionModeSelect.value !== mode) sectionModeSelect.value = mode;
+}
+
 // ViewHelper overlay – fixed bottom-right, above GUI panels
 const viewHelperContainer = document.createElement('div');
 viewHelperContainer.id = 'view-gizmo';
@@ -484,7 +523,7 @@ document.body.appendChild(viewHelperContainer);
 
 // Wrapper reference for hit-testing (toolbar + panels + outliner)
 let outlinerPanelEl = null;
-const guiWrapper = { contains(el) { return guiToolbar.contains(el) || Object.values(guiPanels).some(p => p.gui && p.gui.domElement.style.display !== 'none' && p.gui.domElement.contains(el)) || (outlinerPanelEl && outlinerPanelEl.contains(el)) || statusBar.contains(el) || fsBtn.contains(el) || sectionBtn.contains(el) || solidSectionBtn.contains(el) || showSectionMeshBtn.contains(el) || crossSectionLinesBtn.contains(el) || viewHelperContainer.contains(el) || (_deviationLegendEl && _deviationLegendEl.contains(el)); } };
+const guiWrapper = { contains(el) { return guiToolbar.contains(el) || Object.values(guiPanels).some(p => p.gui && p.gui.domElement.style.display !== 'none' && p.gui.domElement.contains(el)) || (outlinerPanelEl && outlinerPanelEl.contains(el)) || statusBar.contains(el) || fsBtn.contains(el) || sectionBtn.contains(el) || solidSectionBtn.contains(el) || showSectionMeshBtn.contains(el) || crossSectionLinesBtn.contains(el) || sectionModeSelect.contains(el) || sectionResetBtn.contains(el) || viewHelperContainer.contains(el) || (_deviationLegendEl && _deviationLegendEl.contains(el)); } };
 
 let guiView = null;
 let guiAssembly = null;
@@ -2480,13 +2519,10 @@ function addMainGui() {
             scheduleEdgeThresholdUpdate();
         }).listen();
         const sectionFolder = folderProp.addFolder("Section view");   
-            sectionCtrl = sectionFolder.add(viewProp, 'section').name('Section').onChange(function(value){ syncShowSectionMeshWithSection(); renderer.localClippingEnabled = value; viewProp.sectionGizmo = value; activateSectionGizmo(value); updateSectionCrossLines(); viewProp.solidSection = value; if (value) doComputeSolidSection(); else clearSolidSection(scene, render); render(); sectionBtn.classList.toggle('active', value); solidSectionBtn.style.display = value ? 'block' : 'none'; showSectionMeshBtn.style.display = value ? 'block' : 'none'; crossSectionLinesBtn.style.display = value ? 'block' : 'none'; solidSectionBtn.classList.toggle('active', viewProp.solidSection); showSectionMeshBtn.classList.toggle('active', viewProp.showSectionMesh); crossSectionLinesBtn.classList.toggle('active', viewProp.sectionCrossLines); if (solidSectionCtrl) solidSectionCtrl.updateDisplay(); }).listen();
-            sectionModeCtrl = sectionFolder.add(viewProp, 'sectionMode', {
-                Corner: 'corner',
-                'Single XY': 'singleXY',
-                'Single XZ': 'singleXZ',
-                'Single YZ': 'singleYZ',
-            }).name('Mode').onChange(function(value){ setSectionMode(value); }).listen();
+            sectionCtrl = sectionFolder.add(viewProp, 'section').name('Section').onChange(function(value){ syncShowSectionMeshWithSection(); renderer.localClippingEnabled = value; viewProp.sectionGizmo = value; activateSectionGizmo(value); updateSectionCrossLines(); viewProp.solidSection = value; if (value) doComputeSolidSection(); else clearSolidSection(scene, render); render(); sectionBtn.classList.toggle('active', value); updateSectionViewportControlsVisibility(); syncSectionModeViewportSelect(); solidSectionBtn.style.display = value ? 'block' : 'none'; showSectionMeshBtn.style.display = value ? 'block' : 'none'; crossSectionLinesBtn.style.display = value ? 'block' : 'none'; solidSectionBtn.classList.toggle('active', viewProp.solidSection); showSectionMeshBtn.classList.toggle('active', viewProp.showSectionMesh); crossSectionLinesBtn.classList.toggle('active', viewProp.sectionCrossLines); if (solidSectionCtrl) solidSectionCtrl.updateDisplay(); }).listen();
+            sectionModeCtrl = sectionFolder.add(viewProp, 'sectionMode', Object.fromEntries(
+                SECTION_MODE_OPTIONS.map(o => [o.label, o.value])
+            )).name('Mode').onChange(function(value){ setSectionMode(value); }).listen();
             sectionCrossLinesCtrl = sectionFolder.add(viewProp, 'sectionCrossLines').name('Cross Section Lines').onChange(function(value){updateSectionCrossLines(); crossSectionLinesBtn.classList.toggle('active', value); render(); }).listen();
             sectionFolder.addColor(viewProp, 'crossSectionColor').name('Cross Lines Color').onChange(function(value){ if(viewProp.sectionCrossLines) { updateSectionCrossLines(); render(); } });
             sectionFolder.add(viewProp, 'crossSectionOnHidden').name('Apply to hidden').onChange(function(value){ if(viewProp.sectionCrossLines) updateSectionCrossLines(); if(viewProp.showCrossSection) updateCrossSectionLines(); render(); });
@@ -4913,18 +4949,13 @@ function updateSectionGuiFromViewProp() {
 function setSectionMode(mode) {
     const prevMode = normalizeSectionMode(viewProp.sectionMode);
     const newMode = normalizeSectionMode(mode);
-    const center = getSectionSceneCenter();
 
     viewProp.sectionMode = newMode;
 
     if (isSingleSectionMode(viewProp) && prevMode === 'corner') {
-        if (viewProp.px === 0 && viewProp.py === 0 && viewProp.pz === 0) {
-            initSinglePlaneDefaults(viewProp, center, newMode);
-        } else {
-            viewProp.sectionRx = 0;
-            viewProp.sectionRy = 0;
-            viewProp.sectionRz = 0;
-        }
+        viewProp.sectionRx = 0;
+        viewProp.sectionRy = 0;
+        viewProp.sectionRz = 0;
     }
 
     refreshSectionPlanes();
@@ -4935,6 +4966,7 @@ function setSectionMode(mode) {
     if (viewProp.sectionGizmo) applySectionGizmoMode();
     refreshSectionDependents();
     if (sectionModeCtrl) sectionModeCtrl.updateDisplay();
+    syncSectionModeViewportSelect();
 }
 
 function updateSectionMeshClipSettings() {
@@ -4975,13 +5007,13 @@ function syncSectionGizmoPosition() {
 
 
 function resetSection() {
+    viewProp.px = 0;
+    viewProp.py = 0;
+    viewProp.pz = 0;
     if (isSingleSectionMode(viewProp)) {
-        const center = getSectionSceneCenter();
-        initSinglePlaneDefaults(viewProp, center, viewProp.sectionMode);
-    } else {
-        viewProp.px = 0;
-        viewProp.py = 0;
-        viewProp.pz = 0;
+        viewProp.sectionRx = 0;
+        viewProp.sectionRy = 0;
+        viewProp.sectionRz = 0;
     }
     viewProp.crossSectionPos = 0;
     refreshSectionPlanes();
@@ -9922,6 +9954,8 @@ function importSettingsFromGltfScene(gltfScene) {
         }
 
         syncShowSectionMeshWithSection();
+        updateSectionViewportControlsVisibility();
+        syncSectionModeViewportSelect();
         if (viewProp.sectionCrossLines) updateSectionCrossLines();
         if (viewProp.showSectionMesh) toggleSectionMeshAll();
         if (viewProp.solidSection) doComputeSolidSection();

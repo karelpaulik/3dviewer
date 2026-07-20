@@ -5,6 +5,18 @@ import * as THREE from 'three';
 
 export const SECTION_MODES = ['corner', 'singleXY', 'singleXZ', 'singleYZ'];
 
+export const SECTION_MODE_OPTIONS = [
+    { value: 'corner', label: 'Corner', shortLabel: 'Corner' },
+    { value: 'singleXY', label: 'Single XY', shortLabel: 'XY' },
+    { value: 'singleXZ', label: 'Single XZ', shortLabel: 'XZ' },
+    { value: 'singleYZ', label: 'Single YZ', shortLabel: 'YZ' },
+];
+
+export function getSectionModeLabel(mode) {
+    const m = normalizeSectionMode(mode);
+    return SECTION_MODE_OPTIONS.find(o => o.value === m)?.label ?? 'Corner';
+}
+
 const _baseNormal = new THREE.Vector3();
 const _normal = new THREE.Vector3();
 const _point = new THREE.Vector3();
@@ -157,16 +169,6 @@ export function getSceneBBoxCenter(meshObjects, isEffectivelyVisible, target = n
     });
     if (box.isEmpty()) return target.set(0, 0, 0);
     return box.getCenter(target);
-}
-
-/** Initialize single-plane point at bbox center and reset tilt. */
-export function initSinglePlaneDefaults(viewProp, center, mode) {
-    viewProp.sectionMode = normalizeSectionMode(mode || viewProp.sectionMode);
-    if (!MODE_CONFIG[viewProp.sectionMode]) return;
-    viewProp.px = center.x;
-    viewProp.py = center.y;
-    viewProp.pz = center.z;
-    resetSectionRotation(viewProp);
 }
 
 /** Migrate legacy scalar sectionAngle to sectionRx/Ry/Rz. */

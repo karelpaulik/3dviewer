@@ -1544,12 +1544,6 @@ if (selSectionMode) {
         const prevMode = normalizeSectionMode(sectionMode);
         const newMode = normalizeSectionMode(this.value);
         if (newMode !== 'corner' && prevMode === 'corner') {
-            if (sectionPlaneState.px === 0 && sectionPlaneState.py === 0 && sectionPlaneState.pz === 0) {
-                const center = getSceneCenterForSection();
-                sectionPlaneState.px = center.x;
-                sectionPlaneState.py = center.y;
-                sectionPlaneState.pz = center.z;
-            }
             sectionPlaneState.sectionRx = 0;
             sectionPlaneState.sectionRy = 0;
             sectionPlaneState.sectionRz = 0;
@@ -1591,18 +1585,13 @@ wireAxisSlider('sld-ry', 'num-ry', function(v) { sectionPlaneState.sectionRy = v
 wireAxisSlider('sld-rz', 'num-rz', function(v) { sectionPlaneState.sectionRz = v; });
 
 document.getElementById('btn-sec-reset').addEventListener('click', function() {
+    sectionPlaneState.px = 0;
+    sectionPlaneState.py = 0;
+    sectionPlaneState.pz = 0;
     if (isSingleSectionMode()) {
         sectionPlaneState.sectionRx = 0;
         sectionPlaneState.sectionRy = 0;
         sectionPlaneState.sectionRz = 0;
-        const center = getSceneCenterForSection();
-        sectionPlaneState.px = center.x;
-        sectionPlaneState.py = center.y;
-        sectionPlaneState.pz = center.z;
-    } else {
-        sectionPlaneState.px = 0;
-        sectionPlaneState.py = 0;
-        sectionPlaneState.pz = 0;
     }
     syncSectionSliderValues();
     refreshSectionClipState();
