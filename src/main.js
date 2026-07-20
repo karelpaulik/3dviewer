@@ -1129,7 +1129,7 @@ const viewProp = {
     snapScale: 0.25,       // krok měřítka
     transformMode: 'translate', // transform mode: translate, rotate, scale
     pStep: 0.1,            // krok sliderů Px/Py/Pz (Location, Sections, context menu)
-    rStep: 30,               // krok sliderů Rx/Ry/Rz (°)
+    rStep: 1,                // krok sliderů Rx/Ry/Rz (°)
     sStep: 0.1,              // krok slideru Scale
     wireframe: false,       // Wireframe přepínač
     showSharpEdges: false,
@@ -1179,7 +1179,7 @@ const snapTransformInitDefaults = {
 
 const snapSlidersInitDefaults = {
     pStep: 0.1,
-    rStep: 30,
+    rStep: 1,
     sStep: 0.1,
 };
 
