@@ -57,7 +57,7 @@ export function buildGeometry(type, params) {
  */
 export function applyMeshMaterialDefaults(material, clipPlanes) {
     material.clippingPlanes = clipPlanes;
-    material.clipIntersection = clipPlanes.length > 1;
+    material.clipIntersection = true;
     material.side = THREE.DoubleSide;
     material.polygonOffset = true;
     material.polygonOffsetFactor = 1;
