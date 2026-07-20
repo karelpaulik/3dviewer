@@ -2704,14 +2704,17 @@ a, button, input, select {
 
 .file-preview-titlebar {
     display: flex;
+    flex-wrap: nowrap;
     align-items: center;
     gap: 6px;
-    padding: 6px 10px;
+    padding: 3px 6px 0 6px;
     background: #2a2a2a;
     flex-shrink: 0;
     user-select: none;
     cursor: default;
-    min-height: 32px;
+    overflow-x: clip;
+    overflow-y: visible;
+    min-height: 36px;
 }
 
 .fp-title-icon {
@@ -2723,8 +2726,8 @@ a, button, input, select {
 .fp-title-name {
     display: flex;
     align-items: center;
-    flex: 1;
-    min-width: 0;
+    flex: 1 1 100px;
+    min-width: 60px;
     overflow: hidden;
 }
 
@@ -2758,7 +2761,28 @@ a, button, input, select {
     display: flex;
     align-items: center;
     gap: 4px;
-    flex-shrink: 0;
+    flex-wrap: nowrap;
+    flex: 0 1 auto;
+    overflow-x: auto;
+    overflow-y: visible;
+    scrollbar-width: thin;
+    scrollbar-color: #666 #333;
+    min-width: 0;
+    padding-bottom: 5px;
+    margin-bottom: -1px;
+}
+.fp-titlebar-btns::-webkit-scrollbar {
+    height: 4px;
+}
+.fp-titlebar-btns::-webkit-scrollbar-track {
+    background: #333;
+}
+.fp-titlebar-btns::-webkit-scrollbar-thumb {
+    background: #666;
+    border-radius: 2px;
+}
+.fp-titlebar-btns::-webkit-scrollbar-thumb:hover {
+    background: #888;
 }
 
 .fp-title-btn {

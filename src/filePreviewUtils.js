@@ -48,6 +48,8 @@ export function openFilePreview(att, handlers) {
     _ensureToolbar();
     _buildInstanceUI(inst);
     _focusInstance(inst);
+    // Defer maximize one frame so the toolbar is fully rendered and getBoundingClientRect returns correct height
+    requestAnimationFrame(() => _toggleMaximize(inst));
 }
 
 export function closeFilePreviewForAttachment(att) {
@@ -230,6 +232,31 @@ function _makeDraggable(inst, handle) {
         document.addEventListener('mousemove', onMove);
         document.addEventListener('mouseup', onUp);
     });
+
+    handle.addEventListener('touchstart', ev => {
+        if (ev.touches.length !== 1) return;
+        if (inst.isMaximized) return;
+        if (ev.target.closest('button, input')) return;
+        ev.preventDefault();
+        const win = inst.winEl;
+        const touch = ev.touches[0];
+        const r = win.getBoundingClientRect();
+        const dragOff = { x: touch.clientX - r.left, y: touch.clientY - r.top };
+        const onMove = mv => {
+            if (mv.touches.length !== 1) return;
+            const t = mv.touches[0];
+            win.style.left = (t.clientX - dragOff.x) + 'px';
+            win.style.top = (t.clientY - dragOff.y) + 'px';
+        };
+        const onEnd = () => {
+            document.removeEventListener('touchmove', onMove);
+            document.removeEventListener('touchend', onEnd);
+            document.removeEventListener('touchcancel', onEnd);
+        };
+        document.addEventListener('touchmove', onMove, { passive: false });
+        document.addEventListener('touchend', onEnd);
+        document.addEventListener('touchcancel', onEnd);
+    }, { passive: false });
 }
 
 function _toolbarHeight() {
