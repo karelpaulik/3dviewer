@@ -33,6 +33,12 @@ import { initAnnotations, isAnnotationActive, setAnnotationActive, addAnnotation
 import { initAnnotations3d, isAnnotation3dActive, setAnnotation3dActive, addAnnotation3dPoint, getAnnotation3dPendingPoint, updateAnnotation3dPreview, updateAnnotation3dMarkerScales, updateAnnotation3dOrientations, setAnnotations3dVisible, clearAnnotations3d, stripAnnotation3dVisuals, reconstructAnnotations3d, setAnnotation3dDepthTest, removeAnnotations3dForOwner, isAddLeaderLine3dActive, cancelAddLeaderLine3d, commitAddLeaderLine3d, getAnnotation3dDefaults, deleteAnnotation3dByRef, setConvertTo2dFn, reconstructAnnotation3dFromRec, applyDefaultsToAllAnnotations3d, setAnn3dMarkerFixedSize, setAnn3dMarkerFixedScreenPx, setAnn3dMarkerWorldSize, setAnn3dMarkerColor, setAnnotation3dOnSessionComplete, isAnnotation3dDialogOpen, showAnnotation3dContextMenu } from './annotation3dUtils.js';
 import { initCadDim3d, isCadDim3dActive, getCadDim3dStep, getCadDim3dAxis, setCadDim3dActive, addCadDim3dPoint, updateCadDim3dPreview, updateCadDim3dHoverPreview, cycleCadDim3dAxis, placeCadDim3d, clearCadDim3dMeasurements, removeCadDim3dMeasurementsForOwner, setCadDim3dVisible, setCadDim3dDepthTest, updateCadDim3dOrientations, updateCadDim3dMarkerScales, reconstructCadDim3d, stripCadDim3dVisuals, setCadDim3dLabelMode, setCadDim3dDragMode, setCadDim3dOrientationMode, setCadDim3dRotate, setCadDim3dLabelScaleDialog, setCadDim3dMirrored, setCadDim3dTextColor, setCadDim3dBgColor, getCadDim3dDefaults, convertCadDimTo3d, applyDefaultsToAllCadDim3d, setCadDimMarkerFixedSize, setCadDimMarkerFixedScreenPx, setCadDimMarkerWorldSize, setCadDimMarkerColor, setCadDim3dOnSessionComplete } from './cadDim3dUtils.js';
 import { computeSolidSection, clearSolidSection } from './solidSectionUtils.js';
+import {
+    applySectionFromViewProp,
+    readSectionFromGizmo,
+    writeSectionToGizmo,
+    getDefaultSectionState,
+} from './sectionUtils.js';
 import { initDocumentsGui, importDocumentsFromGltfScene, getDocumentsStore, flushDocumentEdits, isDocOverlayBlockingInput, isDocumentEditorOpen, setDocLabelOptions, clearDocumentsStore } from './documentsUtils.js';
 import { isImageEditorOpen } from './imageEditorUtils.js';
 import {
@@ -388,7 +394,7 @@ sectionBtn.addEventListener('click', () => {
     activateSectionGizmo(viewProp.section);
     updateSectionCrossLines();
     viewProp.solidSection = viewProp.section;
-    if (viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render);
+    if (viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render, clipPlanes);
     else clearSolidSection(scene, render);
     render();
     sectionBtn.classList.toggle('active', viewProp.section);
@@ -413,7 +419,7 @@ solidSectionBtn.addEventListener('click', () => {
     if (viewProp.solidSection) {
         renderer.localClippingEnabled = true;
         viewProp.section = true;
-        computeSolidSection(scene, meshObjects, viewProp, render);
+        computeSolidSection(scene, meshObjects, viewProp, render, clipPlanes);
     } else {
         clearSolidSection(scene, render);
     }
@@ -1001,7 +1007,7 @@ function getUndoContext() {
         updateVisibilityIcon,
         insertChildAtIndex,
         updateAssemblyGuiInfo,
-        computeSolidSection: () => computeSolidSection(scene, meshObjects, viewProp, render),
+        computeSolidSection: () => computeSolidSection(scene, meshObjects, viewProp, render, clipPlanes),
         updateCrossSectionLines,
         updateSectionCrossLines,
         repairChainForObject,
@@ -1117,7 +1123,12 @@ const viewProp = {
     crossSectionColor: "#ff0000",
     showSectionMesh: false, // Toggle pro zobrazení/skrytí sectionMesh
     sectionGizmo: false, // Toggle section gizmo on/off
+    sectionGizmoMode: 'translate', // 'translate' | 'rotate'
+    sectionRx: 0,
+    sectionRy: 0,
+    sectionRz: 0,
     sectionSnapTranslation: 1, // Snap step for section gizmo translation
+    sectionSnapRotationDeg: 15, // Snap step for section gizmo rotation (degrees)
     autoUpdateSectionLines: false, // Automaticky aktualizovat průřezové čáry při změnách scény
     sectionCrossLines: true, // Průřezové čáry vázané na section view clip planes
     crossSectionOnHidden: false, // Aplikovat průřezové čáry i na skryté objekty
@@ -1591,7 +1602,7 @@ outlinerPanelEl = initOutliner({
             obj.visible = true;
             const hi = hiddenObjects.indexOf(obj);
             if (hi !== -1) hiddenObjects.splice(hi, 1);
-            if (viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render);
+            if (viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render, clipPlanes);
             if (normalsViewGui.showVertexAllNormals || normalsViewGui.showVertexNormals) updateVertexNormalsHelpers();
             else render();
         }
@@ -1885,23 +1896,14 @@ function init() {
 
         sectionTransformControls = new TransformControls(currentCamera, renderer.domElement);
         sectionTransformControls.setSize(0.5);
-        sectionTransformControls.setMode('translate');
-        sectionTransformControls.setSpace('world');
-        sectionTransformControls.setTranslationSnap(viewProp.sectionSnapTranslation);
+        applySectionGizmoMode();
         scene.add(sectionTransformControls.getHelper());
 
         sectionTransformControls.addEventListener('change', function () {
             if (!viewProp.sectionGizmo) return;
-            const pos = sectionGizmoHelper.position;
-            clipPlanes[0].constant = pos.x;
-            clipPlanes[1].constant = pos.y;
-            clipPlanes[2].constant = pos.z;
-            viewProp.px = pos.x;
-            viewProp.py = pos.y;
-            viewProp.pz = pos.z;
-            if (viewProp.sectionCrossLines) updateSectionCrossLines();
-            if (viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render);
-            render();
+            readSectionFromGizmo(viewProp, sectionGizmoHelper);
+            updateSection();
+            refreshSectionEffects();
         });
 
         sectionTransformControls.addEventListener('dragging-changed', function (event) {
@@ -1986,7 +1988,9 @@ function init() {
 
             case 'r':
             case 'R':
-                if (isTransformGizmoActive()) {
+                if (isSectionGizmoActive()) {
+                    setSectionGizmoMode('rotate');
+                } else if (isTransformGizmoActive()) {
                     transformControls.setMode( 'rotate' );
                     viewProp.transformMode = 'rotate';
                 }
@@ -2002,7 +2006,9 @@ function init() {
 
             case 't':
             case 'T':
-                if (isTransformGizmoActive()) {
+                if (isSectionGizmoActive()) {
+                    setSectionGizmoMode('translate');
+                } else if (isTransformGizmoActive()) {
                     transformControls.setMode( 'translate' );
                     viewProp.transformMode = 'translate';
                 }
@@ -2447,7 +2453,7 @@ function addMainGui() {
             scheduleEdgeThresholdUpdate();
         }).listen();
         const sectionFolder = folderProp.addFolder("Section view");   
-            sectionCtrl = sectionFolder.add(viewProp, 'section').name('Section').onChange(function(value){ syncShowSectionMeshWithSection(); renderer.localClippingEnabled = value; viewProp.sectionGizmo = value; activateSectionGizmo(value); updateSectionCrossLines(); viewProp.solidSection = value; if (value) computeSolidSection(scene, meshObjects, viewProp, render); else clearSolidSection(scene, render); render(); sectionBtn.classList.toggle('active', value); solidSectionBtn.style.display = value ? 'block' : 'none'; showSectionMeshBtn.style.display = value ? 'block' : 'none'; crossSectionLinesBtn.style.display = value ? 'block' : 'none'; solidSectionBtn.classList.toggle('active', viewProp.solidSection); showSectionMeshBtn.classList.toggle('active', viewProp.showSectionMesh); crossSectionLinesBtn.classList.toggle('active', viewProp.sectionCrossLines); if (solidSectionCtrl) solidSectionCtrl.updateDisplay(); }).listen();
+            sectionCtrl = sectionFolder.add(viewProp, 'section').name('Section').onChange(function(value){ syncShowSectionMeshWithSection(); renderer.localClippingEnabled = value; viewProp.sectionGizmo = value; activateSectionGizmo(value); updateSectionCrossLines(); viewProp.solidSection = value; if (value) computeSolidSection(scene, meshObjects, viewProp, render, clipPlanes); else clearSolidSection(scene, render); render(); sectionBtn.classList.toggle('active', value); solidSectionBtn.style.display = value ? 'block' : 'none'; showSectionMeshBtn.style.display = value ? 'block' : 'none'; crossSectionLinesBtn.style.display = value ? 'block' : 'none'; solidSectionBtn.classList.toggle('active', viewProp.solidSection); showSectionMeshBtn.classList.toggle('active', viewProp.showSectionMesh); crossSectionLinesBtn.classList.toggle('active', viewProp.sectionCrossLines); if (solidSectionCtrl) solidSectionCtrl.updateDisplay(); }).listen();
             sectionCrossLinesCtrl = sectionFolder.add(viewProp, 'sectionCrossLines').name('Cross Section Lines').onChange(function(value){updateSectionCrossLines(); crossSectionLinesBtn.classList.toggle('active', value); render(); }).listen();
             sectionFolder.addColor(viewProp, 'crossSectionColor').name('Cross Lines Color').onChange(function(value){ if(viewProp.sectionCrossLines) { updateSectionCrossLines(); render(); } });
             sectionFolder.add(viewProp, 'crossSectionOnHidden').name('Apply to hidden').onChange(function(value){ if(viewProp.sectionCrossLines) updateSectionCrossLines(); if(viewProp.showCrossSection) updateCrossSectionLines(); render(); });
@@ -2455,7 +2461,7 @@ function addMainGui() {
                 if (value) {
                     renderer.localClippingEnabled = true;
                     viewProp.section = true;
-                    computeSolidSection(scene, meshObjects, viewProp, render);
+                    computeSolidSection(scene, meshObjects, viewProp, render, clipPlanes);
                 } else {
                     clearSolidSection(scene, render);
                 }
@@ -2463,14 +2469,19 @@ function addMainGui() {
                 render();
             }).listen();
             sectionFolder.addColor(viewProp, 'capColor').name('Cap Color').onChange(function() {
-                if (viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render);
+                if (viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render, clipPlanes);
             });
             showSectionMeshCtrl = sectionFolder.add(viewProp, 'showSectionMesh').name('Show Section Mesh').onChange(function(value){ toggleSectionMeshAll(); showSectionMeshBtn.classList.toggle('active', value); render(); }).listen();
             sectionFolder.add(viewProp, 'sectionGizmo').name('Gizmo').onChange(function(value){ activateSectionGizmo(value); }).listen();
-            sectionFolder.add(viewProp, 'sectionSnapTranslation', 0.1, 100, 0.1).name('Snap translation').onChange(function(value){ sectionTransformControls.setTranslationSnap(value); }).listen();
-            trackExtentSlider(sectionFolder.add(viewProp, 'px', extent.pn, extent.pp, viewProp.pStep).name('Pos. x').onChange(function(value){clipPlanes[0].constant=value; syncSectionGizmoPosition(); if(viewProp.sectionCrossLines) updateSectionCrossLines(); if(viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render); render(); }).listen(), 'pStep');
-            trackExtentSlider(sectionFolder.add(viewProp, 'py', extent.pn, extent.pp, viewProp.pStep).name('Pos. y').onChange(function(value){clipPlanes[1].constant=value; syncSectionGizmoPosition(); if(viewProp.sectionCrossLines) updateSectionCrossLines(); if(viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render); render(); }).listen(), 'pStep');
-            trackExtentSlider(sectionFolder.add(viewProp, 'pz', extent.pn, extent.pp, viewProp.pStep).name('Pos. z').onChange(function(value){clipPlanes[2].constant=value; syncSectionGizmoPosition(); if(viewProp.sectionCrossLines) updateSectionCrossLines(); if(viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render); render(); }).listen(), 'pStep');
+            sectionFolder.add(viewProp, 'sectionGizmoMode', ['translate', 'rotate']).name('Gizmo mode').onChange(function(value){ setSectionGizmoMode(value); }).listen();
+            sectionFolder.add(viewProp, 'sectionSnapTranslation', 0.1, 100, 0.1).name('Snap translation').onChange(function(value){ if (viewProp.sectionGizmoMode === 'translate') sectionTransformControls.setTranslationSnap(value); }).listen();
+            sectionFolder.add(viewProp, 'sectionSnapRotationDeg', 1, 90, 1).name('Snap rotation').onChange(function(value){ if (viewProp.sectionGizmoMode === 'rotate') sectionTransformControls.setRotationSnap(THREE.MathUtils.degToRad(value)); }).listen();
+            trackExtentSlider(sectionFolder.add(viewProp, 'px', extent.pn, extent.pp, viewProp.pStep).name('Pos. x').onChange(function(){ onSectionParamsChanged(); }).listen(), 'pStep');
+            trackExtentSlider(sectionFolder.add(viewProp, 'py', extent.pn, extent.pp, viewProp.pStep).name('Pos. y').onChange(function(){ onSectionParamsChanged(); }).listen(), 'pStep');
+            trackExtentSlider(sectionFolder.add(viewProp, 'pz', extent.pn, extent.pp, viewProp.pStep).name('Pos. z').onChange(function(){ onSectionParamsChanged(); }).listen(), 'pStep');
+            trackExtentSlider(sectionFolder.add(viewProp, 'sectionRx', -180, 180, viewProp.rStep).name('Rot. x').onChange(function(){ onSectionParamsChanged(); }).listen(), 'rStep');
+            trackExtentSlider(sectionFolder.add(viewProp, 'sectionRy', -180, 180, viewProp.rStep).name('Rot. y').onChange(function(){ onSectionParamsChanged(); }).listen(), 'rStep');
+            trackExtentSlider(sectionFolder.add(viewProp, 'sectionRz', -180, 180, viewProp.rStep).name('Rot. z').onChange(function(){ onSectionParamsChanged(); }).listen(), 'rStep');
             sectionFolder.add({ fn: resetSection }, 'fn').name('Reset section');
 
             const crossSectionFolder = sectionFolder.addFolder("Cross Section Lines");
@@ -4789,10 +4800,50 @@ function selectPrevious() {
 
 
 // --- Section gizmo activation/deactivation ---
+function isSectionGizmoActive() {
+    return viewProp.section
+        && viewProp.sectionGizmo
+        && sectionTransformControls
+        && sectionTransformControls.object === sectionGizmoHelper;
+}
+
+function setSectionGizmoMode(mode) {
+    viewProp.sectionGizmoMode = mode;
+    applySectionGizmoMode();
+    render();
+}
+
+function applySectionGizmoMode() {
+    if (!sectionTransformControls) return;
+    const mode = viewProp.sectionGizmoMode;
+    sectionTransformControls.setMode(mode);
+    if (mode === 'rotate') {
+        sectionTransformControls.setSpace('local');
+        sectionTransformControls.setTranslationSnap(null);
+        sectionTransformControls.setRotationSnap(THREE.MathUtils.degToRad(viewProp.sectionSnapRotationDeg));
+    } else {
+        sectionTransformControls.setSpace('world');
+        sectionTransformControls.setRotationSnap(null);
+        sectionTransformControls.setTranslationSnap(viewProp.sectionSnapTranslation);
+    }
+}
+
+function refreshSectionEffects() {
+    if (viewProp.sectionCrossLines) updateSectionCrossLines();
+    if (viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render, clipPlanes);
+    else render();
+}
+
+function onSectionParamsChanged({ syncGizmo = true } = {}) {
+    updateSection();
+    if (syncGizmo) syncSectionGizmo();
+    refreshSectionEffects();
+}
+
 function activateSectionGizmo(enabled) {
     if (enabled) {
-        // Sync gizmo position from current clip plane constants
-        sectionGizmoHelper.position.set(viewProp.px, viewProp.py, viewProp.pz);
+        writeSectionToGizmo(sectionGizmoHelper, viewProp);
+        applySectionGizmoMode();
         sectionTransformControls.attach(sectionGizmoHelper);
         render();
     } else {
@@ -4805,24 +4856,23 @@ function deactivateSectionGizmo() {
     render();
 }
 
-function syncSectionGizmoPosition() {
+function syncSectionGizmo() {
     if (!viewProp.sectionGizmo) return;
-    sectionGizmoHelper.position.set(viewProp.px, viewProp.py, viewProp.pz);
+    writeSectionToGizmo(sectionGizmoHelper, viewProp);
+}
+
+function syncSectionGizmoPosition() {
+    syncSectionGizmo();
 }
 
 
-function resetSection() {					
-    viewProp.px = 0;
-    viewProp.py = 0;
-    viewProp.pz = 0;
+function resetSection() {
+    const defaults = getDefaultSectionState();
+    Object.assign(viewProp, defaults);
     viewProp.crossSectionPos = 0;
-    updateSection();
-    syncSectionGizmoPosition();
+    onSectionParamsChanged();
     if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) {
         updateCrossSectionLines();
-    }
-    if (viewProp.sectionCrossLines) {
-        updateSectionCrossLines();
     }
 }
 
@@ -4990,10 +5040,7 @@ function fitView() {
 }
     
 function updateSection() {
-    clipPlanes[0].constant=viewProp.px;
-    clipPlanes[1].constant=viewProp.py;
-    clipPlanes[2].constant=viewProp.pz;
-    render();
+    applySectionFromViewProp(clipPlanes, viewProp);
 }				
     
 function setCamera() {					
@@ -5543,7 +5590,7 @@ function removeSelectedGroup(skipConfirm = false) {
         if (viewProp.sectionCrossLines) {
             updateSectionCrossLines();
         }
-        if (viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render);
+        if (viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render, clipPlanes);
         rebuildTree(loadedModels, true);
         render();
     } catch (err) {
@@ -6227,7 +6274,7 @@ function promoteToRoot(obj) {
     if (viewProp.sectionCrossLines) {
         updateSectionCrossLines();
     }
-    if (viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render);
+    if (viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render, clipPlanes);
 
     rebuildTree(loadedModels, true);
     render();
@@ -6266,7 +6313,7 @@ function clearSceneFully() {
     if (_assemblyFolderRef) updateAssemblyGuiInfo();
     if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) updateCrossSectionLines();
     if (viewProp.sectionCrossLines) updateSectionCrossLines();
-    if (viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render);
+    if (viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render, clipPlanes);
 
     rebuildTree(loadedModels);
     render();
@@ -6309,7 +6356,7 @@ function clearSceneKeepDocs() {
         if (_assemblyFolderRef) updateAssemblyGuiInfo();
         if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) updateCrossSectionLines();
         if (viewProp.sectionCrossLines) updateSectionCrossLines();
-        if (viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render);
+        if (viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render, clipPlanes);
 
         rebuildTree(loadedModels);
         render();
@@ -6426,7 +6473,7 @@ function removeModel(part, skipConfirm = false, options = {}) {
         }
 
         // Aktualizace solid section (odebraný objekt nesmí figurovat ve stencilu)
-        if (viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render);
+        if (viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render, clipPlanes);
 
         rebuildTree(loadedModels, true);
         if (normalsViewGui.showVertexAllNormals) updateVertexNormalsHelpers();
@@ -6468,7 +6515,7 @@ function hideObject(part) {
         }
 
         // Aktualizace solid section (skrytý objekt nesmí figurovat ve stencilu)
-        if (viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render);
+        if (viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render, clipPlanes);
 
         if (normalsViewGui.showVertexAllNormals || normalsViewGui.showVertexNormals) updateVertexNormalsHelpers();
         else render();
@@ -6497,7 +6544,7 @@ function showHiddenObjects() {
         }
 
         // Aktualizace solid section
-        if (viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render);
+        if (viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render, clipPlanes);
 
         if (normalsViewGui.showVertexAllNormals || normalsViewGui.showVertexNormals) updateVertexNormalsHelpers();
         else render();
@@ -6534,7 +6581,7 @@ function toggleHiddenObjects() {
         }
 
         // Aktualizace solid section
-        if (viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render);
+        if (viewProp.solidSection) computeSolidSection(scene, meshObjects, viewProp, render, clipPlanes);
 
         render();
     } catch(err) {
@@ -9625,6 +9672,9 @@ function embedAppSettingsToUserData(userData) {
         px:                viewProp.px,
         py:                viewProp.py,
         pz:                viewProp.pz,
+        sectionRx:         viewProp.sectionRx,
+        sectionRy:         viewProp.sectionRy,
+        sectionRz:         viewProp.sectionRz,
         sectionCrossLines: viewProp.sectionCrossLines,
         crossSectionColor: viewProp.crossSectionColor,
         capColor:          viewProp.capColor,
@@ -9717,13 +9767,11 @@ function importSettingsFromGltfScene(gltfScene) {
 
     if (s.sectionSettings) {
         const sec = s.sectionSettings;
-        const scalarKeys = ['px', 'py', 'pz', 'sectionCrossLines', 'crossSectionColor', 'capColor', 'showSectionMesh'];
+        const scalarKeys = ['px', 'py', 'pz', 'sectionRx', 'sectionRy', 'sectionRz', 'sectionCrossLines', 'crossSectionColor', 'capColor', 'showSectionMesh'];
         scalarKeys.forEach(k => { if (sec[k] !== undefined) viewProp[k] = sec[k]; });
 
-        // Apply clip plane positions
-        clipPlanes[0].constant = viewProp.px;
-        clipPlanes[1].constant = viewProp.py;
-        clipPlanes[2].constant = viewProp.pz;
+        updateSection();
+        syncSectionGizmo();
 
         // Apply section on/off
         if (sec.section !== undefined) {
@@ -9736,7 +9784,7 @@ function importSettingsFromGltfScene(gltfScene) {
         }
 
         syncShowSectionMeshWithSection();
-        if (viewProp.sectionCrossLines) updateSectionCrossLines();
+        refreshSectionEffects();
         if (viewProp.showSectionMesh) toggleSectionMeshAll();
     }
 }
@@ -10470,7 +10518,7 @@ function separateMesh(meshToSeparate, { geometries } = {}) {
         });
     }
     if (viewProp.solidSection) {
-        computeSolidSection(scene, meshObjects, viewProp, render);
+        computeSolidSection(scene, meshObjects, viewProp, render, clipPlanes);
     }
     selectObject(group, { outlinerScroll: false });
     refreshEdgeOverlaysAfterSceneChange();

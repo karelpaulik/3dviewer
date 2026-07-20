@@ -10,6 +10,14 @@ import * as THREE from 'three';
 const capObjects = [];   // Every created helper (for cleanup)
 let sharedCapGeo = null;
 
+const _capPos = new THREE.Vector3();
+const _capQuat = new THREE.Quaternion();
+const _zAxis = new THREE.Vector3(0, 0, 1);
+
+function negatedPlaneClone(plane) {
+    return new THREE.Plane(plane.normal.clone().negate(), -plane.constant);
+}
+
 // =====================================================================
 //  Public API
 // =====================================================================
@@ -24,10 +32,16 @@ function isEffectivelyVisible(obj) {
     return true;
 }
 
+function capTransformFromPlane(plane, sceneCenter) {
+    plane.projectPoint(sceneCenter, _capPos);
+    _capQuat.setFromUnitVectors(_zAxis, plane.normal);
+    return { pos: _capPos.clone(), quat: _capQuat.clone() };
+}
+
 /**
  * Build solid-section caps for the current clip-plane positions.
  */
-export function computeSolidSection(scene, meshObjects, viewProp, renderFn) {
+export function computeSolidSection(scene, meshObjects, viewProp, renderFn, sectionClipPlanes) {
     clearSolidSection(scene);
 
     const sceneBBox = new THREE.Box3();
@@ -41,31 +55,19 @@ export function computeSolidSection(scene, meshObjects, viewProp, renderFn) {
     const planeSize   = Math.max(sceneSize.x, sceneSize.y, sceneSize.z) * 4;
     sharedCapGeo = new THREE.PlaneGeometry(planeSize, planeSize);
 
-    const px = viewProp.px, py = viewProp.py, pz = viewProp.pz;
-
-    const clipPlanes = [
-        new THREE.Plane(new THREE.Vector3(-1, 0, 0), px),
-        new THREE.Plane(new THREE.Vector3(0, -1, 0), py),
-        new THREE.Plane(new THREE.Vector3(0, 0, -1), pz),
-    ];
-
     const constraintPlanes = [
-        [new THREE.Plane(new THREE.Vector3(0, 1, 0), -py), new THREE.Plane(new THREE.Vector3(0, 0, 1), -pz)],
-        [new THREE.Plane(new THREE.Vector3(1, 0, 0), -px), new THREE.Plane(new THREE.Vector3(0, 0, 1), -pz)],
-        [new THREE.Plane(new THREE.Vector3(1, 0, 0), -px), new THREE.Plane(new THREE.Vector3(0, 1, 0), -py)],
+        [negatedPlaneClone(sectionClipPlanes[1]), negatedPlaneClone(sectionClipPlanes[2])],
+        [negatedPlaneClone(sectionClipPlanes[0]), negatedPlaneClone(sectionClipPlanes[2])],
+        [negatedPlaneClone(sectionClipPlanes[0]), negatedPlaneClone(sectionClipPlanes[1])],
     ];
 
-    const capTransforms = [
-        { pos: new THREE.Vector3(px, sceneCenter.y, sceneCenter.z), rot: new THREE.Euler(0, Math.PI / 2, 0) },
-        { pos: new THREE.Vector3(sceneCenter.x, py, sceneCenter.z), rot: new THREE.Euler(-Math.PI / 2, 0, 0) },
-        { pos: new THREE.Vector3(sceneCenter.x, sceneCenter.y, pz), rot: new THREE.Euler(0, 0, 0) },
-    ];
+    const capTransforms = sectionClipPlanes.map(plane => capTransformFromPlane(plane, sceneCenter));
 
     const visibleMeshes = meshObjects.filter(
         m => m.isMesh && isEffectivelyVisible(m) && !m.isSectionMesh
     );
 
-    buildCaps(scene, visibleMeshes, clipPlanes, constraintPlanes, capTransforms, viewProp.capColor);
+    buildCaps(scene, visibleMeshes, sectionClipPlanes, constraintPlanes, capTransforms, viewProp.capColor);
 
     console.log(`Solid section: ${capObjects.length} objects, ${visibleMeshes.length} meshes × 3 planes`);
     renderFn();
@@ -122,7 +124,7 @@ function buildCaps(scene, visibleMeshes, clipPlanes, constraintPlanes, capTransf
         });
         const cap = new THREE.Mesh(sharedCapGeo, capMat);
         cap.position.copy(transform.pos);
-        cap.rotation.copy(transform.rot);
+        cap.quaternion.copy(transform.quat);
         cap.renderOrder = order + 1;
         cap.frustumCulled = false;
         cap.onAfterRender = function (r) { r.clearStencil(); };
