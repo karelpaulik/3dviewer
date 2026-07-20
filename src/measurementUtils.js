@@ -1377,6 +1377,43 @@ function _onLabelMouseDown(e) {
     if (_renderFn) _renderFn();
 }
 
+// Labels (CSS2DObject/CSS3DObject) live in overlay DOM trees that are siblings of the
+// WebGL canvas, not its descendants. OrbitControls listens for 'pointerdown'/'wheel'
+// directly on the canvas, so those events never arrive while the cursor is over a label
+// with pointer-events enabled. Forward them manually so camera navigation (middle-button
+// dolly, right-button pan, wheel zoom) keeps working while hovering a label.
+function _forwardEventToOrbitControls(e) {
+    if (!_orbitControls || !_orbitControls.domElement) return;
+    e.preventDefault();
+    const EventCtor = e.type === 'wheel' ? WheelEvent : PointerEvent;
+    _orbitControls.domElement.dispatchEvent(new EventCtor(e.type, e));
+}
+
+function _onLabelPointerDown(e) {
+    if (!_selectDimActive || e.button === 0) return; // left button: handled by _onLabelMouseDown
+    _forwardEventToOrbitControls(e);
+}
+
+function _onLabelWheel(e) {
+    if (!_selectDimActive) return;
+    _forwardEventToOrbitControls(e);
+}
+
+function _addLabelInteractionListeners(el) {
+    el.removeEventListener('mousedown', _onLabelMouseDown);
+    el.addEventListener('mousedown', _onLabelMouseDown);
+    el.removeEventListener('pointerdown', _onLabelPointerDown);
+    el.addEventListener('pointerdown', _onLabelPointerDown);
+    el.removeEventListener('wheel', _onLabelWheel);
+    el.addEventListener('wheel', _onLabelWheel, { passive: false });
+}
+
+function _removeLabelInteractionListeners(el) {
+    el.removeEventListener('mousedown', _onLabelMouseDown);
+    el.removeEventListener('pointerdown', _onLabelPointerDown);
+    el.removeEventListener('wheel', _onLabelWheel);
+}
+
 function _onDocumentMouseMove(e) {
     if (!_isDraggingLabel || !_selectedDim || !_currentCamera) return;
 
@@ -1543,7 +1580,7 @@ function _rebuildCadDimVisuals(meas, p1World, p2World, offsetPoint) {
     }
     if (_selectDimActive) {
         label.element.style.pointerEvents = 'auto';
-        label.element.addEventListener('mousedown', _onLabelMouseDown);
+        _addLabelInteractionListeners(label.element);
     }
 }
 
@@ -1714,54 +1751,48 @@ export function deselectSelectedDimension() {
 function _attachLabelMousedownListeners() {
     for (const m of _measurements) {
         if (!m.label?.element) continue;
-        m.label.element.removeEventListener('mousedown', _onLabelMouseDown);
-        m.label.element.addEventListener('mousedown', _onLabelMouseDown);
+        _addLabelInteractionListeners(m.label.element);
     }
     for (const m of _angleMeasurements) {
         if (!m.label?.element) continue;
-        m.label.element.removeEventListener('mousedown', _onLabelMouseDown);
-        m.label.element.addEventListener('mousedown', _onLabelMouseDown);
+        _addLabelInteractionListeners(m.label.element);
     }
     for (const m of _cadDimMeasurements) {
         if (!m.label?.element) continue;
-        m.label.element.removeEventListener('mousedown', _onLabelMouseDown);
-        m.label.element.addEventListener('mousedown', _onLabelMouseDown);
+        _addLabelInteractionListeners(m.label.element);
     }
     for (const a of getAnnotations()) {
         if (!a.label?.element) continue;
-        a.label.element.removeEventListener('mousedown', _onLabelMouseDown);
-        a.label.element.addEventListener('mousedown', _onLabelMouseDown);
+        _addLabelInteractionListeners(a.label.element);
     }
     for (const a of getAnnotations3d()) {
         if (!a.label?.element) continue;
-        a.label.element.removeEventListener('mousedown', _onLabelMouseDown);
-        a.label.element.addEventListener('mousedown', _onLabelMouseDown);
+        _addLabelInteractionListeners(a.label.element);
     }
     for (const m of getCadDim3dMeasurements()) {
         if (!m.label?.element) continue;
-        m.label.element.removeEventListener('mousedown', _onLabelMouseDown);
-        m.label.element.addEventListener('mousedown', _onLabelMouseDown);
+        _addLabelInteractionListeners(m.label.element);
     }
 }
 
 function _detachLabelMousedownListeners() {
     for (const m of _measurements) {
-        if (m.label?.element) m.label.element.removeEventListener('mousedown', _onLabelMouseDown);
+        if (m.label?.element) _removeLabelInteractionListeners(m.label.element);
     }
     for (const m of _angleMeasurements) {
-        if (m.label?.element) m.label.element.removeEventListener('mousedown', _onLabelMouseDown);
+        if (m.label?.element) _removeLabelInteractionListeners(m.label.element);
     }
     for (const m of _cadDimMeasurements) {
-        if (m.label?.element) m.label.element.removeEventListener('mousedown', _onLabelMouseDown);
+        if (m.label?.element) _removeLabelInteractionListeners(m.label.element);
     }
     for (const a of getAnnotations()) {
-        if (a.label?.element) a.label.element.removeEventListener('mousedown', _onLabelMouseDown);
+        if (a.label?.element) _removeLabelInteractionListeners(a.label.element);
     }
     for (const a of getAnnotations3d()) {
-        if (a.label?.element) a.label.element.removeEventListener('mousedown', _onLabelMouseDown);
+        if (a.label?.element) _removeLabelInteractionListeners(a.label.element);
     }
     for (const m of getCadDim3dMeasurements()) {
-        if (m.label?.element) m.label.element.removeEventListener('mousedown', _onLabelMouseDown);
+        if (m.label?.element) _removeLabelInteractionListeners(m.label.element);
     }
 }
 
@@ -1812,8 +1843,7 @@ export function deleteSelectedDimension(renderFn) {
 export function registerLabelForSelection(annotation) {
     if (!_selectDimActive || !annotation?.label?.element) return;
     annotation.label.element.style.pointerEvents = 'auto';
-    annotation.label.element.removeEventListener('mousedown', _onLabelMouseDown);
-    annotation.label.element.addEventListener('mousedown', _onLabelMouseDown);
+    _addLabelInteractionListeners(annotation.label.element);
 }
 
 /**
@@ -2418,7 +2448,7 @@ export function setCadDimLabelMode(meas, mode, renderFn) {
     if (_selectedDim === meas) newLabel.element.style.border = SELECTED_BORDER;
     if (_selectDimActive) {
         newLabel.element.style.pointerEvents = 'auto';
-        newLabel.element.addEventListener('mousedown', _onLabelMouseDown);
+        _addLabelInteractionListeners(newLabel.element);
     }
     // Persist labelMode in userData
     const o = meas.ownerObject || _scene;
@@ -2799,7 +2829,7 @@ export function convertCadDim3dTo2d(meas3d, renderFn) {
     const newMeas = _cadDimMeasurements[_cadDimMeasurements.length - 1];
     if (_selectDimActive && newMeas && newMeas.label) {
         newMeas.label.element.style.pointerEvents = 'auto';
-        newMeas.label.element.addEventListener('mousedown', _onLabelMouseDown);
+        _addLabelInteractionListeners(newMeas.label.element);
     }
 
     if (renderFn) renderFn();
