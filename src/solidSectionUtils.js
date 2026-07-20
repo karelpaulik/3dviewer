@@ -6,17 +6,15 @@
 //   3. onAfterRender clears stencil before the next plane
 
 import * as THREE from 'three';
+import { isSingleSectionMode } from './sectionPlaneUtils.js';
 
 const capObjects = [];   // Every created helper (for cleanup)
 let sharedCapGeo = null;
 
-const _capPos = new THREE.Vector3();
+const _capNormal = new THREE.Vector3();
+const _capPoint = new THREE.Vector3();
 const _capQuat = new THREE.Quaternion();
-const _zAxis = new THREE.Vector3(0, 0, 1);
-
-function negatedPlaneClone(plane) {
-    return new THREE.Plane(plane.normal.clone().negate(), -plane.constant);
-}
+const _planeUp = new THREE.Vector3(0, 0, 1);
 
 // =====================================================================
 //  Public API
@@ -32,16 +30,10 @@ function isEffectivelyVisible(obj) {
     return true;
 }
 
-function capTransformFromPlane(plane, sceneCenter) {
-    plane.projectPoint(sceneCenter, _capPos);
-    _capQuat.setFromUnitVectors(_zAxis, plane.normal);
-    return { pos: _capPos.clone(), quat: _capQuat.clone() };
-}
-
 /**
  * Build solid-section caps for the current clip-plane positions.
  */
-export function computeSolidSection(scene, meshObjects, viewProp, renderFn, sectionClipPlanes) {
+export function computeSolidSection(scene, meshObjects, viewProp, renderFn, clipPlanes) {
     clearSolidSection(scene);
 
     const sceneBBox = new THREE.Box3();
@@ -55,22 +47,63 @@ export function computeSolidSection(scene, meshObjects, viewProp, renderFn, sect
     const planeSize   = Math.max(sceneSize.x, sceneSize.y, sceneSize.z) * 4;
     sharedCapGeo = new THREE.PlaneGeometry(planeSize, planeSize);
 
-    const constraintPlanes = [
-        [negatedPlaneClone(sectionClipPlanes[1]), negatedPlaneClone(sectionClipPlanes[2])],
-        [negatedPlaneClone(sectionClipPlanes[0]), negatedPlaneClone(sectionClipPlanes[2])],
-        [negatedPlaneClone(sectionClipPlanes[0]), negatedPlaneClone(sectionClipPlanes[1])],
-    ];
-
-    const capTransforms = sectionClipPlanes.map(plane => capTransformFromPlane(plane, sceneCenter));
-
     const visibleMeshes = meshObjects.filter(
         m => m.isMesh && isEffectivelyVisible(m) && !m.isSectionMesh
     );
 
-    buildCaps(scene, visibleMeshes, sectionClipPlanes, constraintPlanes, capTransforms, viewProp.capColor);
+    if (isSingleSectionMode(viewProp)) {
+        computeSinglePlaneSolidSection(scene, visibleMeshes, clipPlanes, sceneCenter, viewProp.capColor);
+        console.log(`Solid section (single): ${capObjects.length} objects, ${visibleMeshes.length} meshes`);
+    } else {
+        computeCornerSolidSection(scene, visibleMeshes, viewProp, sceneCenter, viewProp.capColor);
+        console.log(`Solid section (corner): ${capObjects.length} objects, ${visibleMeshes.length} meshes × 3 planes`);
+    }
 
-    console.log(`Solid section: ${capObjects.length} objects, ${visibleMeshes.length} meshes × 3 planes`);
     renderFn();
+}
+
+function computeCornerSolidSection(scene, visibleMeshes, viewProp, sceneCenter, capColor) {
+    const px = viewProp.px, py = viewProp.py, pz = viewProp.pz;
+
+    const clipPlanes = [
+        new THREE.Plane(new THREE.Vector3(-1, 0, 0), px),
+        new THREE.Plane(new THREE.Vector3(0, -1, 0), py),
+        new THREE.Plane(new THREE.Vector3(0, 0, -1), pz),
+    ];
+
+    const constraintPlanes = [
+        [new THREE.Plane(new THREE.Vector3(0, 1, 0), -py), new THREE.Plane(new THREE.Vector3(0, 0, 1), -pz)],
+        [new THREE.Plane(new THREE.Vector3(1, 0, 0), -px), new THREE.Plane(new THREE.Vector3(0, 0, 1), -pz)],
+        [new THREE.Plane(new THREE.Vector3(1, 0, 0), -px), new THREE.Plane(new THREE.Vector3(0, 1, 0), -py)],
+    ];
+
+    const capTransforms = [
+        { pos: new THREE.Vector3(px, sceneCenter.y, sceneCenter.z), rot: new THREE.Euler(0, Math.PI / 2, 0) },
+        { pos: new THREE.Vector3(sceneCenter.x, py, sceneCenter.z), rot: new THREE.Euler(-Math.PI / 2, 0, 0) },
+        { pos: new THREE.Vector3(sceneCenter.x, sceneCenter.y, pz), rot: new THREE.Euler(0, 0, 0) },
+    ];
+
+    buildCaps(scene, visibleMeshes, clipPlanes, constraintPlanes, capTransforms, capColor);
+}
+
+function computeSinglePlaneSolidSection(scene, visibleMeshes, clipPlanes, sceneCenter, capColor) {
+    if (!clipPlanes || clipPlanes.length === 0) return;
+
+    const plane = clipPlanes[0];
+    _capNormal.copy(plane.normal);
+    _capPoint.copy(sceneCenter);
+    plane.projectPoint(sceneCenter, _capPoint);
+
+    _capQuat.setFromUnitVectors(_planeUp, _capNormal);
+
+    const clipPlanesArr = [plane.clone()];
+    const constraintPlanes = [[]];
+    const capTransforms = [{
+        pos: _capPoint.clone(),
+        quat: _capQuat.clone(),
+    }];
+
+    buildCaps(scene, visibleMeshes, clipPlanesArr, constraintPlanes, capTransforms, capColor, true);
 }
 
 /**
@@ -94,9 +127,9 @@ export function clearSolidSection(scene, renderFn) {
     if (renderFn) renderFn();
 }
 
-function buildCaps(scene, visibleMeshes, clipPlanes, constraintPlanes, capTransforms, capColor) {
+function buildCaps(scene, visibleMeshes, clipPlanes, constraintPlanes, capTransforms, capColor, useQuaternion = false) {
     let order = 1;
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < clipPlanes.length; i++) {
         const plane      = clipPlanes[i];
         const constraint = constraintPlanes[i];
         const transform  = capTransforms[i];
@@ -124,7 +157,11 @@ function buildCaps(scene, visibleMeshes, clipPlanes, constraintPlanes, capTransf
         });
         const cap = new THREE.Mesh(sharedCapGeo, capMat);
         cap.position.copy(transform.pos);
-        cap.quaternion.copy(transform.quat);
+        if (useQuaternion && transform.quat) {
+            cap.quaternion.copy(transform.quat);
+        } else if (transform.rot) {
+            cap.rotation.copy(transform.rot);
+        }
         cap.renderOrder = order + 1;
         cap.frustumCulled = false;
         cap.onAfterRender = function (r) { r.clearStencil(); };
@@ -156,9 +193,6 @@ function makeStencilMesh(mesh, clipPlane, side, stencilOp, renderOrder) {
     m.frustumCulled = false;
     m.matrix.copy(mesh.matrixWorld);
     m.renderOrder = renderOrder;
-    // Keep matrixWorld in sync with the source mesh so that animations are reflected.
-    // We update matrixWorld directly because scene.updateMatrixWorld() runs before
-    // onBeforeRender, so updating m.matrix would be too late for the draw call.
     m.onBeforeRender = function () {
         mesh.updateWorldMatrix(true, false);
         m.matrixWorld.copy(mesh.matrixWorld);
