@@ -39,12 +39,13 @@ import {
     syncClipPlanesFromViewProp,
     syncSectionFromGizmo,
     syncGizmoFromViewProp,
-    constrainGizmoTranslateAlongNormal,
-    getSectionNormalFromQuaternion,
     getSceneBBoxCenter,
     initSinglePlaneDefaults,
+    migrateLegacySectionPoint,
+    migrateLegacySectionAngle,
     shouldUseClipIntersection,
     isSingleSectionMode,
+    normalizeSectionMode,
 } from './sectionPlaneUtils.js';
 import { initDocumentsGui, importDocumentsFromGltfScene, getDocumentsStore, flushDocumentEdits, isDocOverlayBlockingInput, isDocumentEditorOpen, setDocLabelOptions, clearDocumentsStore } from './documentsUtils.js';
 import { isImageEditorOpen } from './imageEditorUtils.js';
@@ -199,7 +200,7 @@ const VIEW_HELPER_SIZE = 128;
 const clipPlanes = [];
 const sectionPlaneStore = createSectionPlaneStore();
 const _sectionDragPrevPos = new THREE.Vector3();
-const _sectionNormal = new THREE.Vector3();
+let _sectionGizmoDragging = false;
 let crossSectionLines = null; // Pro uchování průřezových čar
 let sectionCrossSectionLines = null; // Pro uchování průřezových čar vázaných na section view
 
@@ -209,9 +210,6 @@ let sectionGizmoHelper = null;       // Invisible helper object whose position d
 let sectionPxCtrl = null;
 let sectionPyCtrl = null;
 let sectionPzCtrl = null;
-let sectionSPxCtrl = null;
-let sectionSPyCtrl = null;
-let sectionSPzCtrl = null;
 let sectionRxCtrl = null;
 let sectionRyCtrl = null;
 let sectionRzCtrl = null;
@@ -1139,15 +1137,12 @@ const viewProp = {
     px: 0,
     py: 0,
     pz: 0,
-    sectionMode: 'corner', // 'corner' | 'single'
-    sectionPx: 0,
-    sectionPy: 0,
-    sectionPz: 0,
+    sectionMode: 'corner', // 'corner' | 'singleXY' | 'singleXZ' | 'singleYZ'
     sectionRx: 0,
     sectionRy: 0,
     sectionRz: 0,
     sectionGizmoMode: 'translate', // 'translate' | 'rotate'
-    sectionSnapRotationDeg: 30,
+    sectionSnapRotationDeg: 5,
     showCrossSection: false,
     crossSectionPlane: 'XY', // XY, XZ, YZ
     crossSectionPos: 0,
@@ -1926,19 +1921,16 @@ function init() {
         scene.add(sectionTransformControls.getHelper());
 
         sectionTransformControls.addEventListener('change', function () {
-            if (!viewProp.sectionGizmo) return;
-            if (isSingleSectionMode(viewProp) && sectionTransformControls.getMode() === 'translate') {
-                getSectionNormalFromQuaternion(sectionGizmoHelper.quaternion, _sectionNormal);
-                constrainGizmoTranslateAlongNormal(sectionGizmoHelper, _sectionDragPrevPos, _sectionNormal);
-            }
-            syncSectionFromGizmo(sectionGizmoHelper, viewProp, clipPlanes, sectionPlaneStore);
-            updateSectionGuiFromViewProp();
-            refreshSectionDependents();
+            if (!viewProp.sectionGizmo || !_sectionGizmoDragging) return;
+            applySectionGizmoChange(getSectionSceneCenter());
         });
 
         sectionTransformControls.addEventListener('dragging-changed', function (event) {
+            _sectionGizmoDragging = event.value;
             if (event.value) {
                 _sectionDragPrevPos.copy(sectionGizmoHelper.position);
+            } else if (viewProp.sectionGizmo) {
+                applySectionGizmoChange(getSectionSceneCenter());
             }
             orbitControls.enabled = !event.value;
         });
@@ -2489,7 +2481,12 @@ function addMainGui() {
         }).listen();
         const sectionFolder = folderProp.addFolder("Section view");   
             sectionCtrl = sectionFolder.add(viewProp, 'section').name('Section').onChange(function(value){ syncShowSectionMeshWithSection(); renderer.localClippingEnabled = value; viewProp.sectionGizmo = value; activateSectionGizmo(value); updateSectionCrossLines(); viewProp.solidSection = value; if (value) doComputeSolidSection(); else clearSolidSection(scene, render); render(); sectionBtn.classList.toggle('active', value); solidSectionBtn.style.display = value ? 'block' : 'none'; showSectionMeshBtn.style.display = value ? 'block' : 'none'; crossSectionLinesBtn.style.display = value ? 'block' : 'none'; solidSectionBtn.classList.toggle('active', viewProp.solidSection); showSectionMeshBtn.classList.toggle('active', viewProp.showSectionMesh); crossSectionLinesBtn.classList.toggle('active', viewProp.sectionCrossLines); if (solidSectionCtrl) solidSectionCtrl.updateDisplay(); }).listen();
-            sectionModeCtrl = sectionFolder.add(viewProp, 'sectionMode', { Corner: 'corner', Single: 'single' }).name('Mode').onChange(function(value){ setSectionMode(value); }).listen();
+            sectionModeCtrl = sectionFolder.add(viewProp, 'sectionMode', {
+                Corner: 'corner',
+                'Single XY': 'singleXY',
+                'Single XZ': 'singleXZ',
+                'Single YZ': 'singleYZ',
+            }).name('Mode').onChange(function(value){ setSectionMode(value); }).listen();
             sectionCrossLinesCtrl = sectionFolder.add(viewProp, 'sectionCrossLines').name('Cross Section Lines').onChange(function(value){updateSectionCrossLines(); crossSectionLinesBtn.classList.toggle('active', value); render(); }).listen();
             sectionFolder.addColor(viewProp, 'crossSectionColor').name('Cross Lines Color').onChange(function(value){ if(viewProp.sectionCrossLines) { updateSectionCrossLines(); render(); } });
             sectionFolder.add(viewProp, 'crossSectionOnHidden').name('Apply to hidden').onChange(function(value){ if(viewProp.sectionCrossLines) updateSectionCrossLines(); if(viewProp.showCrossSection) updateCrossSectionLines(); render(); });
@@ -2512,15 +2509,12 @@ function addMainGui() {
             sectionGizmoModeCtrl = sectionFolder.add(viewProp, 'sectionGizmoMode', ['translate', 'rotate']).name('Gizmo mode').onChange(function(value){ applySectionGizmoMode(); }).listen();
             sectionFolder.add(viewProp, 'sectionSnapTranslation', 0.1, 100, 0.1).name('Snap translation').onChange(function(value){ sectionTransformControls.setTranslationSnap(value); }).listen();
             sectionSnapRotationCtrl = sectionFolder.add(viewProp, 'sectionSnapRotationDeg', 1, 90, 1).name('Snap rotation').onChange(function(value){ applySectionGizmoMode(); }).listen();
-            sectionPxCtrl = trackExtentSlider(sectionFolder.add(viewProp, 'px', extent.pn, extent.pp, viewProp.pStep).name('Pos. x').onChange(function(value){ viewProp.px = value; syncClipPlanesFromViewProp(clipPlanes, viewProp, sectionPlaneStore); syncSectionGizmoPosition(); refreshSectionDependents(); }).listen(), 'pStep');
-            sectionPyCtrl = trackExtentSlider(sectionFolder.add(viewProp, 'py', extent.pn, extent.pp, viewProp.pStep).name('Pos. y').onChange(function(value){ viewProp.py = value; syncClipPlanesFromViewProp(clipPlanes, viewProp, sectionPlaneStore); syncSectionGizmoPosition(); refreshSectionDependents(); }).listen(), 'pStep');
-            sectionPzCtrl = trackExtentSlider(sectionFolder.add(viewProp, 'pz', extent.pn, extent.pp, viewProp.pStep).name('Pos. z').onChange(function(value){ viewProp.pz = value; syncClipPlanesFromViewProp(clipPlanes, viewProp, sectionPlaneStore); syncSectionGizmoPosition(); refreshSectionDependents(); }).listen(), 'pStep');
-            sectionSPxCtrl = trackExtentSlider(sectionFolder.add(viewProp, 'sectionPx', extent.pn, extent.pp, viewProp.pStep).name('Plane X').onChange(function(value){ viewProp.sectionPx = value; syncGizmoFromViewProp(sectionGizmoHelper, viewProp); syncClipPlanesFromViewProp(clipPlanes, viewProp, sectionPlaneStore); refreshSectionDependents(); }).listen(), 'pStep');
-            sectionSPyCtrl = trackExtentSlider(sectionFolder.add(viewProp, 'sectionPy', extent.pn, extent.pp, viewProp.pStep).name('Plane Y').onChange(function(value){ viewProp.sectionPy = value; syncGizmoFromViewProp(sectionGizmoHelper, viewProp); syncClipPlanesFromViewProp(clipPlanes, viewProp, sectionPlaneStore); refreshSectionDependents(); }).listen(), 'pStep');
-            sectionSPzCtrl = trackExtentSlider(sectionFolder.add(viewProp, 'sectionPz', extent.pn, extent.pp, viewProp.pStep).name('Plane Z').onChange(function(value){ viewProp.sectionPz = value; syncGizmoFromViewProp(sectionGizmoHelper, viewProp); syncClipPlanesFromViewProp(clipPlanes, viewProp, sectionPlaneStore); refreshSectionDependents(); }).listen(), 'pStep');
-            sectionRxCtrl = sectionFolder.add(viewProp, 'sectionRx', -180, 180, viewProp.rStep).name('Rot. x').onChange(function(){ syncGizmoFromViewProp(sectionGizmoHelper, viewProp); syncClipPlanesFromViewProp(clipPlanes, viewProp, sectionPlaneStore); refreshSectionDependents(); }).listen();
-            sectionRyCtrl = sectionFolder.add(viewProp, 'sectionRy', -180, 180, viewProp.rStep).name('Rot. y').onChange(function(){ syncGizmoFromViewProp(sectionGizmoHelper, viewProp); syncClipPlanesFromViewProp(clipPlanes, viewProp, sectionPlaneStore); refreshSectionDependents(); }).listen();
-            sectionRzCtrl = sectionFolder.add(viewProp, 'sectionRz', -180, 180, viewProp.rStep).name('Rot. z').onChange(function(){ syncGizmoFromViewProp(sectionGizmoHelper, viewProp); syncClipPlanesFromViewProp(clipPlanes, viewProp, sectionPlaneStore); refreshSectionDependents(); }).listen();
+            sectionPxCtrl = trackExtentSlider(sectionFolder.add(viewProp, 'px', extent.pn, extent.pp, viewProp.pStep).name('Pos. x').onChange(function(value){ viewProp.px = value; refreshSectionPlanes(); syncSectionGizmoPosition(); refreshSectionDependents(); }).listen(), 'pStep');
+            sectionPyCtrl = trackExtentSlider(sectionFolder.add(viewProp, 'py', extent.pn, extent.pp, viewProp.pStep).name('Pos. y').onChange(function(value){ viewProp.py = value; refreshSectionPlanes(); syncSectionGizmoPosition(); refreshSectionDependents(); }).listen(), 'pStep');
+            sectionPzCtrl = trackExtentSlider(sectionFolder.add(viewProp, 'pz', extent.pn, extent.pp, viewProp.pStep).name('Pos. z').onChange(function(value){ viewProp.pz = value; refreshSectionPlanes(); syncSectionGizmoPosition(); refreshSectionDependents(); }).listen(), 'pStep');
+            sectionRxCtrl = sectionFolder.add(viewProp, 'sectionRx', -180, 180, viewProp.rStep).name('Rot. x').onChange(function(){ syncSectionGizmoFromViewProp(); refreshSectionPlanes(); refreshSectionDependents(); }).listen();
+            sectionRyCtrl = sectionFolder.add(viewProp, 'sectionRy', -180, 180, viewProp.rStep).name('Rot. y').onChange(function(){ syncSectionGizmoFromViewProp(); refreshSectionPlanes(); refreshSectionDependents(); }).listen();
+            sectionRzCtrl = sectionFolder.add(viewProp, 'sectionRz', -180, 180, viewProp.rStep).name('Rot. z').onChange(function(){ syncSectionGizmoFromViewProp(); refreshSectionPlanes(); refreshSectionDependents(); }).listen();
             sectionFolder.add({ fn: resetSection }, 'fn').name('Reset section');
             updateSectionGuiVisibility();
 
@@ -4849,6 +4843,26 @@ function _isMeshEffectivelyVisible(obj) {
     return true;
 }
 
+function getSectionSceneCenter() {
+    return getSceneBBoxCenter(meshObjects, _isMeshEffectivelyVisible);
+}
+
+function refreshSectionPlanes() {
+    syncClipPlanesFromViewProp(clipPlanes, viewProp, sectionPlaneStore, getSectionSceneCenter());
+}
+
+function syncSectionGizmoFromViewProp() {
+    if (!sectionGizmoHelper) return;
+    syncGizmoFromViewProp(sectionGizmoHelper, viewProp, getSectionSceneCenter());
+    _sectionDragPrevPos.copy(sectionGizmoHelper.position);
+}
+
+function applySectionGizmoChange(sceneCenter) {
+    syncSectionFromGizmo(sectionGizmoHelper, viewProp, clipPlanes, sectionPlaneStore, sceneCenter);
+    updateSectionGuiFromViewProp();
+    refreshSectionDependents();
+}
+
 function doComputeSolidSection() {
     computeSolidSection(scene, meshObjects, viewProp, render, clipPlanes);
 }
@@ -4880,12 +4894,6 @@ function setSectionGuiControllerVisible(ctrl, visible) {
 
 function updateSectionGuiVisibility() {
     const single = isSingleSectionMode(viewProp);
-    setSectionGuiControllerVisible(sectionPxCtrl, !single);
-    setSectionGuiControllerVisible(sectionPyCtrl, !single);
-    setSectionGuiControllerVisible(sectionPzCtrl, !single);
-    setSectionGuiControllerVisible(sectionSPxCtrl, single);
-    setSectionGuiControllerVisible(sectionSPyCtrl, single);
-    setSectionGuiControllerVisible(sectionSPzCtrl, single);
     setSectionGuiControllerVisible(sectionRxCtrl, single);
     setSectionGuiControllerVisible(sectionRyCtrl, single);
     setSectionGuiControllerVisible(sectionRzCtrl, single);
@@ -4897,35 +4905,30 @@ function updateSectionGuiFromViewProp() {
     if (sectionPxCtrl) sectionPxCtrl.updateDisplay();
     if (sectionPyCtrl) sectionPyCtrl.updateDisplay();
     if (sectionPzCtrl) sectionPzCtrl.updateDisplay();
-    if (sectionSPxCtrl) sectionSPxCtrl.updateDisplay();
-    if (sectionSPyCtrl) sectionSPyCtrl.updateDisplay();
-    if (sectionSPzCtrl) sectionSPzCtrl.updateDisplay();
     if (sectionRxCtrl) sectionRxCtrl.updateDisplay();
     if (sectionRyCtrl) sectionRyCtrl.updateDisplay();
     if (sectionRzCtrl) sectionRzCtrl.updateDisplay();
 }
 
 function setSectionMode(mode) {
-    const prevMode = viewProp.sectionMode;
-    viewProp.sectionMode = mode;
-    if (mode === 'single' && prevMode !== 'single') {
-        viewProp.sectionPx = viewProp.px;
-        viewProp.sectionPy = viewProp.py;
-        viewProp.sectionPz = viewProp.pz;
-        viewProp.sectionRx = 0;
-        viewProp.sectionRy = 0;
-        viewProp.sectionRz = 0;
-        if (viewProp.sectionPx === 0 && viewProp.sectionPy === 0 && viewProp.sectionPz === 0) {
-            const center = getSceneBBoxCenter(meshObjects, _isMeshEffectivelyVisible);
-            initSinglePlaneDefaults(viewProp, center);
+    const prevMode = normalizeSectionMode(viewProp.sectionMode);
+    const newMode = normalizeSectionMode(mode);
+    const center = getSectionSceneCenter();
+
+    viewProp.sectionMode = newMode;
+
+    if (isSingleSectionMode(viewProp) && prevMode === 'corner') {
+        if (viewProp.px === 0 && viewProp.py === 0 && viewProp.pz === 0) {
+            initSinglePlaneDefaults(viewProp, center, newMode);
+        } else {
+            viewProp.sectionRx = 0;
+            viewProp.sectionRy = 0;
+            viewProp.sectionRz = 0;
         }
-    } else if (mode === 'corner' && prevMode === 'single') {
-        viewProp.px = viewProp.sectionPx;
-        viewProp.py = viewProp.sectionPy;
-        viewProp.pz = viewProp.sectionPz;
     }
-    syncClipPlanesFromViewProp(clipPlanes, viewProp, sectionPlaneStore);
-    if (sectionGizmoHelper) syncGizmoFromViewProp(sectionGizmoHelper, viewProp);
+
+    refreshSectionPlanes();
+    syncSectionGizmoFromViewProp();
     updateSectionGuiVisibility();
     updateSectionGuiFromViewProp();
     updateSectionMeshClipSettings();
@@ -4951,7 +4954,7 @@ function updateSectionMeshClipSettings() {
 
 function activateSectionGizmo(enabled) {
     if (enabled) {
-        syncGizmoFromViewProp(sectionGizmoHelper, viewProp);
+        syncSectionGizmoFromViewProp();
         applySectionGizmoMode();
         sectionTransformControls.attach(sectionGizmoHelper);
         render();
@@ -4967,21 +4970,21 @@ function deactivateSectionGizmo() {
 
 function syncSectionGizmoPosition() {
     if (!viewProp.sectionGizmo) return;
-    syncGizmoFromViewProp(sectionGizmoHelper, viewProp);
+    syncSectionGizmoFromViewProp();
 }
 
 
 function resetSection() {
     if (isSingleSectionMode(viewProp)) {
-        const center = getSceneBBoxCenter(meshObjects, _isMeshEffectivelyVisible);
-        initSinglePlaneDefaults(viewProp, center);
+        const center = getSectionSceneCenter();
+        initSinglePlaneDefaults(viewProp, center, viewProp.sectionMode);
     } else {
         viewProp.px = 0;
         viewProp.py = 0;
         viewProp.pz = 0;
     }
     viewProp.crossSectionPos = 0;
-    syncClipPlanesFromViewProp(clipPlanes, viewProp, sectionPlaneStore);
+    refreshSectionPlanes();
     updateSection();
     syncSectionGizmoPosition();
     updateSectionGuiFromViewProp();
@@ -5158,7 +5161,7 @@ function fitView() {
 }
     
 function updateSection() {
-    syncClipPlanesFromViewProp(clipPlanes, viewProp, sectionPlaneStore);
+    refreshSectionPlanes();
     render();
 }				
     
@@ -9792,12 +9795,9 @@ function embedAppSettingsToUserData(userData) {
         px:                viewProp.px,
         py:                viewProp.py,
         pz:                viewProp.pz,
-        sectionPx:         viewProp.sectionPx,
-        sectionPy:         viewProp.sectionPy,
-        sectionPz:         viewProp.sectionPz,
-        sectionRx:         viewProp.sectionRx,
-        sectionRy:         viewProp.sectionRy,
-        sectionRz:         viewProp.sectionRz,
+        sectionRx:           viewProp.sectionRx,
+        sectionRy:           viewProp.sectionRy,
+        sectionRz:           viewProp.sectionRz,
         sectionGizmoMode:  viewProp.sectionGizmoMode,
         sectionCrossLines: viewProp.sectionCrossLines,
         crossSectionColor: viewProp.crossSectionColor,
@@ -9892,14 +9892,21 @@ function importSettingsFromGltfScene(gltfScene) {
     if (s.sectionSettings) {
         const sec = s.sectionSettings;
         const scalarKeys = [
-            'px', 'py', 'pz', 'sectionMode', 'sectionPx', 'sectionPy', 'sectionPz',
-            'sectionRx', 'sectionRy', 'sectionRz', 'sectionGizmoMode',
+            'px', 'py', 'pz', 'sectionMode', 'sectionRx', 'sectionRy', 'sectionRz', 'sectionGizmoMode',
             'sectionCrossLines', 'crossSectionColor', 'capColor', 'showSectionMesh',
         ];
         scalarKeys.forEach(k => { if (sec[k] !== undefined) viewProp[k] = sec[k]; });
 
-        syncClipPlanesFromViewProp(clipPlanes, viewProp, sectionPlaneStore);
-        if (sectionGizmoHelper) syncGizmoFromViewProp(sectionGizmoHelper, viewProp);
+        if (sec.sectionMode) viewProp.sectionMode = normalizeSectionMode(sec.sectionMode);
+        if (sec.sectionPos !== undefined && isSingleSectionMode(viewProp)) {
+            viewProp.sectionPos = sec.sectionPos;
+            migrateLegacySectionPoint(viewProp, getSectionSceneCenter());
+        }
+        if (sec.sectionAngle !== undefined) viewProp.sectionAngle = sec.sectionAngle;
+        migrateLegacySectionAngle(viewProp);
+
+        refreshSectionPlanes();
+        syncSectionGizmoFromViewProp();
         updateSectionGuiVisibility();
         updateSectionGuiFromViewProp();
         updateSectionMeshClipSettings();
