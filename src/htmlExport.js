@@ -3,6 +3,26 @@ import * as THREE from 'three';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import exportLibsBundle from 'virtual:export-libs-bundle';
 
+function buildSectionSettings(viewProp) {
+    return {
+        section: viewProp.section,
+        showSectionMesh: viewProp.showSectionMesh,
+        sectionCrossLines: viewProp.sectionCrossLines,
+        crossSectionColor: viewProp.crossSectionColor,
+        capColor: viewProp.capColor,
+        sectionMode: viewProp.sectionMode || 'corner',
+        px: viewProp.px,
+        py: viewProp.py,
+        pz: viewProp.pz,
+        sectionPx: viewProp.sectionPx ?? viewProp.px ?? 0,
+        sectionPy: viewProp.sectionPy ?? viewProp.py ?? 0,
+        sectionPz: viewProp.sectionPz ?? viewProp.pz ?? 0,
+        sectionRx: viewProp.sectionRx ?? 0,
+        sectionRy: viewProp.sectionRy ?? 0,
+        sectionRz: viewProp.sectionRz ?? 0,
+    };
+}
+
 // ===== Export to standalone HTML with embedded GLB =====
 export function exportToHTML(loadedModels, assemblyGui, viewProp, assemblyWriteToUserData, assemblyClearUserData) {
     if (loadedModels.length === 0) {
@@ -48,16 +68,7 @@ export function exportToHTML(loadedModels, assemblyGui, viewProp, assemblyWriteT
             zoomCoeff:   assemblyGui.zoomCoeff,
         };
 
-        const sectionSettings = {
-            section:         viewProp.section,
-            showSectionMesh: viewProp.showSectionMesh,
-            sectionCrossLines: viewProp.sectionCrossLines,
-            crossSectionColor: viewProp.crossSectionColor,
-            capColor: viewProp.capColor,
-            px: viewProp.px,
-            py: viewProp.py,
-            pz: viewProp.pz,
-        };
+        const sectionSettings = buildSectionSettings(viewProp);
 
         const htmlContent = generateStandaloneHTML(base64, animSettings, sectionSettings, '');
 
@@ -170,16 +181,7 @@ export function exportToHTMLDraco(loadedModels, assemblyGui, viewProp, assemblyW
             zoomCoeff:   assemblyGui.zoomCoeff,
         };
 
-        const sectionSettings = {
-            section:         viewProp.section,
-            showSectionMesh: viewProp.showSectionMesh,
-            sectionCrossLines: viewProp.sectionCrossLines,
-            crossSectionColor: viewProp.crossSectionColor,
-            capColor: viewProp.capColor,
-            px: viewProp.px,
-            py: viewProp.py,
-            pz: viewProp.pz,
-        };
+        const sectionSettings = buildSectionSettings(viewProp);
 
         // Fetch Draco decoder JS for embedding in standalone HTML
         let dracoDecoderBase64 = '';
@@ -459,9 +461,25 @@ canvas { display: block; width: 100%; height: 100%; }
         <label class="chk-label"><input type="checkbox" id="chk-section-cross"> Cross Section Lines</label>
         <label class="chk-label"><input type="checkbox" id="chk-solid-section"> Solid Section</label>
         <label class="chk-label"><input type="checkbox" id="chk-section-mesh"> Section Mesh</label>
+        <label class="chk-label">Mode
+            <select id="sel-section-mode" style="margin-left:6px;">
+                <option value="corner">Corner</option>
+                <option value="single">Single</option>
+            </select>
+        </label>
+        <div id="corner-sec-sliders">
         <div class="sec-row"><span class="sec-axis">X</span><input type="range" id="sld-px" step="1"><input type="number" id="num-px" step="1"></div>
         <div class="sec-row"><span class="sec-axis">Y</span><input type="range" id="sld-py" step="1"><input type="number" id="num-py" step="1"></div>
         <div class="sec-row"><span class="sec-axis">Z</span><input type="range" id="sld-pz" step="1"><input type="number" id="num-pz" step="1"></div>
+        </div>
+        <div id="single-sec-sliders" style="display:none;">
+        <div class="sec-row"><span class="sec-axis">PX</span><input type="range" id="sld-spx" step="1"><input type="number" id="num-spx" step="1"></div>
+        <div class="sec-row"><span class="sec-axis">PY</span><input type="range" id="sld-spy" step="1"><input type="number" id="num-spy" step="1"></div>
+        <div class="sec-row"><span class="sec-axis">PZ</span><input type="range" id="sld-spz" step="1"><input type="number" id="num-spz" step="1"></div>
+        <div class="sec-row"><span class="sec-axis">RX</span><input type="range" id="sld-rx" step="1" min="-180" max="180"><input type="number" id="num-rx" step="1" min="-180" max="180"></div>
+        <div class="sec-row"><span class="sec-axis">RY</span><input type="range" id="sld-ry" step="1" min="-180" max="180"><input type="number" id="num-ry" step="1" min="-180" max="180"></div>
+        <div class="sec-row"><span class="sec-axis">RZ</span><input type="range" id="sld-rz" step="1" min="-180" max="180"><input type="number" id="num-rz" step="1" min="-180" max="180"></div>
+        </div>
         <button id="btn-sec-reset">&#x21BA; Reset</button>
     </div>
 </div>
@@ -539,12 +557,43 @@ const dl2 = new THREE.DirectionalLight(0xffffff, 1);
 dl2.position.set(0.5, 1, -1);
 scene.add(dl2);
 
-// Clip planes (section view)
-const clipPlanes = [
-    new THREE.Plane(new THREE.Vector3(-1, 0, 0), ${sectionSettings.px}),
-    new THREE.Plane(new THREE.Vector3(0, -1, 0), ${sectionSettings.py}),
-    new THREE.Plane(new THREE.Vector3(0, 0, -1), ${sectionSettings.pz}),
-];
+// Clip planes (section view) – keep in sync with sectionPlaneUtils.js
+let sectionMode = '${sectionSettings.sectionMode || 'corner'}';
+const sectionPlaneState = {
+    px: ${sectionSettings.px},
+    py: ${sectionSettings.py},
+    pz: ${sectionSettings.pz},
+    sectionPx: ${sectionSettings.sectionPx},
+    sectionPy: ${sectionSettings.sectionPy},
+    sectionPz: ${sectionSettings.sectionPz},
+    sectionRx: ${sectionSettings.sectionRx},
+    sectionRy: ${sectionSettings.sectionRy},
+    sectionRz: ${sectionSettings.sectionRz},
+};
+const clipPlanes = [];
+function rebuildClipPlanes() {
+    clipPlanes.length = 0;
+    if (sectionMode === 'single') {
+        const normal = new THREE.Vector3(0, 0, -1);
+        const euler = new THREE.Euler(
+            THREE.MathUtils.degToRad(sectionPlaneState.sectionRx),
+            THREE.MathUtils.degToRad(sectionPlaneState.sectionRy),
+            THREE.MathUtils.degToRad(sectionPlaneState.sectionRz),
+            'XYZ'
+        );
+        normal.applyEuler(euler).normalize();
+        const point = new THREE.Vector3(sectionPlaneState.sectionPx, sectionPlaneState.sectionPy, sectionPlaneState.sectionPz);
+        clipPlanes.push(new THREE.Plane().setFromNormalAndCoplanarPoint(normal, point));
+    } else {
+        clipPlanes.push(
+            new THREE.Plane(new THREE.Vector3(-1, 0, 0), sectionPlaneState.px),
+            new THREE.Plane(new THREE.Vector3(0, -1, 0), sectionPlaneState.py),
+            new THREE.Plane(new THREE.Vector3(0, 0, -1), sectionPlaneState.pz)
+        );
+    }
+}
+function usesClipIntersection() { return sectionMode !== 'single'; }
+rebuildClipPlanes();
 let sectionMeshEnabled = ${sectionSettings.showSectionMesh};
 let sectionCrossLinesEnabled = ${sectionSettings.sectionCrossLines};
 let sectionCrossLinesObj = null;
@@ -1079,7 +1128,7 @@ function applyClipPlanesToMaterials(root) {
             const mats = Array.isArray(child.material) ? child.material : [child.material];
             mats.forEach(mat => {
                 mat.clippingPlanes = clipPlanes;
-                mat.clipIntersection = true;
+                mat.clipIntersection = usesClipIntersection();
                 mat.side = THREE.DoubleSide;
                 mat.needsUpdate = true;
             });
@@ -1094,7 +1143,7 @@ function createSectionMesh(mesh) {
     const newMats = mats.map(mat => new THREE.MeshBasicMaterial({
         side: THREE.BackSide,
         clippingPlanes: clipPlanes,
-        clipIntersection: true,
+        clipIntersection: usesClipIntersection(),
         color: mat.color,
         polygonOffset: true,
         polygonOffsetFactor: -1,
@@ -1228,6 +1277,45 @@ function computeSolidSection() {
     const planeSize   = Math.max(sceneSize.x, sceneSize.y, sceneSize.z) * 4;
     const capGeo      = new THREE.PlaneGeometry(planeSize, planeSize);
 
+    if (sectionMode === 'single') {
+        if (clipPlanes.length === 0) return;
+        const plane = clipPlanes[0];
+        const capPoint = sceneCenter.clone();
+        plane.projectPoint(sceneCenter, capPoint);
+        const capQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), plane.normal.clone());
+        let order = 1;
+        meshes.forEach(function(mesh) {
+            mesh.updateWorldMatrix(true, false);
+            solidSectionObjects.push(makeStencilMesh(mesh, plane, THREE.BackSide,  THREE.IncrementWrapStencilOp, order));
+            solidSectionObjects.push(makeStencilMesh(mesh, plane, THREE.FrontSide, THREE.DecrementWrapStencilOp, order));
+        });
+        const capMat = new THREE.MeshStandardMaterial({
+            color: new THREE.Color(solidSectionCapColor),
+            roughness: 0.5,
+            metalness: 0.1,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+            depthTest: true,
+            stencilWrite: true,
+            stencilRef: 0,
+            stencilFunc: THREE.NotEqualStencilFunc,
+            stencilFail:  THREE.KeepStencilOp,
+            stencilZFail: THREE.KeepStencilOp,
+            stencilZPass: THREE.KeepStencilOp,
+            clippingPlanes: [],
+        });
+        const cap = new THREE.Mesh(capGeo, capMat);
+        cap.position.copy(capPoint);
+        cap.quaternion.copy(capQuat);
+        cap.renderOrder = order + 1;
+        cap.frustumCulled = false;
+        cap.onAfterRender = function(r) { r.clearStencil(); };
+        scene.add(cap);
+        solidSectionObjects.push(cap);
+        render();
+        return;
+    }
+
     const px = clipPlanes[0].constant, py = clipPlanes[1].constant, pz = clipPlanes[2].constant;
 
     const sPlanes = [
@@ -1324,12 +1412,28 @@ function makeStencilMesh(mesh, clipPlane, side, stencilOp, renderOrder) {
 }
 
 function setSectionSliderRange(range) {
-    document.getElementById('sld-px').min = -range; document.getElementById('sld-px').max = range;
-    document.getElementById('num-px').min = -range; document.getElementById('num-px').max = range;
-    document.getElementById('sld-py').min = -range; document.getElementById('sld-py').max = range;
-    document.getElementById('num-py').min = -range; document.getElementById('num-py').max = range;
-    document.getElementById('sld-pz').min = -range; document.getElementById('sld-pz').max = range;
-    document.getElementById('num-pz').min = -range; document.getElementById('num-pz').max = range;
+    ['px', 'py', 'pz', 'spx', 'spy', 'spz'].forEach(function(id) {
+        const sld = document.getElementById('sld-' + id);
+        const num = document.getElementById('num-' + id);
+        if (sld) { sld.min = -range; sld.max = range; }
+        if (num) { num.min = -range; num.max = range; }
+    });
+}
+
+function updateSectionPanelVisibility() {
+    const single = sectionMode === 'single';
+    const cornerEl = document.getElementById('corner-sec-sliders');
+    const singleEl = document.getElementById('single-sec-sliders');
+    if (cornerEl) cornerEl.style.display = single ? 'none' : '';
+    if (singleEl) singleEl.style.display = single ? '' : 'none';
+}
+
+function refreshSectionClipState() {
+    rebuildClipPlanes();
+    if (sceneRoot) {
+        applyClipPlanesToMaterials(sceneRoot);
+        if (sectionMeshEnabled) updateSectionMeshes();
+    }
 }
 
 // ---- Section UI wiring ----
@@ -1381,14 +1485,14 @@ chkSectionCross.addEventListener('change', function() {
     updateSectionCrossLines();
 });
 
-function wireAxisSlider(sldId, numId, idx) {
+function wireAxisSlider(sldId, numId, onUpdate) {
     const sld = document.getElementById(sldId);
     const num = document.getElementById(numId);
-    sld.value = clipPlanes[idx].constant;
-    num.value = clipPlanes[idx].constant;
+    if (!sld || !num) return;
     function update(v) {
-        clipPlanes[idx].constant = v;
+        onUpdate(v);
         sld.value = v; num.value = v;
+        refreshSectionClipState();
         if (sectionCrossLinesEnabled) updateSectionCrossLines();
         if (solidSectionEnabled) computeSolidSection();
         render();
@@ -1396,15 +1500,85 @@ function wireAxisSlider(sldId, numId, idx) {
     sld.addEventListener('input', () => update(parseFloat(sld.value)));
     num.addEventListener('change', () => update(parseFloat(num.value) || 0));
 }
-wireAxisSlider('sld-px', 'num-px', 0);
-wireAxisSlider('sld-py', 'num-py', 1);
-wireAxisSlider('sld-pz', 'num-pz', 2);
+
+const selSectionMode = document.getElementById('sel-section-mode');
+if (selSectionMode) {
+    selSectionMode.value = sectionMode;
+    selSectionMode.addEventListener('change', function() {
+        sectionMode = this.value;
+        if (sectionMode === 'single') {
+            sectionPlaneState.sectionPx = sectionPlaneState.px;
+            sectionPlaneState.sectionPy = sectionPlaneState.py;
+            sectionPlaneState.sectionPz = sectionPlaneState.pz;
+        } else {
+            sectionPlaneState.px = sectionPlaneState.sectionPx;
+            sectionPlaneState.py = sectionPlaneState.sectionPy;
+            sectionPlaneState.pz = sectionPlaneState.sectionPz;
+        }
+        updateSectionPanelVisibility();
+        syncSectionSliderValues();
+        refreshSectionClipState();
+        if (sectionCrossLinesEnabled) updateSectionCrossLines();
+        if (solidSectionEnabled) computeSolidSection();
+        render();
+    });
+}
+updateSectionPanelVisibility();
+
+function syncSectionSliderValues() {
+    const map = [
+        ['sld-px', 'num-px', sectionPlaneState.px],
+        ['sld-py', 'num-py', sectionPlaneState.py],
+        ['sld-pz', 'num-pz', sectionPlaneState.pz],
+        ['sld-spx', 'num-spx', sectionPlaneState.sectionPx],
+        ['sld-spy', 'num-spy', sectionPlaneState.sectionPy],
+        ['sld-spz', 'num-spz', sectionPlaneState.sectionPz],
+        ['sld-rx', 'num-rx', sectionPlaneState.sectionRx],
+        ['sld-ry', 'num-ry', sectionPlaneState.sectionRy],
+        ['sld-rz', 'num-rz', sectionPlaneState.sectionRz],
+    ];
+    map.forEach(function(row) {
+        const sld = document.getElementById(row[0]);
+        const num = document.getElementById(row[1]);
+        if (sld) sld.value = row[2];
+        if (num) num.value = row[2];
+    });
+}
+syncSectionSliderValues();
+
+wireAxisSlider('sld-px', 'num-px', function(v) { sectionPlaneState.px = v; });
+wireAxisSlider('sld-py', 'num-py', function(v) { sectionPlaneState.py = v; });
+wireAxisSlider('sld-pz', 'num-pz', function(v) { sectionPlaneState.pz = v; });
+wireAxisSlider('sld-spx', 'num-spx', function(v) { sectionPlaneState.sectionPx = v; });
+wireAxisSlider('sld-spy', 'num-spy', function(v) { sectionPlaneState.sectionPy = v; });
+wireAxisSlider('sld-spz', 'num-spz', function(v) { sectionPlaneState.sectionPz = v; });
+wireAxisSlider('sld-rx', 'num-rx', function(v) { sectionPlaneState.sectionRx = v; });
+wireAxisSlider('sld-ry', 'num-ry', function(v) { sectionPlaneState.sectionRy = v; });
+wireAxisSlider('sld-rz', 'num-rz', function(v) { sectionPlaneState.sectionRz = v; });
 
 document.getElementById('btn-sec-reset').addEventListener('click', function() {
-    clipPlanes[0].constant = 0; clipPlanes[1].constant = 0; clipPlanes[2].constant = 0;
-    document.getElementById('sld-px').value = 0; document.getElementById('num-px').value = 0;
-    document.getElementById('sld-py').value = 0; document.getElementById('num-py').value = 0;
-    document.getElementById('sld-pz').value = 0; document.getElementById('num-pz').value = 0;
+    if (sectionMode === 'single') {
+        sectionPlaneState.sectionRx = 0;
+        sectionPlaneState.sectionRy = 0;
+        sectionPlaneState.sectionRz = 0;
+        if (sceneRoot) {
+            const box = new THREE.Box3().setFromObject(sceneRoot);
+            const center = box.isEmpty() ? new THREE.Vector3() : box.getCenter(new THREE.Vector3());
+            sectionPlaneState.sectionPx = center.x;
+            sectionPlaneState.sectionPy = center.y;
+            sectionPlaneState.sectionPz = center.z;
+        } else {
+            sectionPlaneState.sectionPx = 0;
+            sectionPlaneState.sectionPy = 0;
+            sectionPlaneState.sectionPz = 0;
+        }
+    } else {
+        sectionPlaneState.px = 0;
+        sectionPlaneState.py = 0;
+        sectionPlaneState.pz = 0;
+    }
+    syncSectionSliderValues();
+    refreshSectionClipState();
     if (sectionCrossLinesEnabled) updateSectionCrossLines();
     if (solidSectionEnabled) computeSolidSection();
     render();
@@ -1903,16 +2077,7 @@ export function exportToHTMLObfuscated(loadedModels, assemblyGui, viewProp, asse
             zoomCoeff:   assemblyGui.zoomCoeff,
         };
 
-        const sectionSettings = {
-            section:         viewProp.section,
-            showSectionMesh: viewProp.showSectionMesh,
-            sectionCrossLines: viewProp.sectionCrossLines,
-            crossSectionColor: viewProp.crossSectionColor,
-            capColor: viewProp.capColor,
-            px: viewProp.px,
-            py: viewProp.py,
-            pz: viewProp.pz,
-        };
+        const sectionSettings = buildSectionSettings(viewProp);
 
         const htmlContent = generateObfuscatedHTML(base64, animSettings, sectionSettings, '');
 
@@ -2020,16 +2185,7 @@ export function exportToHTMLObfuscatedDraco(loadedModels, assemblyGui, viewProp,
             zoomCoeff:   assemblyGui.zoomCoeff,
         };
 
-        const sectionSettings = {
-            section:         viewProp.section,
-            showSectionMesh: viewProp.showSectionMesh,
-            sectionCrossLines: viewProp.sectionCrossLines,
-            crossSectionColor: viewProp.crossSectionColor,
-            capColor: viewProp.capColor,
-            px: viewProp.px,
-            py: viewProp.py,
-            pz: viewProp.pz,
-        };
+        const sectionSettings = buildSectionSettings(viewProp);
 
         let dracoDecoderBase64 = '';
         try {
@@ -2070,9 +2226,16 @@ function generateObfuscatedHTML(glbBase64, animSettings, sectionSettings, dracoD
         'btn-next': '_4', 'btn-anim-start': '_5', 'btn-anim-finish': '_6', 'chk-loop': '_7', 'chk-fullscreen': '_8', 'chk-camera': '_9',
         'section-panel': '_sa', 'section-panel-hdr': '_sb', 'section-panel-body': '_sc',
         'chk-section': '_s1', 'chk-section-mesh': '_s2', 'chk-section-cross': '_s2b', 'chk-solid-section': '_s2c',
+        'sel-section-mode': '_sm', 'corner-sec-sliders': '_cs', 'single-sec-sliders': '_ss',
         'sld-px': '_s3', 'num-px': '_s4',
         'sld-py': '_s5', 'num-py': '_s6',
         'sld-pz': '_s7', 'num-pz': '_s8',
+        'sld-spx': '_s3a', 'num-spx': '_s4a',
+        'sld-spy': '_s5a', 'num-spy': '_s6a',
+        'sld-spz': '_s7a', 'num-spz': '_s8a',
+        'sld-rx': '_s3b', 'num-rx': '_s4b',
+        'sld-ry': '_s5b', 'num-ry': '_s6b',
+        'sld-rz': '_s7b', 'num-rz': '_s8b',
         'btn-sec-reset': '_s9',
         'analysis-panel': '_aa', 'analysis-panel-hdr': '_ab', 'analysis-panel-body': '_ac',
         'chk-measure': '_a1', 'chk-detect-circle': '_a2', 'btn-clear-meas': '_a3',
@@ -2143,6 +2306,10 @@ function generateObfuscatedHTML(glbBase64, animSettings, sectionSettings, dracoD
     const secCrossChecked = sectionSettings.sectionCrossLines ? ' checked' : '';
     const secSolidChecked = '';
 
+    const secMode = sectionSettings.sectionMode || 'corner';
+    const secSingleDisplay = secMode === 'single' ? '' : 'none';
+    const secCornerDisplay = secMode === 'single' ? 'none' : '';
+
     // ── Assemble obfuscated HTML ──
     return `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no"><style>${css}</style></head><body>` +
         `<div id="_a"><div id="_b"></div><div id="_c"></div></div>` +
@@ -2152,9 +2319,20 @@ function generateObfuscatedHTML(glbBase64, animSettings, sectionSettings, dracoD
         `<label class="_cl"><input type="checkbox" id="_s2b"${secCrossChecked}> Cross Section Lines</label>` +
         `<label class="_cl"><input type="checkbox" id="_s2c"${secSolidChecked}> Solid Section</label>` +
         `<label class="_cl"><input type="checkbox" id="_s2"${secMeshChecked}> Section Mesh</label>` +
+        `<label class="_cl">Mode <select id="_sm"><option value="corner"${secMode === 'corner' ? ' selected' : ''}>Corner</option><option value="single"${secMode === 'single' ? ' selected' : ''}>Single</option></select></label>` +
+        `<div id="_cs" style="display:${secCornerDisplay}">` +
         `<div class="_sr"><span class="_sx">X</span><input type="range" id="_s3" step="1"><input type="number" id="_s4" step="1"></div>` +
         `<div class="_sr"><span class="_sx">Y</span><input type="range" id="_s5" step="1"><input type="number" id="_s6" step="1"></div>` +
         `<div class="_sr"><span class="_sx">Z</span><input type="range" id="_s7" step="1"><input type="number" id="_s8" step="1"></div>` +
+        `</div>` +
+        `<div id="_ss" style="display:${secSingleDisplay}">` +
+        `<div class="_sr"><span class="_sx">PX</span><input type="range" id="_s3a" step="1"><input type="number" id="_s4a" step="1"></div>` +
+        `<div class="_sr"><span class="_sx">PY</span><input type="range" id="_s5a" step="1"><input type="number" id="_s6a" step="1"></div>` +
+        `<div class="_sr"><span class="_sx">PZ</span><input type="range" id="_s7a" step="1"><input type="number" id="_s8a" step="1"></div>` +
+        `<div class="_sr"><span class="_sx">RX</span><input type="range" id="_s3b" step="1" min="-180" max="180"><input type="number" id="_s4b" step="1" min="-180" max="180"></div>` +
+        `<div class="_sr"><span class="_sx">RY</span><input type="range" id="_s5b" step="1" min="-180" max="180"><input type="number" id="_s6b" step="1" min="-180" max="180"></div>` +
+        `<div class="_sr"><span class="_sx">RZ</span><input type="range" id="_s7b" step="1" min="-180" max="180"><input type="number" id="_s8b" step="1" min="-180" max="180"></div>` +
+        `</div>` +
         `<button id="_s9">&#x21BA; Reset</button></div></div>` +
         `<div id="_aa"><div id="_ab">&#x1F4CF; Analysis &#x25BE;</div><div id="_ac">` +
         `<label class="_cl"><input type="checkbox" id="_a1"> Measure (point-to-point)</label>` +
