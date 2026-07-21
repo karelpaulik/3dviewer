@@ -235,12 +235,14 @@ export function syncToolsPanelUI(deps) {
         if (showCircleDetect) {
             _circleDetectCtrl.show();
             _circleDetectCtrl.enable();
+            _circleDetectCtrl.updateDisplay();
         } else {
             _circleDetectCtrl.hide();
             deps.viewProp.detectCircleCenter = false;
             _circleDetectCtrl.setValue(false);
         }
     }
+    deps.syncCircleDetectViewport?.(showCircleDetect, deps.viewProp.detectCircleCenter);
 
     if (_cancelBtnCtrl) {
         const toolActive = !assemblyEdit && active !== 'navigate';
@@ -504,6 +506,7 @@ export function initToolsPanel(container, deps) {
     const optionsFolder = toolsGui.addFolder('Options');
     optionsFolder.add(deps.viewProp, 'repeatTool').name('Repeat tool');
     _circleDetectCtrl = optionsFolder.add(deps.viewProp, 'detectCircleCenter').name('Detect circle center').onChange(() => {
+        deps.syncCircleDetectViewport?.(true, deps.viewProp.detectCircleCenter);
         deps.render();
     });
     _circleDetectCtrl.hide();

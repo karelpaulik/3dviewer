@@ -386,6 +386,21 @@ const viewportBottomLeftToolbar = document.createElement('div');
 viewportBottomLeftToolbar.id = 'viewport-bottom-left-toolbar';
 document.body.appendChild(viewportBottomLeftToolbar);
 
+const circleDetectToggleEl = document.createElement('label');
+circleDetectToggleEl.id = 'circle-detect-toggle';
+circleDetectToggleEl.className = 'circle-detect-toggle';
+circleDetectToggleEl.style.display = 'none';
+const circleDetectToggleCb = document.createElement('input');
+circleDetectToggleCb.type = 'checkbox';
+circleDetectToggleCb.addEventListener('change', () => {
+    viewProp.detectCircleCenter = circleDetectToggleCb.checked;
+    syncToolsPanelUI(toolsDeps);
+    render();
+});
+circleDetectToggleEl.appendChild(circleDetectToggleCb);
+circleDetectToggleEl.appendChild(document.createTextNode('Detect circle center'));
+document.body.appendChild(circleDetectToggleEl);
+
 // Fullscreen toggle button (bottom-left, next to ViewHelper gizmo)
 const fsBtn = document.createElement('button');
 fsBtn.id = 'fs-btn';
@@ -511,7 +526,7 @@ document.body.appendChild(viewHelperContainer);
 
 // Wrapper reference for hit-testing (toolbar + panels + outliner)
 let outlinerPanelEl = null;
-const guiWrapper = { contains(el) { return guiToolbar.contains(el) || Object.values(guiPanels).some(p => p.gui && p.gui.domElement.style.display !== 'none' && p.gui.domElement.contains(el)) || (outlinerPanelEl && outlinerPanelEl.contains(el)) || statusBar.contains(el) || viewportBottomLeftToolbar.contains(el) || viewHelperContainer.contains(el) || (_deviationLegendEl && _deviationLegendEl.contains(el)); } };
+const guiWrapper = { contains(el) { return guiToolbar.contains(el) || Object.values(guiPanels).some(p => p.gui && p.gui.domElement.style.display !== 'none' && p.gui.domElement.contains(el)) || (outlinerPanelEl && outlinerPanelEl.contains(el)) || statusBar.contains(el) || circleDetectToggleEl.contains(el) || viewportBottomLeftToolbar.contains(el) || viewHelperContainer.contains(el) || (_deviationLegendEl && _deviationLegendEl.contains(el)); } };
 
 let guiView = null;
 let guiAssembly = null;
@@ -3271,6 +3286,10 @@ function addToolsGui() {
         updateCadDim3dHintUI: _updateCadDim3dHintUI,
         invalidateModeIndicatorCache: () => { _modeIndicatorCache = ''; },
         isPtpSnapActive: () => ptpSnapMode,
+        syncCircleDetectViewport: (visible, checked) => {
+            circleDetectToggleEl.style.display = visible ? '' : 'none';
+            circleDetectToggleCb.checked = !!checked;
+        },
     };
     const toolsGui = initToolsPanel(guiContainer, toolsDeps);
     registerGuiPanel('Tools', toolsGui);
