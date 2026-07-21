@@ -217,6 +217,9 @@ let sectionModeCtrl = null;
 let sectionGizmoModeCtrl = null;
 let sectionSnapRotationCtrl = null;
 
+/** @type {{ solidSection: boolean, showSectionMesh: boolean, sectionCrossLines: boolean, sectionMode: string } | null} */
+let _sectionDisabledSnapshot = null;
+
 let cameraPersp, cameraOrtho, currentCamera;
 let transformControls, orbitControls;
 let transformSpaceGizmoAnchor = null;
@@ -411,27 +414,7 @@ sectionBtn.id = 'section-btn';
 sectionBtn.title = 'Section View';
 sectionBtn.textContent = '✂';
 sectionBtn.addEventListener('click', () => {
-    viewProp.section = !viewProp.section;
-    syncShowSectionMeshWithSection();
-    renderer.localClippingEnabled = viewProp.section;
-    viewProp.sectionGizmo = viewProp.section;
-    activateSectionGizmo(viewProp.section);
-    updateSectionCrossLines();
-    viewProp.solidSection = viewProp.section;
-    if (viewProp.solidSection) doComputeSolidSection();
-    else clearSolidSection(scene, render);
-    render();
-    sectionBtn.classList.toggle('active', viewProp.section);
-    updateSectionViewportControlsVisibility();
-    syncSectionModeViewportSelect();
-    solidSectionBtn.style.display = viewProp.section ? 'block' : 'none';
-    showSectionMeshBtn.style.display = viewProp.section ? 'block' : 'none';
-    crossSectionLinesBtn.style.display = viewProp.section ? 'block' : 'none'; // Add this line
-    solidSectionBtn.classList.toggle('active', viewProp.solidSection);
-    showSectionMeshBtn.classList.toggle('active', viewProp.showSectionMesh);
-    crossSectionLinesBtn.classList.toggle('active', viewProp.sectionCrossLines); // Add this line
-    if (sectionCtrl) sectionCtrl.updateDisplay();
-    if (solidSectionCtrl) solidSectionCtrl.updateDisplay();
+    setSectionEnabled(!viewProp.section);
 });
 viewportBottomLeftToolbar.appendChild(sectionBtn);
 
@@ -443,13 +426,14 @@ solidSectionBtn.textContent = '◼';
 solidSectionBtn.addEventListener('click', () => {
     viewProp.solidSection = !viewProp.solidSection;
     if (viewProp.solidSection) {
-        renderer.localClippingEnabled = true;
-        viewProp.section = true;
+        if (!viewProp.section) setSectionEnabled(true);
+        viewProp.solidSection = true;
         doComputeSolidSection();
+        syncSectionToggleUi();
     } else {
         clearSolidSection(scene, render);
+        solidSectionBtn.classList.toggle('active', false);
     }
-    solidSectionBtn.classList.toggle('active', viewProp.solidSection);
     if (solidSectionCtrl) solidSectionCtrl.updateDisplay();
     render();
 });
@@ -2523,7 +2507,7 @@ function addMainGui() {
             scheduleEdgeThresholdUpdate();
         }).listen();
         const sectionFolder = folderProp.addFolder("Section view");   
-            sectionCtrl = sectionFolder.add(viewProp, 'section').name('Section').onChange(function(value){ syncShowSectionMeshWithSection(); renderer.localClippingEnabled = value; viewProp.sectionGizmo = value; activateSectionGizmo(value); updateSectionCrossLines(); viewProp.solidSection = value; if (value) doComputeSolidSection(); else clearSolidSection(scene, render); render(); sectionBtn.classList.toggle('active', value); updateSectionViewportControlsVisibility(); syncSectionModeViewportSelect(); solidSectionBtn.style.display = value ? 'block' : 'none'; showSectionMeshBtn.style.display = value ? 'block' : 'none'; crossSectionLinesBtn.style.display = value ? 'block' : 'none'; solidSectionBtn.classList.toggle('active', viewProp.solidSection); showSectionMeshBtn.classList.toggle('active', viewProp.showSectionMesh); crossSectionLinesBtn.classList.toggle('active', viewProp.sectionCrossLines); if (solidSectionCtrl) solidSectionCtrl.updateDisplay(); }).listen();
+            sectionCtrl = sectionFolder.add(viewProp, 'section').name('Section').onChange(function(value){ setSectionEnabled(value); }).listen();
             sectionModeCtrl = sectionFolder.add(viewProp, 'sectionMode', Object.fromEntries(
                 SECTION_MODE_OPTIONS.map(o => [o.label, o.value])
             )).name('Mode').onChange(function(value){ setSectionMode(value); }).listen();
@@ -2532,13 +2516,14 @@ function addMainGui() {
             sectionFolder.add(viewProp, 'crossSectionOnHidden').name('Apply to hidden').onChange(function(value){ if(viewProp.sectionCrossLines) updateSectionCrossLines(); if(viewProp.showCrossSection) updateCrossSectionLines(); render(); });
             solidSectionCtrl = sectionFolder.add(viewProp, 'solidSection').name('Solid Section').onChange(function(value) {
                 if (value) {
-                    renderer.localClippingEnabled = true;
-                    viewProp.section = true;
+                    if (!viewProp.section) setSectionEnabled(true);
+                    viewProp.solidSection = true;
                     doComputeSolidSection();
+                    syncSectionToggleUi();
                 } else {
                     clearSolidSection(scene, render);
+                    solidSectionBtn.classList.toggle('active', false);
                 }
-                solidSectionBtn.classList.toggle('active', value);
                 render();
             }).listen();
             sectionFolder.addColor(viewProp, 'capColor').name('Cap Color').onChange(function() {
@@ -4796,46 +4781,66 @@ function createSectionMesh(mesh) {
     mesh.add(sectionMesh);			
 }
 
+function _disposeSectionMeshChild(mesh, child) {
+    mesh.remove(child);
+    if (child.geometry) child.geometry.dispose();
+    if (child.material) {
+        if (Array.isArray(child.material)) {
+            child.material.forEach(mat => mat.dispose());
+        } else {
+            child.material.dispose();
+        }
+    }
+}
+
+function removeSectionMeshesOnly() {
+    meshObjects.forEach(mesh => {
+        if (mesh.isMesh) {
+            mesh.children.forEach(child => {
+                if (child.isSectionMesh) {
+                    _disposeSectionMeshChild(mesh, child);
+                }
+            });
+        }
+    });
+}
+
+function ensureSectionMeshes() {
+    if (!viewProp.showSectionMesh) return;
+    meshObjects.forEach(mesh => {
+        if (mesh.isMesh) {
+            createSectionMesh(mesh);
+        }
+    });
+}
+
 function toggleSectionMeshAll() {
     if (viewProp.showSectionMesh) {
-        // Vytvoření sectionMesh pro všechny meshe
-        meshObjects.forEach(mesh => {
-            if (mesh.isMesh) {
-                createSectionMesh(mesh);
-            }
-        });
+        ensureSectionMeshes();
     } else {
-        // Odstranění všech sectionMesh
-        meshObjects.forEach(mesh => {
-            if (mesh.isMesh) {
-                // Projdeme children a najdeme ty, které jsou sectionMesh
-                mesh.children.forEach(child => {
-                    if (child.isSectionMesh) {
-                        mesh.remove(child);
-                        // Uvolníme paměť
-                        if (child.geometry) child.geometry.dispose();
-                        if (child.material) {
-                            if (Array.isArray(child.material)) {
-                                child.material.forEach(mat => mat.dispose());
-                            } else {
-                                child.material.dispose();
-                            }
-                        }
-                    }
-                });
-            }
-        });
+        removeSectionMeshesOnly();
     }
     render();
 }
 
-function syncShowSectionMeshWithSection() {
-    if (!viewProp.section && viewProp.showSectionMesh) {
-        viewProp.showSectionMesh = false;
-        toggleSectionMeshAll();
-        showSectionMeshBtn.classList.remove('active');
-        if (showSectionMeshCtrl) showSectionMeshCtrl.updateDisplay();
-    }
+function _isSectionMeshExportNode(node) {
+    return node.isSectionMesh
+        || (node.isMesh && typeof node.name === 'string' && node.name.endsWith('__section'));
+}
+
+/** Remove runtime section-mesh copies from an export clone (does not touch live scene). */
+function stripSectionMeshes(root) {
+    if (!root) return;
+    const toRemove = [];
+    root.traverse(child => {
+        if (_isSectionMeshExportNode(child)) toRemove.push(child);
+    });
+    toRemove.forEach(node => {
+        node.parent?.remove(node);
+        if (node.geometry) node.geometry.dispose();
+        const mats = Array.isArray(node.material) ? node.material : [node.material];
+        mats.forEach(m => m?.dispose());
+    });
 }
 
 // Navigation functions used by keyboard and GUI
@@ -4997,6 +5002,64 @@ function activateSectionGizmo(enabled) {
     } else {
         deactivateSectionGizmo();
     }
+}
+
+function syncSectionToggleUi() {
+    sectionBtn.classList.toggle('active', viewProp.section);
+    updateSectionViewportControlsVisibility();
+    syncSectionModeViewportSelect();
+    const subVisible = viewProp.section ? 'block' : 'none';
+    solidSectionBtn.style.display = subVisible;
+    showSectionMeshBtn.style.display = subVisible;
+    crossSectionLinesBtn.style.display = subVisible;
+    solidSectionBtn.classList.toggle('active', viewProp.solidSection);
+    showSectionMeshBtn.classList.toggle('active', viewProp.showSectionMesh);
+    crossSectionLinesBtn.classList.toggle('active', viewProp.sectionCrossLines);
+    if (sectionCtrl) sectionCtrl.updateDisplay();
+    if (solidSectionCtrl) solidSectionCtrl.updateDisplay();
+    if (showSectionMeshCtrl) showSectionMeshCtrl.updateDisplay();
+    if (sectionCrossLinesCtrl) sectionCrossLinesCtrl.updateDisplay();
+}
+
+function setSectionEnabled(enabled) {
+    if (enabled) {
+        if (_sectionDisabledSnapshot) {
+            viewProp.solidSection = _sectionDisabledSnapshot.solidSection;
+            viewProp.showSectionMesh = _sectionDisabledSnapshot.showSectionMesh;
+            viewProp.sectionCrossLines = _sectionDisabledSnapshot.sectionCrossLines;
+            const mode = _sectionDisabledSnapshot.sectionMode;
+            _sectionDisabledSnapshot = null;
+            if (normalizeSectionMode(mode) !== normalizeSectionMode(viewProp.sectionMode)) {
+                setSectionMode(mode);
+            } else {
+                refreshSectionPlanes();
+            }
+        }
+        viewProp.section = true;
+        renderer.localClippingEnabled = true;
+        viewProp.sectionGizmo = true;
+        activateSectionGizmo(true);
+        ensureSectionMeshes();
+        updateSectionCrossLines();
+        if (viewProp.solidSection) doComputeSolidSection();
+        else clearSolidSection(scene, render);
+    } else {
+        _sectionDisabledSnapshot = {
+            solidSection: viewProp.solidSection,
+            showSectionMesh: viewProp.showSectionMesh,
+            sectionCrossLines: viewProp.sectionCrossLines,
+            sectionMode: viewProp.sectionMode,
+        };
+        viewProp.section = false;
+        renderer.localClippingEnabled = false;
+        viewProp.sectionGizmo = false;
+        activateSectionGizmo(false);
+        removeSectionMeshesOnly();
+        updateSectionCrossLines();
+        clearSolidSection(scene, render);
+    }
+    syncSectionToggleUi();
+    render();
 }
 
 function deactivateSectionGizmo() {
@@ -9007,6 +9070,7 @@ function exportAllModelsStl() {
     const exporter = new STLExporter();
     const group = new THREE.Group();
     loadedModels.forEach(model => group.add(model.clone(true)));
+    stripSectionMeshes(group);
 
     const result = exporter.parse(group, { binary });
     if (binary) {
@@ -9047,6 +9111,7 @@ function exportSelectedObjectStl() {
             clone.scale.copy(worldScale);
             group.add(clone);
         });
+        stripSectionMeshes(group);
 
         const result = exporter.parse(group, { binary });
         if (binary) {
@@ -9077,6 +9142,7 @@ function exportSelectedObjectStl() {
 
     const exporter = new STLExporter();
     const clone = lastSelectedObject.clone(true);
+    stripSectionMeshes(clone);
 
     const result = exporter.parse(clone, { binary });
     if (binary) {
@@ -9947,22 +10013,19 @@ function importSettingsFromGltfScene(gltfScene) {
         updateSectionGuiFromViewProp();
         updateSectionMeshClipSettings();
 
-        // Apply section on/off
+        // Apply section on/off and dependent visuals
         if (sec.section !== undefined) {
-            viewProp.section = sec.section;
-            renderer.localClippingEnabled = sec.section;
-            if (sec.section) {
-                viewProp.sectionGizmo = true;
-                activateSectionGizmo(true);
-            }
+            setSectionEnabled(sec.section);
+        } else if (viewProp.section) {
+            ensureSectionMeshes();
+            updateSectionCrossLines();
+            if (viewProp.solidSection) doComputeSolidSection();
+            else clearSolidSection(scene, render);
+            syncSectionToggleUi();
+            render();
+        } else {
+            syncSectionToggleUi();
         }
-
-        syncShowSectionMeshWithSection();
-        updateSectionViewportControlsVisibility();
-        syncSectionModeViewportSelect();
-        if (viewProp.sectionCrossLines) updateSectionCrossLines();
-        if (viewProp.showSectionMesh) toggleSectionMeshAll();
-        if (viewProp.solidSection) doComputeSolidSection();
     }
 }
 
@@ -10158,6 +10221,7 @@ function buildAllModelsExportGroup(finalName) {
     stripAnnotation3dVisuals(group);
     stripCadDim3dVisuals(group);
     stripEdgeOverlays(group);
+    stripSectionMeshes(group);
 
     return group;
 }
@@ -10315,6 +10379,7 @@ function exportSelectedObject() {
         stripAnnotation3dVisuals(group);
         stripCadDim3dVisuals(group);
         stripEdgeOverlays(group);
+        stripSectionMeshes(group);
 
         exporter.parse(group, function(result) {
             saveArrayBuffer(result, finalName);
@@ -10358,6 +10423,7 @@ function exportSelectedObject() {
     stripAnnotation3dVisuals(clone);
     stripCadDim3dVisuals(clone);
     stripEdgeOverlays(clone);
+    stripSectionMeshes(clone);
 
     // Apply world transform to the clone so it appears in the same position after re-import
     // Aplikujeme world transform na klon, aby se po importu zobrazil ve stejné pozici
@@ -10438,6 +10504,7 @@ async function exportSelectedObjectDraco() {
         stripAnnotation3dVisuals(groupDraco);
         stripCadDim3dVisuals(groupDraco);
         stripEdgeOverlays(groupDraco);
+        stripSectionMeshes(groupDraco);
 
         exporter.parse(groupDraco, function(result) {
             setTimeout(async () => {
@@ -10533,6 +10600,7 @@ async function exportSelectedObjectDraco() {
     stripAnnotation3dVisuals(clone);
     stripCadDim3dVisuals(clone);
     stripEdgeOverlays(clone);
+    stripSectionMeshes(clone);
 
     lastSelectedObject.updateWorldMatrix(true, false);
     const worldPos = new THREE.Vector3();

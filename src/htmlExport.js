@@ -41,6 +41,7 @@ export function exportToHTML(loadedModels, assemblyGui, viewProp, assemblyWriteT
 
     // Clean up originals
     assemblyClearUserData();
+    removeSectionMeshes(group);
 
     exporter.parse(group, function(glbBuffer) {
         // Convert ArrayBuffer to base64
@@ -102,6 +103,7 @@ export function exportToHTMLDraco(loadedModels, assemblyGui, viewProp, assemblyW
 
     // Clean up originals
     assemblyClearUserData();
+    removeSectionMeshes(group);
 
     exporter.parse(group, async function(glbBuffer) {
         // Show overlay
@@ -1188,14 +1190,17 @@ function createSectionMesh(mesh) {
 }
 
 function removeSectionMeshes(root) {
+    const toRemove = [];
     root.traverse(function(child) {
-        if (child.isMesh && !child.isSectionMesh) {
-            [...child.children].filter(c => c.isSectionMesh).forEach(sm => {
-                child.remove(sm);
-                if (sm.geometry) sm.geometry.dispose();
-                (Array.isArray(sm.material) ? sm.material : [sm.material]).forEach(m => m.dispose());
-            });
+        if (child.isSectionMesh
+            || (child.isMesh && typeof child.name === 'string' && child.name.endsWith('__section'))) {
+            toRemove.push(child);
         }
+    });
+    toRemove.forEach(sm => {
+        sm.parent?.remove(sm);
+        if (sm.geometry) sm.geometry.dispose();
+        (Array.isArray(sm.material) ? sm.material : [sm.material]).forEach(m => m?.dispose());
     });
 }
 
@@ -2070,6 +2075,7 @@ export function exportToHTMLObfuscated(loadedModels, assemblyGui, viewProp, asse
     loadedModels.forEach(model => group.add(model.clone(true)));
 
     assemblyClearUserData();
+    removeSectionMeshes(group);
 
     exporter.parse(group, function(glbBuffer) {
         const bytes = new Uint8Array(glbBuffer);
@@ -2127,6 +2133,7 @@ export function exportToHTMLObfuscatedDraco(loadedModels, assemblyGui, viewProp,
     loadedModels.forEach(model => group.add(model.clone(true)));
 
     assemblyClearUserData();
+    removeSectionMeshes(group);
 
     exporter.parse(group, async function(glbBuffer) {
         // Show overlay
