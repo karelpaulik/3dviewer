@@ -174,6 +174,12 @@ import {
     applySmoothVertexNormalsToMeshes,
 } from './geometryOperationsUtils.js';
 import {
+    SIMPLIFY_SLOW_VERTEX_THRESHOLD,
+    estimateMeshDensityStats,
+    applyTessellateToMeshes,
+    applySimplifyToMeshes,
+} from './meshDensityUtils.js';
+import {
     collectBoxSelectCandidates,
     findObjectsInScreenRect,
     clientDragToScreenRect,
@@ -1364,6 +1370,15 @@ const normalsViewGui = {
     mergeUvBeforeSmooth: true,
 };
 let vertexNormalsHelpers = [];
+
+const meshDensityGui = {
+    simplifyRatio: 0.5,          // fraction of vertices to keep (0.05-0.95)
+    tessellateMaxEdgeLength: 0,  // 0 = auto (~2% of each mesh's own bbox diagonal)
+    tessellateMaxIterations: 6,
+    mergeVerticesAfter: true,
+    countTriangles: false,       // off by default – avoid recomputing on every selection change
+    triangleInfo: '–',
+};
 
 // Možnost zobrazení následujících objektů v konzoli pouze v režimu "npx vite"
 if (import.meta.env.DEV) {
@@ -2952,6 +2967,84 @@ function addMainGui() {
         .listen();
     geometryOpsFolder.close();
 
+    function runMeshDensityOp(applyFn, opts, opLabel) {
+        const obj = lastSelectedObject;
+        if (!obj) {
+            alert('No object selected.');
+            return;
+        }
+        const meshes = collectMeshesForGeometryOps(obj);
+        if (meshes.length === 0) {
+            alert('No meshes found in selection.');
+            return;
+        }
+
+        const { trianglesBefore, maxVertsBefore } = estimateMeshDensityStats(meshes);
+        const targetName = obj.name || 'object';
+        let confirmMsg = meshes.length === 1
+            ? `${opLabel} on 1 mesh in "${targetName}"?\nCurrent triangles: ${trianglesBefore}`
+            : `${opLabel} on ${meshes.length} meshes in "${targetName}"?\nCurrent triangles (total): ${trianglesBefore}`;
+        if (maxVertsBefore > SIMPLIFY_SLOW_VERTEX_THRESHOLD) {
+            confirmMsg += `\n\nWarning: up to ${maxVertsBefore} vertices in a single mesh – this may take a while and briefly freeze the UI.`;
+        }
+        if (!confirm(confirmMsg)) return;
+
+        let overlay = document.getElementById('meshDensityOverlay');
+        if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.id = 'meshDensityOverlay';
+            overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:99999;color:#fff;font-size:22px;font-family:sans-serif;';
+            document.body.appendChild(overlay);
+        }
+        overlay.textContent = `${opLabel}… please wait`;
+        overlay.style.display = 'flex';
+
+        setTimeout(() => {
+            try {
+                const result = applyFn(meshes, opts);
+                if (result.error) {
+                    alert(result.error);
+                    return;
+                }
+                meshes.forEach(mesh => {
+                    if (mesh.geometry) clearCircleDetectionCache(mesh.geometry);
+                });
+                if (edgesDisplayActive()) updateEdgeOverlays();
+                else if (normalsViewGui.showVertexAllNormals || normalsViewGui.showVertexNormals) updateVertexNormalsHelpers();
+                else render();
+                updateMeshDensityInfo();
+                alert(`${opLabel} done: ${result.trianglesBefore} → ${result.trianglesAfter} triangles.`);
+            } finally {
+                overlay.style.display = 'none';
+            }
+        }, 20);
+    }
+    function runTessellate() {
+        runMeshDensityOp(applyTessellateToMeshes, {
+            maxEdgeLength: meshDensityGui.tessellateMaxEdgeLength,
+            maxIterations: meshDensityGui.tessellateMaxIterations,
+            mergeVerticesAfter: meshDensityGui.mergeVerticesAfter,
+        }, 'Refine mesh');
+    }
+    function runSimplify() {
+        runMeshDensityOp(applySimplifyToMeshes, {
+            ratio: meshDensityGui.simplifyRatio,
+            mergeVerticesAfter: meshDensityGui.mergeVerticesAfter,
+        }, 'Coarsen mesh');
+    }
+    const meshDensityFolder = editGui.addFolder('Mesh Density');
+    meshDensityFolder.add(meshDensityGui, 'countTriangles').name('Count triangles on select').onChange(function() {
+        updateMeshDensityInfo();
+    });
+    meshDensityFolder.add(meshDensityGui, 'triangleInfo').name('Selected: triangles').disable().listen();
+    meshDensityFolder.add(meshDensityGui, 'mergeVerticesAfter').name('Merge vertices after');
+    meshDensityFolder.add(meshDensityGui, 'tessellateMaxEdgeLength').name('Max edge length (0=auto)');
+    meshDensityFolder.add(meshDensityGui, 'tessellateMaxIterations', 1, 10, 1).name('Max iterations');
+    meshDensityFolder.add({ fn() { runTessellate(); } }, 'fn').name('Refine mesh (more triangles)');
+    meshDensityFolder.add(meshDensityGui, 'simplifyRatio', 0.05, 0.95, 0.05).name('Keep ratio');
+    meshDensityFolder.add({ fn() { runSimplify(); } }, 'fn').name('Coarsen mesh (fewer triangles)');
+    meshDensityFolder.close();
+
     function tryStartBoolean(operation) {
         if (booleanMode) {
             alert('Boolean režim je již aktivní. Dokončete výběr nebo zrušte (Cancel / ESC).');
@@ -3346,6 +3439,25 @@ function updateBBoxSize(obj) {
     }
     const size = new THREE.Vector3().subVectors(max, min);
     part.bbSize = size.x.toFixed(2) + ' × ' + size.y.toFixed(2) + ' × ' + size.z.toFixed(2);
+}
+
+/** Update meshDensityGui.triangleInfo from the currently selected object (for the "Mesh Density" GUI folder). */
+function updateMeshDensityInfo() {
+    if (!meshDensityGui.countTriangles) {
+        meshDensityGui.triangleInfo = 'off';
+        return;
+    }
+    if (!lastSelectedObject) {
+        meshDensityGui.triangleInfo = '–';
+        return;
+    }
+    const meshes = collectMeshesForGeometryOps(lastSelectedObject);
+    if (meshes.length === 0) {
+        meshDensityGui.triangleInfo = 'No meshes';
+        return;
+    }
+    const { trianglesBefore } = estimateMeshDensityStats(meshes);
+    meshDensityGui.triangleInfo = `${trianglesBefore.toLocaleString('en-US')} (${meshes.length} mesh${meshes.length === 1 ? '' : 'es'})`;
 }
 
 let _savedSelectedGuiScrollTop = 0;
@@ -7250,6 +7362,7 @@ function selectObject(object, options = {}) {
         }
 
         refreshSelectedObjGui(object);// Aktualizujeme GUI      
+        updateMeshDensityInfo();
 
         object.traverse( function ( child ) {
             if ( child.isMesh ) {
@@ -7310,6 +7423,7 @@ function deselectObject() {
     }
 
     lastSelectedObject = null;
+    updateMeshDensityInfo();
     updateVertexNormalsHelpers();
 
     highlightObject(null); // Zrušení zvýraznění v outlineru
