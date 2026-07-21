@@ -379,6 +379,10 @@ let sectionCrossLinesCtrl = null; // Reference to the GUI 'Cross Section Lines' 
 let solidSectionCtrl = null; // Reference to the GUI 'Solid Section' controller for syncing
 let showSectionMeshCtrl = null; // Reference to the GUI 'Show Section Mesh' controller for syncing
 
+const viewportBottomLeftToolbar = document.createElement('div');
+viewportBottomLeftToolbar.id = 'viewport-bottom-left-toolbar';
+document.body.appendChild(viewportBottomLeftToolbar);
+
 // Fullscreen toggle button (bottom-left, next to ViewHelper gizmo)
 const fsBtn = document.createElement('button');
 fsBtn.id = 'fs-btn';
@@ -399,7 +403,7 @@ fsBtn.addEventListener('click', () => {
     }
     fsBtn.classList.toggle('active', viewProp.fullscreen);
 });
-document.body.appendChild(fsBtn);
+viewportBottomLeftToolbar.appendChild(fsBtn);
 
 // Section toggle button (bottom-left, next to fs-btn)
 const sectionBtn = document.createElement('button');
@@ -429,7 +433,7 @@ sectionBtn.addEventListener('click', () => {
     if (sectionCtrl) sectionCtrl.updateDisplay();
     if (solidSectionCtrl) solidSectionCtrl.updateDisplay();
 });
-document.body.appendChild(sectionBtn);
+viewportBottomLeftToolbar.appendChild(sectionBtn);
 
 // Solid Section button (visible only when section is active)
 const solidSectionBtn = document.createElement('button');
@@ -449,7 +453,7 @@ solidSectionBtn.addEventListener('click', () => {
     if (solidSectionCtrl) solidSectionCtrl.updateDisplay();
     render();
 });
-document.body.appendChild(solidSectionBtn);
+viewportBottomLeftToolbar.appendChild(solidSectionBtn);
 
 // Show Section Mesh button (visible only when section is active)
 const showSectionMeshBtn = document.createElement('button');
@@ -463,7 +467,7 @@ showSectionMeshBtn.addEventListener('click', () => {
     if (showSectionMeshCtrl) showSectionMeshCtrl.updateDisplay();
     render();
 });
-document.body.appendChild(showSectionMeshBtn);
+viewportBottomLeftToolbar.appendChild(showSectionMeshBtn);
 
 // Cross Section Lines button (visible only when section is active)
 const crossSectionLinesBtn = document.createElement('button');
@@ -477,7 +481,7 @@ crossSectionLinesBtn.addEventListener('click', () => {
     if (sectionCrossLinesCtrl) sectionCrossLinesCtrl.updateDisplay();
     render();
 });
-document.body.appendChild(crossSectionLinesBtn);
+viewportBottomLeftToolbar.appendChild(crossSectionLinesBtn);
 
 // Section mode select (visible only when section is active)
 const sectionModeSelect = document.createElement('select');
@@ -493,7 +497,7 @@ SECTION_MODE_OPTIONS.forEach(({ value, shortLabel }) => {
 sectionModeSelect.addEventListener('change', function () {
     setSectionMode(this.value);
 });
-document.body.appendChild(sectionModeSelect);
+viewportBottomLeftToolbar.appendChild(sectionModeSelect);
 
 const sectionResetBtn = document.createElement('button');
 sectionResetBtn.id = 'section-reset-btn';
@@ -502,7 +506,7 @@ sectionResetBtn.textContent = '↺';
 sectionResetBtn.addEventListener('click', () => {
     resetSection();
 });
-document.body.appendChild(sectionResetBtn);
+viewportBottomLeftToolbar.appendChild(sectionResetBtn);
 
 function updateSectionViewportControlsVisibility() {
     const visible = viewProp.section ? 'block' : 'none';
@@ -523,7 +527,7 @@ document.body.appendChild(viewHelperContainer);
 
 // Wrapper reference for hit-testing (toolbar + panels + outliner)
 let outlinerPanelEl = null;
-const guiWrapper = { contains(el) { return guiToolbar.contains(el) || Object.values(guiPanels).some(p => p.gui && p.gui.domElement.style.display !== 'none' && p.gui.domElement.contains(el)) || (outlinerPanelEl && outlinerPanelEl.contains(el)) || statusBar.contains(el) || fsBtn.contains(el) || sectionBtn.contains(el) || solidSectionBtn.contains(el) || showSectionMeshBtn.contains(el) || crossSectionLinesBtn.contains(el) || sectionModeSelect.contains(el) || sectionResetBtn.contains(el) || viewHelperContainer.contains(el) || (_deviationLegendEl && _deviationLegendEl.contains(el)); } };
+const guiWrapper = { contains(el) { return guiToolbar.contains(el) || Object.values(guiPanels).some(p => p.gui && p.gui.domElement.style.display !== 'none' && p.gui.domElement.contains(el)) || (outlinerPanelEl && outlinerPanelEl.contains(el)) || statusBar.contains(el) || viewportBottomLeftToolbar.contains(el) || viewHelperContainer.contains(el) || (_deviationLegendEl && _deviationLegendEl.contains(el)); } };
 
 let guiView = null;
 let guiAssembly = null;
