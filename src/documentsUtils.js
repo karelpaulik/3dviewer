@@ -190,7 +190,7 @@ let _sidePanelWidthPct = (() => {
     return Number.isFinite(stored) && stored > 0 ? stored : _DOC_PANEL_WIDTH_DEFAULT;
 })();
 
-let documentsStore = [];   // [{ id, title, content, createdAt, font }]
+let documentsStore = [];   // [{ id, title, fileName?, content, createdAt, font }]
 let _guiRef = null;        // lil-gui folder reference (set by initDocumentsGui)
 let _editor = null;        // TipTap editor instance
 let _overlayEl = null;     // editor overlay DOM element
@@ -374,6 +374,10 @@ function _showOverlay(doc, editMode) {
     const descriptionInput = _overlayEl.querySelector('.doc-description-input');
     descriptionInput.value = doc.description || '';
     descriptionInput.readOnly = !editMode;
+
+    const fileNameInput = _overlayEl.querySelector('.doc-filename-input');
+    fileNameInput.value = doc.fileName || '';
+    fileNameInput.readOnly = !editMode;
 
     // Apply font
     const fontSelect = _overlayEl.querySelector('.doc-font-select');
@@ -710,6 +714,12 @@ function _saveCurrentDocument(updateLastEdit = false) {
     doc.title = titleInput.value.trim() || 'Untitled';
     const descriptionInput = _overlayEl.querySelector('.doc-description-input');
     doc.description = descriptionInput.value.trim();
+    const fileNameInput = _overlayEl.querySelector('.doc-filename-input');
+    const fileName = fileNameInput.value.trim()
+        .replace(/\.docs\.json$/i, '')
+        .replace(/\.json$/i, '')
+        .trim();
+    doc.fileName = fileName || undefined;
     doc.content = _editor.getHTML();
     doc.font = (_overlayEl.querySelector('.doc-font-select') || {}).value || _DEFAULT_FONT;
     doc.lineHeight = (_overlayEl.querySelector('.doc-line-height-select') || {}).value || _DEFAULT_LINE_HEIGHT;
@@ -1057,18 +1067,30 @@ function _deleteCurrentDocument() {
 
 // ── JSON export / import ──────────────────────────────────────────────────────
 
+function _titleFromImportFileName(fileName) {
+    return fileName
+        .replace(/\.docs\.json$/i, '')
+        .replace(/\.json$/i, '')
+        .trim();
+}
+
+function _docExportBaseName(doc) {
+    const base = (doc.fileName || doc.title || 'document').trim();
+    return base.replace(/[\\/:*?"<>| ]/g, '_');
+}
+
 function _exportCurrentDocJson() {
     if (!_currentDocId) return;
     if (_isEditMode && _editor) _saveCurrentDocument();
     const doc = documentsStore.find(d => d.id === _currentDocId);
     if (!doc) return;
-    const json = JSON.stringify(doc, null, 2);
+    const { fileName, ...docForExport } = doc;
+    const json = JSON.stringify(docForExport, null, 2);
     const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    const safeName = (doc.title || 'document').replace(/[^a-z0-9_\-]/gi, '_').toLowerCase();
     a.href = url;
-    a.download = safeName + '.docs.json';
+    a.download = _docExportBaseName(doc) + '.json';
     a.click();
     URL.revokeObjectURL(url);
 }
@@ -1216,8 +1238,11 @@ function _importDocJson() {
                     alert('Neplatný soubor dokumentu.');
                     return;
                 }
+                const titleFromFile = _titleFromImportFileName(file.name);
                 const importedDoc = {
                     ...doc,
+                    title: doc.title?.trim() || titleFromFile || 'Untitled',
+                    fileName: titleFromFile || doc.fileName?.trim() || undefined,
                     id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
                     originalId: doc.id,
                     importedAt: new Date().toISOString(),
@@ -1432,16 +1457,30 @@ function _buildEditorOverlay() {
     const headerMeta = document.createElement('div');
     headerMeta.className = 'doc-header-meta';
 
+    const titleWrap = document.createElement('span');
+    titleWrap.className = 'doc-font-wrap';
+    const titleLabel = document.createElement('span');
+    titleLabel.className = 'doc-font-label';
+    titleLabel.textContent = 'Title';
     const titleInput = document.createElement('input');
     titleInput.type = 'text';
     titleInput.className = 'doc-title-input';
     titleInput.placeholder = 'Document title';
+    titleWrap.appendChild(titleLabel);
+    titleWrap.appendChild(titleInput);
 
+    const descWrap = document.createElement('span');
+    descWrap.className = 'doc-font-wrap';
+    const descLabel = document.createElement('span');
+    descLabel.className = 'doc-font-label';
+    descLabel.textContent = 'Desc';
     const descriptionInput = document.createElement('input');
     descriptionInput.type = 'text';
     descriptionInput.className = 'doc-description-input';
     descriptionInput.placeholder = 'Short description (SEO / previews, ~155 chars)';
     descriptionInput.maxLength = 160;
+    descWrap.appendChild(descLabel);
+    descWrap.appendChild(descriptionInput);
 
     const btnEdit = document.createElement('button');
     btnEdit.className = 'doc-btn doc-btn-edit';
@@ -1451,6 +1490,7 @@ function _buildEditorOverlay() {
         const titleInput = overlay.querySelector('.doc-title-input');
         titleInput.readOnly = false;
         overlay.querySelector('.doc-description-input').readOnly = false;
+        overlay.querySelector('.doc-filename-input').readOnly = false;
         btnEdit.style.display = 'none';
         btnSave.style.display = 'inline-block';
         overlay.querySelector('.doc-editor-toolbar').style.display = 'flex';
@@ -1479,6 +1519,7 @@ function _buildEditorOverlay() {
         const titleInput = overlay.querySelector('.doc-title-input');
         titleInput.readOnly = true;
         overlay.querySelector('.doc-description-input').readOnly = true;
+        overlay.querySelector('.doc-filename-input').readOnly = true;
         btnSave.style.display = 'none';
         btnEdit.style.display = 'inline-block';
         overlay.querySelector('.doc-editor-toolbar').style.display = 'none';
@@ -1521,6 +1562,19 @@ function _buildEditorOverlay() {
     btnClose.className = 'doc-btn doc-btn-close';
     btnClose.textContent = '✕ Close';
     btnClose.addEventListener('click', _closeOverlay);
+
+    const fileNameWrap = document.createElement('span');
+    fileNameWrap.className = 'doc-filename-wrap';
+    const fileNameLabel = document.createElement('span');
+    fileNameLabel.className = 'doc-filename-label';
+    fileNameLabel.textContent = 'File';
+    const fileNameInput = document.createElement('input');
+    fileNameInput.type = 'text';
+    fileNameInput.className = 'doc-filename-input';
+    fileNameInput.placeholder = 'export-file-name';
+    fileNameInput.title = 'JSON export file name (without .json)';
+    fileNameWrap.appendChild(fileNameLabel);
+    fileNameWrap.appendChild(fileNameInput);
 
     const bgWrap = document.createElement('span');
     bgWrap.className = 'doc-bg-wrap';
@@ -1586,9 +1640,10 @@ function _buildEditorOverlay() {
     headerActions.appendChild(btnExportHtml);
     headerActions.appendChild(btnDelete);
     headerActions.appendChild(btnClose);
+    headerActions.appendChild(fileNameWrap);
 
-    headerMeta.appendChild(titleInput);
-    headerMeta.appendChild(descriptionInput);
+    headerMeta.appendChild(titleWrap);
+    headerMeta.appendChild(descWrap);
     headerMeta.appendChild(bgWrap);
     headerMeta.appendChild(btnNav3d);
 

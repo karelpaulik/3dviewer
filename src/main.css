@@ -2095,6 +2095,38 @@ a, button, input, select {
     cursor: default;
 }
 
+.doc-filename-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.doc-filename-label {
+    font-size: 11px;
+    color: #333;
+    white-space: nowrap;
+}
+
+.doc-filename-input {
+    width: 160px;
+    background: #fff;
+    border: 1px solid #999;
+    border-radius: 4px;
+    color: #111;
+    padding: 4px 6px;
+    outline: none;
+    font-size: 12px;
+}
+.doc-filename-input:focus {
+    border-color: #555;
+}
+.doc-filename-input[readonly] {
+    background: #fff;
+    border-color: transparent;
+    color: #111;
+    cursor: default;
+}
+
 .doc-btn {
     padding: 4px 12px;
     border: 1px solid #888;
