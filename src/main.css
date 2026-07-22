@@ -89,8 +89,9 @@ a:hover {
 }
 
 #about-dialog h2,
-#welcome-dialog h2 {
+#welcome-dialog h1 {
 	margin: 0 0 12px;
+	font-size: 1.5em;
 }
 
 #about-dialog p,

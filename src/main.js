@@ -11129,7 +11129,7 @@ function addHelpGui() {
     const welcomeDialog = document.createElement('dialog');
     welcomeDialog.id = 'welcome-dialog';
     welcomeDialog.innerHTML = `
-        <h2>MeshBex</h2>
+        <h1>MeshBex – CAD Explorer</h1>
         <p><strong>Welcome to the 3D model exploration and documentation platform.</strong></p>
         <p>The goal of the project is to provide a publicly available <strong>CAD explorer</strong> for everyone.</p>
         <form method="dialog"><button>Start</button></form>

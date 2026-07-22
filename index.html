@@ -12,11 +12,52 @@
 		<meta charset="utf-8">
 		<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, viewport-fit=cover">
 		<meta name="description" content="Meshbex CAD Explorer – interactive 3D assembly presenter for STL and GLTF models with cross-section, animation and HTML export.">
-		<meta name="keywords" content="3D Editor, 3D viewer, 3D assembly, 3D Studio, STL, GLTF, GLB, three.js, cross section, 3D presenter, meshbex, 3D Tech Studio, CAD, CAD explorer, CAD workspace, CAD tool, CAD insight, CAD viewer, CAD presenterr">
+		<meta name="keywords" content="3D Editor, 3D viewer, 3D assembly, 3D Studio, STL, GLTF, GLB, three.js, cross section, 3D presenter, meshbex, 3D Tech Studio, CAD, CAD explorer, CAD workspace, CAD tool, CAD insight, CAD viewer, CAD presenter">
+		<meta name="robots" content="index, follow">
+		<link rel="canonical" href="https://meshbex.com/">
+
+		<!-- Open Graph -->
+		<meta property="og:type" content="website">
+		<meta property="og:site_name" content="Meshbex">
+		<meta property="og:title" content="Meshbex | CAD Explorer">
+		<meta property="og:description" content="Meshbex CAD Explorer – interactive 3D assembly presenter for STL and GLTF models with cross-section, animation and HTML export.">
+		<meta property="og:url" content="https://meshbex.com/">
+		<meta property="og:image" content="https://meshbex.com/icon-512.png">
+		<meta property="og:locale" content="en_US">
+
+		<!-- Twitter Card -->
+		<meta name="twitter:card" content="summary">
+		<meta name="twitter:title" content="Meshbex | CAD Explorer">
+		<meta name="twitter:description" content="Meshbex CAD Explorer – interactive 3D assembly presenter for STL and GLTF models with cross-section, animation and HTML export.">
+		<meta name="twitter:image" content="https://meshbex.com/icon-512.png">
+
 		<link type="text/css" rel="stylesheet" href="/src/main.css">
 		<link rel="icon" type="image/png" href="/favicon-32x32.png">
+		<link rel="apple-touch-icon" href="/icon-192.png">
 		<link rel="manifest" href="/manifest.json">
 		<meta name="theme-color" content="#72645b">
+		<script type="application/ld+json">
+		{
+			"@context": "https://schema.org",
+			"@type": "SoftwareApplication",
+			"name": "Meshbex CAD Explorer",
+			"url": "https://meshbex.com/",
+			"description": "Meshbex CAD Explorer – interactive 3D assembly presenter for STL and GLTF models with cross-section, animation and HTML export.",
+			"applicationCategory": "DesignApplication",
+			"operatingSystem": "Any (runs in a web browser)",
+			"offers": {
+				"@type": "Offer",
+				"price": "0",
+				"priceCurrency": "USD"
+			},
+			"image": "https://meshbex.com/icon-512.png",
+			"publisher": {
+				"@type": "Organization",
+				"name": "Meshbex",
+				"email": "info@meshbex.com"
+			}
+		}
+		</script>
 		<script>
 			if ('serviceWorker' in navigator) {
 				navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(err => {
@@ -26,7 +67,16 @@
 		</script>
 	</head>
 	<body id="body">
-		
+		<noscript>
+			<div style="max-width:720px;margin:40px auto;padding:0 20px;font-family:Arial, sans-serif;line-height:1.5;color:#eee;">
+				<h1>Meshbex – CAD Explorer</h1>
+				<p><strong>Meshbex</strong> is a free, web-based 3D CAD explorer, assembly workflow editor and document editor built with Three.js.</p>
+				<p>Load STL and GLTF/GLB models directly in your browser to explore their structure, create documentation, build step-by-step animated assembly instructions, take cross-sections and measurements, and export self-contained interactive HTML presentations.</p>
+				<p>The goal of the project is to provide a publicly available CAD explorer for everyone.</p>
+				<p>This application requires JavaScript to run. Please enable JavaScript in your browser to use Meshbex.</p>
+			</div>
+		</noscript>
+
 		<div id="info">
 			<label id="fileNameLabel"></label>
 		</div>
