@@ -29,11 +29,12 @@ function dataUrlBytes(dataUrl) {
 }
 
 /**
- * Show compression dialog and call onInsert(dataUrl) when user confirms.
+ * Show compression dialog and call onInsert(dataUrl, alt) when user confirms.
  * @param {File} file
- * @param {(dataUrl: string) => void} onInsert
+ * @param {(dataUrl: string, alt: string) => void} onInsert
+ * @param {string} [defaultAlt] - pre-filled alt text (e.g. derived from the file name)
  */
-export function showImageInsertDialog(file, onInsert) {
+export function showImageInsertDialog(file, onInsert, defaultAlt = '') {
     document.querySelectorAll('.img-dialog-backdrop').forEach(el => el.remove());
     let maxPx = 1600;
     let quality = 0.85;
@@ -125,6 +126,21 @@ export function showImageInsertDialog(file, onInsert) {
     controls.appendChild(makeSliderRow('Max rozměr', 200, 4000, 50, maxPx, ' px', v => { maxPx = v; schedulePreview(); }));
     controls.appendChild(makeSliderRow('Kvalita', 0.1, 1.0, 0.05, quality, '', v => { quality = v; schedulePreview(); }));
 
+    const altRow = document.createElement('div');
+    altRow.className = 'img-dialog-row';
+    const altLabel = document.createElement('label');
+    altLabel.className = 'img-dialog-label';
+    altLabel.textContent = 'Alt text';
+    const altInput = document.createElement('input');
+    altInput.type = 'text';
+    altInput.className = 'img-dialog-alt-input';
+    altInput.placeholder = 'Describe the image (accessibility & SEO)';
+    altInput.maxLength = 160;
+    altInput.value = defaultAlt;
+    altRow.appendChild(altLabel);
+    altRow.appendChild(altInput);
+    controls.appendChild(altRow);
+
     dialog.appendChild(controls);
 
     function closeDialog() {
@@ -141,7 +157,7 @@ export function showImageInsertDialog(file, onInsert) {
     btnInsert.disabled = true;
     btnInsert.addEventListener('click', () => {
         if (previewDataUrl) {
-            onInsert(previewDataUrl);
+            onInsert(previewDataUrl, altInput.value.trim());
             closeDialog();
         }
     });
@@ -155,7 +171,7 @@ export function showImageInsertDialog(file, onInsert) {
             reader.onload = e => resolve(e.target.result);
             reader.readAsDataURL(file);
         });
-        onInsert(dataUrl);
+        onInsert(dataUrl, altInput.value.trim());
         closeDialog();
     });
 
@@ -202,8 +218,12 @@ export function showImageInsertDialog(file, onInsert) {
     generatePreview();
 }
 
+function _defaultAltFromName(name) {
+    return (name || '').replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim();
+}
+
 /**
- * @param {(dataUrl: string) => void} onInsert
+ * @param {(dataUrl: string, alt: string) => void} onInsert
  */
 export function pickImageFromDisk(onInsert) {
     const input = document.createElement('input');
@@ -212,13 +232,13 @@ export function pickImageFromDisk(onInsert) {
     input.onchange = () => {
         const file = input.files[0];
         if (!file) return;
-        showImageInsertDialog(file, onInsert);
+        showImageInsertDialog(file, onInsert, _defaultAltFromName(file.name));
     };
     input.click();
 }
 
 /**
- * @param {(dataUrl: string) => void} onInsert
+ * @param {(dataUrl: string, alt: string) => void} onInsert
  */
 export function pickImageFromFiles(onInsert) {
     const images = getAttachmentsStore().filter(a => a.mimeType && a.mimeType.startsWith('image/'));
@@ -270,7 +290,7 @@ export function pickImageFromFiles(onInsert) {
             for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
             const blob = new Blob([bytes], { type: att.mimeType });
             const file = new File([blob], att.name, { type: att.mimeType });
-            showImageInsertDialog(file, onInsert);
+            showImageInsertDialog(file, onInsert, _defaultAltFromName(att.name));
         });
 
         grid.appendChild(cell);

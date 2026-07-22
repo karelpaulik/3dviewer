@@ -634,8 +634,8 @@ function _pasteImageFromClipboardEvent(event) {
     const file = imageItem.getAsFile();
     if (!file) return false;
     event.preventDefault();
-    showImageInsertDialog(file, dataUrl => {
-        _editor.chain().focus().setImage({ src: dataUrl }).run();
+    showImageInsertDialog(file, (dataUrl, alt) => {
+        _editor.chain().focus().setImage({ src: dataUrl, alt }).run();
     });
     return true;
 }
@@ -1267,6 +1267,7 @@ function _updateToolbarState() {
             else active = _editor.isActive({ textAlign: 'right' });
         }
         else if (action === 'link') active = _editor.isActive('link');
+        else if (action === 'imageAlt') active = _editor.isActive('imageResize') && !!(_editor.getAttributes('imageResize').alt || '').trim();
         btn.classList.toggle('active', active);
     });
 
@@ -1305,6 +1306,20 @@ function _setImageAlign(align) {
     return true;
 }
 
+// Edit (or add) the alt text of the currently selected image - used both for
+// newly inserted images (where the insert dialog already collects alt text)
+// and to backfill/correct alt text on images that already exist in the document.
+function _editImageAlt() {
+    if (!_editor || !_editor.isActive('imageResize')) {
+        window.alert('Select an image first to edit its alt text.');
+        return;
+    }
+    const currentAlt = _editor.getAttributes('imageResize').alt || '';
+    const alt = window.prompt('Alt text (describes the image for accessibility & SEO):', currentAlt);
+    if (alt === null) return;
+    _editor.chain().focus().updateAttributes('imageResize', { alt: alt.trim() }).run();
+}
+
 // ── Toolbar click handler ─────────────────────────────────────────────────────
 
 function _handleToolbarClick(action) {
@@ -1329,6 +1344,7 @@ function _handleToolbarClick(action) {
         case 'redo':        _editor.chain().focus().redo().run(); break;
         case 'image':           _insertImageFromFile(); break;
         case 'imageFromFiles':  _insertImageFromFiles(); break;
+        case 'imageAlt':        _editImageAlt(); break;
         case 'link':            _insertLinkDialog(); break;
         case 'tableInsert':     _insertTableDialog(); break;
         case 'tableAddRowAfter':  _editor.chain().focus().addRowAfter().run(); break;
@@ -1386,14 +1402,14 @@ function _insertTableDialog() {
 }
 
 function _insertImageFromFile() {
-    pickImageFromDisk(dataUrl => {
-        _editor.chain().focus().setImage({ src: dataUrl }).run();
+    pickImageFromDisk((dataUrl, alt) => {
+        _editor.chain().focus().setImage({ src: dataUrl, alt }).run();
     });
 }
 
 function _insertImageFromFiles() {
-    pickImageFromFiles(dataUrl => {
-        _editor.chain().focus().setImage({ src: dataUrl }).run();
+    pickImageFromFiles((dataUrl, alt) => {
+        _editor.chain().focus().setImage({ src: dataUrl, alt }).run();
     });
 }
 
@@ -1743,6 +1759,7 @@ function _buildEditorOverlay() {
         { sep: true },
         { action: 'image',          label: '🖼️',  title: 'Insert image from disk' },
         { action: 'imageFromFiles',  label: '📎🖼', title: 'Insert image from Files' },
+        { action: 'imageAlt',       label: '🏷',  title: 'Edit alt text of the selected image' },
         { action: 'link',           label: '🔗',  title: 'Insert / edit link' },
         { sep: true },
         { action: 'tableInsert',      label: '⊞',   title: 'Insert table (e.g. 3x4)' },

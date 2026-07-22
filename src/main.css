@@ -3478,6 +3478,18 @@ a, button, input, select {
     flex: 1;
     accent-color: #4a90e2;
 }
+.img-dialog-alt-input {
+    flex: 1;
+    padding: 4px 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 13px;
+    color: #222;
+    outline: none;
+}
+.img-dialog-alt-input:focus {
+    border-color: #4a90e2;
+}
 .img-dialog-val {
     width: 64px;
     text-align: right;
