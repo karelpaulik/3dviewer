@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Supported File Formats – Meshbex Help</title>
+<meta name="description" content="Overview of the 3D file formats supported by Meshbex CAD Explorer (GLB, STL and more), with their use cases, advantages and limitations.">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="https://meshbex.com/help/supported-file-formats.html">
+
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Meshbex">
+<meta property="og:title" content="Supported File Formats – Meshbex Help">
+<meta property="og:description" content="Overview of the 3D file formats supported by Meshbex CAD Explorer (GLB, STL and more), with their use cases, advantages and limitations.">
+<meta property="og:url" content="https://meshbex.com/help/supported-file-formats.html">
+<meta property="og:image" content="https://meshbex.com/icon-512.png">
+
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Supported File Formats – Meshbex Help">
+<meta name="twitter:description" content="Overview of the 3D file formats supported by Meshbex CAD Explorer (GLB, STL and more), with their use cases, advantages and limitations.">
+<meta name="twitter:image" content="https://meshbex.com/icon-512.png">
+
+<link rel="icon" type="image/png" href="/favicon-32x32.png">
+<style>
+*, *::before, *::after { box-sizing: border-box; }
+html, body {
+    margin: 0;
+    padding: 0;
+    font-family: Arial, sans-serif;
+    background: #1a1a1a;
+    color: #ddd;
+}
+#staticHelpHeader {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 14px 20px;
+    background: #2a2a2a;
+    border-bottom: 1px solid #444;
+}
+#staticHelpHeader a {
+    color: #5af;
+    text-decoration: none;
+    font-size: 13px;
+}
+#staticHelpHeader a:hover { text-decoration: underline; }
+#staticHelpContent {
+    max-width: 860px;
+    margin: 24px auto 64px;
+    padding: 40px 48px;
+    background: #fff;
+    color: #111;
+    font-size: 15px;
+    line-height: 1.4;
+    border-radius: 4px;
+}
+#staticHelpContent h1 { font-size: 2em; margin: 0.6em 0 0.4em; }
+#staticHelpContent h2 { font-size: 1.5em; margin: 1em 0 0.3em; }
+#staticHelpContent h3 { font-size: 1.2em; margin: 0.8em 0 0.3em; }
+#staticHelpContent h4 { font-size: 1em; margin: 0.6em 0 0.3em; font-weight: 600; }
+#staticHelpContent p  { margin: 0 0 8px; }
+#staticHelpContent ul,
+#staticHelpContent ol { padding-left: 2em; margin: 0 0 0.8em; }
+#staticHelpContent blockquote {
+    border-left: 4px solid #ccc;
+    margin: 0.8em 0;
+    padding: 0.2em 1em;
+    color: #555;
+}
+#staticHelpContent img {
+    max-width: 100%;
+    height: auto;
+    display: inline-block;
+    vertical-align: top;
+    margin: 0.4em 4px;
+}
+#staticHelpContent a { color: #1a6fc4; text-decoration: underline; }
+#staticHelpContent a:hover { color: #1254a0; }
+#staticHelpContent strong { font-weight: 700; }
+#staticHelpContent em { font-style: italic; }
+#staticHelpContent code {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.9em;
+    background: #f0f0f0;
+    padding: 1px 4px;
+    border-radius: 3px;
+}
+#staticHelpContent pre {
+    background: #f5f5f5;
+    padding: 12px 16px;
+    border-radius: 4px;
+    overflow-x: auto;
+    font-size: 13px;
+}
+#staticHelpContent pre code { background: none; padding: 0; }
+#staticHelpContent table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 1em 0;
+    table-layout: fixed;
+}
+#staticHelpContent td,
+#staticHelpContent th {
+    border: 1px solid #ccc;
+    padding: 6px 10px;
+    vertical-align: top;
+    box-sizing: border-box;
+}
+#staticHelpContent th {
+    background: #f0f0f0;
+    font-weight: 600;
+    text-align: left;
+}
+#staticHelpContent hr {
+    border: none;
+    border-top: 1px solid #ddd;
+    margin: 1.5em 0;
+}
+</style>
+</head>
+<body>
+<div id="staticHelpHeader">
+    <a href="/">← Meshbex CAD Explorer</a>
+    <a href="/help.html?doc=%2Fhelp%2Fsupported-file-formats.json">Open interactive version with table of contents ↗</a>
+</div>
+<main id="staticHelpContent">
+<h1>Supported Import File Formats</h1><p>CAD Explorer supports loading 3D models in a variety of formats. This page explains the purpose of each format, its typical use cases, and its advantages and disadvantages.</p><hr><h2>GLB – the primary format</h2><p><strong>GLB</strong> (GL Binary) is the binary variant of the open standard <strong>glTF 2.0</strong> (Graphics Language Transmission Format), developed by the Khronos Group. It is the <strong>preferred and primary format</strong> of CAD Explorer.</p><h3>Why is GLB the primary format?</h3><ul><li><p><strong>Complete scene in a single file</strong> – GLB bundles geometry, materials, textures, object hierarchy, animations, and all user metadata (dimensions, annotations, assembly workflow, documents, attachments) into one self-contained file.</p></li><li><p><strong>Efficiency</strong> – Binary encoding ensures a compact file size and very fast loading with no text decoding overhead.</p></li><li><p><strong>Full material and texture support</strong> – PBR (Physically Based Rendering) materials are a first-class part of the standard; the result looks identical in every renderer.</p></li><li><p><strong>Open standard</strong> – No licensing fees; supported across the entire industry (Three.js, Blender, Unity, Unreal Engine, web browsers, AR/VR).</p></li><li><p><strong>Extensibility</strong> – The format supports custom extensions (<code>extras</code> / <code>extensions</code>), which CAD Explorer uses to embed assembly steps, section settings, 3D dimensions, and other data directly in the file.</p></li><li><p><strong>Draco compression</strong> – Optional geometry compression via Google Draco can further reduce file size by tens of percent.</p></li></ul><h2>GLTF</h2><p><strong>GLTF</strong> is the text (JSON) variant of the same standard. Geometry and textures are stored in separate files (<code>.bin</code>, <code>.png</code>…), so the full project is a folder of multiple files. This is convenient for manual editing but impractical for sharing as a single file. CAD Explorer supports importing a full GLTF folder.</p><h3>GLTF vs. GLB</h3><table style="min-width: 75px;"><colgroup><col style="min-width: 25px;"><col style="min-width: 25px;"><col style="min-width: 25px;"></colgroup><tbody><tr><th colspan="1" rowspan="1"><p>Property</p></th><th colspan="1" rowspan="1"><p>GLB</p></th><th colspan="1" rowspan="1"><p>GLTF</p></th></tr><tr><td colspan="1" rowspan="1"><p>Number of files</p></td><td colspan="1" rowspan="1"><p>1</p></td><td colspan="1" rowspan="1"><p>multiple</p></td></tr><tr><td colspan="1" rowspan="1"><p>Content type</p></td><td colspan="1" rowspan="1"><p>binary</p></td><td colspan="1" rowspan="1"><p>text (JSON)</p></td></tr><tr><td colspan="1" rowspan="1"><p>Loading speed</p></td><td colspan="1" rowspan="1"><p>fast</p></td><td colspan="1" rowspan="1"><p>slower</p></td></tr><tr><td colspan="1" rowspan="1"><p>Human-readable</p></td><td colspan="1" rowspan="1"><p>no</p></td><td colspan="1" rowspan="1"><p>yes</p></td></tr></tbody></table><hr><h2>STL – Standard Triangle Language</h2><p>One of the oldest and most widely used formats for 3D printing and CAD export. It describes a solid surface as a set of triangles.</p><h3>Advantages</h3><ul><li><p>Universal support – readable by virtually every piece of 3D software.</p></li><li><p>Simple structure – easy to generate and parse.</p></li><li><p>Available in both binary and ASCII variants.</p></li></ul><h3>Disadvantages</h3><ul><li><p><strong>No materials or textures</strong> – pure geometry only.</p></li><li><p><strong>No hierarchy</strong> – the entire model is a single triangle mesh with no names or groups.</p></li><li><p>Large file sizes at high mesh density.</p></li><li><p>No native colour support (unofficial extensions exist).</p></li></ul><p><strong>Typical use:</strong> preparing models for FDM/SLA 3D printing, exchanging bare geometry between CAD systems.</p><hr><h2>OBJ – Wavefront Object</h2><p>A text-based format developed by Wavefront Technologies in the 1980s. Still widely used thanks to its simple structure. Geometry is stored in a <code>.obj</code> file, with materials in an accompanying <code>.mtl</code> file.</p><h3>Advantages</h3><ul><li><p>Supports materials and UV coordinates for textures.</p></li><li><p>Human-readable in any text editor.</p></li><li><p>Broad support across 3D applications.</p></li></ul><h3>Disadvantages</h3><ul><li><p>Import requires the full folder (OBJ + MTL + textures).</p></li><li><p>Text format – slow loading for large models.</p></li><li><p>Limited PBR material support.</p></li><li><p>No animation or skeletal data.</p></li></ul><p><strong>Typical use:</strong> exchanging models between different 3D applications, legacy game assets, visualisation.</p><hr><h2>FBX – Filmbox</h2><p>A proprietary format by Autodesk, originally developed for exchanging animations and 3D scenes between animation applications (Maya, 3ds Max, MotionBuilder).</p><h3>Advantages</h3><ul><li><p>Supports skeletal animations, skinning, and morph targets.</p></li><li><p>Preserves scene hierarchy, cameras, and lights.</p></li><li><p>Full material and texture support.</p></li><li><p>Widely used in the games industry (Unity, Unreal Engine).</p></li></ul><h3>Disadvantages</h3><ul><li><p><strong>Proprietary format</strong> – Autodesk does not maintain a public specification.</p></li><li><p>Import in CAD Explorer uses an open-source library with limited compatibility.</p></li><li><p>The binary file format is not easily readable.</p></li><li><p>Gradually being replaced by the open glTF standard.</p></li></ul><p><strong>Typical use:</strong> game assets, 3D animation, data exchange between Autodesk products.</p><hr><h2>3MF – 3D Manufacturing Format</h2><p>A modern open format designed by the 3MF Consortium (Microsoft, Autodesk, HP, Ultimaker, and others) specifically for next-generation 3D printing.</p><h3>Advantages</h3><ul><li><p>A single file (ZIP archive) contains geometry, materials, colours, and print parameters.</p></li><li><p>Accurate mesh description without the typical errors found in STL.</p></li><li><p>Supports multi-material printing and full-colour models.</p></li><li><p>Open standard with thorough documentation.</p></li></ul><h3>Disadvantages</h3><ul><li><p>Less widespread than STL in legacy slicers.</p></li><li><p>Limited support for animations or complex hierarchies.</p></li></ul><p><strong>Typical use:</strong> professional 3D printing (FDM, SLA, SLS, MJF), data transfer to modern slicer applications (PrusaSlicer, Bambu Studio).</p><hr><h2>STEP / STP – Standard for the Exchange of Product Data</h2><p>The international standard ISO 10303 for data exchange between CAD systems. It stores exact B-Rep (Boundary Representation) geometry – not just a triangular mesh approximation.</p><h3>Advantages</h3><ul><li><p><strong>Precise geometry</strong> – NURBS curves and surfaces, not a triangular approximation.</p></li><li><p>Preserves assembly hierarchy, component names, and material properties.</p></li><li><p>Industry standard – supported by all professional CAD systems (CATIA, SolidWorks, NX, Fusion 360, FreeCAD…).</p></li></ul><h3>Disadvantages</h3><ul><li><p>Conversion to a triangle mesh (tessellation) for display in CAD Explorer loses B-Rep precision.</p></li><li><p>Large, complex assemblies can be slow to import.</p></li><li><p>No texture or animation support.</p></li></ul><p><strong>Typical use:</strong> CAD data exchange between engineering systems, archiving design documentation, supply-chain data in mechanical engineering.</p><hr><h2>IGES / IGS – Initial Graphics Exchange Specification</h2><p>One of the earliest CAD data exchange standards, developed in the USA in 1980 (ANSI Y14.26M). Being gradually superseded by STEP, but still widely used in aerospace and automotive industries.</p><h3>Advantages</h3><ul><li><p>Extremely broad compatibility – supported by virtually every CAD system in the world.</p></li><li><p>Transfers exact B-Rep and NURBS geometry.</p></li><li><p>Vendor-independent.</p></li></ul><h3>Disadvantages</h3><ul><li><p><strong>Outdated standard</strong> – the specification has not been actively developed since 1996.</p></li><li><p>Text format – large files, slow import for large assemblies.</p></li><li><p>Different implementations are often incompatible – a file that works in one CAD system may fail in another.</p></li><li><p>No support for textures, animations, or modern design data (PMI).</p></li></ul><p><strong>Typical use:</strong> exchanging precise geometry (surfaces, curves) between legacy CAD systems, archival documentation in aerospace and automotive industries.</p><hr><h2>Quick format comparison</h2><table style="min-width: 150px;"><colgroup><col style="min-width: 25px;"><col style="min-width: 25px;"><col style="min-width: 25px;"><col style="min-width: 25px;"><col style="min-width: 25px;"><col style="min-width: 25px;"></colgroup><tbody><tr><th colspan="1" rowspan="1"><p>Format</p></th><th colspan="1" rowspan="1"><p>Geometry</p></th><th colspan="1" rowspan="1"><p>Materials / textures</p></th><th colspan="1" rowspan="1"><p>Hierarchy</p></th><th colspan="1" rowspan="1"><p>Animation</p></th><th colspan="1" rowspan="1"><p>Open standard</p></th></tr><tr><td colspan="1" rowspan="1"><p><strong>GLB</strong></p></td><td colspan="1" rowspan="1"><p>mesh</p></td><td colspan="1" rowspan="1"><p>PBR (full)</p></td><td colspan="1" rowspan="1"><p>yes</p></td><td colspan="1" rowspan="1"><p>yes</p></td><td colspan="1" rowspan="1"><p>yes</p></td></tr><tr><td colspan="1" rowspan="1"><p><strong>GLTF</strong></p></td><td colspan="1" rowspan="1"><p>mesh</p></td><td colspan="1" rowspan="1"><p>PBR (full)</p></td><td colspan="1" rowspan="1"><p>yes</p></td><td colspan="1" rowspan="1"><p>yes</p></td><td colspan="1" rowspan="1"><p>yes</p></td></tr><tr><td colspan="1" rowspan="1"><p><strong>STL</strong></p></td><td colspan="1" rowspan="1"><p>mesh</p></td><td colspan="1" rowspan="1"><p>none</p></td><td colspan="1" rowspan="1"><p>no</p></td><td colspan="1" rowspan="1"><p>no</p></td><td colspan="1" rowspan="1"><p>yes</p></td></tr><tr><td colspan="1" rowspan="1"><p><strong>OBJ</strong></p></td><td colspan="1" rowspan="1"><p>mesh</p></td><td colspan="1" rowspan="1"><p>Phong</p></td><td colspan="1" rowspan="1"><p>partial</p></td><td colspan="1" rowspan="1"><p>no</p></td><td colspan="1" rowspan="1"><p>yes</p></td></tr><tr><td colspan="1" rowspan="1"><p><strong>FBX</strong></p></td><td colspan="1" rowspan="1"><p>mesh</p></td><td colspan="1" rowspan="1"><p>yes</p></td><td colspan="1" rowspan="1"><p>yes</p></td><td colspan="1" rowspan="1"><p>yes</p></td><td colspan="1" rowspan="1"><p>no</p></td></tr><tr><td colspan="1" rowspan="1"><p><strong>3MF</strong></p></td><td colspan="1" rowspan="1"><p>mesh</p></td><td colspan="1" rowspan="1"><p>colours</p></td><td colspan="1" rowspan="1"><p>yes</p></td><td colspan="1" rowspan="1"><p>no</p></td><td colspan="1" rowspan="1"><p>yes</p></td></tr><tr><td colspan="1" rowspan="1"><p><strong>STEP</strong></p></td><td colspan="1" rowspan="1"><p>B-Rep</p></td><td colspan="1" rowspan="1"><p>none</p></td><td colspan="1" rowspan="1"><p>yes</p></td><td colspan="1" rowspan="1"><p>no</p></td><td colspan="1" rowspan="1"><p>yes</p></td></tr><tr><td colspan="1" rowspan="1"><p><strong>IGES</strong></p></td><td colspan="1" rowspan="1"><p>B-Rep</p></td><td colspan="1" rowspan="1"><p>none</p></td><td colspan="1" rowspan="1"><p>partial</p></td><td colspan="1" rowspan="1"><p>no</p></td><td colspan="1" rowspan="1"><p>yes</p></td></tr></tbody></table><hr><p><em>For sharing finished 3D models including assembly workflow, annotations, and documentation, always prefer the </em><strong><em>GLB</em></strong><em> format.</em></p><hr><h1>Supported Export File Formats</h1><p>CAD Explorer can export the current scene or a selected object in the following formats. All export actions are available in the <strong>File</strong> panel.</p><hr><h2>GLB – standard export</h2><p>Exports the scene as a standard <strong>GLB 2.0</strong> file. All geometry, materials, PBR textures, object hierarchy, assembly workflow, 3D dimensions, annotations, documents, and attachments are embedded in a single binary file.</p><h3>Two scope variants</h3><ul><li><p><strong>Export all to GLB</strong> – exports every loaded model.</p></li><li><p><strong>Export selected to GLB</strong> – exports only the currently selected object (or multi-selection group). The world-space transform is baked in so the object appears in the correct position on re-import.</p></li></ul><h3>When to use</h3><p>Use this format for all regular saves and sharing. The exported GLB can be re-imported without any data loss.</p><hr><h2>GLB with Draco compression</h2><p>Same as the standard GLB export but applies <strong>Google Draco</strong> geometry compression before writing the file. A progress overlay is displayed while the compression runs.</p><h3>Advantages</h3><ul><li><p>Significantly smaller file size (often 60–90% reduction) – ideal for web sharing or storage-constrained environments.</p></li><li><p>All metadata is preserved identically to the standard GLB export.</p></li></ul><h3>Disadvantages</h3><ul><li><p>Slower export due to the compression step.</p></li><li><p>Requires a Draco-capable loader on the receiving end (CAD Explorer includes one; most modern 3D tools do too).</p></li></ul><h3>Two scope variants</h3><ul><li><p><strong>Export all to GLB (Compression)</strong></p></li><li><p><strong>Export selected to GLB (Compression)</strong></p></li></ul><hr><h2>STL – export</h2><p>Exports the mesh geometry as an STL file. On export you are prompted for a file name and for the format variant.</p><h3>Format variants</h3><ul><li><p><strong>Binary STL</strong> (default, option <code>b</code>) – compact binary encoding, smaller file, faster to write.</p></li><li><p><strong>ASCII STL</strong> (option <code>a</code>) – human-readable text, larger file, useful for debugging or legacy tools that do not support binary STL.</p></li></ul><h3>Limitations</h3><ul><li><p>Only geometry is exported. Materials, textures, hierarchy, annotations, and assembly data are not included.</p></li><li><p>The entire scene (or selected object) is flattened into a single triangle mesh.</p></li></ul><h3>Two scope variants</h3><ul><li><p><strong>Export all to STL</strong></p></li><li><p><strong>Export selected to STL</strong></p></li></ul><hr><h2>HTML – self-contained viewer</h2><p>Exports a fully self-contained <strong>HTML file</strong> that embeds the 3D model together with a lightweight Three.js viewer. The recipient can open the file directly in any modern web browser with no installation required.</p><h3>Advantages</h3><ul><li><p>Zero dependency for the viewer – works offline.</p></li><li><p>The model, assembly workflow, and all annotations are preserved.</p></li><li><p>Easy to share via e-mail or a file host.</p></li></ul><h3>Disadvantages</h3><ul><li><p>File size is larger than GLB because the viewer JavaScript is bundled inside.</p></li><li><p>The file is read-only – it cannot be re-imported into CAD Explorer for editing.</p></li></ul><h3>Four variants</h3><table style="min-width: 75px;"><colgroup><col style="min-width: 25px;"><col style="min-width: 25px;"><col style="min-width: 25px;"></colgroup><tbody><tr><th colspan="1" rowspan="1"><p>Variant</p></th><th colspan="1" rowspan="1"><p>Draco</p></th><th colspan="1" rowspan="1"><p>Source obfuscated</p></th></tr><tr><td colspan="1" rowspan="1"><p>Export to HTML</p></td><td colspan="1" rowspan="1"><p>no</p></td><td colspan="1" rowspan="1"><p>no</p></td></tr><tr><td colspan="1" rowspan="1"><p>Export to HTML (Compression)</p></td><td colspan="1" rowspan="1"><p>yes</p></td><td colspan="1" rowspan="1"><p>no</p></td></tr><tr><td colspan="1" rowspan="1"><p>Export to HTML obfuscated</p></td><td colspan="1" rowspan="1"><p>no</p></td><td colspan="1" rowspan="1"><p>yes</p></td></tr><tr><td colspan="1" rowspan="1"><p>Export to HTML obfuscated (Compression)</p></td><td colspan="1" rowspan="1"><p>yes</p></td><td colspan="1" rowspan="1"><p>yes</p></td></tr></tbody></table><p>The <strong>obfuscated</strong> variants minify and obfuscate the embedded viewer source code, making it harder to extract the 3D data from the HTML file – useful when distributing models that should not be easily re-used.</p><hr><h2>Quick export comparison</h2><table style="min-width: 125px;"><colgroup><col style="min-width: 25px;"><col style="min-width: 25px;"><col style="min-width: 25px;"><col style="min-width: 25px;"><col style="min-width: 25px;"></colgroup><tbody><tr><th colspan="1" rowspan="1"><p>Format</p></th><th colspan="1" rowspan="1"><p>Re-importable</p></th><th colspan="1" rowspan="1"><p>Metadata preserved</p></th><th colspan="1" rowspan="1"><p>Draco option</p></th><th colspan="1" rowspan="1"><p>Viewer included</p></th></tr><tr><td colspan="1" rowspan="1"><p>GLB</p></td><td colspan="1" rowspan="1"><p>yes</p></td><td colspan="1" rowspan="1"><p>full</p></td><td colspan="1" rowspan="1"><p>yes</p></td><td colspan="1" rowspan="1"><p>no</p></td></tr><tr><td colspan="1" rowspan="1"><p>STL</p></td><td colspan="1" rowspan="1"><p>yes (geometry only)</p></td><td colspan="1" rowspan="1"><p>none</p></td><td colspan="1" rowspan="1"><p>no</p></td><td colspan="1" rowspan="1"><p>no</p></td></tr><tr><td colspan="1" rowspan="1"><p>HTML</p></td><td colspan="1" rowspan="1"><p>no</p></td><td colspan="1" rowspan="1"><p>full</p></td><td colspan="1" rowspan="1"><p>yes</p></td><td colspan="1" rowspan="1"><p>yes</p></td></tr></tbody></table><p></p>
+</main>
+</body>
+</html>
