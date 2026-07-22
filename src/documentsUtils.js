@@ -348,6 +348,7 @@ function _newDocument() {
     const doc = {
         id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
         title: 'New document',
+        description: '',
         content: '<p></p>',
         createdAt: new Date().toISOString(),
         font: _DEFAULT_FONT,
@@ -368,6 +369,11 @@ function _showOverlay(doc, editMode) {
     const titleInput = _overlayEl.querySelector('.doc-title-input');
     titleInput.value = doc.title;
     titleInput.readOnly = !editMode;
+
+    // Update description input (short summary used for SEO / link previews)
+    const descriptionInput = _overlayEl.querySelector('.doc-description-input');
+    descriptionInput.value = doc.description || '';
+    descriptionInput.readOnly = !editMode;
 
     // Apply font
     const fontSelect = _overlayEl.querySelector('.doc-font-select');
@@ -702,6 +708,8 @@ function _saveCurrentDocument(updateLastEdit = false) {
 
     const titleInput = _overlayEl.querySelector('.doc-title-input');
     doc.title = titleInput.value.trim() || 'Untitled';
+    const descriptionInput = _overlayEl.querySelector('.doc-description-input');
+    doc.description = descriptionInput.value.trim();
     doc.content = _editor.getHTML();
     doc.font = (_overlayEl.querySelector('.doc-font-select') || {}).value || _DEFAULT_FONT;
     doc.lineHeight = (_overlayEl.querySelector('.doc-line-height-select') || {}).value || _DEFAULT_LINE_HEIGHT;
@@ -1413,6 +1421,12 @@ function _buildEditorOverlay() {
     titleInput.className = 'doc-title-input';
     titleInput.placeholder = 'Document title';
 
+    const descriptionInput = document.createElement('input');
+    descriptionInput.type = 'text';
+    descriptionInput.className = 'doc-description-input';
+    descriptionInput.placeholder = 'Short description (SEO / previews, ~155 chars)';
+    descriptionInput.maxLength = 160;
+
     const btnEdit = document.createElement('button');
     btnEdit.className = 'doc-btn doc-btn-edit';
     btnEdit.textContent = '✎ Edit';
@@ -1420,6 +1434,7 @@ function _buildEditorOverlay() {
         if (!_currentDocId) return;
         const titleInput = overlay.querySelector('.doc-title-input');
         titleInput.readOnly = false;
+        overlay.querySelector('.doc-description-input').readOnly = false;
         btnEdit.style.display = 'none';
         btnSave.style.display = 'inline-block';
         overlay.querySelector('.doc-editor-toolbar').style.display = 'flex';
@@ -1447,6 +1462,7 @@ function _buildEditorOverlay() {
         // Switch to view mode
         const titleInput = overlay.querySelector('.doc-title-input');
         titleInput.readOnly = true;
+        overlay.querySelector('.doc-description-input').readOnly = true;
         btnSave.style.display = 'none';
         btnEdit.style.display = 'inline-block';
         overlay.querySelector('.doc-editor-toolbar').style.display = 'none';
@@ -1556,6 +1572,7 @@ function _buildEditorOverlay() {
     headerActions.appendChild(btnClose);
 
     headerMeta.appendChild(titleInput);
+    headerMeta.appendChild(descriptionInput);
     headerMeta.appendChild(bgWrap);
     headerMeta.appendChild(btnNav3d);
 

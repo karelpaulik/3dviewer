@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Install as Local App (PWA) – Meshbex Help</title>
+<meta name="description" content="How to install Meshbex CAD Explorer as an offline-capable Progressive Web App (PWA) on Chrome or Edge, and how the offline cache works.">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="https://meshbex.com/help/pwa-install.html">
+
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Meshbex">
+<meta property="og:title" content="Install as Local App (PWA) – Meshbex Help">
+<meta property="og:description" content="How to install Meshbex CAD Explorer as an offline-capable Progressive Web App (PWA) on Chrome or Edge, and how the offline cache works.">
+<meta property="og:url" content="https://meshbex.com/help/pwa-install.html">
+<meta property="og:image" content="https://meshbex.com/icon-512.png">
+
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Install as Local App (PWA) – Meshbex Help">
+<meta name="twitter:description" content="How to install Meshbex CAD Explorer as an offline-capable Progressive Web App (PWA) on Chrome or Edge, and how the offline cache works.">
+<meta name="twitter:image" content="https://meshbex.com/icon-512.png">
+
+<link rel="icon" type="image/png" href="/favicon-32x32.png">
+<style>
+*, *::before, *::after { box-sizing: border-box; }
+html, body {
+    margin: 0;
+    padding: 0;
+    font-family: Arial, sans-serif;
+    background: #1a1a1a;
+    color: #ddd;
+}
+#staticHelpHeader {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 14px 20px;
+    background: #2a2a2a;
+    border-bottom: 1px solid #444;
+}
+#staticHelpHeader a {
+    color: #5af;
+    text-decoration: none;
+    font-size: 13px;
+}
+#staticHelpHeader a:hover { text-decoration: underline; }
+#staticHelpContent {
+    max-width: 860px;
+    margin: 24px auto 64px;
+    padding: 40px 48px;
+    background: #fff;
+    color: #111;
+    font-size: 15px;
+    line-height: 1.4;
+    border-radius: 4px;
+}
+#staticHelpContent h1 { font-size: 2em; margin: 0.6em 0 0.4em; }
+#staticHelpContent h2 { font-size: 1.5em; margin: 1em 0 0.3em; }
+#staticHelpContent h3 { font-size: 1.2em; margin: 0.8em 0 0.3em; }
+#staticHelpContent h4 { font-size: 1em; margin: 0.6em 0 0.3em; font-weight: 600; }
+#staticHelpContent p  { margin: 0 0 8px; }
+#staticHelpContent ul,
+#staticHelpContent ol { padding-left: 2em; margin: 0 0 0.8em; }
+#staticHelpContent blockquote {
+    border-left: 4px solid #ccc;
+    margin: 0.8em 0;
+    padding: 0.2em 1em;
+    color: #555;
+}
+#staticHelpContent img {
+    max-width: 100%;
+    height: auto;
+    display: inline-block;
+    vertical-align: top;
+    margin: 0.4em 4px;
+}
+#staticHelpContent a { color: #1a6fc4; text-decoration: underline; }
+#staticHelpContent a:hover { color: #1254a0; }
+#staticHelpContent strong { font-weight: 700; }
+#staticHelpContent em { font-style: italic; }
+#staticHelpContent code {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.9em;
+    background: #f0f0f0;
+    padding: 1px 4px;
+    border-radius: 3px;
+}
+#staticHelpContent pre {
+    background: #f5f5f5;
+    padding: 12px 16px;
+    border-radius: 4px;
+    overflow-x: auto;
+    font-size: 13px;
+}
+#staticHelpContent pre code { background: none; padding: 0; }
+#staticHelpContent table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 1em 0;
+    table-layout: fixed;
+}
+#staticHelpContent td,
+#staticHelpContent th {
+    border: 1px solid #ccc;
+    padding: 6px 10px;
+    vertical-align: top;
+    box-sizing: border-box;
+}
+#staticHelpContent th {
+    background: #f0f0f0;
+    font-weight: 600;
+    text-align: left;
+}
+#staticHelpContent hr {
+    border: none;
+    border-top: 1px solid #ddd;
+    margin: 1.5em 0;
+}
+</style>
+</head>
+<body>
+<div id="staticHelpHeader">
+    <a href="/">← Meshbex CAD Explorer</a>
+    <a href="/help.html?doc=%2Fhelp%2Fpwa-install.json">Open interactive version with table of contents ↗</a>
+</div>
+<main id="staticHelpContent">
+<h1>Install as Local App (PWA)</h1><p><strong>Meshbex CAD Explorer</strong> supports installation as a <strong>Progressive Web App (PWA)</strong>. Once installed, the application is cached locally in your browser and can be launched and used <strong>without an internet connection</strong>.</p><hr><h2>Requirements</h2><ul><li><p>A <strong>Chromium-based browser</strong> – Google Chrome, Microsoft Edge, or Brave. Firefox does not support PWA installation.</p></li><li><p>An <strong>internet connection</strong> for the first installation. After that, no internet is needed.</p></li></ul><hr><h2>How to Install</h2><ol><li><p>Open your browser and navigate to <code>https://meshbex.com</code>.</p></li><li><p>Wait for the page to fully load.</p></li><li><p>Look for the <strong>install icon</strong> in the browser address bar on the right side – it looks like a computer with a download arrow (⊕).</p></li><li><p>Click it and confirm by clicking <strong>Install</strong>.</p></li><li><p>A shortcut will appear on your <strong>desktop</strong> and/or in the Start menu.</p></li></ol><p>Alternatively, use the browser menu:</p><ul><li><p><strong>Chrome</strong> – menu (⋮) → <em>Save and share</em> → <em>Install as app…</em></p></li><li><p><strong>Edge</strong> – menu (⋯) → <em>Apps</em> → <em>Install this site as an app</em></p></li></ul><hr><h2>Launching After Installation</h2><p>Double-click the <strong>desktop shortcut</strong>. The application opens in its own standalone window – without the browser address bar – and works fully offline.</p><hr><h2>How Offline Mode Works</h2><p>On the first visit, the browser downloads and caches the entire application (JavaScript, CSS, icons, demo models, help files). All subsequent launches load from this local cache, so <strong>no internet connection is required</strong>.</p><p>When you are online, the cache is silently updated in the background so you always get the latest version.</p><hr><h2>Sharing the App with Another Computer</h2><p>The PWA cache cannot be copied between computers. To install on another machine:</p><ol><li><p>Connect that computer to the internet (even briefly).</p></li><li><p>Open <code>https://meshbex.com</code> in Chrome or Edge.</p></li><li><p>Click the install icon and install.</p></li><li><p>The computer can then be used offline.</p></li></ol><hr><h2>Uninstalling</h2><ul><li><p>Open the app, click the menu (⋮ / ⋯) → <strong>Uninstall</strong>.</p></li></ul><hr><h2>Notes</h2><ul><li><p>Imported models (loaded via <em>Import GLB</em>) are kept in memory for the current session only – they are not cached permanently.</p></li><li><p>Clearing browser data or cache will remove the installed PWA cache. You will need to be online for the next launch to re-cache.</p></li><li><p>The PWA remains installed indefinitely as long as it is used occasionally. Browsers may evict unused PWA caches after several weeks of inactivity.</p></li></ul><p></p>
+</main>
+</body>
+</html>

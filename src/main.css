@@ -2073,6 +2073,28 @@ a, button, input, select {
     cursor: default;
 }
 
+.doc-description-input {
+    flex: 1 1 auto;
+    min-width: 160px;
+    max-width: min(100%, 480px);
+    background: #fff;
+    border: 1px solid #999;
+    border-radius: 4px;
+    color: #111;
+    padding: 4px 6px;
+    outline: none;
+    font-size: 12px;
+}
+.doc-description-input:focus {
+    border-color: #555;
+}
+.doc-description-input[readonly] {
+    background: #fff;
+    border-color: transparent;
+    color: #111;
+    cursor: default;
+}
+
 .doc-btn {
     padding: 4px 12px;
     border: 1px solid #888;
