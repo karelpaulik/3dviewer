@@ -1394,6 +1394,9 @@ if (import.meta.env.DEV) {
     //NOK - toto není reference
     window.transformControls = transformControls;
     window.lastSelectedObject = lastSelectedObject;
+
+    window.render = render;
+    window.fitView = fitView;
 }
 
 
@@ -2383,6 +2386,9 @@ function init() {
 // Přepočítá frustum ortografické kamery podle aktuálního obsahu meshObjects.
 // Volat po každém načtení modelu.
 function recalibrateOrthoCamera() {
+    // Zajistíme aktuální world matice (viz komentář ve fitView) i při případném samostatném volání.
+    scene.updateMatrixWorld(true);
+
     const box = new THREE.Box3();
     meshObjects.forEach(obj => box.expandByObject(obj));
     if (box.isEmpty()) return;
@@ -2412,6 +2418,9 @@ function recalibrateOrthoCamera() {
 
 // Přepočítá near/far perspektivní kamery podle aktuálního obsahu meshObjects.
 function recalibratePerspCamera() {
+    // Zajistíme aktuální world matice (viz komentář ve fitView) i při případném samostatném volání.
+    scene.updateMatrixWorld(true);
+
     const box = new THREE.Box3();
     meshObjects.forEach(obj => box.expandByObject(obj));
     if (box.isEmpty()) return;
@@ -5269,6 +5278,13 @@ function viewFromPoint(x, y, z) {
 }
 
 function fitView() {
+    // Vynutíme přepočet world matic celé scény, aby Box3.expandByObject (uvnitř recalibrate*
+    // i níže) nepočítal se zastaralými maticemi. Object3D.updateWorldMatrix (které Box3 volá
+    // interně) aktualizuje matici jen daného objektu, ne jeho rodičů – pokud tedy proběhla
+    // úprava transformace (např. korekce scale při importu) a scéna ještě nebyla vykreslena,
+    // matrixWorld rodičovských uzlů by byla stále stará a box by vyšel řádově špatně.
+    scene.updateMatrixWorld(true);
+
     // Přepočítáme frustum aktivní kamery (near/far) podle aktuální velikosti modelu
         recalibrateOrthoCamera();
         recalibratePerspCamera();
