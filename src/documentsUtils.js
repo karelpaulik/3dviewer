@@ -10,6 +10,15 @@ import TextAlign from '@tiptap/extension-text-align';
 import { TextStyle } from '@tiptap/extension-text-style';
 import Color from '@tiptap/extension-color';
 import { Table, TableRow, TableCell, TableHeader } from '@tiptap/extension-table';
+import {
+    resolveDocStyle,
+    escapeHtml,
+    buildTocFromHeadings,
+    buildTocNavHtml,
+    buildDocContentCss,
+    buildDocContentWrapperCss,
+    buildTocScrollSpyScript,
+} from '../scripts/docHtmlShared.mjs';
 
 // ── ImageResize with persistent alignment ─────────────────────────────────────
 // Adds an `imageAlign` attribute ('left'|'center'|'right') that survives
@@ -1102,44 +1111,22 @@ function _exportCurrentDocHtml() {
     if (!doc) return;
 
     const title = doc.title || 'Document';
-    const fontFamily = doc.font || _DEFAULT_FONT;
-    const lineHeight = doc.lineHeight || _DEFAULT_LINE_HEIGHT;
-    const paraSpacing = doc.paraSpacing || _DEFAULT_PARA_SPACING;
-    const docWidth = doc.docWidth || _DEFAULT_DOC_WIDTH;
-    const tableBorder = doc.tableBorder || _DEFAULT_TABLE_BORDER;
-
-    // Inject heading IDs and build TOC data
-    const tmp = document.createElement('div');
-    tmp.innerHTML = doc.content || '';
-    const toc = [];
-    Array.from(tmp.querySelectorAll('h1, h2, h3, h4')).forEach((h, i) => {
-        const id = 'h-' + i;
-        h.id = id;
-        toc.push({ level: parseInt(h.tagName[1]), text: h.textContent.trim(), id });
-    });
-    const contentHtml = tmp.innerHTML;
-
-    const showToc = toc.length >= 2;
-    const tocHtml = showToc ? `
-    <nav id="docToc">
-      <ul>
-        ${toc.map(item =>
-            `<li class="toc-level-${item.level}"><a href="#${item.id}" data-id="${item.id}">${item.text.replace(/</g, '&lt;')}</a></li>`
-        ).join('\n        ')}
-      </ul>
-    </nav>` : '';
-
-    const safeName = title.replace(/[^a-z0-9_\-]/gi, '_').toLowerCase();
+    const style = resolveDocStyle(doc);
+    const { contentHtml, toc } = buildTocFromHeadings(doc.content || '');
+    const tocHtml = buildTocNavHtml(toc, 'docToc');
+    const safeTitle = escapeHtml(title);
+    const contentCss = buildDocContentCss('#docContentInner', style);
+    const wrapperCss = buildDocContentWrapperCss('#docContentInner', style, '');
 
     const html = `<!DOCTYPE html>
 <html lang="cs">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${title.replace(/</g, '&lt;')}</title>
+<title>${safeTitle}</title>
 <style>
 *, *::before, *::after { box-sizing: border-box; }
-html, body { height: 100%; margin: 0; padding: 0; font-family: ${fontFamily}; font-size: 15px; background: #1a1a1a; color: #ddd; overflow: hidden; }
+html, body { height: 100%; margin: 0; padding: 0; font-family: ${style.fontFamily}; font-size: 15px; background: #1a1a1a; color: #ddd; overflow: hidden; }
 #docHeader { height: 44px; background: #2a2a2a; border-bottom: 1px solid #444; display: flex; align-items: center; padding: 0 20px; flex-shrink: 0; }
 #docHeaderTitle { font-size: 15px; font-weight: 600; color: #fff; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #docBody { display: flex; height: calc(100vh - 44px); overflow: hidden; }
@@ -1154,23 +1141,8 @@ html, body { height: 100%; margin: 0; padding: 0; font-family: ${fontFamily}; fo
 #docToc .toc-level-3 > a { padding-left: 36px; font-size: 11px; color: #999; }
 #docToc .toc-level-4 > a { padding-left: 50px; font-size: 11px; color: #888; }
 #docContentWrap { flex: 1; overflow-y: auto; background: #c8c8c8; }
-#docContentInner { padding: 40px 48px; max-width: ${docWidth}; margin: 0 auto; background: #fff; min-height: 100%; color: #111; line-height: ${lineHeight}; }
-#docContentInner h1 { font-size: 2em; margin: 0.6em 0 0.4em; }
-#docContentInner h2 { font-size: 1.5em; margin: 1em 0 0.3em; border-bottom: 1px solid #e0e0e0; padding-bottom: 4px; }
-#docContentInner h3 { font-size: 1.2em; margin: 0.8em 0 0.3em; }
-#docContentInner h4 { font-size: 1em; margin: 0.6em 0 0.3em; font-weight: 600; }
-#docContentInner p { margin: 0 0 ${paraSpacing}; }
-#docContentInner ul, #docContentInner ol { padding-left: 2em; margin: 0 0 0.8em; }
-#docContentInner blockquote { border-left: 4px solid #ccc; margin: 0.8em 0; padding: 0.2em 1em; color: #555; }
-#docContentInner img { max-width: 100%; height: auto; display: inline-block; vertical-align: top; margin: 0.4em 4px; }
-#docContentInner a { color: #1a6fc4; text-decoration: underline; }
-#docContentInner a:hover { color: #1254a0; }
-#docContentInner strong { font-weight: 700; }
-#docContentInner em { font-style: italic; }
-#docContentInner table { border-collapse: collapse; width: 100%; margin: 1em 0; table-layout: fixed; }
-#docContentInner td, #docContentInner th { border: ${tableBorder}; padding: 6px 10px; vertical-align: top; box-sizing: border-box; }
-#docContentInner th { background: #f0f0f0; font-weight: 600; text-align: left; }
-#docContentInner hr { border: none; border-top: 1px solid #ddd; margin: 1.5em 0; }
+${wrapperCss}
+${contentCss}
 #docContentWrap::-webkit-scrollbar { width: 8px; }
 #docContentWrap::-webkit-scrollbar-track { background: #b0b0b0; }
 #docContentWrap::-webkit-scrollbar-thumb { background: #888; border-radius: 4px; }
@@ -1179,7 +1151,7 @@ html, body { height: 100%; margin: 0; padding: 0; font-family: ${fontFamily}; fo
 </style>
 </head>
 <body>
-<div id="docHeader"><span id="docHeaderTitle">${title.replace(/</g, '&lt;')}</span></div>
+<div id="docHeader"><span id="docHeaderTitle">${safeTitle}</span></div>
 <div id="docBody">
   ${tocHtml}
   <div id="docContentWrap">
@@ -1187,29 +1159,7 @@ html, body { height: 100%; margin: 0; padding: 0; font-family: ${fontFamily}; fo
   </div>
 </div>
 <script>
-(function(){
-  var tocLinks = Array.from(document.querySelectorAll('#docToc a'));
-  var contentWrap = document.getElementById('docContentWrap');
-  if (!contentWrap || tocLinks.length === 0) return;
-  var headings = Array.from(document.querySelectorAll('#docContentInner h1,#docContentInner h2,#docContentInner h3,#docContentInner h4'));
-  tocLinks.forEach(function(a){
-    a.addEventListener('click', function(e){
-      e.preventDefault();
-      var target = document.getElementById(a.dataset.id);
-      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
-  });
-  function setActive(id){
-    tocLinks.forEach(function(a){ a.classList.toggle('active', a.dataset.id === id); });
-  }
-  if (headings.length > 0) setActive(headings[0].id);
-  contentWrap.addEventListener('scroll', function(){
-    var top = contentWrap.getBoundingClientRect().top + 100;
-    var activeId = headings[0] ? headings[0].id : null;
-    headings.forEach(function(h){ if (h.getBoundingClientRect().top <= top) activeId = h.id; });
-    if (activeId) setActive(activeId);
-  }, { passive: true });
-})();
+${buildTocScrollSpyScript('#docContentInner', 'docToc')}
 <\/script>
 </body>
 </html>`;
@@ -1218,7 +1168,7 @@ html, body { height: 100%; margin: 0; padding: 0; font-family: ${fontFamily}; fo
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = safeName + '.html';
+    a.download = _docExportBaseName(doc) + '.html';
     a.click();
     URL.revokeObjectURL(url);
 }

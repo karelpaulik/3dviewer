@@ -29,25 +29,20 @@ const SLUGS = [
     'pwa-install',
 ];
 
-function stripHtml(html) {
-    return html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
-}
-
 function truncate(str, maxLen) {
     if (str.length <= maxLen) return str;
     return str.slice(0, maxLen - 1).trimEnd() + '\u2026';
 }
 
-function escapeHtml(str) {
-    return String(str)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
-}
+function buildPage(doc, slug, docHtml) {
+    const {
+        resolveDocStyle,
+        escapeHtml,
+        stripHtml,
+        buildDocContentCss,
+        buildDocContentWrapperCss,
+    } = docHtml;
 
-function buildPage(doc, slug) {
     const title = (doc.title || slug).trim();
     const description = (doc.description && doc.description.trim())
         ? doc.description.trim()
@@ -59,6 +54,12 @@ function buildPage(doc, slug) {
 
     const safeTitle = escapeHtml(pageTitle);
     const safeDescription = escapeHtml(description);
+    const style = resolveDocStyle(doc);
+    const wrapperCss = buildDocContentWrapperCss('#staticHelpContent', style, `
+    margin: 24px auto 64px;
+    min-height: auto;
+    border-radius: 4px;`);
+    const contentCss = buildDocContentCss('#staticHelpContent', style);
 
     return `<!DOCTYPE html>
 <html lang="en">
@@ -88,7 +89,6 @@ function buildPage(doc, slug) {
 html, body {
     margin: 0;
     padding: 0;
-    font-family: Arial, sans-serif;
     background: #1a1a1a;
     color: #ddd;
 }
@@ -108,78 +108,8 @@ html, body {
     font-size: 13px;
 }
 #staticHelpHeader a:hover { text-decoration: underline; }
-#staticHelpContent {
-    max-width: 860px;
-    margin: 24px auto 64px;
-    padding: 40px 48px;
-    background: #fff;
-    color: #111;
-    font-size: 15px;
-    line-height: 1.4;
-    border-radius: 4px;
-}
-#staticHelpContent h1 { font-size: 2em; margin: 0.6em 0 0.4em; }
-#staticHelpContent h2 { font-size: 1.5em; margin: 1em 0 0.3em; }
-#staticHelpContent h3 { font-size: 1.2em; margin: 0.8em 0 0.3em; }
-#staticHelpContent h4 { font-size: 1em; margin: 0.6em 0 0.3em; font-weight: 600; }
-#staticHelpContent p  { margin: 0 0 8px; }
-#staticHelpContent ul,
-#staticHelpContent ol { padding-left: 2em; margin: 0 0 0.8em; }
-#staticHelpContent blockquote {
-    border-left: 4px solid #ccc;
-    margin: 0.8em 0;
-    padding: 0.2em 1em;
-    color: #555;
-}
-#staticHelpContent img {
-    max-width: 100%;
-    height: auto;
-    display: inline-block;
-    vertical-align: top;
-    margin: 0.4em 4px;
-}
-#staticHelpContent a { color: #1a6fc4; text-decoration: underline; }
-#staticHelpContent a:hover { color: #1254a0; }
-#staticHelpContent strong { font-weight: 700; }
-#staticHelpContent em { font-style: italic; }
-#staticHelpContent code {
-    font-family: 'Courier New', Courier, monospace;
-    font-size: 0.9em;
-    background: #f0f0f0;
-    padding: 1px 4px;
-    border-radius: 3px;
-}
-#staticHelpContent pre {
-    background: #f5f5f5;
-    padding: 12px 16px;
-    border-radius: 4px;
-    overflow-x: auto;
-    font-size: 13px;
-}
-#staticHelpContent pre code { background: none; padding: 0; }
-#staticHelpContent table {
-    border-collapse: collapse;
-    width: 100%;
-    margin: 1em 0;
-    table-layout: fixed;
-}
-#staticHelpContent td,
-#staticHelpContent th {
-    border: 1px solid #ccc;
-    padding: 6px 10px;
-    vertical-align: top;
-    box-sizing: border-box;
-}
-#staticHelpContent th {
-    background: #f0f0f0;
-    font-weight: 600;
-    text-align: left;
-}
-#staticHelpContent hr {
-    border: none;
-    border-top: 1px solid #ddd;
-    margin: 1.5em 0;
-}
+${wrapperCss}
+${contentCss}
 </style>
 </head>
 <body>
@@ -195,7 +125,8 @@ ${doc.content || ''}
 `;
 }
 
-function main() {
+async function main() {
+    const docHtml = await import('./docHtmlShared.mjs');
     let failures = 0;
     for (const slug of SLUGS) {
         const jsonPath = path.join(HELP_DIR, `${slug}.json`);
@@ -203,7 +134,7 @@ function main() {
         try {
             const raw = fs.readFileSync(jsonPath, 'utf8');
             const doc = JSON.parse(raw);
-            const html = buildPage(doc, slug);
+            const html = buildPage(doc, slug, docHtml);
             fs.writeFileSync(outPath, html, 'utf8');
             console.log(`generate-static-help: wrote public/help/${slug}.html`);
         } catch (err) {
@@ -216,4 +147,7 @@ function main() {
     }
 }
 
-main();
+main().catch(err => {
+    console.error('generate-static-help:', err);
+    process.exit(1);
+});
