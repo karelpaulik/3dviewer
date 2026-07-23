@@ -1055,7 +1055,7 @@ canvas {
 
 #info {
 	position: absolute;
-	top: 0px;
+	top: 28px; /* below the fixed #gui-toolbar so content isn't hidden underneath it */
 	width: 100%;
 	padding: 10px;
 	box-sizing: border-box;
@@ -1066,6 +1066,15 @@ canvas {
 	user-select: none;
 	/*pointer-events: none;*/
 	z-index: 1; /* TODO Solve this in HTML */
+}
+
+#appTitle {
+	display: inline-block;
+	margin: 0 12px 0 0;
+	font-size: 13px;
+	font-weight: 600;
+	color: rgba(255,255,255,0.85);
+	vertical-align: middle;
 }
 
 a, button, input, select {
