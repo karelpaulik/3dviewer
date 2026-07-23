@@ -41,6 +41,13 @@ function buildPage(doc, slug, docHtml) {
         stripHtml,
         buildDocContentCss,
         buildDocContentWrapperCss,
+        buildTocFromHeadings,
+        buildTocNavHtml,
+        buildTocShellCss,
+        buildTocScrollSpyScript,
+        buildTocToggleButtonHtml,
+        buildTocToggleCss,
+        buildTocToggleScript,
     } = docHtml;
 
     const title = (doc.title || slug).trim();
@@ -50,16 +57,50 @@ function buildPage(doc, slug, docHtml) {
     const pageTitle = `${title} \u2013 Meshbex Help`;
     const canonical = `${SITE_URL}/help/${slug}.html`;
     const ogImage = `${SITE_URL}/icon-512.png`;
-    const interactiveUrl = `/help.html?doc=${encodeURIComponent('/help/' + slug + '.json')}`;
 
     const safeTitle = escapeHtml(pageTitle);
     const safeDescription = escapeHtml(description);
     const style = resolveDocStyle(doc);
-    const wrapperCss = buildDocContentWrapperCss('#staticHelpContent', style, `
-    margin: 24px auto 64px;
-    min-height: auto;
-    border-radius: 4px;`);
+    const { contentHtml, toc } = buildTocFromHeadings(doc.content || '');
+    const hasToc = toc.length >= 2;
+    const tocHtml = hasToc ? buildTocNavHtml(toc, 'staticHelpToc') : '';
     const contentCss = buildDocContentCss('#staticHelpContent', style);
+
+    const wrapperExtra = hasToc
+        ? 'margin: 0 auto;\n    min-height: 100%;'
+        : 'margin: 24px auto 64px;\n    min-height: auto;\n    border-radius: 4px;';
+    const wrapperCss = buildDocContentWrapperCss('#staticHelpContent', style, wrapperExtra);
+    const tocShellCss = hasToc
+        ? buildTocShellCss('staticHelpBody', 'staticHelpToc', 'staticHelpContentWrap', 'font-family: Arial, sans-serif;')
+        : '';
+    const tocToggleCss = hasToc ? buildTocToggleCss('staticHelpToc', 'staticTocToggleBtn') : '';
+
+    const bodyLayoutCss = hasToc
+        ? `html, body { height: 100%; }
+body { display: flex; flex-direction: column; overflow: hidden; }`
+        : '';
+
+    const headerHtml = hasToc
+        ? `<div id="staticHelpHeader">
+    ${buildTocToggleButtonHtml('staticTocToggleBtn')}
+    <a class="staticHelpHeaderHome" href="/">\u2190 Meshbex CAD Explorer</a>
+</div>`
+        : `<div id="staticHelpHeader">
+    <a class="staticHelpHeaderHome" href="/">\u2190 Meshbex CAD Explorer</a>
+</div>`;
+
+    const bodyContent = hasToc
+        ? `<div id="staticHelpBody">
+  ${tocHtml}
+  <div id="staticHelpContentWrap">
+    <main id="staticHelpContent">${contentHtml}</main>
+  </div>
+</div>
+<script>
+${buildTocScrollSpyScript('#staticHelpContent', 'staticHelpToc', 'staticHelpContentWrap')}
+${buildTocToggleScript('staticHelpToc', 'staticTocToggleBtn')}
+<\/script>`
+        : `<main id="staticHelpContent">${contentHtml}</main>`;
 
     return `<!DOCTYPE html>
 <html lang="en">
@@ -92,34 +133,32 @@ html, body {
     background: #1a1a1a;
     color: #ddd;
 }
+${bodyLayoutCss}
 #staticHelpHeader {
     display: flex;
     align-items: center;
-    justify-content: space-between;
     gap: 12px;
-    flex-wrap: wrap;
     padding: 14px 20px;
     background: #2a2a2a;
     border-bottom: 1px solid #444;
+    flex-shrink: 0;
 }
-#staticHelpHeader a {
+.staticHelpHeaderHome {
+    margin-left: auto;
     color: #5af;
     text-decoration: none;
     font-size: 13px;
 }
-#staticHelpHeader a:hover { text-decoration: underline; }
+.staticHelpHeaderHome:hover { text-decoration: underline; }
+${tocToggleCss}
+${tocShellCss}
 ${wrapperCss}
 ${contentCss}
 </style>
 </head>
 <body>
-<div id="staticHelpHeader">
-    <a href="/">\u2190 Meshbex CAD Explorer</a>
-    <a href="${interactiveUrl}">Open interactive version with table of contents \u2197</a>
-</div>
-<main id="staticHelpContent">
-${doc.content || ''}
-</main>
+${headerHtml}
+${bodyContent}
 </body>
 </html>
 `;

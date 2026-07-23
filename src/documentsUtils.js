@@ -17,6 +17,7 @@ import {
     buildTocNavHtml,
     buildDocContentCss,
     buildDocContentWrapperCss,
+    buildTocShellCss,
     buildTocScrollSpyScript,
 } from '../scripts/docHtmlShared.mjs';
 
@@ -1117,6 +1118,7 @@ function _exportCurrentDocHtml() {
     const safeTitle = escapeHtml(title);
     const contentCss = buildDocContentCss('#docContentInner', style);
     const wrapperCss = buildDocContentWrapperCss('#docContentInner', style, '');
+    const tocShellCss = buildTocShellCss('docBody', 'docToc', 'docContentWrap');
 
     const html = `<!DOCTYPE html>
 <html lang="cs">
@@ -1130,24 +1132,9 @@ html, body { height: 100%; margin: 0; padding: 0; font-family: ${style.fontFamil
 #docHeader { height: 44px; background: #2a2a2a; border-bottom: 1px solid #444; display: flex; align-items: center; padding: 0 20px; flex-shrink: 0; }
 #docHeaderTitle { font-size: 15px; font-weight: 600; color: #fff; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #docBody { display: flex; height: calc(100vh - 44px); overflow: hidden; }
-#docToc { width: 240px; flex-shrink: 0; overflow-y: auto; background: #222; border-right: 1px solid #444; padding: 10px 0; }
-#docToc ul { list-style: none; margin: 0; padding: 0; }
-#docToc li { margin: 0; }
-#docToc a { display: block; padding: 4px 14px; color: #bbb; text-decoration: none; font-size: 12px; border-left: 3px solid transparent; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.5; transition: background 0.1s, color 0.1s; }
-#docToc a:hover { background: rgba(255,255,255,0.07); color: #fff; }
-#docToc a.active { border-left-color: #5af; color: #5af; background: rgba(85,170,255,0.08); }
-#docToc .toc-level-1 > a { font-weight: 600; padding-left: 8px; color: #ddd; }
-#docToc .toc-level-2 > a { padding-left: 22px; }
-#docToc .toc-level-3 > a { padding-left: 36px; font-size: 11px; color: #999; }
-#docToc .toc-level-4 > a { padding-left: 50px; font-size: 11px; color: #888; }
-#docContentWrap { flex: 1; overflow-y: auto; background: #c8c8c8; }
+${tocShellCss}
 ${wrapperCss}
 ${contentCss}
-#docContentWrap::-webkit-scrollbar { width: 8px; }
-#docContentWrap::-webkit-scrollbar-track { background: #b0b0b0; }
-#docContentWrap::-webkit-scrollbar-thumb { background: #888; border-radius: 4px; }
-#docToc::-webkit-scrollbar { width: 6px; }
-#docToc::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
 </style>
 </head>
 <body>
