@@ -740,6 +740,14 @@ export function rebuildTree(loadedModels, preserveExpanded = false) {
 }
 
 /**
+ * Rebuild the outliner when overlay/tool children changed and they should be visible in the tree.
+ */
+export function notifyOutlinerAuxiliaryChildrenChanged() {
+    if (!showAuxiliaryObjects || lastLoadedModels.length === 0) return;
+    rebuildTree(lastLoadedModels, true);
+}
+
+/**
  * Toggle whether overlays and tool objects appear in the outliner.
  * @param {boolean} value
  */

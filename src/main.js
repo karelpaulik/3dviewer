@@ -23,7 +23,7 @@ import { GUI } from 'lil-gui';
 import ZipLoader from 'zip-loader';
 import { updateCrossSectionLines as updateCrossSectionLinesCore, updateSectionCrossLines as updateSectionCrossLinesCore } from './crossSectionUtils.js';
 import { exportToHTML, exportToHTMLDraco, exportToHTMLObfuscated, exportToHTMLObfuscatedDraco } from './htmlExport.js';
-import { initOutliner, toggleOutliner, rebuildTree, highlightObject as outlinerHighlight, updateVisibilityIcon, updateSelectableIcon, updateObjectLabel, isOutlinerOpen, navigateOutliner, highlightGroupObjects, clearGroupHighlights, setNavigationPosition, setOnTreeRebuild, setShowAuxiliaryObjects, isOutlinerAuxiliaryObject } from './sceneOutliner.js';
+import { initOutliner, toggleOutliner, rebuildTree, highlightObject as outlinerHighlight, updateVisibilityIcon, updateSelectableIcon, updateObjectLabel, isOutlinerOpen, navigateOutliner, highlightGroupObjects, clearGroupHighlights, setNavigationPosition, setOnTreeRebuild, setShowAuxiliaryObjects, isOutlinerAuxiliaryObject, notifyOutlinerAuxiliaryChildrenChanged } from './sceneOutliner.js';
 import { positionContextMenu } from './uiMenuUtils.js';
 import { computeModelStats } from './modelInfoUtils.js';
 import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, updateMeasurement3dOrientations, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements, isSelectDimActive, setSelectDimActive, refreshLabelEditListeners, hasSelectedDimension, deselectSelectedDimension, deleteSelectedDimension, resetSelectedMeasurementLabel, getSelectedMeasurementLabelStyle, getSelectedMeasurementLabelDim, setSelectedMeasurementLabelDim, setSelectedMeasurementOrientationMode, setSelectedMeasurementTextColor, setSelectedMeasurementBgColor, setSelectedMeasurementFontSize, initSelectDimension, updateSelectDimensionCamera, reconstructMeasurements, stripMeasurementVisuals, setMeasurementsVisible, setMeasurementDepthTest, removeMeasurementsForOwner, isCadDimActive, setCadDimActive, getCadDimStep, getCadDimAxis, addCadDimPoint, updateCadDimPreview, updateCadDimHoverPreview, cycleCadDimAxis, placeCadDim, clearCadDimMeasurements, removeCadDimMeasurementsForOwner, getSelectedCadDim, setCadDimLabelMode, setCadDimDragMode, selectDimTouchStart, selectDimTouchMove, selectDimTouchEnd, registerLabelForSelection, getSelectedCadDim3d, getSelectedAnnotation, getSelectedAnnotation3d, getSelectedDistance, getSelectedAngle, getCadDimMeasurements, deleteCadDimByRef, convertCadDim3dTo2d, getFlatDimDefaults, applyDefaultsToAllFlatDim, getDistanceLabelDefaults, getAngleLabelDefaults, getDistanceMarkerDefaults, getAngleMarkerDefaults, applyDefaultsToAllDistanceMeasurements, applyDefaultsToAllAngleMeasurements, setDistanceMarkerColor, setAngleMarkerColor, getMeasurementMarkerSettings, setMeasurementMarkerFixedSize, setMeasurementMarkerFixedScreenPx, setMeasurementMarkerWorldSize, getDefaultMeasurementLabelDim, setDefaultMeasurementLabelDim, getMeasurement3dDefaults, setDimMarkerFixedSize, setDimMarkerFixedScreenPx, setDimMarkerWorldSize, setDimMarkerColor, getDimMarkerSettings, setMeasureOnSessionComplete, setAngleOnSessionComplete, setCadDimOnSessionComplete } from './measurementUtils.js';
@@ -238,6 +238,15 @@ const meshObjects = [];
 const hiddenObjects = [];
 let temporarilyShownObjects = [];
 const loadedModels = []; // Pole pro uchování načtených GLB modelů (root scene objekty)
+
+function refreshOutlinerOverlaysAndTools() {
+    notifyOutlinerAuxiliaryChildrenChanged();
+}
+
+function deleteSelectedDimensionAndRefresh() {
+    deleteSelectedDimension(render);
+    refreshOutlinerOverlaysAndTools();
+}
 
 // ===== Assembly / Disassembly Workflow =====
 const assemblyData = {
@@ -2060,7 +2069,7 @@ function init() {
         switch ( event.key ) {
             case 'Delete':
                 if (isSelectDimActive() && hasSelectedDimension()) {
-                    deleteSelectedDimension(render);
+                    deleteSelectedDimensionAndRefresh();
                 } else if (selectedObjects.length > 0) {
                     removeSelectedGroup();
                 } else if (lastSelectedObject) {
@@ -2289,6 +2298,7 @@ function init() {
         const newAnn3d = reconstructAnnotation3dFromRec(owner, rec, renderFn);
         registerLabelForSelection(newAnn3d);
         if (renderFn) renderFn();
+        refreshOutlinerOverlaysAndTools();
     });
     setConvertTo2dFn((annotation, renderFn) => {
         const owner = annotation.ownerObject || scene;
@@ -2304,6 +2314,7 @@ function init() {
         const newAnn2d = reconstructAnnotationFromRec(owner, rec, renderFn);
         registerLabelForSelection(newAnn2d);
         if (renderFn) renderFn();
+        refreshOutlinerOverlaysAndTools();
     });
 
     // CAD dim placement hint overlay (created here, referenced by module-level pointer)
@@ -2542,6 +2553,7 @@ function addMainGui() {
         folderProp.add(viewProp, 'perspCam').name('Persp. camera').onChange(function(value){setCamera(); render(); });
         folderProp.add(viewProp, 'showSharpEdges').name('Sharp edges').onChange(function() {
             updateEdgeOverlays();
+            refreshOutlinerOverlaysAndTools();
         }).listen();
         folderProp.add(viewProp, 'edgeAngleThreshold', 1, 45, 1).name('Edge angle threshold').onChange(function() {
             scheduleEdgeThresholdUpdate();
@@ -3345,12 +3357,12 @@ function addToolsGui() {
         setAnnotationDepthTest,
         setAnnotation3dDepthTest,
         setCadDim3dDepthTest,
-        clearMeasurements,
-        clearAngleMeasurements,
-        clearCadDimMeasurements,
-        clearCadDim3dMeasurements,
-        clearAnnotations,
-        clearAnnotations3d,
+        clearMeasurements: (renderFn) => { clearMeasurements(renderFn); refreshOutlinerOverlaysAndTools(); },
+        clearAngleMeasurements: (renderFn) => { clearAngleMeasurements(renderFn); refreshOutlinerOverlaysAndTools(); },
+        clearCadDimMeasurements: (renderFn) => { clearCadDimMeasurements(renderFn); refreshOutlinerOverlaysAndTools(); },
+        clearCadDim3dMeasurements: (renderFn) => { clearCadDim3dMeasurements(renderFn); refreshOutlinerOverlaysAndTools(); },
+        clearAnnotations: (renderFn) => { clearAnnotations(renderFn); refreshOutlinerOverlaysAndTools(); },
+        clearAnnotations3d: (renderFn) => { clearAnnotations3d(renderFn); refreshOutlinerOverlaysAndTools(); },
         getFlatDimDefaults,
         getCadDim3dDefaults,
         getDimMarkerSettings,
@@ -3403,7 +3415,10 @@ function addToolsGui() {
     const toolsGui = initToolsPanel(guiContainer, toolsDeps);
     registerGuiPanel('Tools', toolsGui);
 
-    const onToolComplete = (toolId) => () => finishToolSession(toolsDeps, toolId);
+    const onToolComplete = (toolId) => () => {
+        finishToolSession(toolsDeps, toolId);
+        refreshOutlinerOverlaysAndTools();
+    };
     setMeasureOnSessionComplete(onToolComplete('measure'));
     setAngleOnSessionComplete(onToolComplete('angle'));
     setCadDimOnSessionComplete(onToolComplete('dimension'));
@@ -4620,6 +4635,7 @@ function bakeSelectedObjectLocation() {
 
     // Geometry was rebaked above; rebuild edge overlays so they stay aligned with the new surface.
     refreshEdgeOverlaysAfterSceneChange();
+    refreshOutlinerOverlaysAndTools();
     render();
 }
 
@@ -4967,6 +4983,7 @@ function toggleSectionMeshAll() {
     } else {
         removeSectionMeshesOnly();
     }
+    refreshOutlinerOverlaysAndTools();
     render();
 }
 
@@ -5206,6 +5223,7 @@ function setSectionEnabled(enabled) {
         clearSolidSection(scene, render);
     }
     syncSectionToggleUi();
+    refreshOutlinerOverlaysAndTools();
     render();
 }
 
@@ -8706,6 +8724,7 @@ function onClick( event ) {
             : _llIntersects.filter(h => { let o = h.object; while (o) { if (!o.visible) return false; o = o.parent; } return true; });
         if (_llVisible.length > 0) {
             commitAddLeaderLine(_llVisible[0].point, _llVisible[0].object, render);
+            refreshOutlinerOverlaysAndTools();
         }
         return;
     }
@@ -8722,6 +8741,7 @@ function onClick( event ) {
             : _ll3Intersects.filter(h => { let o = h.object; while (o) { if (!o.visible) return false; o = o.parent; } return true; });
         if (_ll3Visible.length > 0) {
             commitAddLeaderLine3d(_ll3Visible[0].point, _ll3Visible[0].object, render);
+            refreshOutlinerOverlaysAndTools();
         }
         return;
     }
@@ -12501,7 +12521,7 @@ function assemblyMoveStepDown() {
         }));
 
         m.appendChild(simpleItem('Delete dimension', () => {
-            deleteSelectedDimension(render);
+            deleteSelectedDimensionAndRefresh();
             hideAll();
         }));
 
@@ -12655,7 +12675,7 @@ function assemblyMoveStepDown() {
         }));
 
         m.appendChild(simpleItem('Delete dimension', () => {
-            deleteSelectedDimension(render);
+            deleteSelectedDimensionAndRefresh();
             hideAll();
         }));
 
@@ -12779,7 +12799,7 @@ function assemblyMoveStepDown() {
         m.appendChild(itemToggleDim);
 
         const itemDelete = simpleItem('Delete measurement', () => {
-            deleteSelectedDimension(render);
+            deleteSelectedDimensionAndRefresh();
             hideAll();
         });
         m.appendChild(itemDelete);
