@@ -544,11 +544,17 @@ let selectBtnEl = null;
 let renameBtnEl = null;
 let currentMatchSet = new Set();
 
-/** When false, section mesh nodes are hidden from the outliner tree. */
+/** When false, auxiliary view nodes (section mesh, sharp edges) are hidden from the outliner tree. */
 let showAuxiliaryObjects = false;
 
 function isOutlinerAuxiliaryNode(obj) {
-    return !!obj.isSectionMesh;
+    return !!obj.isSectionMesh
+        || !!obj.userData?._isEdgeOverlay;
+}
+
+/** @param {import('three').Object3D|null|undefined} obj */
+export function isOutlinerAuxiliaryObject(obj) {
+    return !!obj && isOutlinerAuxiliaryNode(obj);
 }
 
 function getOutlinerChildren(obj) {
