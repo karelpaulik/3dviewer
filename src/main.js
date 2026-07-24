@@ -2546,6 +2546,12 @@ function addMainGui() {
         folderProp.add(viewProp, 'edgeAngleThreshold', 1, 45, 1).name('Edge angle threshold').onChange(function() {
             scheduleEdgeThresholdUpdate();
         }).listen();
+        folderProp.add(viewProp, 'showAuxiliaryObjects').name('Outliner: auxiliary objects').onChange(function(value) {
+            setShowAuxiliaryObjects(value);
+            if (!value && lastSelectedObject && isOutlinerAuxiliaryObject(lastSelectedObject)) {
+                deselectObject();
+            }
+        }).listen();
         const sectionFolder = folderProp.addFolder("Section view");   
             sectionCtrl = sectionFolder.add(viewProp, 'section').name('Section').onChange(function(value){ setSectionEnabled(value); }).listen();
             sectionModeCtrl = sectionFolder.add(viewProp, 'sectionMode', Object.fromEntries(
@@ -2570,12 +2576,6 @@ function addMainGui() {
                 if (viewProp.solidSection) doComputeSolidSection();
             });
             showSectionMeshCtrl = sectionFolder.add(viewProp, 'showSectionMesh').name('Show Section Mesh').onChange(function(value){ toggleSectionMeshAll(); showSectionMeshBtn.classList.toggle('active', value); render(); }).listen();
-            sectionFolder.add(viewProp, 'showAuxiliaryObjects').name('Show auxiliary objects').onChange(function(value) {
-                setShowAuxiliaryObjects(value);
-                if (!value && lastSelectedObject && isOutlinerAuxiliaryObject(lastSelectedObject)) {
-                    deselectObject();
-                }
-            }).listen();
             sectionFolder.add(viewProp, 'sectionGizmo').name('Gizmo').onChange(function(value){ activateSectionGizmo(value); }).listen();
             sectionGizmoModeCtrl = sectionFolder.add(viewProp, 'sectionGizmoMode', ['translate', 'rotate']).name('Gizmo mode').onChange(function(value){ applySectionGizmoMode(); }).listen();
             sectionFolder.add(viewProp, 'sectionSnapTranslation', 0.1, 100, 0.1).name('Snap translation').onChange(function(value){ sectionTransformControls.setTranslationSnap(value); }).listen();
