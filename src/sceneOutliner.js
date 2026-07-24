@@ -296,7 +296,7 @@ function showCtxMenu(x, y, obj, li) {
         hideCtxMenu();
         if (onGroupAdd) {
             // Snapshot first — attach() reparents each child (mutates live children array)
-            [...obj.children].forEach(child => onGroupAdd(child));
+            getOutlinerChildren(obj).forEach(child => onGroupAdd(child));
         }
     });
     menu.appendChild(selChildrenItem);
@@ -307,7 +307,7 @@ function showCtxMenu(x, y, obj, li) {
     menu.appendChild(sep3);
 
     // --- Sort children (first level) ---
-    if (obj.children && obj.children.length > 1) {
+    if (getOutlinerChildren(obj).length > 1) {
         const sortItem = document.createElement('div');
         sortItem.className = 'outliner-ctx-item';
         sortItem.textContent = 'Sort children A→Z';
@@ -544,6 +544,18 @@ let selectBtnEl = null;
 let renameBtnEl = null;
 let currentMatchSet = new Set();
 
+/** When false, section mesh nodes are hidden from the outliner tree. */
+let showAuxiliaryObjects = false;
+
+function isOutlinerAuxiliaryNode(obj) {
+    return !!obj.isSectionMesh;
+}
+
+function getOutlinerChildren(obj) {
+    if (showAuxiliaryObjects) return obj.children;
+    return obj.children.filter(child => !isOutlinerAuxiliaryNode(child));
+}
+
 // -------------------------------------------------------------------
 // Public API
 // -------------------------------------------------------------------
@@ -713,6 +725,18 @@ export function rebuildTree(loadedModels, preserveExpanded = false) {
     }
     if (preserveExpanded) {
         treeEl.scrollTop = scrollTop;
+    }
+}
+
+/**
+ * Toggle whether auxiliary view objects (e.g. section mesh) appear in the outliner.
+ * @param {boolean} value
+ */
+export function setShowAuxiliaryObjects(value) {
+    if (showAuxiliaryObjects === value) return;
+    showAuxiliaryObjects = !!value;
+    if (lastLoadedModels.length > 0) {
+        rebuildTree(lastLoadedModels, true);
     }
 }
 
@@ -896,8 +920,9 @@ function restoreExpandedUUIDs(uuids) {
                 const childList = li.querySelector(':scope > .outliner-children');
                 const arrow = li.querySelector(':scope > .outliner-row > .outliner-arrow');
                 if (childList) {
-                    if (childList.children.length === 0 && obj.children.length > 0) {
-                        for (const child of obj.children) {
+                    const outlinerChildren = getOutlinerChildren(obj);
+                    if (childList.children.length === 0 && outlinerChildren.length > 0) {
+                        for (const child of outlinerChildren) {
                             childList.appendChild(createTreeNode(child, depth + 1));
                         }
                     }
@@ -928,7 +953,7 @@ function createTreeNode(obj, depth) {
     domToObject.set(li, obj);
     objectToDom.set(obj, li);
 
-    const hasChildren = obj.children && obj.children.length > 0;
+    const hasChildren = getOutlinerChildren(obj).length > 0;
 
     // Row container
     const row = document.createElement('div');
@@ -1114,8 +1139,9 @@ function expandSubtree(li, obj, depth) {
     const arrow = li.querySelector(':scope > .outliner-row > .outliner-arrow');
     if (!childList) return;
     // Lazy-populate if needed
-    if (childList.children.length === 0 && obj.children.length > 0) {
-        for (const child of obj.children) {
+    const outlinerChildren = getOutlinerChildren(obj);
+    if (childList.children.length === 0 && outlinerChildren.length > 0) {
+        for (const child of outlinerChildren) {
             childList.appendChild(createTreeNode(child, depth + 1));
         }
     }
@@ -1123,7 +1149,7 @@ function expandSubtree(li, obj, depth) {
     if (arrow) arrow.textContent = '▼';
     li.classList.add('outliner-expanded');
     // Recurse into children
-    for (const child of obj.children) {
+    for (const child of outlinerChildren) {
         const childLi = objectToDom.get(child);
         if (childLi) expandSubtree(childLi, child, depth + 1);
     }
@@ -1160,8 +1186,9 @@ function toggleExpand(li, obj, depth) {
         li.classList.remove('outliner-expanded');
     } else {
         // Lazy create children on first expand
-        if (childList.children.length === 0 && obj.children.length > 0) {
-            for (const child of obj.children) {
+        const outlinerChildren = getOutlinerChildren(obj);
+        if (childList.children.length === 0 && outlinerChildren.length > 0) {
+            for (const child of outlinerChildren) {
                 childList.appendChild(createTreeNode(child, depth + 1));
             }
         }
@@ -1182,7 +1209,7 @@ function expandParents(li) {
                 const obj = domToObject.get(parent);
                 if (obj && childList.children.length === 0) {
                     const depth = getDepth(parent);
-                    for (const child of obj.children) {
+                    for (const child of getOutlinerChildren(obj)) {
                         childList.appendChild(createTreeNode(child, depth + 1));
                     }
                 }
@@ -1266,7 +1293,7 @@ function computeVisibleSet(obj, regex, visibleSet, matchSet) {
     const selfMatch = regex.test(getDisplayName(obj));
     if (selfMatch && matchSet) matchSet.add(obj);
     let anyChildMatch = false;
-    for (const child of obj.children) {
+    for (const child of getOutlinerChildren(obj)) {
         if (computeVisibleSet(child, regex, visibleSet, matchSet)) anyChildMatch = true;
     }
     const visible = selfMatch || anyChildMatch;
@@ -1286,18 +1313,19 @@ function applyFilterVisibility(obj, visibleSet, depth) {
         return;
     }
     li.style.display = '';
-    if (obj.children.length > 0) {
+    const outlinerChildren = getOutlinerChildren(obj);
+    if (outlinerChildren.length > 0) {
         const childList = li.querySelector(':scope > .outliner-children');
         if (childList) {
             if (childList.children.length === 0) {
-                for (const child of obj.children) {
+                for (const child of outlinerChildren) {
                     childList.appendChild(createTreeNode(child, depth + 1));
                 }
             }
             childList.style.display = '';
             const arrow = li.querySelector(':scope > .outliner-row > .outliner-arrow');
             if (arrow) arrow.textContent = '\u25bc';
-            for (const child of obj.children) {
+            for (const child of outlinerChildren) {
                 applyFilterVisibility(child, visibleSet, depth + 1);
             }
         }
@@ -1338,7 +1366,7 @@ function getMatchedObjectsInOrder() {
     const result = [];
     function walk(obj) {
         if (currentMatchSet.has(obj)) result.push(obj);
-        for (const child of obj.children) walk(child);
+        for (const child of getOutlinerChildren(obj)) walk(child);
     }
     for (const root of lastLoadedModels) walk(root);
     return result;
@@ -1351,7 +1379,7 @@ function openRenameDialog() {
     if (wasEmpty && lastLoadedModels.length > 0) {
         function walkAll(obj) {
             currentMatchSet.add(obj);
-            for (const child of obj.children) walkAll(child);
+            for (const child of getOutlinerChildren(obj)) walkAll(child);
         }
         for (const root of lastLoadedModels) walkAll(root);
     }
