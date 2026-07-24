@@ -544,12 +544,17 @@ let selectBtnEl = null;
 let renameBtnEl = null;
 let currentMatchSet = new Set();
 
-/** When false, auxiliary view nodes (section mesh, sharp edges) are hidden from the outliner tree. */
+/** When false, overlays and tool objects are hidden from the outliner tree. */
 let showAuxiliaryObjects = false;
 
 function isOutlinerAuxiliaryNode(obj) {
+    const ud = obj.userData;
     return !!obj.isSectionMesh
-        || !!obj.userData?._isEdgeOverlay;
+        || !!ud?._isEdgeOverlay
+        || !!ud?._isMeasurement
+        || !!ud?._isAnnotation
+        || !!ud?._isAnnotation3d
+        || !!ud?._isCadDim3d;
 }
 
 /** @param {import('three').Object3D|null|undefined} obj */
@@ -735,7 +740,7 @@ export function rebuildTree(loadedModels, preserveExpanded = false) {
 }
 
 /**
- * Toggle whether auxiliary view objects (e.g. section mesh) appear in the outliner.
+ * Toggle whether overlays and tool objects appear in the outliner.
  * @param {boolean} value
  */
 export function setShowAuxiliaryObjects(value) {

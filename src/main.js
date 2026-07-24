@@ -1196,7 +1196,7 @@ const viewProp = {
     crossSectionPos: 0,
     crossSectionColor: "#ff0000",
     showSectionMesh: false, // Toggle pro zobrazení/skrytí sectionMesh
-    showAuxiliaryObjects: false, // Zobrazit pomocné objekty (section mesh, sharp edges) ve Scene outlineru
+    showAuxiliaryObjects: false, // Zobrazit overlays a tool objekty ve Scene outlineru
     sectionGizmo: false, // Toggle section gizmo on/off
     sectionSnapTranslation: 1, // Snap step for section gizmo translation
     autoUpdateSectionLines: false, // Automaticky aktualizovat průřezové čáry při změnách scény
@@ -2546,7 +2546,7 @@ function addMainGui() {
         folderProp.add(viewProp, 'edgeAngleThreshold', 1, 45, 1).name('Edge angle threshold').onChange(function() {
             scheduleEdgeThresholdUpdate();
         }).listen();
-        folderProp.add(viewProp, 'showAuxiliaryObjects').name('Outliner: auxiliary objects').onChange(function(value) {
+        folderProp.add(viewProp, 'showAuxiliaryObjects').name('Outliner: overlays & tools').onChange(function(value) {
             setShowAuxiliaryObjects(value);
             if (!value && lastSelectedObject && isOutlinerAuxiliaryObject(lastSelectedObject)) {
                 deselectObject();
