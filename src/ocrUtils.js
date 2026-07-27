@@ -8,16 +8,14 @@ let _idleTimer = null;
 const IDLE_TIMEOUT_MS = 5 * 60 * 1000;
 const DEFAULT_LANGS = ['ces', 'eng'];
 
-function _baseUrl() {
-    const base = import.meta.env.BASE_URL || './';
-    return base.endsWith('/') ? base : `${base}/`;
-}
-
 function _ocrPaths() {
-    const base = _baseUrl();
+    // Absolute paths: public/tesseract/ and public/tessdata/ are always served
+    // from the site root, regardless of which HTML entry point (landing page
+    // vs. /app/) loaded this script, so import.meta.env.BASE_URL (a single
+    // build-time constant shared by both) is not reliable here.
     return {
-        workerPath: `${base}tesseract/worker.min.js`,
-        langPath: `${base}tessdata/4.0.0_best_int/`,
+        workerPath: '/tesseract/worker.min.js',
+        langPath: '/tessdata/4.0.0_best_int/',
         corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@7.0.0/',
     };
 }

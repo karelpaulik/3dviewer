@@ -2709,27 +2709,27 @@ function addMainGui() {
     const demoFolder = fileGui.addFolder('Import demo');
     demoFolder.close();
     demoFolder.add({ fn() {
-        loadGlbModel('./models/drilling_machine.glb', 'drilling_machine.glb', 0.001, true).then(() => {
+        loadGlbModel('/models/drilling_machine.glb', 'drilling_machine.glb', 0.001, true).then(() => {
             fitView();
         });
     } }, 'fn').name('Drilling machine (MAIN DEMO)');
     demoFolder.add({ fn() {
-        loadGlbModel('./models/motor.glb', 'motor.glb', 0.001, true).then(() => {
+        loadGlbModel('/models/motor.glb', 'motor.glb', 0.001, true).then(() => {
             fitView();
         });
     } }, 'fn').name('Motor');
     demoFolder.add({ fn() {
-        loadGlbModel('./models/forklift.glb', 'forklift.glb', 0.001, true).then(() => {
+        loadGlbModel('/models/forklift.glb', 'forklift.glb', 0.001, true).then(() => {
             fitView();
         });
     } }, 'fn').name('Forklift');
     demoFolder.add({ fn() {
-        loadGlbModel('./models/cnc.glb', 'cnc.glb', 0.001, true).then(() => {
+        loadGlbModel('/models/cnc.glb', 'cnc.glb', 0.001, true).then(() => {
             fitView();
         });
     } }, 'fn').name('CNC');
     demoFolder.add({ fn() {
-        loadGlbModel('./models/DJI_drone.glb', 'DJI_drone.glb', 0.001, true).then(() => {
+        loadGlbModel('/models/DJI_drone.glb', 'DJI_drone.glb', 0.001, true).then(() => {
             fitView();
         });
     } }, 'fn').name('DJI_drone');
@@ -4336,10 +4336,10 @@ function initLoad() {
 
     } else {
         //console.error("Chyba: Nebyl nalezen žádný model k načtení.");
-        //loadStlModel('./models/1011364_c.zip','1011364_c.zip', 0.001, true).then( (result)=>{} );	
+        //loadStlModel('/models/1011364_c.zip','1011364_c.zip', 0.001, true).then( (result)=>{} );	
         
         //loadGlbModel('/models/1012053_l.glb','1012053_l.glb', 0.001, true).then( (result)=>{meshObjects.push( result )} );
-        loadGlbModel('./models/1012053_l.glb','1012053_l.glb', 0.001, true).then( (result)=>{
+        loadGlbModel('/models/1012053_l.glb','1012053_l.glb', 0.001, true).then( (result)=>{
             fitView();
         });
     }
@@ -6344,9 +6344,9 @@ function loadGlbModel(model, name, scale, colored) {
     return new Promise((resolve, reject) => {
         const loader = new GLTFLoader();
         const dracoLoader = new DRACOLoader();
-        dracoLoader.setDecoderPath('./draco/');
+        dracoLoader.setDecoderPath('/draco/');
         loader.setDRACOLoader(dracoLoader);
-        //loader.load('./models/1012053_l.glb', function (gltf) {
+        //loader.load('/models/1012053_l.glb', function (gltf) {
         loader.load(model, function (gltf) {
             // Oprava extrémních scale hodnot způsobených exportem (např. 0.001 nebo 0.01 z CAD → Blender → GLB)
             // Povolený rozsah: [0.1, 10] — vše mimo se považuje za artefakt exportu a resetuje se na 1
@@ -10424,8 +10424,8 @@ async function compressGlbWithDraco(result) {
         document.head.appendChild(s);
     });
 
-    await loadDracoScript('./draco/draco_encoder_wasm.js');
-    await loadDracoScript('./draco/draco_decoder_wasm.js');
+    await loadDracoScript('/draco/draco_encoder_wasm.js');
+    await loadDracoScript('/draco/draco_decoder_wasm.js');
 
     const encoder = await window.DracoEncoderModule();
     const decoder = await window.DracoDecoderModule();
@@ -10699,8 +10699,8 @@ async function exportSelectedObjectDraco() {
                         document.head.appendChild(s);
                     });
 
-                    await loadDracoScript('./draco/draco_encoder_wasm.js');
-                    await loadDracoScript('./draco/draco_decoder_wasm.js');
+                    await loadDracoScript('/draco/draco_encoder_wasm.js');
+                    await loadDracoScript('/draco/draco_decoder_wasm.js');
 
                     const encoder = await window.DracoEncoderModule();
                     const decoder = await window.DracoDecoderModule();
@@ -10809,8 +10809,8 @@ async function exportSelectedObjectDraco() {
                     document.head.appendChild(s);
                 });
 
-                await loadDracoScript('./draco/draco_encoder_wasm.js');
-                await loadDracoScript('./draco/draco_decoder_wasm.js');
+                await loadDracoScript('/draco/draco_encoder_wasm.js');
+                await loadDracoScript('/draco/draco_decoder_wasm.js');
 
                 const encoder = await window.DracoEncoderModule();
                 const decoder = await window.DracoDecoderModule();

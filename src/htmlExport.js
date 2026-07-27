@@ -137,8 +137,8 @@ export function exportToHTMLDraco(loadedModels, assemblyGui, viewProp, assemblyW
                 document.head.appendChild(s);
             });
 
-            await loadDracoScript('./draco/draco_encoder_wasm.js');
-            await loadDracoScript('./draco/draco_decoder_wasm.js');
+            await loadDracoScript('/draco/draco_encoder_wasm.js');
+            await loadDracoScript('/draco/draco_decoder_wasm.js');
 
             const encoder = await window.DracoEncoderModule();
             const decoder = await window.DracoDecoderModule();
@@ -186,7 +186,7 @@ export function exportToHTMLDraco(loadedModels, assemblyGui, viewProp, assemblyW
         // Fetch Draco decoder JS for embedding in standalone HTML
         let dracoDecoderBase64 = '';
         try {
-            const resp = await fetch('./draco/draco_decoder.js');
+            const resp = await fetch('/draco/draco_decoder.js');
             const text = await resp.text();
             dracoDecoderBase64 = btoa(unescape(encodeURIComponent(text)));
         } catch (err) {
@@ -2166,8 +2166,8 @@ export function exportToHTMLObfuscatedDraco(loadedModels, assemblyGui, viewProp,
                 document.head.appendChild(s);
             });
 
-            await loadDracoScript('./draco/draco_encoder_wasm.js');
-            await loadDracoScript('./draco/draco_decoder_wasm.js');
+            await loadDracoScript('/draco/draco_encoder_wasm.js');
+            await loadDracoScript('/draco/draco_decoder_wasm.js');
 
             const encoder = await window.DracoEncoderModule();
             const decoder = await window.DracoDecoderModule();
@@ -2212,7 +2212,7 @@ export function exportToHTMLObfuscatedDraco(loadedModels, assemblyGui, viewProp,
 
         let dracoDecoderBase64 = '';
         try {
-            const resp = await fetch('./draco/draco_decoder.js');
+            const resp = await fetch('/draco/draco_decoder.js');
             const text = await resp.text();
             dracoDecoderBase64 = btoa(unescape(encodeURIComponent(text)));
         } catch (err) {
