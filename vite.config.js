@@ -1,4 +1,5 @@
 import { defineConfig } from 'vite'
+import { resolve } from 'path'
 
 // Vite plugin: bundles Three.js + addons + gsap into a single IIFE string
 // so that HTML exports can embed all libraries inline (fully offline).
@@ -62,7 +63,13 @@ export default defineConfig({
 
   //base: '/3dviewer/',
   build: {
-    outDir: 'docs'
+    outDir: 'docs',
+    rollupOptions: {
+      input: {
+        main: resolve(__dirname, 'index.html'),
+        app: resolve(__dirname, 'app/index.html'),
+      },
+    },
   },
   plugins: [exportLibsBundlePlugin()],
   define: {

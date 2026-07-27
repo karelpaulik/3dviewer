@@ -5,7 +5,7 @@
 //   - Cross-origin requests (analytics, CDN): pass through, do not cache
 //   - Share target: POST ./share-glb → cache file → redirect to app
 
-const CACHE_NAME = 'meshbex-v1';
+const CACHE_NAME = 'meshbex-v2';
 
 // Keep in sync with src/shareTargetConstants.js
 const SHARE_ACTION_SUFFIX = '/share-glb';
@@ -17,11 +17,13 @@ const SHARE_TARGET_QUERY_PARAM = 'share-target';
 const SHARE_TARGET_QUERY_VALUE = 'glb';
 const SHARE_TARGET_QUERY_ERROR = 'error';
 const SHARE_TARGET_MESSAGE_TYPE = 'meshbex-share-glb';
+const APP_SHELL_URL = '/app/index.html';
 
 const PRESERVED_CACHES = [CACHE_NAME, SHARE_CACHE_NAME];
 
-// Pre-cache shell on install
-const PRECACHE_URLS = ['/', '/index.html'];
+// Pre-cache the app shell on install. The landing page ("/") is outside this
+// worker's scope ("/app/") and is intentionally not cached here.
+const PRECACHE_URLS = ['/app/', APP_SHELL_URL];
 
 function isFileLike(value) {
     return value != null && typeof value.arrayBuffer === 'function' && value.size > 0;
@@ -57,7 +59,7 @@ function normalizeSharedFileName(name) {
 }
 
 function buildShareRedirectUrl(baseUrl, shareTargetValue) {
-    const redirect = new URL('./', baseUrl);
+    const redirect = new URL('/app/', baseUrl);
     redirect.searchParams.set(SHARE_TARGET_QUERY_PARAM, shareTargetValue);
     return redirect.href;
 }
@@ -142,7 +144,7 @@ self.addEventListener('fetch', event => {
                     caches.open(CACHE_NAME).then(cache => cache.put(req, clone));
                     return response;
                 })
-                .catch(() => caches.match(req).then(cached => cached || caches.match('/index.html')))
+                .catch(() => caches.match(req).then(cached => cached || caches.match(APP_SHELL_URL)))
         );
     } else {
         // Cache-first for all other assets, update cache in background (stale-while-revalidate)

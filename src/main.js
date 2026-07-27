@@ -11168,7 +11168,10 @@ async function saveScreenCaptureToFiles() {
 }
 
 function addHelpGui() {
-    // Create welcome dialog – shown once on every page load
+    // Welcome dialog – shown only on the first-ever visit to the app.
+    // The marketing landing page (meshbex.com/) now covers the product intro,
+    // so repeating it on every load here would be redundant.
+    const WELCOME_SEEN_STORAGE_KEY = 'meshbex-welcome-seen';
     const welcomeDialog = document.createElement('dialog');
     welcomeDialog.id = 'welcome-dialog';
     welcomeDialog.innerHTML = `
@@ -11178,10 +11181,15 @@ function addHelpGui() {
         <form method="dialog"><button>Start</button></form>
     `;
     welcomeDialog.addEventListener('click', e => { if (e.target === welcomeDialog) welcomeDialog.close(); });
+    welcomeDialog.addEventListener('close', () => {
+        try { localStorage.setItem(WELCOME_SEEN_STORAGE_KEY, '1'); } catch (_) { /* ignore */ }
+    });
     document.body.appendChild(welcomeDialog);
     void (async () => {
         await waitForExternalFileSignal();
-        if (!wasOpenedWithExternalFile()) {
+        let alreadySeen = false;
+        try { alreadySeen = localStorage.getItem(WELCOME_SEEN_STORAGE_KEY) === '1'; } catch (_) { /* ignore */ }
+        if (!wasOpenedWithExternalFile() && !alreadySeen) {
             welcomeDialog.showModal();
         }
     })();
