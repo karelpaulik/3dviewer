@@ -394,6 +394,7 @@ _statusLeft.appendChild(statusDeviationProbeEl);
 
 let sectionCtrl = null; // Reference to the GUI 'Section' controller for syncing
 let sectionCrossLinesCtrl = null; // Reference to the GUI 'Cross Section Lines' controller for syncing
+let crossSectionOnHiddenCtrl = null; // Reference to the GUI 'Apply to hidden' controller for syncing
 let solidSectionCtrl = null; // Reference to the GUI 'Solid Section' controller for syncing
 let showSectionMeshCtrl = null; // Reference to the GUI 'Show Section Mesh' controller for syncing
 
@@ -496,6 +497,16 @@ crossSectionLinesBtn.addEventListener('click', () => {
     render();
 });
 viewportBottomLeftToolbar.appendChild(crossSectionLinesBtn);
+
+// Apply to hidden button (visible only when section is active)
+const crossSectionOnHiddenBtn = document.createElement('button');
+crossSectionOnHiddenBtn.id = 'cross-section-on-hidden-btn';
+crossSectionOnHiddenBtn.title = 'Apply to hidden';
+crossSectionOnHiddenBtn.textContent = '◌';
+crossSectionOnHiddenBtn.addEventListener('click', () => {
+    setCrossSectionOnHidden(!viewProp.crossSectionOnHidden);
+});
+viewportBottomLeftToolbar.appendChild(crossSectionOnHiddenBtn);
 
 // Section mode select (visible only when section is active)
 const sectionModeSelect = document.createElement('select');
@@ -2571,7 +2582,7 @@ function addMainGui() {
             )).name('Mode').onChange(function(value){ setSectionMode(value); }).listen();
             sectionCrossLinesCtrl = sectionFolder.add(viewProp, 'sectionCrossLines').name('Cross Section Lines').onChange(function(value){updateSectionCrossLines(); crossSectionLinesBtn.classList.toggle('active', value); render(); }).listen();
             sectionFolder.addColor(viewProp, 'crossSectionColor').name('Cross Lines Color').onChange(function(value){ if(viewProp.sectionCrossLines) { updateSectionCrossLines(); render(); } });
-            sectionFolder.add(viewProp, 'crossSectionOnHidden').name('Apply to hidden').onChange(function(value){ if(viewProp.sectionCrossLines) updateSectionCrossLines(); if(viewProp.showCrossSection) updateCrossSectionLines(); render(); });
+            crossSectionOnHiddenCtrl = sectionFolder.add(viewProp, 'crossSectionOnHidden').name('Apply to hidden').onChange(function(value){ setCrossSectionOnHidden(value); }).listen();
             solidSectionCtrl = sectionFolder.add(viewProp, 'solidSection').name('Solid Section').onChange(function(value) {
                 if (value) {
                     if (!viewProp.section) setSectionEnabled(true);
@@ -2603,7 +2614,7 @@ function addMainGui() {
 
             const crossSectionFolder = sectionFolder.addFolder("Cross Section Lines");
             crossSectionFolder.add(viewProp, 'showCrossSection').name('Show Lines').onChange(function(value){updateCrossSectionLines(); render(); });
-            crossSectionFolder.add(viewProp, 'crossSectionOnHidden').name('Apply to hidden').onChange(function(value){ if(viewProp.showCrossSection) { updateCrossSectionLines(); render(); } }).listen();
+            crossSectionFolder.add(viewProp, 'crossSectionOnHidden').name('Apply to hidden').onChange(function(value){ setCrossSectionOnHidden(value); }).listen();
             crossSectionFolder.add(viewProp, 'autoUpdateSectionLines').name('Update Section Lines');
             crossSectionFolder.add(viewProp, 'crossSectionPlane', ['XY', 'XZ', 'YZ']).name('Plane').onChange(function(value){if(viewProp.showCrossSection){updateCrossSectionLines(); render();}});
             trackExtentSlider(crossSectionFolder.add(viewProp, 'crossSectionPos', extent.pn, extent.pp, viewProp.pStep).name('Position').onChange(function(value){if(viewProp.showCrossSection){updateCrossSectionLines(); render();}}).listen(), 'pStep');
@@ -5168,6 +5179,22 @@ function activateSectionGizmo(enabled) {
     }
 }
 
+function setCrossSectionOnHidden(enabled) {
+    viewProp.crossSectionOnHidden = enabled;
+    if (enabled && !viewProp.sectionCrossLines) {
+        viewProp.sectionCrossLines = true;
+        updateSectionCrossLines();
+        crossSectionLinesBtn.classList.toggle('active', true);
+        if (sectionCrossLinesCtrl) sectionCrossLinesCtrl.updateDisplay();
+    } else if (viewProp.sectionCrossLines) {
+        updateSectionCrossLines();
+    }
+    if (viewProp.showCrossSection) updateCrossSectionLines();
+    crossSectionOnHiddenBtn.classList.toggle('active', enabled);
+    if (crossSectionOnHiddenCtrl) crossSectionOnHiddenCtrl.updateDisplay();
+    render();
+}
+
 function syncSectionToggleUi() {
     sectionBtn.classList.toggle('active', viewProp.section);
     updateSectionViewportControlsVisibility();
@@ -5176,13 +5203,16 @@ function syncSectionToggleUi() {
     solidSectionBtn.style.display = subVisible;
     showSectionMeshBtn.style.display = subVisible;
     crossSectionLinesBtn.style.display = subVisible;
+    crossSectionOnHiddenBtn.style.display = subVisible;
     solidSectionBtn.classList.toggle('active', viewProp.solidSection);
     showSectionMeshBtn.classList.toggle('active', viewProp.showSectionMesh);
     crossSectionLinesBtn.classList.toggle('active', viewProp.sectionCrossLines);
+    crossSectionOnHiddenBtn.classList.toggle('active', viewProp.crossSectionOnHidden);
     if (sectionCtrl) sectionCtrl.updateDisplay();
     if (solidSectionCtrl) solidSectionCtrl.updateDisplay();
     if (showSectionMeshCtrl) showSectionMeshCtrl.updateDisplay();
     if (sectionCrossLinesCtrl) sectionCrossLinesCtrl.updateDisplay();
+    if (crossSectionOnHiddenCtrl) crossSectionOnHiddenCtrl.updateDisplay();
 }
 
 function setSectionEnabled(enabled) {

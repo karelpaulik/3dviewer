@@ -803,7 +803,8 @@ canvas {
 #section-btn.active,
 #solid-section-btn.active,
 #show-section-mesh-btn.active,
-#cross-section-lines-btn.active {
+#cross-section-lines-btn.active,
+#cross-section-on-hidden-btn.active {
     background: rgba(0, 0, 0, 0.9);
     color: #4af;
 }
@@ -811,6 +812,7 @@ canvas {
 #solid-section-btn,
 #show-section-mesh-btn,
 #cross-section-lines-btn,
+#cross-section-on-hidden-btn,
 #section-mode-select,
 #section-reset-btn {
     display: none;
