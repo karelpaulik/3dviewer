@@ -1201,7 +1201,7 @@ const viewProp = {
     section: false,
     fullscreen: false,
     isSelectAllowed: true, // Povolit / zakázat selekci objektů myší
-    backgroundColor: "#867e79",
+    backgroundColor: "#433f3d",
     px: 0,
     py: 0,
     pz: 0,
