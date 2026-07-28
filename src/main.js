@@ -399,6 +399,7 @@ let sectionCrossLinesCtrl = null; // Reference to the GUI 'Cross Section Lines' 
 let crossSectionOnHiddenCtrl = null; // Reference to the GUI 'Apply to hidden' controller for syncing
 let solidSectionCtrl = null; // Reference to the GUI 'Solid Section' controller for syncing
 let showSectionMeshCtrl = null; // Reference to the GUI 'Show Section Mesh' controller for syncing
+let sectionFlipCtrl = null; // Reference to the GUI 'Flip side' controller for syncing
 
 const viewportBottomLeftToolbar = document.createElement('div');
 viewportBottomLeftToolbar.id = 'viewport-bottom-left-toolbar';
@@ -526,6 +527,15 @@ sectionModeSelect.addEventListener('change', function () {
 });
 viewportBottomLeftToolbar.appendChild(sectionModeSelect);
 
+const sectionFlipBtn = document.createElement('button');
+sectionFlipBtn.id = 'section-flip-btn';
+sectionFlipBtn.title = 'Flip section side';
+sectionFlipBtn.textContent = '⇄';
+sectionFlipBtn.addEventListener('click', () => {
+    toggleSectionFlip();
+});
+viewportBottomLeftToolbar.appendChild(sectionFlipBtn);
+
 const sectionResetBtn = document.createElement('button');
 sectionResetBtn.id = 'section-reset-btn';
 sectionResetBtn.title = 'Reset section';
@@ -538,6 +548,7 @@ viewportBottomLeftToolbar.appendChild(sectionResetBtn);
 function updateSectionViewportControlsVisibility() {
     const visible = viewProp.section ? 'block' : 'none';
     sectionModeSelect.style.display = visible;
+    sectionFlipBtn.style.display = visible;
     sectionResetBtn.style.display = visible;
 }
 
@@ -1208,6 +1219,7 @@ const viewProp = {
     py: 0,
     pz: 0,
     sectionMode: 'corner', // 'corner' | 'singleXY' | 'singleXZ' | 'singleYZ'
+    sectionFlip: false,
     sectionRx: 0,
     sectionRy: 0,
     sectionRz: 0,
@@ -2582,6 +2594,11 @@ function addMainGui() {
             sectionModeCtrl = sectionFolder.add(viewProp, 'sectionMode', Object.fromEntries(
                 SECTION_MODE_OPTIONS.map(o => [o.label, o.value])
             )).name('Mode').onChange(function(value){ setSectionMode(value); }).listen();
+            sectionFlipCtrl = sectionFolder.add(viewProp, 'sectionFlip').name('Flip side').onChange(function() {
+                refreshSectionPlanes();
+                refreshSectionDependents();
+                syncSectionToggleUi();
+            }).listen();
             sectionCrossLinesCtrl = sectionFolder.add(viewProp, 'sectionCrossLines').name('Cross Section Lines').onChange(function(value){updateSectionCrossLines(); crossSectionLinesBtn.classList.toggle('active', value); render(); }).listen();
             sectionFolder.addColor(viewProp, 'crossSectionColor').name('Cross Lines Color').onChange(function(value){ if(viewProp.sectionCrossLines) { updateSectionCrossLines(); render(); } });
             crossSectionOnHiddenCtrl = sectionFolder.add(viewProp, 'crossSectionOnHidden').name('Apply to hidden').onChange(function(value){ setCrossSectionOnHidden(value); }).listen();
@@ -5000,6 +5017,13 @@ function toggleSectionMeshAll() {
     render();
 }
 
+function toggleSectionFlip() {
+    viewProp.sectionFlip = !viewProp.sectionFlip;
+    refreshSectionPlanes();
+    refreshSectionDependents();
+    syncSectionToggleUi();
+}
+
 function _isSectionMeshExportNode(node) {
     return node.isSectionMesh
         || (node.isMesh && typeof node.name === 'string' && node.name.endsWith('__section'));
@@ -5210,11 +5234,13 @@ function syncSectionToggleUi() {
     showSectionMeshBtn.classList.toggle('active', viewProp.showSectionMesh);
     crossSectionLinesBtn.classList.toggle('active', viewProp.sectionCrossLines);
     crossSectionOnHiddenBtn.classList.toggle('active', viewProp.crossSectionOnHidden);
+    sectionFlipBtn.classList.toggle('active', viewProp.sectionFlip);
     if (sectionCtrl) sectionCtrl.updateDisplay();
     if (solidSectionCtrl) solidSectionCtrl.updateDisplay();
     if (showSectionMeshCtrl) showSectionMeshCtrl.updateDisplay();
     if (sectionCrossLinesCtrl) sectionCrossLinesCtrl.updateDisplay();
     if (crossSectionOnHiddenCtrl) crossSectionOnHiddenCtrl.updateDisplay();
+    if (sectionFlipCtrl) sectionFlipCtrl.updateDisplay();
 }
 
 function setSectionEnabled(enabled) {
@@ -5274,6 +5300,7 @@ function resetSection() {
     viewProp.px = 0;
     viewProp.py = 0;
     viewProp.pz = 0;
+    viewProp.sectionFlip = false;
     if (isSingleSectionMode(viewProp)) {
         viewProp.sectionRx = 0;
         viewProp.sectionRy = 0;
@@ -5284,6 +5311,7 @@ function resetSection() {
     updateSection();
     syncSectionGizmoPosition();
     updateSectionGuiFromViewProp();
+    syncSectionToggleUi();
     if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) {
         updateCrossSectionLines();
     }
@@ -10110,6 +10138,7 @@ function embedAppSettingsToUserData(userData) {
         sectionRx:           viewProp.sectionRx,
         sectionRy:           viewProp.sectionRy,
         sectionRz:           viewProp.sectionRz,
+        sectionFlip:       viewProp.sectionFlip,
         sectionGizmoMode:  viewProp.sectionGizmoMode,
         sectionCrossLines: viewProp.sectionCrossLines,
         crossSectionColor: viewProp.crossSectionColor,
@@ -10204,7 +10233,7 @@ function importSettingsFromGltfScene(gltfScene) {
     if (s.sectionSettings) {
         const sec = s.sectionSettings;
         const scalarKeys = [
-            'px', 'py', 'pz', 'sectionMode', 'sectionRx', 'sectionRy', 'sectionRz', 'sectionGizmoMode',
+            'px', 'py', 'pz', 'sectionMode', 'sectionRx', 'sectionRy', 'sectionRz', 'sectionFlip', 'sectionGizmoMode',
             'sectionCrossLines', 'crossSectionColor', 'capColor', 'showSectionMesh',
         ];
         scalarKeys.forEach(k => { if (sec[k] !== undefined) viewProp[k] = sec[k]; });

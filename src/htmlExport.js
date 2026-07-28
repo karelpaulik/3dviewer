@@ -18,6 +18,7 @@ function buildSectionSettings(viewProp) {
         sectionRx: viewProp.sectionRx ?? 0,
         sectionRy: viewProp.sectionRy ?? 0,
         sectionRz: viewProp.sectionRz ?? 0,
+        sectionFlip: viewProp.sectionFlip ?? false,
     };
 }
 
@@ -479,6 +480,7 @@ canvas { display: block; width: 100%; height: 100%; }
         <div class="sec-row"><span class="sec-axis">Ry</span><input type="range" id="sld-ry" step="1" min="-180" max="180"><input type="number" id="num-ry" step="1" min="-180" max="180"></div>
         <div class="sec-row"><span class="sec-axis">Rz</span><input type="range" id="sld-rz" step="1" min="-180" max="180"><input type="number" id="num-rz" step="1" min="-180" max="180"></div>
         </div>
+        <label class="chk-label"><input type="checkbox" id="chk-section-flip"${sectionSettings.sectionFlip ? ' checked' : ''}> Flip side</label>
         <button id="btn-sec-reset">&#x21BA; Reset</button>
     </div>
 </div>
@@ -565,6 +567,7 @@ const sectionPlaneState = {
     sectionRx: ${sectionSettings.sectionRx},
     sectionRy: ${sectionSettings.sectionRy},
     sectionRz: ${sectionSettings.sectionRz},
+    sectionFlip: ${sectionSettings.sectionFlip || false},
 };
 const SECTION_MODE_CFG = {
     singleXY: { nx: 0, ny: 0, nz: -1, tiltAxis: 'x' },
@@ -616,13 +619,17 @@ const clipPlanes = [];
 function rebuildClipPlanes() {
     clipPlanes.length = 0;
     if (isSingleSectionMode()) {
-        clipPlanes.push(new THREE.Plane().setFromNormalAndCoplanarPoint(getSectionNormal(), getSectionPoint()));
+        const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(getSectionNormal(), getSectionPoint());
+        if (sectionPlaneState.sectionFlip) plane.negate();
+        clipPlanes.push(plane);
     } else {
-        clipPlanes.push(
+        const planes = [
             new THREE.Plane(new THREE.Vector3(-1, 0, 0), sectionPlaneState.px),
             new THREE.Plane(new THREE.Vector3(0, -1, 0), sectionPlaneState.py),
-            new THREE.Plane(new THREE.Vector3(0, 0, -1), sectionPlaneState.pz)
-        );
+            new THREE.Plane(new THREE.Vector3(0, 0, -1), sectionPlaneState.pz),
+        ];
+        if (sectionPlaneState.sectionFlip) planes.forEach(plane => plane.negate());
+        clipPlanes.push(...planes);
     }
 }
 function usesClipIntersection() { return !isSingleSectionMode(); }
@@ -1525,6 +1532,15 @@ chkSectionCross.addEventListener('change', function() {
     updateSectionCrossLines();
 });
 
+const chkSectionFlip = document.getElementById('chk-section-flip');
+chkSectionFlip.addEventListener('change', function() {
+    sectionPlaneState.sectionFlip = this.checked;
+    refreshSectionClipState();
+    if (sectionCrossLinesEnabled) updateSectionCrossLines();
+    if (solidSectionEnabled) computeSolidSection();
+    render();
+});
+
 function wireAxisSlider(sldId, numId, onUpdate) {
     const sld = document.getElementById(sldId);
     const num = document.getElementById(numId);
@@ -1593,11 +1609,14 @@ document.getElementById('btn-sec-reset').addEventListener('click', function() {
     sectionPlaneState.px = 0;
     sectionPlaneState.py = 0;
     sectionPlaneState.pz = 0;
+    sectionPlaneState.sectionFlip = false;
     if (isSingleSectionMode()) {
         sectionPlaneState.sectionRx = 0;
         sectionPlaneState.sectionRy = 0;
         sectionPlaneState.sectionRz = 0;
     }
+    const flipChk = document.getElementById('chk-section-flip');
+    if (flipChk) flipChk.checked = false;
     syncSectionSliderValues();
     refreshSectionClipState();
     if (sectionCrossLinesEnabled) updateSectionCrossLines();
@@ -2248,7 +2267,7 @@ function generateObfuscatedHTML(glbBase64, animSettings, sectionSettings, dracoD
         'btn-start': '_1', 'btn-finish': '_2', 'btn-prev': '_3',
         'btn-next': '_4', 'btn-anim-start': '_5', 'btn-anim-finish': '_6', 'chk-loop': '_7', 'chk-fullscreen': '_8', 'chk-camera': '_9',
         'section-panel': '_sa', 'section-panel-hdr': '_sb', 'section-panel-body': '_sc',
-        'chk-section': '_s1', 'chk-section-mesh': '_s2', 'chk-section-cross': '_s2b', 'chk-solid-section': '_s2c',
+        'chk-section': '_s1', 'chk-section-mesh': '_s2', 'chk-section-cross': '_s2b', 'chk-solid-section': '_s2c', 'chk-section-flip': '_s2d',
         'sel-section-mode': '_sm', 'corner-sec-sliders': '_cs', 'single-sec-sliders': '_ss',
         'sld-px': '_s3', 'num-px': '_s4',
         'sld-py': '_s5', 'num-py': '_s6',
@@ -2324,6 +2343,7 @@ function generateObfuscatedHTML(glbBase64, animSettings, sectionSettings, dracoD
     const secChecked = sectionSettings.section ? ' checked' : '';
     const secMeshChecked = sectionSettings.showSectionMesh ? ' checked' : '';
     const secCrossChecked = sectionSettings.sectionCrossLines ? ' checked' : '';
+    const secFlipChecked = sectionSettings.sectionFlip ? ' checked' : '';
     const secSolidChecked = '';
 
     const secMode = sectionSettings.sectionMode === 'single' ? 'singleXY' : (sectionSettings.sectionMode || 'corner');
@@ -2355,6 +2375,7 @@ function generateObfuscatedHTML(glbBase64, animSettings, sectionSettings, dracoD
         `<div class="_sr"><span class="_sx" id="_lp">${secPosLabel}</span><input type="range" id="_s3a" step="1"><input type="number" id="_s4a" step="1"></div>` +
         `<div class="_sr"><span class="_sx">A</span><input type="range" id="_s3b" step="1" min="-180" max="180"><input type="number" id="_s4b" step="1" min="-180" max="180"></div>` +
         `</div>` +
+        `<label class="_cl"><input type="checkbox" id="_s2d"${secFlipChecked}> Flip side</label>` +
         `<button id="_s9">&#x21BA; Reset</button></div></div>` +
         `<div id="_aa"><div id="_ab">&#x1F4CF; Analysis &#x25BE;</div><div id="_ac">` +
         `<label class="_cl"><input type="checkbox" id="_a1"> Measure (point-to-point)</label>` +

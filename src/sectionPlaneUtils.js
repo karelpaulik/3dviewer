@@ -141,11 +141,18 @@ function syncSinglePlaneFromViewProp(plane, viewProp, sceneCenter) {
     plane.setFromNormalAndCoplanarPoint(_normal, _point);
 }
 
+/** Flip which half-space is clipped without moving the plane geometry. */
+export function applySectionFlipToPlane(plane, viewProp) {
+    if (viewProp.sectionFlip) plane.negate();
+    return plane;
+}
+
 /** Mutate shared clipPlanes array in place (materials keep the same reference). */
 export function rebuildClipPlanes(clipPlanes, viewProp, planeStore, sceneCenter) {
     clipPlanes.length = 0;
     if (isSingleSectionMode(viewProp)) {
         syncSinglePlaneFromViewProp(planeStore.single, viewProp, sceneCenter);
+        applySectionFlipToPlane(planeStore.single, viewProp);
         clipPlanes.push(planeStore.single);
     } else {
         planeStore.corner[0].normal.set(-1, 0, 0);
@@ -154,6 +161,9 @@ export function rebuildClipPlanes(clipPlanes, viewProp, planeStore, sceneCenter)
         planeStore.corner[1].constant = viewProp.py;
         planeStore.corner[2].normal.set(0, 0, -1);
         planeStore.corner[2].constant = viewProp.pz;
+        if (viewProp.sectionFlip) {
+            planeStore.corner.forEach(plane => plane.negate());
+        }
         clipPlanes.push(planeStore.corner[0], planeStore.corner[1], planeStore.corner[2]);
     }
 }
