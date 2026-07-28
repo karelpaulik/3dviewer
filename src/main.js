@@ -75,6 +75,7 @@ import { initAttachmentsGui, importAttachmentsFromGltfScene, getAttachmentsStore
 import { serializeAttachmentsForExport } from './attachmentCompressionUtils.js';
 import { initLocalFileAccess, openLocalGlbFile, saveLocalGlbFile, saveLocalGlbFileAs, clearCurrentLocalFileHandle, waitForExternalFileSignal, wasOpenedWithExternalFile } from './localFileAccess.js';
 import { applyVisibilityToExportClone, restoreVisibilityFromImport } from './visibilityPersistenceUtils.js';
+import { stripSelectionHighlightFromExportSubtree } from './exportSanitizeUtils.js';
 import { captureScreenFromDisplayMedia } from './viewportCapture.js';
 import { openHelp } from './helpUtils.js';
 import { openBomDialog } from './bomUtils.js';
@@ -10413,6 +10414,7 @@ function buildAllModelsExportGroup(finalName) {
     loadedModels.forEach((model) => {
         const clone = model.clone(true);
         applyVisibilityToExportClone(model, clone);
+        stripSelectionHighlightFromExportSubtree(clone);
         clone.userData.fileName = finalName;
         group.add(clone);
     });
@@ -10554,13 +10556,6 @@ function exportSelectedObject() {
         if (input === null) return;
         const finalName = (input.trim() || defaultName.replace(/\.glb$/i, '')).replace(/\.glb$/i, '') + '.glb';
 
-        selectedObjects.forEach(obj => obj.traverse(child => {
-            if (child.isMesh && child.material) {
-                const mats = Array.isArray(child.material) ? child.material : [child.material];
-                mats.forEach(mat => { if (mat.emissive) mat.emissive.setHex(0x000000); });
-            }
-        }));
-
         assemblyWriteToUserData();
 
         const exporter = new GLTFExporter();
@@ -10571,6 +10566,7 @@ function exportSelectedObject() {
         selectedObjects.forEach(obj => {
             const clone = obj.clone(true);
             applyVisibilityToExportClone(obj, clone);
+            stripSelectionHighlightFromExportSubtree(clone);
             obj.updateWorldMatrix(true, false);
             const worldPos = new THREE.Vector3();
             const worldQuat = new THREE.Quaternion();
@@ -10609,13 +10605,6 @@ function exportSelectedObject() {
     const input = window.prompt('File name (.glb will be added):', defaultName.replace(/\.glb$/i, ''));
     if (input === null) return; // uživatel stiskl Cancel
     const finalName = (input.trim() || defaultName.replace(/\.glb$/i, '')).replace(/\.glb$/i, '') + '.glb';
-    // Vypneme emissive (zvýraznění výběru) před exportem
-    lastSelectedObject.traverse((child) => {
-        if (child.isMesh && child.material) {
-            const mats = Array.isArray(child.material) ? child.material : [child.material];
-            mats.forEach(mat => { if (mat.emissive) mat.emissive.setHex(0x000000); });
-        }
-    });
 
     // Write assembly workflow into userData before cloning
     assemblyWriteToUserData();
@@ -10623,6 +10612,7 @@ function exportSelectedObject() {
     const exporter = new GLTFExporter();
     const clone = lastSelectedObject.clone(true);
     applyVisibilityToExportClone(lastSelectedObject, clone);
+    stripSelectionHighlightFromExportSubtree(clone);
 
     embedAppSettingsToUserData(clone.userData);
 
@@ -10680,13 +10670,6 @@ async function exportSelectedObjectDraco() {
         }
         overlay.style.display = 'flex';
 
-        selectedObjects.forEach(obj => obj.traverse(child => {
-            if (child.isMesh && child.material) {
-                const mats = Array.isArray(child.material) ? child.material : [child.material];
-                mats.forEach(mat => { if (mat.emissive) mat.emissive.setHex(0x000000); });
-            }
-        }));
-
         assemblyWriteToUserData();
         flushDocumentEdits();
 
@@ -10698,6 +10681,7 @@ async function exportSelectedObjectDraco() {
         selectedObjects.forEach(obj => {
             const clone = obj.clone(true);
             applyVisibilityToExportClone(obj, clone);
+            stripSelectionHighlightFromExportSubtree(clone);
             obj.updateWorldMatrix(true, false);
             const worldPos = new THREE.Vector3();
             const worldQuat = new THREE.Quaternion();
@@ -10790,20 +10774,13 @@ async function exportSelectedObjectDraco() {
     }
     overlay.style.display = 'flex';
 
-    // Vypneme emissive (zvýraznění výběru) před exportem
-    lastSelectedObject.traverse((child) => {
-        if (child.isMesh && child.material) {
-            const mats = Array.isArray(child.material) ? child.material : [child.material];
-            mats.forEach(mat => { if (mat.emissive) mat.emissive.setHex(0x000000); });
-        }
-    });
-
     assemblyWriteToUserData();
     flushDocumentEdits();
 
     const exporter = new GLTFExporter();
     const clone = lastSelectedObject.clone(true);
     applyVisibilityToExportClone(lastSelectedObject, clone);
+    stripSelectionHighlightFromExportSubtree(clone);
 
     embedAppSettingsToUserData(clone.userData);
 
