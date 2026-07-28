@@ -74,6 +74,7 @@ import {
 import { initAttachmentsGui, importAttachmentsFromGltfScene, getAttachmentsStore, addImageAttachmentFromBlob, clearAttachmentsStore } from './attachmentsUtils.js';
 import { serializeAttachmentsForExport } from './attachmentCompressionUtils.js';
 import { initLocalFileAccess, openLocalGlbFile, saveLocalGlbFile, saveLocalGlbFileAs, clearCurrentLocalFileHandle, waitForExternalFileSignal, wasOpenedWithExternalFile } from './localFileAccess.js';
+import { applyVisibilityToExportClone, restoreVisibilityFromImport } from './visibilityPersistenceUtils.js';
 import { captureScreenFromDisplayMedia } from './viewportCapture.js';
 import { openHelp } from './helpUtils.js';
 import { openBomDialog } from './bomUtils.js';
@@ -6442,6 +6443,7 @@ function loadGlbModel(model, name, scale, colored) {
                     reconstructAnnotations3d(mdl, render);
                     reconstructCadDim3d(mdl);
                     _afterLabelReconstruct();
+                    restoreVisibilityFromImport(mdl, hiddenObjects, updateVisibilityIcon);
                 }
 
                 rebuildTree(loadedModels);
@@ -6493,6 +6495,7 @@ function loadGlbModel(model, name, scale, colored) {
                 reconstructAnnotations3d(gltf.scene, render);
                 reconstructCadDim3d(gltf.scene);
                 _afterLabelReconstruct();
+                restoreVisibilityFromImport(gltf.scene, hiddenObjects, updateVisibilityIcon);
                 
                 rebuildTree(loadedModels);
                 refreshEdgeOverlaysAfterSceneChange();
@@ -10409,6 +10412,7 @@ function buildAllModelsExportGroup(finalName) {
     const group = new THREE.Group();
     loadedModels.forEach((model) => {
         const clone = model.clone(true);
+        applyVisibilityToExportClone(model, clone);
         clone.userData.fileName = finalName;
         group.add(clone);
     });
@@ -10566,6 +10570,7 @@ function exportSelectedObject() {
 
         selectedObjects.forEach(obj => {
             const clone = obj.clone(true);
+            applyVisibilityToExportClone(obj, clone);
             obj.updateWorldMatrix(true, false);
             const worldPos = new THREE.Vector3();
             const worldQuat = new THREE.Quaternion();
@@ -10617,6 +10622,7 @@ function exportSelectedObject() {
 
     const exporter = new GLTFExporter();
     const clone = lastSelectedObject.clone(true);
+    applyVisibilityToExportClone(lastSelectedObject, clone);
 
     embedAppSettingsToUserData(clone.userData);
 
@@ -10691,6 +10697,7 @@ async function exportSelectedObjectDraco() {
 
         selectedObjects.forEach(obj => {
             const clone = obj.clone(true);
+            applyVisibilityToExportClone(obj, clone);
             obj.updateWorldMatrix(true, false);
             const worldPos = new THREE.Vector3();
             const worldQuat = new THREE.Quaternion();
@@ -10796,6 +10803,7 @@ async function exportSelectedObjectDraco() {
 
     const exporter = new GLTFExporter();
     const clone = lastSelectedObject.clone(true);
+    applyVisibilityToExportClone(lastSelectedObject, clone);
 
     embedAppSettingsToUserData(clone.userData);
 
