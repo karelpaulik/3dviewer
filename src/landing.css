@@ -250,6 +250,15 @@ p {
 	font-size: 0.95rem;
 }
 
+.features a {
+	color: var(--accent);
+	text-decoration: none;
+}
+
+.features a:hover {
+	text-decoration: underline;
+}
+
 /* Visuals */
 
 .visuals {
