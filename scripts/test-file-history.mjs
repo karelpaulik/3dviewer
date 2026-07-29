@@ -5,14 +5,19 @@
 import {
     USER_NAME_STORAGE_KEY,
     MAX_FILE_HISTORY_ENTRIES,
+    MAX_COMMENT_LENGTH,
     DEFAULT_HISTORY_USER_NAME,
     getUserName,
     setUserName,
     clearFileHistoryStore,
     replaceFileHistoryStore,
     appendFileHistoryEntry,
+    isFileHistoryOnSaveEnabled,
+    setFileHistoryOnSaveEnabled,
+    resetFileHistoryOnSaveEnabled,
+    recordSaveHistoryIfEnabled,
     getUserNameForHistory,
-    promptUserNameForSaveIfEmpty,
+    resolveSaveHistoryEntry,
     getFileHistoryForExport,
     getFileHistoryStore,
     importFileHistoryFromGltfScene,
@@ -42,7 +47,6 @@ globalThis.localStorage = {
     setItem(key, value) { storage.set(key, String(value)); },
     removeItem(key) { storage.delete(key); },
 };
-globalThis.window = { prompt: () => null };
 
 clearFileHistoryStore();
 storage.clear();
@@ -65,6 +69,26 @@ assert(getUserNameForHistory() === DEFAULT_HISTORY_USER_NAME, 'getUserNameForHis
 
 setUserName('Eve');
 assert(getUserNameForHistory() === 'Eve', 'getUserNameForHistory uses stored name');
+
+// Append with comment
+clearFileHistoryStore();
+appendFileHistoryEntry('Alice', 'Fixed dims');
+assert(getFileHistoryForExport()[0].comment === 'Fixed dims', 'append stores comment');
+appendFileHistoryEntry('Bob', '');
+assert(getFileHistoryForExport()[1].comment === undefined, 'empty comment omitted');
+
+// Comment length limit
+clearFileHistoryStore();
+appendFileHistoryEntry('User', 'x'.repeat(MAX_COMMENT_LENGTH + 50));
+assert(getFileHistoryStore()[0].comment.length === MAX_COMMENT_LENGTH, 'comment trimmed to max length');
+
+// resolveSaveHistoryEntry
+const resolved = resolveSaveHistoryEntry('  Name  ', '  note  ');
+assert(resolved.user === 'Name', 'resolveSaveHistoryEntry trims name');
+assert(resolved.comment === 'note', 'resolveSaveHistoryEntry trims comment');
+const resolvedEmpty = resolveSaveHistoryEntry('', '');
+assert(resolvedEmpty.user === '', 'resolveSaveHistoryEntry allows empty name');
+assert(resolvedEmpty.comment === undefined, 'resolveSaveHistoryEntry omits empty comment');
 
 // Append and export copy
 clearFileHistoryStore();
@@ -93,21 +117,23 @@ replaceFileHistoryStore([
     { user: '', savedAt: '2026-01-02T00:00:00.000Z' },
     { user: 'NoDate' },
     null,
-    { user: '  Trimmed  ', savedAt: '2026-01-03T00:00:00.000Z' },
+    { user: '  Trimmed  ', savedAt: '2026-01-03T00:00:00.000Z', comment: '  kept  ' },
 ]);
 assert(getFileHistoryStore().length === 2, 'invalid entries filtered');
 assert(getFileHistoryStore()[1].user === 'Trimmed', 'entries normalized');
+assert(getFileHistoryStore()[1].comment === 'kept', 'comment preserved on import');
 
 // importFileHistoryFromGltfScene
 clearFileHistoryStore();
 const sceneWithHistory = createMockGltfScene({
     fileHistory: [
-        { user: 'Carol', savedAt: '2026-02-01T12:00:00.000Z' },
+        { user: 'Carol', savedAt: '2026-02-01T12:00:00.000Z', comment: 'Initial' },
     ],
 });
 importFileHistoryFromGltfScene(sceneWithHistory);
 assert(getFileHistoryStore().length === 1, 'import replaces store');
 assert(getFileHistoryStore()[0].user === 'Carol', 'imported user');
+assert(getFileHistoryStore()[0].comment === 'Initial', 'imported comment');
 assert(sceneWithHistory.userData.fileHistory === undefined, 'import strips fileHistory from scene');
 
 // stripFileHistoryFromGltfScene without import
@@ -127,6 +153,13 @@ const formatted = formatFileHistoryEntry({
 });
 assert(formatted.startsWith('Dave — '), 'formatted entry includes user');
 
+const formattedWithComment = formatFileHistoryEntry({
+    user: 'Dave',
+    savedAt: '2026-04-15T10:30:00.000Z',
+    comment: 'Adjusted bracket',
+});
+assert(formattedWithComment.endsWith('— Adjusted bracket'), 'formatted entry includes comment');
+
 // formatFileHistoryForDialog — oldest first
 clearFileHistoryStore();
 replaceFileHistoryStore([
@@ -137,28 +170,21 @@ const dialogText = formatFileHistoryForDialog();
 assert(dialogText.startsWith('1. Older'), 'dialog lists oldest entry first');
 assert(dialogText.includes('2. Newer'), 'dialog lists newest entry last');
 
-// promptUserNameForSaveIfEmpty
-setUserName('Frank');
-let promptCalls = 0;
-globalThis.window.prompt = () => { promptCalls++; return null; };
-assert(promptUserNameForSaveIfEmpty() === true, 'skip prompt when name already set');
-assert(promptCalls === 0, 'no prompt when name already set');
+// file history on save session flag
+setFileHistoryOnSaveEnabled(false);
+assert(isFileHistoryOnSaveEnabled() === false, 'setFileHistoryOnSaveEnabled false');
+setFileHistoryOnSaveEnabled(true);
+assert(isFileHistoryOnSaveEnabled() === true, 'setFileHistoryOnSaveEnabled true');
+setFileHistoryOnSaveEnabled(false);
+resetFileHistoryOnSaveEnabled();
+assert(isFileHistoryOnSaveEnabled() === true, 'resetFileHistoryOnSaveEnabled');
 
-setUserName('');
-promptCalls = 0;
-globalThis.window.prompt = () => { promptCalls++; return null; };
-assert(promptUserNameForSaveIfEmpty() === false, 'Cancel in prompt aborts save');
-assert(promptCalls === 1, 'prompt shown when name empty');
-assert(getUserName() === '', 'Cancel does not set user name');
-
-setUserName('');
-globalThis.window.prompt = () => '';
-assert(promptUserNameForSaveIfEmpty() === true, 'empty OK continues save');
-assert(getUserName() === '', 'empty OK does not set user name');
-
-setUserName('');
-globalThis.window.prompt = () => '  Bob  ';
-assert(promptUserNameForSaveIfEmpty() === true, 'name entry continues save');
-assert(getUserName() === 'Bob', 'prompt trims and stores user name');
+// recordSaveHistoryIfEnabled when disabled skips dialog
+clearFileHistoryStore();
+setFileHistoryOnSaveEnabled(false);
+const recordedWithoutDialog = await recordSaveHistoryIfEnabled();
+assert(recordedWithoutDialog === true, 'recordSaveHistoryIfEnabled true when toggle off');
+assert(getFileHistoryStore().length === 0, 'no entry when toggle off');
+resetFileHistoryOnSaveEnabled();
 
 console.log('All file-history tests passed.');

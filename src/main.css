@@ -85,38 +85,177 @@ a:hover {
 
 #about-dialog::backdrop,
 #welcome-dialog::backdrop,
-#file-history-dialog::backdrop {
+#file-history-dialog::backdrop,
+#save-history-dialog::backdrop {
 	background: rgba(0, 0, 0, 0.45);
+}
+
+#save-history-dialog {
+	background: #2a2a2a;
+	color: #eee;
+	padding: 0;
+	border-radius: 10px;
+	font-family: sans-serif;
+	box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+	width: fit-content;
+	max-width: min(480px, calc(100vw - 48px));
+	margin: auto;
+	border: none;
+}
+
+#save-history-dialog[open] {
+	display: flex;
+	flex-direction: column;
+}
+
+#save-history-dialog .save-history-form {
+	display: flex;
+	flex-direction: column;
+	margin: 0;
+	padding: 24px 32px;
+	width: min(480px, calc(100vw - 48px));
+	box-sizing: border-box;
+}
+
+#save-history-dialog .save-history-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	margin: -24px -32px 16px;
+	padding: 16px 32px 12px;
+	border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+	cursor: move;
+	user-select: none;
+}
+
+#save-history-dialog.save-history-dragging .save-history-header {
+	cursor: grabbing;
+}
+
+#save-history-dialog h2 {
+	margin: 0;
+	font-size: 1.25em;
+}
+
+#save-history-dialog .save-history-field {
+	display: block;
+	margin-bottom: 14px;
+}
+
+#save-history-dialog .save-history-field span {
+	display: block;
+	margin-bottom: 6px;
+	font-size: 13px;
+	color: #ccc;
+}
+
+#save-history-dialog input,
+#save-history-dialog textarea {
+	width: 100%;
+	box-sizing: border-box;
+	padding: 8px 10px;
+	border: 1px solid #444;
+	border-radius: 4px;
+	background: #1e1e1e;
+	color: #eee;
+	font-family: inherit;
+	font-size: 13px;
+	outline: none;
+}
+
+#save-history-dialog input:focus,
+#save-history-dialog textarea:focus {
+	border-color: #666;
+}
+
+#save-history-dialog textarea {
+	resize: vertical;
+	min-height: 72px;
+}
+
+#save-history-dialog .save-history-footer {
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
+	margin-top: 8px;
+}
+
+#save-history-dialog button {
+	padding: 6px 18px;
+	cursor: pointer;
+	border: none;
+	border-radius: 4px;
+	background: #555;
+	color: #eee;
+	font-size: 14px;
+}
+
+#save-history-dialog #save-history-confirm {
+	background: #3a6ea5;
 }
 
 #file-history-dialog {
 	background: #2a2a2a;
 	color: #eee;
-	padding: 24px 32px;
+	padding: 0;
 	border-radius: 10px;
 	font-family: sans-serif;
 	box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-	width: fit-content;
-	max-width: min(520px, calc(100vw - 48px));
+	width: min(520px, calc(100vw - 48px));
+	min-width: 320px;
+	min-height: 220px;
+	max-width: calc(100vw - 48px);
+	max-height: calc(100vh - 48px);
 	margin: auto;
 	border: none;
+	resize: both;
+	overflow: hidden;
+}
+
+#file-history-dialog[open] {
+	display: flex;
+	flex-direction: column;
+}
+
+#file-history-dialog .file-history-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 16px 32px 12px;
+	border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+	cursor: move;
+	user-select: none;
+	flex-shrink: 0;
+}
+
+#file-history-dialog.file-history-dragging .file-history-header {
+	cursor: grabbing;
 }
 
 #file-history-dialog h2 {
-	margin: 0 0 12px;
+	margin: 0;
 	font-size: 1.25em;
 }
 
 #file-history-dialog .file-history-list {
-	margin: 0 0 16px;
-	padding: 12px;
+	flex: 1 1 auto;
+	min-height: 120px;
+	margin: 0;
+	padding: 12px 32px;
 	background: #1e1e1e;
-	border-radius: 6px;
 	font-size: 13px;
 	line-height: 1.5;
 	white-space: pre-wrap;
-	max-height: 320px;
 	overflow-y: auto;
+	box-sizing: border-box;
+}
+
+#file-history-dialog .file-history-footer {
+	display: flex;
+	justify-content: flex-end;
+	padding: 12px 32px 24px;
+	margin: 0;
+	flex-shrink: 0;
 }
 
 #file-history-dialog button {

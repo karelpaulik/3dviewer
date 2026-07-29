@@ -46,6 +46,7 @@ const shareTargetSettledPromise = new Promise(resolve => {
  *   loadGlbFile?: (file: File) => void | Promise<void>,
  *   updateFileUi?: (fileName: string) => void,
  *   buildGlbBuffer?: (opts: { draco?: boolean, finalName?: string, recordHistory?: boolean }) => Promise<{ buffer: ArrayBuffer, suggestedName: string } | null>,
+ *   recordSaveHistoryIfEnabled?: () => Promise<boolean>,
  *   fallbackImportGlb?: () => void,
  * }} */
 let _callbacks = {};
@@ -353,6 +354,9 @@ export async function saveLocalGlbFileAs() {
         return;
     }
 
+    const historyOk = await _callbacks.recordSaveHistoryIfEnabled?.();
+    if (historyOk === false) return;
+
     const defaultName = ensureGlbExtension(currentFileName || undefined);
 
     let handle;
@@ -371,7 +375,7 @@ export async function saveLocalGlbFileAs() {
     const finalName = ensureGlbExtension(handle.name || defaultName);
 
     try {
-        const built = await _callbacks.buildGlbBuffer({ draco: true, finalName, recordHistory: true });
+        const built = await _callbacks.buildGlbBuffer({ draco: true, finalName, recordHistory: false });
         if (!built) return;
 
         await writeArrayBufferToHandle(handle, built.buffer);

@@ -79,7 +79,12 @@ import {
     getUserName,
     setUserName,
     getFileHistoryStore,
-    promptUserNameForSaveIfEmpty,
+    promptSaveHistoryEntry,
+    recordSaveHistoryIfEnabled,
+    isSaveHistoryDialogOpen,
+    isFileHistoryOnSaveEnabled,
+    setFileHistoryOnSaveEnabled,
+    resetFileHistoryOnSaveEnabled,
     registerToolbarUsernameInput,
     clearFileHistoryStore,
     appendFileHistoryEntry,
@@ -617,6 +622,17 @@ registerToolbarUsernameInput(userNameInput);
 userNameInput.addEventListener('change', () => setUserName(userNameInput.value));
 userNameInput.addEventListener('blur', () => setUserName(userNameInput.value));
 guiToolbar.insertBefore(userNameInput, fileNameInput.nextSibling);
+
+const fileHistoryUi = { enableFileHistory: true };
+let _enableFileHistoryController = null;
+let _fileHistoryDialog = null;
+let _fileHistoryDialogContent = null;
+
+function syncFileHistoryToggleUi() {
+    resetFileHistoryOnSaveEnabled();
+    fileHistoryUi.enableFileHistory = true;
+    _enableFileHistoryController?.updateDisplay();
+}
 
 // Pre-create all toolbar buttons in desired order: Selected, File, Edit, View, Tools, Assembly, Docs, Help
 ['Selected', 'File', 'Edit', 'View', 'Tools', 'Assembly', 'Docs', 'Files', 'Call', 'Help'].forEach(name => {
@@ -2806,6 +2822,10 @@ function addMainGui() {
     exportHtmlFolder.add({ fn() { exportToHTMLDraco(loadedModels, assemblyGui, viewProp, assemblyWriteToUserData, assemblyClearUserData); } }, 'fn').name('Export to HTML (Compression)');
     exportHtmlFolder.add({ fn() { exportToHTMLObfuscated(loadedModels, assemblyGui, viewProp, assemblyWriteToUserData, assemblyClearUserData); } }, 'fn').name('Export to HTML obfuscated');
     exportHtmlFolder.add({ fn() { exportToHTMLObfuscatedDraco(loadedModels, assemblyGui, viewProp, assemblyWriteToUserData, assemblyClearUserData); } }, 'fn').name('Export to HTML obfuscated (Compression)');
+    _enableFileHistoryController = fileGui.add(fileHistoryUi, 'enableFileHistory')
+        .name('Enable file history')
+        .onChange(v => setFileHistoryOnSaveEnabled(v))
+        .listen();
     fileGui.add({ fn: showFileHistoryDialog }, 'fn').name('File history…');
     registerGuiPanel('File', fileGui);
 
@@ -2827,6 +2847,7 @@ function addMainGui() {
             fileNameInput.value = fileName.replace(/\.[^.]+$/, '');
         },
         buildGlbBuffer: (opts) => buildAllModelsGlbArrayBuffer(opts),
+        recordSaveHistoryIfEnabled: () => recordSaveHistoryIfEnabled(),
         fallbackImportGlb: () => importGlbFile(),
     });
 
@@ -6184,6 +6205,7 @@ function assemblySelectStepObjects() {
 function isBoxSelectAllowed() {
     return viewProp.isSelectAllowed
         && !isDocOverlayBlockingInput()
+        && !isFileHistoryModalBlockingInput()
         && !faceSnapMode
         && !ptpSnapMode
         && !booleanMode
@@ -6432,6 +6454,7 @@ function loadStlModel(model, name, scale, colored) {
 
 function loadGlbModel(model, name, scale, colored, options = {}) {
     const { loadFileHistory = false } = options;
+    if (loadFileHistory) syncFileHistoryToggleUi();
     return new Promise((resolve, reject) => {
         const loader = new GLTFLoader();
         const dracoLoader = new DRACOLoader();
@@ -7621,7 +7644,7 @@ function render() {
     const isMouseOverGui = _guiHitEl && (guiWrapper.contains(_guiHitEl) || _guiHitEl.closest('.lil-gui') || _guiHitEl.closest('.ctx-menu'));
     
     // Nezvýrazňujeme objekty při dragování (rotaci/posouvání) nebo při transformaci
-    if (!isTransformDragging && !isMouseOverGui && !isMouseDown && !isTouchDragging && viewProp.isSelectAllowed && !isDocOverlayBlockingInput()) {      
+    if (!isTransformDragging && !isMouseOverGui && !isMouseDown && !isTouchDragging && viewProp.isSelectAllowed && !isDocOverlayBlockingInput() && !isFileHistoryModalBlockingInput()) {      
         raycaster.setFromCamera(mouse, currentCamera);
         // Raycasting ArrowHelper – vizualizace paprsku pro ladění
         if (viewProp.showRaycastHelper) {
@@ -7680,12 +7703,12 @@ function render() {
     }
 
     // Pokud je selekce zakázána nebo je aktivní skupinová transformace nebo doc overlay blokuje vstup, zajistíme že nebude nic zvýrazněno
-    if ((!viewProp.isSelectAllowed || isDocOverlayBlockingInput()) && INTERSECTED) {
+    if ((!viewProp.isSelectAllowed || isDocOverlayBlockingInput() || isFileHistoryModalBlockingInput()) && INTERSECTED) {
         clearHighlight();
         INTERSECTED = null;
     }
 
-    const docBlocks3dInput = isDocOverlayBlockingInput();
+    const docBlocks3dInput = isDocOverlayBlockingInput() || isFileHistoryModalBlockingInput();
 
     // Measurement hover preview – raycast for point preview when in measure mode
     // Face snap highlight – show hovered triangle during face-to-face snap mode
@@ -7971,6 +7994,8 @@ function onMouseMove( event ) {
 }
 
 function onMouseDown( event ) {
+    if (isFileHistoryModalBlockingInput()) return;
+
     // Uložíme pozici myši při stisku tlačítka
     mouseDownPos.x = event.clientX;
     mouseDownPos.y = event.clientY;
@@ -8678,8 +8703,8 @@ function onClick( event ) {
         return;
     }
 
-    // Document editor open – ignore all 3D model interaction (annotation, measure, select, …)
-    if (isDocOverlayBlockingInput()) return;
+    // Document editor or save-history dialog open – ignore all 3D model interaction
+    if (isDocOverlayBlockingInput() || isFileHistoryModalBlockingInput()) return;
 
     // --- Deviation probe mode ---
     if (deviationProbeMode && deviationResultActive) {
@@ -9105,7 +9130,7 @@ function onClick( event ) {
 
     // Pokud je selekce zakázána v GUI, ignorujeme click
     if (!viewProp.isSelectAllowed) return;
-    if (isDocOverlayBlockingInput()) return;
+    if (isDocOverlayBlockingInput() || isFileHistoryModalBlockingInput()) return;
 
     // Pokud právě probíhá drag transformací, ignorujeme click
     if (isTransformDragging) return;
@@ -9269,7 +9294,7 @@ function onTouchEnd( event ) {
         // All touches ended - simulujeme click pro selekci
         if (!viewProp.isSelectAllowed) return;
         if (viewProp.isGroupTransformActive) return;
-        if (isDocOverlayBlockingInput()) return;
+        if (isDocOverlayBlockingInput() || isFileHistoryModalBlockingInput()) return;
         if (isTransformDragging) return;
 
         // Pokud je dotykem stisknuto na GUI prvek, ignorujeme raycast pro selekci
@@ -9462,27 +9487,106 @@ function importStlFile() {
     input.click();
 }
 
-let _fileHistoryDialog = null;
-let _fileHistoryDialogContent = null;
+function isFileHistoryDialogOpen() {
+    return !!(_fileHistoryDialog && _fileHistoryDialog.open);
+}
+
+function isFileHistoryModalBlockingInput() {
+    return isSaveHistoryDialogOpen() || isFileHistoryDialogOpen();
+}
+
+function clampFileHistoryDialogPosition(left, top) {
+    if (!_fileHistoryDialog) return { left, top };
+    const margin = 8;
+    const w = _fileHistoryDialog.offsetWidth || 400;
+    const h = _fileHistoryDialog.offsetHeight || 300;
+    return {
+        left: Math.min(Math.max(margin, left), window.innerWidth - w - margin),
+        top: Math.min(Math.max(margin, top), window.innerHeight - h - margin),
+    };
+}
+
+function resetFileHistoryDialogPosition() {
+    if (!_fileHistoryDialog) return;
+    _fileHistoryDialog.style.margin = '';
+    _fileHistoryDialog.style.position = '';
+    _fileHistoryDialog.style.left = '';
+    _fileHistoryDialog.style.top = '';
+}
+
+function initFileHistoryDialogDrag() {
+    if (!_fileHistoryDialog) return;
+    const header = _fileHistoryDialog.querySelector('.file-history-header');
+    if (!header || header.dataset.dragInit === '1') return;
+    header.dataset.dragInit = '1';
+
+    let dragging = false;
+    let startX = 0;
+    let startY = 0;
+    let startLeft = 0;
+    let startTop = 0;
+
+    header.addEventListener('mousedown', e => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+
+        const rect = _fileHistoryDialog.getBoundingClientRect();
+        _fileHistoryDialog.style.margin = '0';
+        _fileHistoryDialog.style.position = 'fixed';
+        _fileHistoryDialog.style.left = `${rect.left}px`;
+        _fileHistoryDialog.style.top = `${rect.top}px`;
+
+        dragging = true;
+        startX = e.clientX;
+        startY = e.clientY;
+        startLeft = rect.left;
+        startTop = rect.top;
+        _fileHistoryDialog.classList.add('file-history-dragging');
+    });
+
+    window.addEventListener('mousemove', e => {
+        if (!dragging || !_fileHistoryDialog) return;
+        e.preventDefault();
+        const next = clampFileHistoryDialogPosition(
+            startLeft + (e.clientX - startX),
+            startTop + (e.clientY - startY)
+        );
+        _fileHistoryDialog.style.left = `${next.left}px`;
+        _fileHistoryDialog.style.top = `${next.top}px`;
+    });
+
+    window.addEventListener('mouseup', () => {
+        if (!dragging || !_fileHistoryDialog) return;
+        dragging = false;
+        _fileHistoryDialog.classList.remove('file-history-dragging');
+    });
+}
 
 function initFileHistoryDialog() {
     _fileHistoryDialog = document.createElement('dialog');
     _fileHistoryDialog.id = 'file-history-dialog';
+    _fileHistoryDialog.setAttribute('closedby', 'closerequest');
     _fileHistoryDialog.innerHTML = `
-        <h2>File history</h2>
+        <div class="file-history-header">
+            <h2>File history</h2>
+        </div>
         <pre class="file-history-list"></pre>
-        <form method="dialog"><button>OK</button></form>
+        <form method="dialog" class="file-history-footer"><button>OK</button></form>
     `;
     _fileHistoryDialogContent = _fileHistoryDialog.querySelector('.file-history-list');
-    _fileHistoryDialog.addEventListener('click', e => {
-        if (e.target === _fileHistoryDialog) _fileHistoryDialog.close();
+    _fileHistoryDialog.addEventListener('cancel', e => {
+        e.preventDefault();
+        _fileHistoryDialog?.close();
     });
     document.body.appendChild(_fileHistoryDialog);
+    initFileHistoryDialogDrag();
 }
 
 function showFileHistoryDialog() {
     if (!_fileHistoryDialog) initFileHistoryDialog();
     _fileHistoryDialogContent.textContent = formatFileHistoryForDialog();
+    resetFileHistoryDialogPosition();
     _fileHistoryDialog.showModal();
 }
 
@@ -10503,12 +10607,7 @@ function hideDracoOverlay() {
     if (overlay) overlay.style.display = 'none';
 }
 
-function buildAllModelsExportGroup(finalName, { recordHistory = false } = {}) {
-    if (recordHistory) {
-        if (!promptUserNameForSaveIfEmpty()) return null;
-        appendFileHistoryEntry(getUserName());
-    }
-
+function buildAllModelsExportGroup(finalName) {
     assemblyWriteToUserData();
     flushDocumentEdits();
 
@@ -10596,7 +10695,12 @@ async function buildAllModelsGlbArrayBuffer({ draco = false, finalName = null, r
     if (draco) showDracoOverlay();
 
     try {
-        const group = buildAllModelsExportGroup(resolvedName, { recordHistory });
+        if (recordHistory) {
+            const ok = await recordSaveHistoryIfEnabled();
+            if (!ok) return null;
+        }
+
+        const group = buildAllModelsExportGroup(resolvedName);
         if (!group) return null;
         let result = await parseExportGroupToArrayBuffer(group);
 
