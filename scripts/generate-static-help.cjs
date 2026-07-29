@@ -22,7 +22,7 @@ const ROOT_DIR = path.join(__dirname, '..');
 const HELP_DIR = path.join(ROOT_DIR, 'public/help');
 const SITEMAP_PATH = path.join(ROOT_DIR, 'public/sitemap.xml');
 const LANDING_INDEX = path.join(ROOT_DIR, 'index.html');
-const OG_IMAGE_ALT = 'Meshbex CAD Explorer';
+const OG_IMAGE_ALT = 'Meshbex CAD Explorer screen layout with toolbar, scene outliner, 3D viewport and selection options';
 
 // Only the "main" guides shown in the top-level Help menu (src/main.js) get a
 // static page. The "Panels" sub-menu JSONs are short, contextual UI tooltips
@@ -86,7 +86,7 @@ function buildPage(doc, slug, docHtml) {
         : truncate(stripHtml(doc.content || ''), 155);
     const pageTitle = `${title} \u2013 Meshbex Help`;
     const canonical = `${SITE_URL}/help/${slug}.html`;
-    const ogImage = `${SITE_URL}/icon-512.png`;
+    const ogImage = `${SITE_URL}/landing/hero-ui.png`;
     const ogImageAlt = OG_IMAGE_ALT;
     const dateModified = doc.lastEditAt ? toDateOnly(doc.lastEditAt) : null;
 
@@ -175,7 +175,7 @@ ${buildTocToggleScript('staticHelpToc', 'staticTocToggleBtn')}
 <meta property="og:image" content="${ogImage}">
 <meta property="og:image:alt" content="${safeOgImageAlt}">
 
-<meta name="twitter:card" content="summary">
+<meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="${safeTitle}">
 <meta name="twitter:description" content="${safeDescription}">
 <meta name="twitter:image" content="${ogImage}">
