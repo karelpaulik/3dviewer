@@ -10,12 +10,19 @@
 // Docs editor / help.json import-export). Re-run this script (or `npm run
 // build`, which runs it automatically) after editing any of the JSON files
 // below to regenerate the matching static page.
+//
+// Also regenerates public/sitemap.xml (landing + public help guides) with
+// lastmod dates derived from doc.lastEditAt or file mtimes.
 
 const fs = require('fs');
 const path = require('path');
 
 const SITE_URL = 'https://meshbex.com';
-const HELP_DIR = path.join(__dirname, '../public/help');
+const ROOT_DIR = path.join(__dirname, '..');
+const HELP_DIR = path.join(ROOT_DIR, 'public/help');
+const SITEMAP_PATH = path.join(ROOT_DIR, 'public/sitemap.xml');
+const LANDING_INDEX = path.join(ROOT_DIR, 'index.html');
+const OG_IMAGE_ALT = 'Meshbex CAD Explorer';
 
 // Only the "main" guides shown in the top-level Help menu (src/main.js) get a
 // static page. The "Panels" sub-menu JSONs are short, contextual UI tooltips
@@ -32,6 +39,29 @@ const SLUGS = [
 function truncate(str, maxLen) {
     if (str.length <= maxLen) return str;
     return str.slice(0, maxLen - 1).trimEnd() + '\u2026';
+}
+
+/** @returns {string} YYYY-MM-DD */
+function toDateOnly(isoOrDate) {
+    const d = isoOrDate instanceof Date ? isoOrDate : new Date(isoOrDate);
+    if (Number.isNaN(d.getTime())) return null;
+    return d.toISOString().slice(0, 10);
+}
+
+function fileMtimeDate(filePath) {
+    try {
+        return toDateOnly(fs.statSync(filePath).mtime);
+    } catch {
+        return null;
+    }
+}
+
+function lastmodForDoc(doc, jsonPath) {
+    if (doc.lastEditAt) {
+        const fromDoc = toDateOnly(doc.lastEditAt);
+        if (fromDoc) return fromDoc;
+    }
+    return fileMtimeDate(jsonPath) || toDateOnly(new Date());
 }
 
 function buildPage(doc, slug, docHtml) {
@@ -57,9 +87,12 @@ function buildPage(doc, slug, docHtml) {
     const pageTitle = `${title} \u2013 Meshbex Help`;
     const canonical = `${SITE_URL}/help/${slug}.html`;
     const ogImage = `${SITE_URL}/icon-512.png`;
+    const ogImageAlt = OG_IMAGE_ALT;
+    const dateModified = doc.lastEditAt ? toDateOnly(doc.lastEditAt) : null;
 
     const safeTitle = escapeHtml(pageTitle);
     const safeDescription = escapeHtml(description);
+    const safeOgImageAlt = escapeHtml(ogImageAlt);
     const style = resolveDocStyle(doc);
     const { contentHtml, toc } = buildTocFromHeadings(doc.content || '');
     const hasToc = toc.length >= 2;
@@ -102,6 +135,28 @@ ${buildTocToggleScript('staticHelpToc', 'staticTocToggleBtn')}
 <\/script>`
         : `<main id="staticHelpContent">${contentHtml}</main>`;
 
+    const jsonLd = {
+        '@context': 'https://schema.org',
+        '@type': 'TechArticle',
+        name: pageTitle,
+        description,
+        url: canonical,
+        image: ogImage,
+        publisher: {
+            '@type': 'Organization',
+            name: 'Meshbex',
+            url: SITE_URL + '/',
+            logo: `${SITE_URL}/icon-512.png`,
+        },
+    };
+    if (dateModified) {
+        jsonLd.dateModified = dateModified;
+    }
+    const jsonLdScript = JSON.stringify(jsonLd, null, '\t')
+        .split('\n')
+        .map((line, i) => (i === 0 ? line : `\t${line}`))
+        .join('\n');
+
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -118,11 +173,17 @@ ${buildTocToggleScript('staticHelpToc', 'staticTocToggleBtn')}
 <meta property="og:description" content="${safeDescription}">
 <meta property="og:url" content="${canonical}">
 <meta property="og:image" content="${ogImage}">
+<meta property="og:image:alt" content="${safeOgImageAlt}">
 
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="${safeTitle}">
 <meta name="twitter:description" content="${safeDescription}">
 <meta name="twitter:image" content="${ogImage}">
+<meta name="twitter:image:alt" content="${safeOgImageAlt}">
+
+<script type="application/ld+json">
+${jsonLdScript}
+</script>
 
 <link rel="icon" type="image/png" href="/favicon-32x32.png">
 <style>
@@ -164,9 +225,29 @@ ${bodyContent}
 `;
 }
 
+function buildSitemapXml(entries) {
+    const urls = entries.map(({ loc, lastmod, changefreq, priority }) => (
+        `\t<url>\n` +
+        `\t\t<loc>${loc}</loc>\n` +
+        `\t\t<lastmod>${lastmod}</lastmod>\n` +
+        `\t\t<changefreq>${changefreq}</changefreq>\n` +
+        `\t\t<priority>${priority}</priority>\n` +
+        `\t</url>`
+    )).join('\n');
+
+    return (
+        `<?xml version="1.0" encoding="UTF-8"?>\n` +
+        `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n` +
+        `${urls}\n` +
+        `</urlset>\n`
+    );
+}
+
 async function main() {
     const docHtml = await import('./docHtmlShared.mjs');
     let failures = 0;
+    const helpEntries = [];
+
     for (const slug of SLUGS) {
         const jsonPath = path.join(HELP_DIR, `${slug}.json`);
         const outPath = path.join(HELP_DIR, `${slug}.html`);
@@ -175,12 +256,32 @@ async function main() {
             const doc = JSON.parse(raw);
             const html = buildPage(doc, slug, docHtml);
             fs.writeFileSync(outPath, html, 'utf8');
+            helpEntries.push({
+                loc: `${SITE_URL}/help/${slug}.html`,
+                lastmod: lastmodForDoc(doc, jsonPath),
+                changefreq: 'monthly',
+                priority: '0.6',
+            });
             console.log(`generate-static-help: wrote public/help/${slug}.html`);
         } catch (err) {
             failures++;
             console.warn(`generate-static-help: failed for "${slug}": ${err.message}`);
         }
     }
+
+    const landingLastmod = fileMtimeDate(LANDING_INDEX) || toDateOnly(new Date());
+    const sitemapXml = buildSitemapXml([
+        {
+            loc: `${SITE_URL}/`,
+            lastmod: landingLastmod,
+            changefreq: 'weekly',
+            priority: '1.0',
+        },
+        ...helpEntries,
+    ]);
+    fs.writeFileSync(SITEMAP_PATH, sitemapXml, 'utf8');
+    console.log('generate-static-help: wrote public/sitemap.xml');
+
     if (failures > 0) {
         console.warn(`generate-static-help: ${failures} file(s) failed, continuing build.`);
     }
