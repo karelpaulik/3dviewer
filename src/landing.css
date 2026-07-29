@@ -318,6 +318,62 @@ p {
 	text-decoration: underline;
 }
 
+/* FAQ */
+
+.faq-list {
+	max-width: 40rem;
+	margin: 0 auto;
+	display: flex;
+	flex-direction: column;
+	gap: 0.75rem;
+}
+
+.faq-item {
+	border: 1px solid var(--border);
+	border-radius: 12px;
+	background: var(--surface);
+	padding: 0 1.25rem;
+}
+
+.faq-item summary {
+	cursor: pointer;
+	list-style: none;
+	padding: 1.1rem 0;
+	font-weight: 600;
+	color: var(--text);
+}
+
+.faq-item summary::-webkit-details-marker {
+	display: none;
+}
+
+.faq-item summary::after {
+	content: "+";
+	float: right;
+	color: var(--text-dim);
+	font-weight: 400;
+}
+
+.faq-item[open] summary::after {
+	content: "–";
+}
+
+.faq-item p {
+	margin: 0 0 1.1rem;
+	border-top: 1px solid var(--border);
+	padding-top: 0.9rem;
+	font-size: 0.95rem;
+}
+
+.faq-item a {
+	color: var(--accent);
+	text-decoration: none;
+}
+
+.faq-item a:hover {
+	text-decoration: underline;
+}
+
 /* CTA band */
 
 .cta-band {

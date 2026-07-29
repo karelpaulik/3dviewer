@@ -41,25 +41,109 @@
 		<script type="application/ld+json">
 		{
 			"@context": "https://schema.org",
-			"@type": "SoftwareApplication",
-			"name": "Meshbex CAD Explorer",
-			"url": "https://meshbex.com/",
-			"description": "Meshbex is a free web-based CAD explorer for STL, GLB and more. No login, no cloud, no install required. Explore assemblies and cross-sections.",
-			"applicationCategory": "DesignApplication",
-			"operatingSystem": "Any (runs in a web browser)",
-			"offers": {
-				"@type": "Offer",
-				"price": "0",
-				"priceCurrency": "USD"
-			},
-			"image": "https://meshbex.com/landing/hero-ui.png",
-			"publisher": {
-				"@type": "Organization",
-				"name": "Meshbex",
-				"url": "https://meshbex.com/",
-				"email": "info@meshbex.com",
-				"logo": "https://meshbex.com/icon-512.png"
-			}
+			"@graph": [
+				{
+					"@type": "Organization",
+					"@id": "https://meshbex.com/#organization",
+					"name": "Meshbex",
+					"url": "https://meshbex.com/",
+					"email": "info@meshbex.com",
+					"logo": "https://meshbex.com/icon-512.png",
+					"contactPoint": {
+						"@type": "ContactPoint",
+						"email": "info@meshbex.com",
+						"contactType": "customer support"
+					}
+				},
+				{
+					"@type": "WebSite",
+					"@id": "https://meshbex.com/#website",
+					"name": "Meshbex",
+					"url": "https://meshbex.com/",
+					"publisher": { "@id": "https://meshbex.com/#organization" }
+				},
+				{
+					"@type": "SoftwareApplication",
+					"@id": "https://meshbex.com/#software",
+					"name": "Meshbex CAD Explorer",
+					"url": "https://meshbex.com/",
+					"description": "Meshbex is a free web-based CAD explorer for STL, GLB and more. No login, no cloud, no install required. Explore assemblies and cross-sections.",
+					"applicationCategory": "DesignApplication",
+					"operatingSystem": "Any (runs in a web browser)",
+					"softwareVersion": "2.0.0",
+					"featureList": [
+						"Assembly and explode sequences",
+						"Cross-sections",
+						"Measurements and annotations",
+						"In-file documents",
+						"HTML export",
+						"Local-only privacy — no cloud uploads"
+					],
+					"offers": {
+						"@type": "Offer",
+						"price": "0",
+						"priceCurrency": "USD"
+					},
+					"image": "https://meshbex.com/landing/hero-ui.png",
+					"publisher": { "@id": "https://meshbex.com/#organization" }
+				}
+			]
+		}
+		</script>
+		<script type="application/ld+json">
+		{
+			"@context": "https://schema.org",
+			"@type": "FAQPage",
+			"mainEntity": [
+				{
+					"@type": "Question",
+					"name": "Is Meshbex free?",
+					"acceptedAnswer": {
+						"@type": "Answer",
+						"text": "Yes. Meshbex CAD Explorer is free for everyone — no paid plan is required to view, explore, measure, or document 3D models."
+					}
+				},
+				{
+					"@type": "Question",
+					"name": "Do I need an account or login?",
+					"acceptedAnswer": {
+						"@type": "Answer",
+						"text": "No. Open Meshbex in your browser and start working immediately. No registration or account is required."
+					}
+				},
+				{
+					"@type": "Question",
+					"name": "Are my 3D files uploaded to the cloud?",
+					"acceptedAnswer": {
+						"@type": "Answer",
+						"text": "No. Your models stay on your computer. Meshbex does not upload files to Meshbex servers — work stays local on your device."
+					}
+				},
+				{
+					"@type": "Question",
+					"name": "Which file formats are supported?",
+					"acceptedAnswer": {
+						"@type": "Answer",
+						"text": "GLB is the primary Meshbex format. You can also import glTF, STL, OBJ, FBX, 3MF, STEP/STP, and IGES/IGS. See the supported file formats guide for details."
+					}
+				},
+				{
+					"@type": "Question",
+					"name": "Do I need to install anything?",
+					"acceptedAnswer": {
+						"@type": "Answer",
+						"text": "No install is required. Meshbex runs in a modern web browser. You can optionally install it as a PWA for offline use."
+					}
+				},
+				{
+					"@type": "Question",
+					"name": "Can I use Meshbex offline?",
+					"acceptedAnswer": {
+						"@type": "Answer",
+						"text": "Yes, after installing Meshbex as a Progressive Web App (PWA). In the browser without PWA install, an internet connection is needed to load the app."
+					}
+				}
+			]
 		}
 		</script>
 		<script>
@@ -93,6 +177,7 @@
 			<nav class="nav-links" aria-label="Primary">
 				<a href="#features">Features</a>
 				<a href="#formats">Formats</a>
+				<a href="#faq">FAQ</a>
 				<a href="./help.html" target="_blank" rel="noopener noreferrer">Help</a>
 				<a class="btn btn-primary" href="./app/">Open Meshbex</a>
 			</nav>
@@ -103,7 +188,7 @@
 				<div class="hero-copy">
 					<p class="hero-kicker" id="hero-brand">Mesh<em>bex</em></p>
 					<h1>CAD Explorer in your browser</h1>
-					<p class="hero-lead">Load 3D models, explore assemblies, document steps, and export interactive presentations — free, with no login and no cloud. No install required; optional PWA for offline use.</p>
+					<p class="hero-lead">Meshbex is a free web-based CAD explorer for engineers, makers, and anyone who needs to open STL, GLB, and other 3D files without login, cloud upload, or install — explore assemblies, measure, document, and export presentations on your device.</p>
 					<div class="hero-actions">
 						<a class="btn btn-primary btn-lg" href="./app/">Open Meshbex <span aria-hidden="true">→</span></a>
 						<a class="btn btn-ghost" href="./help/guide-for-beginners.html" target="_blank" rel="noopener noreferrer">Beginner guide</a>
@@ -185,6 +270,39 @@
 				<p class="formats-link"><a href="./help/supported-file-formats.html" target="_blank" rel="noopener noreferrer">Supported file formats guide</a></p>
 			</section>
 
+			<section class="section" id="faq" aria-labelledby="faq-title">
+				<div class="section-head">
+					<h2 id="faq-title">Frequently asked questions</h2>
+					<p>Short answers about price, privacy, formats, and how Meshbex runs.</p>
+				</div>
+				<div class="faq-list">
+					<details class="faq-item">
+						<summary>Is Meshbex free?</summary>
+						<p>Yes. Meshbex CAD Explorer is free for everyone — no paid plan is required to view, explore, measure, or document 3D models.</p>
+					</details>
+					<details class="faq-item">
+						<summary>Do I need an account or login?</summary>
+						<p>No. Open Meshbex in your browser and start working immediately. No registration or account is required.</p>
+					</details>
+					<details class="faq-item">
+						<summary>Are my 3D files uploaded to the cloud?</summary>
+						<p>No. Your models stay on your computer. Meshbex does not upload files to Meshbex servers — work stays local on your device.</p>
+					</details>
+					<details class="faq-item">
+						<summary>Which file formats are supported?</summary>
+						<p>GLB is the primary Meshbex format. You can also import glTF, STL, OBJ, FBX, 3MF, STEP/STP, and IGES/IGS. See the <a href="./help/supported-file-formats.html" target="_blank" rel="noopener noreferrer">supported file formats guide</a> for details.</p>
+					</details>
+					<details class="faq-item">
+						<summary>Do I need to install anything?</summary>
+						<p>No install is required. Meshbex runs in a modern web browser. You can optionally install it as a <a href="./help/pwa-install.html" target="_blank" rel="noopener noreferrer">PWA</a> for offline use.</p>
+					</details>
+					<details class="faq-item">
+						<summary>Can I use Meshbex offline?</summary>
+						<p>Yes, after installing Meshbex as a Progressive Web App (PWA). In the browser without PWA install, an internet connection is needed to load the app.</p>
+					</details>
+				</div>
+			</section>
+
 			<section class="cta-band" aria-labelledby="cta-title">
 				<div>
 					<h2 id="cta-title">Ready to explore?</h2>
@@ -198,6 +316,7 @@
 			<p>&copy; 2026 Meshbex</p>
 			<nav aria-label="Footer">
 				<a href="./app/">App</a>
+				<a href="#faq">FAQ</a>
 				<a href="./help.html" target="_blank" rel="noopener noreferrer">Help</a>
 				<a href="./help/pwa-install.html" target="_blank" rel="noopener noreferrer">Install PWA</a>
 				<a href="mailto:info@meshbex.com">info@meshbex.com</a>
