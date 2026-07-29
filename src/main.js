@@ -627,6 +627,7 @@ const fileHistoryUi = { enableFileHistory: true };
 let _enableFileHistoryController = null;
 let _fileHistoryDialog = null;
 let _fileHistoryDialogContent = null;
+let _fileHistoryClearBtn = null;
 
 function syncFileHistoryToggleUi() {
     resetFileHistoryOnSaveEnabled();
@@ -9563,6 +9564,14 @@ function initFileHistoryDialogDrag() {
     });
 }
 
+function refreshFileHistoryDialogContent() {
+    if (!_fileHistoryDialogContent) return;
+    _fileHistoryDialogContent.textContent = formatFileHistoryForDialog();
+    if (_fileHistoryClearBtn) {
+        _fileHistoryClearBtn.disabled = getFileHistoryStore().length === 0;
+    }
+}
+
 function initFileHistoryDialog() {
     _fileHistoryDialog = document.createElement('dialog');
     _fileHistoryDialog.id = 'file-history-dialog';
@@ -9572,9 +9581,18 @@ function initFileHistoryDialog() {
             <h2>File history</h2>
         </div>
         <pre class="file-history-list"></pre>
-        <form method="dialog" class="file-history-footer"><button>OK</button></form>
+        <div class="file-history-footer">
+            <button type="button" id="file-history-clear" class="file-history-clear-btn">Clear history</button>
+            <form method="dialog"><button>OK</button></form>
+        </div>
     `;
     _fileHistoryDialogContent = _fileHistoryDialog.querySelector('.file-history-list');
+    _fileHistoryClearBtn = _fileHistoryDialog.querySelector('#file-history-clear');
+    _fileHistoryClearBtn.addEventListener('click', () => {
+        if (!confirm('Delete all save history?')) return;
+        clearFileHistoryStore();
+        refreshFileHistoryDialogContent();
+    });
     _fileHistoryDialog.addEventListener('cancel', e => {
         e.preventDefault();
         _fileHistoryDialog?.close();
@@ -9585,7 +9603,7 @@ function initFileHistoryDialog() {
 
 function showFileHistoryDialog() {
     if (!_fileHistoryDialog) initFileHistoryDialog();
-    _fileHistoryDialogContent.textContent = formatFileHistoryForDialog();
+    refreshFileHistoryDialogContent();
     resetFileHistoryDialogPosition();
     _fileHistoryDialog.showModal();
 }

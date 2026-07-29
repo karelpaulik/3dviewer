@@ -101,6 +101,13 @@ assert(typeof exported[0].savedAt === 'string', 'exported savedAt');
 exported[0].user = 'Hacked';
 assert(getFileHistoryStore()[0].user === 'Bob', 'export returns a copy');
 
+// Clear all history
+clearFileHistoryStore();
+appendFileHistoryEntry('Alice', 'note');
+clearFileHistoryStore();
+assert(getFileHistoryStore().length === 0, 'clearFileHistoryStore empties store');
+assert(getFileHistoryForExport().length === 0, 'export after clear is empty');
+
 // Max entries limit
 clearFileHistoryStore();
 for (let i = 0; i < MAX_FILE_HISTORY_ENTRIES + 5; i++) {

@@ -252,10 +252,16 @@ a:hover {
 
 #file-history-dialog .file-history-footer {
 	display: flex;
-	justify-content: flex-end;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
 	padding: 12px 32px 24px;
 	margin: 0;
 	flex-shrink: 0;
+}
+
+#file-history-dialog .file-history-footer form {
+	margin: 0;
 }
 
 #file-history-dialog button {
@@ -266,6 +272,19 @@ a:hover {
 	background: #555;
 	color: #eee;
 	font-size: 14px;
+}
+
+#file-history-dialog .file-history-clear-btn {
+	background: #8b3a3a;
+}
+
+#file-history-dialog .file-history-clear-btn:hover:not(:disabled) {
+	background: #a04444;
+}
+
+#file-history-dialog .file-history-clear-btn:disabled {
+	opacity: 0.45;
+	cursor: not-allowed;
 }
 
 #about-dialog h2,
