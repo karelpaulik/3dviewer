@@ -74,6 +74,20 @@ import {
 import { initAttachmentsGui, importAttachmentsFromGltfScene, getAttachmentsStore, addImageAttachmentFromBlob, clearAttachmentsStore } from './attachmentsUtils.js';
 import { serializeAttachmentsForExport } from './attachmentCompressionUtils.js';
 import { initLocalFileAccess, openLocalGlbFile, saveLocalGlbFile, saveLocalGlbFileAs, clearCurrentLocalFileHandle, waitForExternalFileSignal, wasOpenedWithExternalFile } from './localFileAccess.js';
+import {
+    USER_NAME_STORAGE_KEY,
+    getUserName,
+    setUserName,
+    getFileHistoryStore,
+    promptUserNameForSaveIfEmpty,
+    registerToolbarUsernameInput,
+    clearFileHistoryStore,
+    appendFileHistoryEntry,
+    getFileHistoryForExport,
+    importFileHistoryFromGltfScene,
+    stripFileHistoryFromGltfScene,
+    formatFileHistoryForDialog,
+} from './fileHistoryUtils.js';
 import { applyVisibilityToExportClone, restoreVisibilityFromImport } from './visibilityPersistenceUtils.js';
 import { stripSelectionHighlightFromExportSubtree } from './exportSanitizeUtils.js';
 import { captureScreenFromDisplayMedia } from './viewportCapture.js';
@@ -592,6 +606,17 @@ fileNameInput.type = 'text';
 fileNameInput.placeholder = 'file name…';
 fileNameInput.title = 'File name (default name for export)';
 guiToolbar.insertBefore(fileNameInput, outlinerBtn.nextSibling);
+
+const userNameInput = document.createElement('input');
+userNameInput.id = 'toolbar-username-input';
+userNameInput.type = 'text';
+userNameInput.placeholder = 'user name…';
+userNameInput.title = 'Your name (used in file save history)';
+userNameInput.value = getUserName();
+registerToolbarUsernameInput(userNameInput);
+userNameInput.addEventListener('change', () => setUserName(userNameInput.value));
+userNameInput.addEventListener('blur', () => setUserName(userNameInput.value));
+guiToolbar.insertBefore(userNameInput, fileNameInput.nextSibling);
 
 // Pre-create all toolbar buttons in desired order: Selected, File, Edit, View, Tools, Assembly, Docs, Help
 ['Selected', 'File', 'Edit', 'View', 'Tools', 'Assembly', 'Docs', 'Files', 'Call', 'Help'].forEach(name => {
@@ -1425,6 +1450,10 @@ if (import.meta.env.DEV) {
     window.assemblyState = assemblyState;
     window.getAnnotations = getAnnotations;
     window.getDocumentsStore = getDocumentsStore;
+    window.USER_NAME_STORAGE_KEY = USER_NAME_STORAGE_KEY;
+    window.getUserName = getUserName;
+    window.setUserName = setUserName;
+    window.getFileHistoryStore = getFileHistoryStore;
 
     //NOK - toto není reference
     window.transformControls = transformControls;
@@ -2777,6 +2806,7 @@ function addMainGui() {
     exportHtmlFolder.add({ fn() { exportToHTMLDraco(loadedModels, assemblyGui, viewProp, assemblyWriteToUserData, assemblyClearUserData); } }, 'fn').name('Export to HTML (Compression)');
     exportHtmlFolder.add({ fn() { exportToHTMLObfuscated(loadedModels, assemblyGui, viewProp, assemblyWriteToUserData, assemblyClearUserData); } }, 'fn').name('Export to HTML obfuscated');
     exportHtmlFolder.add({ fn() { exportToHTMLObfuscatedDraco(loadedModels, assemblyGui, viewProp, assemblyWriteToUserData, assemblyClearUserData); } }, 'fn').name('Export to HTML obfuscated (Compression)');
+    fileGui.add({ fn: showFileHistoryDialog }, 'fn').name('File history…');
     registerGuiPanel('File', fileGui);
 
     initLocalFileAccess({
@@ -2785,7 +2815,7 @@ function addMainGui() {
         loadGlbFile: async (file) => {
             const url = URL.createObjectURL(file);
             try {
-                await loadGlbModel(url, file.name, 0.001, true);
+                await loadGlbModel(url, file.name, 0.001, true, { loadFileHistory: true });
                 fitView();
             } finally {
                 URL.revokeObjectURL(url);
@@ -6400,7 +6430,8 @@ function loadStlModel(model, name, scale, colored) {
     });
 }
 
-function loadGlbModel(model, name, scale, colored) {
+function loadGlbModel(model, name, scale, colored, options = {}) {
+    const { loadFileHistory = false } = options;
     return new Promise((resolve, reject) => {
         const loader = new GLTFLoader();
         const dracoLoader = new DRACOLoader();
@@ -6442,6 +6473,12 @@ function loadGlbModel(model, name, scale, colored) {
                 importDocumentsFromGltfScene(gltf.scene);
                 importAttachmentsFromGltfScene(gltf.scene);
                 importSettingsFromGltfScene(gltf.scene);
+
+                if (loadFileHistory) {
+                    importFileHistoryFromGltfScene(gltf.scene);
+                } else {
+                    stripFileHistoryFromGltfScene(gltf.scene);
+                }
 
                 const fallbackName = name || fileNameWithoutExtension(model);
                 for (const mdl of extractedModels) {
@@ -6517,6 +6554,12 @@ function loadGlbModel(model, name, scale, colored) {
 
                 // Import 3D dimension defaults, 3D annotation defaults, section settings
                 importSettingsFromGltfScene(gltf.scene);
+
+                if (loadFileHistory) {
+                    importFileHistoryFromGltfScene(gltf.scene);
+                } else {
+                    stripFileHistoryFromGltfScene(gltf.scene);
+                }
                 
                 // Reconstruct measurements stored in userData
                 reconstructMeasurements(gltf.scene, render);
@@ -6763,6 +6806,7 @@ function clearSceneFully() {
 
     clearDocumentsStore();
     clearAttachmentsStore();
+    clearFileHistoryStore();
     clearCurrentLocalFileHandle();
 
     if (_assemblyFolderRef) updateAssemblyGuiInfo();
@@ -9418,6 +9462,30 @@ function importStlFile() {
     input.click();
 }
 
+let _fileHistoryDialog = null;
+let _fileHistoryDialogContent = null;
+
+function initFileHistoryDialog() {
+    _fileHistoryDialog = document.createElement('dialog');
+    _fileHistoryDialog.id = 'file-history-dialog';
+    _fileHistoryDialog.innerHTML = `
+        <h2>File history</h2>
+        <pre class="file-history-list"></pre>
+        <form method="dialog"><button>OK</button></form>
+    `;
+    _fileHistoryDialogContent = _fileHistoryDialog.querySelector('.file-history-list');
+    _fileHistoryDialog.addEventListener('click', e => {
+        if (e.target === _fileHistoryDialog) _fileHistoryDialog.close();
+    });
+    document.body.appendChild(_fileHistoryDialog);
+}
+
+function showFileHistoryDialog() {
+    if (!_fileHistoryDialog) initFileHistoryDialog();
+    _fileHistoryDialogContent.textContent = formatFileHistoryForDialog();
+    _fileHistoryDialog.showModal();
+}
+
 function importGlbFile() {
     const input = document.createElement('input');
     input.type = 'file';
@@ -10435,7 +10503,12 @@ function hideDracoOverlay() {
     if (overlay) overlay.style.display = 'none';
 }
 
-function buildAllModelsExportGroup(finalName) {
+function buildAllModelsExportGroup(finalName, { recordHistory = false } = {}) {
+    if (recordHistory) {
+        if (!promptUserNameForSaveIfEmpty()) return null;
+        appendFileHistoryEntry(getUserName());
+    }
+
     assemblyWriteToUserData();
     flushDocumentEdits();
 
@@ -10455,6 +10528,11 @@ function buildAllModelsExportGroup(finalName) {
         attachmentCompressionDefaults
     );
     embedAppSettingsToUserData(group.userData);
+
+    const history = getFileHistoryForExport();
+    if (history.length > 0) {
+        group.userData.fileHistory = history;
+    }
 
     assemblyClearUserData();
     stripMeasurementVisuals(group);
@@ -10507,7 +10585,7 @@ async function compressGlbWithDraco(result) {
     return io.writeBinary(gltfDoc);
 }
 
-async function buildAllModelsGlbArrayBuffer({ draco = false, finalName = null } = {}) {
+async function buildAllModelsGlbArrayBuffer({ draco = false, finalName = null, recordHistory = false } = {}) {
     if (loadedModels.length === 0) {
         console.warn('Žádné modely k exportu.');
         return null;
@@ -10518,7 +10596,8 @@ async function buildAllModelsGlbArrayBuffer({ draco = false, finalName = null } 
     if (draco) showDracoOverlay();
 
     try {
-        const group = buildAllModelsExportGroup(resolvedName);
+        const group = buildAllModelsExportGroup(resolvedName, { recordHistory });
+        if (!group) return null;
         let result = await parseExportGroupToArrayBuffer(group);
 
         if (draco) {
