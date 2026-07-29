@@ -733,6 +733,9 @@ canvas {
     align-items: center;
     gap: 8px;
     max-width: calc(100vw - 144px);
+    padding: 4px;
+    border-radius: 6px;
+    background: rgba(17, 17, 17, 0.75);
     overflow-x: auto;
     overflow-y: hidden;
     -webkit-overflow-scrolling: touch;
@@ -1409,11 +1412,12 @@ a, button, input, select {
 }
 
 /* ===== Scene Outliner Panel ===== */
+/* bottom clears #viewport-bottom-left-toolbar (bottom 36px + 32px btn + 8px pad + 8px gap) */
 #outliner-panel {
     position: fixed;
     top: 28px;
     left: 0;
-    bottom: 29px;
+    bottom: 84px;
     width: 260px;
     background: #1a1a1a;
     border-right: 1px solid #333;
