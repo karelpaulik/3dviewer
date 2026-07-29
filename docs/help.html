@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="cs">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -291,7 +291,7 @@ html, body {
     <nav id="helpToc"></nav>
     <div id="helpContentWrap">
         <div id="helpContentInner">
-            <div id="helpLoading">Načítání…</div>
+            <div id="helpLoading">Loading…</div>
         </div>
     </div>
 </div>
@@ -355,7 +355,7 @@ html, body {
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
         helpDoc = await resp.json();
     } catch (e) {
-        contentInner.innerHTML = '<div id="helpError">Chybu při načítání helpu: ' + e.message + '</div>';
+        contentInner.innerHTML = '<div id="helpError">Failed to load help: ' + e.message + '</div>';
         return;
     }
 
