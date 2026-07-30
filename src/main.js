@@ -1602,12 +1602,21 @@ outlinerPanelEl = initOutliner({
     onGroupAdd: (obj) => toggleObjectInMultiSelect(obj),
     onGroupRemove: (obj) => { const idx = selectedObjects.indexOf(obj); if (idx !== -1) toggleObjectInMultiSelect(obj); },
     onHideOthers: (obj) => {
-        // Hide all siblings; for root loadedModels hide all other roots
-        const siblings = (obj.parent && obj.parent.isScene)
-            ? loadedModels
-            : (obj.parent ? obj.parent.children : []);
-        siblings.forEach(s => {
-            if (s !== obj && s.visible) { hideObject(s); updateVisibilityIcon(s); }
+        // Hide siblings at every level up the ancestor chain (other branches hide with their root node)
+        const toHide = new Set();
+        let current = obj;
+        while (current?.parent) {
+            const parent = current.parent;
+            const siblings = parent.isScene ? loadedModels : parent.children;
+            for (const s of siblings) {
+                if (s !== current && s.visible) toHide.add(s);
+            }
+            if (parent.isScene) break;
+            current = parent;
+        }
+        toHide.forEach(s => {
+            hideObject(s);
+            updateVisibilityIcon(s);
         });
         // Ensure the object itself is visible
         if (!obj.visible) {
