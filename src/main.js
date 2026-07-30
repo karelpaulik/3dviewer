@@ -70,6 +70,7 @@ import {
     createRemoveObjectCommand,
     captureVisibilitySnapshot,
     createVisibilityCommand,
+    createHideOthersCommand,
 } from './undoCommands.js';
 import { initAttachmentsGui, importAttachmentsFromGltfScene, getAttachmentsStore, addImageAttachmentFromBlob, clearAttachmentsStore } from './attachmentsUtils.js';
 import { serializeAttachmentsForExport } from './attachmentCompressionUtils.js';
@@ -1614,10 +1615,16 @@ outlinerPanelEl = initOutliner({
             if (parent.isScene) break;
             current = parent;
         }
+        const ctx = getUndoContext();
+        const snaps = [];
         toHide.forEach(s => {
-            hideObject(s);
+            snaps.push(captureVisibilitySnapshot(s, ctx));
+            hideObject(s, { skipUndo: true });
             updateVisibilityIcon(s);
         });
+        if (snaps.length > 0) {
+            pushCommand(createHideOthersCommand(ctx, snaps));
+        }
         // Ensure the object itself is visible
         if (!obj.visible) {
             obj.visible = true;
@@ -7015,9 +7022,10 @@ function removeModel(part, skipConfirm = false, options = {}) {
     }
 }
 
-function hideObject(part) {
+function hideObject(part, options = {}) {
     try {
-        const visSnap = captureVisibilitySnapshot(part, getUndoContext());
+        const skipUndo = !!options.skipUndo;
+        const visSnap = skipUndo ? null : captureVisibilitySnapshot(part, getUndoContext());
         // Skryjeme objekt nastavením visibility na false
         part.visible = false;
         
@@ -7052,7 +7060,9 @@ function hideObject(part) {
         if (normalsViewGui.showVertexAllNormals || normalsViewGui.showVertexNormals) updateVertexNormalsHelpers();
         else render();
 
-        pushCommand(createVisibilityCommand(getUndoContext(), visSnap));
+        if (!skipUndo) {
+            pushCommand(createVisibilityCommand(getUndoContext(), visSnap));
+        }
     } catch(err) {
         console.log("Error: hideObject " + err.message);
     }

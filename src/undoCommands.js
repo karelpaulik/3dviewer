@@ -360,3 +360,20 @@ export function createVisibilityCommand(ctx, snap) {
         redo: () => _applyVisibility(ctx, snap, false),
     };
 }
+
+/**
+ * Single undo/redo step for bulk hide (e.g. Hide others).
+ * @param {object} ctx
+ * @param {ReturnType<typeof captureVisibilitySnapshot>[]} snaps
+ */
+export function createHideOthersCommand(ctx, snaps) {
+    return {
+        label: 'Hide others',
+        undo: () => {
+            for (const snap of snaps) _applyVisibility(ctx, snap, snap.beforeVisible);
+        },
+        redo: () => {
+            for (const snap of snaps) _applyVisibility(ctx, snap, false);
+        },
+    };
+}
