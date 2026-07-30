@@ -1282,6 +1282,7 @@ const viewProp = {
     solidSection: false, // Solid (capped) section cut
     capColor: '#00ffff', // Color of the solid section cap faces
     transformSpace: true,  // true = world, false = local
+    movePivotOnly: false,  // true = gizmo translate/rotate only moves pivot, not the object
     snapTranslation: 10,   // krok translace
     snapRotationDeg: 30,   // krok rotace ve stupních
     snapScale: 0.25,       // krok měřítka
@@ -1984,7 +1985,8 @@ function init() {
         }
         // Delta-sync: pohyb pivotu přeneseme na skutečný objekt (objekt zůstává u původního rodiče).
         // Funguje pro translate, rotate i scale – matice přesně zachovává world-space transformaci.
-        if (isTransformDragging && singleSelectPivot && lastSelectedObject
+        // movePivotOnly: přeskočit – uživatel nastavuje jen střed/osy gizma.
+        if (isTransformDragging && !viewProp.movePivotOnly && singleSelectPivot && lastSelectedObject
                 && singleSelectPivotInitMatrix && singleSelectObjectInitMatrix) {
             singleSelectPivot.updateWorldMatrix(true, false);
             const _deltaM = new THREE.Matrix4()
@@ -2034,8 +2036,8 @@ function init() {
                 singleSelectPivotInitMatrix = singleSelectPivot.matrixWorld.clone();
                 singleSelectObjectInitMatrix = lastSelectedObject.matrixWorld.clone();
             }
-            // Uložíme předchozí stav před změnou
-            if (transformControls.object && !viewProp.isGroupTransformActive) {
+            // Uložíme předchozí stav před změnou (ne při samotném přesunu pivotu)
+            if (transformControls.object && !viewProp.isGroupTransformActive && !viewProp.movePivotOnly) {
                 savePreviousTransformState();
             }
             // Pro group transform uložíme world pozice všech objektů skupiny
@@ -2050,7 +2052,10 @@ function init() {
                 roundObjectTransformNearZero(transformControls.object);
                 roundObjectTransformNearZero(lastSelectedObject);
                 // Zaznamenat transformaci v assembly edit modu + globální undo
-                commitDragTransformUndo();
+                // Pivot only: neukládat undo (objekt se nezměnil); group transform tím neovlivňovat
+                if (!(viewProp.movePivotOnly && !viewProp.isGroupTransformActive)) {
+                    commitDragTransformUndo();
+                }
                 // Přepočítáme BoxHelpery po dokončení skupinové transformace
                 if (viewProp.isGroupTransformActive) {
                     multiSelectionHelpers.forEach((h, i) => {
@@ -3795,6 +3800,9 @@ function refreshSelectedObjGui(obj) {
     const folder2 = selectedFolder.addFolder("Location");
         folder2.add(viewProp, 'locationKeepOpen').name('Keep open');
         folder2.add({ fn() { if (lastSelectedObject) setDefPosRotScale(lastSelectedObject); } }, 'fn').name('Reset init. location');
+        folder2.add(viewProp, 'movePivotOnly').name('Pivot only').onChange(function(value) {
+            setMovePivotOnly(value);
+        }).listen();
 
         // Capture "before" state when the object is selected (TransformControl is already attached).
         savePreviousTransformState();
@@ -4841,6 +4849,45 @@ function syncSingleSelectPivotOrientation() {
     singleSelectPivot.updateMatrixWorld(true);
 }
 
+/** Persist gizmo pivot in object-local space so it survives deselect/reselect. */
+function saveSingleSelectPivotToObject(obj, pivot) {
+    if (!obj || !pivot) return;
+    obj.updateWorldMatrix(true, false);
+    pivot.updateWorldMatrix(true, false);
+    const localPos = pivot.position.clone().applyMatrix4(
+        new THREE.Matrix4().copy(obj.matrixWorld).invert()
+    );
+    const objWorldQ = new THREE.Quaternion();
+    const pivotWorldQ = new THREE.Quaternion();
+    obj.getWorldQuaternion(objWorldQ);
+    pivot.getWorldQuaternion(pivotWorldQ);
+    const localQ = objWorldQ.clone().invert().multiply(pivotWorldQ);
+    obj.userData._customPivot = {
+        position: [localPos.x, localPos.y, localPos.z],
+        quaternion: [localQ.x, localQ.y, localQ.z, localQ.w],
+    };
+}
+
+/**
+ * Restore saved pivot into world pos/quat. Returns true if custom pivot existed.
+ * @param {THREE.Object3D} obj
+ * @param {THREE.Vector3} targetPos
+ * @param {THREE.Quaternion} targetQuat
+ */
+function restoreSingleSelectPivotFromObject(obj, targetPos, targetQuat) {
+    const data = obj && obj.userData && obj.userData._customPivot;
+    if (!data || !data.position || !data.quaternion) return false;
+    obj.updateWorldMatrix(true, true);
+    targetPos
+        .set(data.position[0], data.position[1], data.position[2])
+        .applyMatrix4(obj.matrixWorld);
+    const localQ = new THREE.Quaternion(
+        data.quaternion[0], data.quaternion[1], data.quaternion[2], data.quaternion[3]
+    );
+    obj.getWorldQuaternion(targetQuat).multiply(localQ);
+    return true;
+}
+
 // Local gizmo frame for group selection: align pivotObject to selectedObjects[0] world rotation.
 // Compensates child local transforms so world positions stay unchanged.
 function syncGroupPivotOrientation() {
@@ -4906,6 +4953,12 @@ function setTransformSpace(isWorld, triggerRender = true) {
 
 function toggleTransformSpace() {
     setTransformSpace(!viewProp.transformSpace);
+}
+
+/** When true, TransformControls move/rotate only the single-select pivot (custom rotation center/axes). */
+function setMovePivotOnly(enabled, triggerRender = true) {
+    viewProp.movePivotOnly = !!enabled;
+    if (triggerRender) render();
 }
 
 function initTransformSpaceGizmo() {
@@ -7517,32 +7570,37 @@ function selectObject(object, options = {}) {
     if (object) {        
         lastSelectedObject = object;// Nastavíme nové reference
 
-        // Vždy vytvoříme pivot na středu bboxu, aby gizmo bylo ve středu objektu
-        // (platí i pro assembly edit mode). Delta-sync v change eventu přenese pohyb
-        // pivotu na skutečný objekt; savePreviousTransformState/recordAssemblyTransformation
-        // čtou lastSelectedObject, nikoli pivot – assembly tracking zůstává správný.
+        // Pivot na středu bboxu, nebo obnovený custom pivot (Pivot only / předchozí výběr).
+        // Delta-sync v change eventu přenese pohyb pivotu na skutečný objekt;
+        // savePreviousTransformState/recordAssemblyTransformation čtou lastSelectedObject.
         {
             object.updateWorldMatrix(true, true);
-            const bbox = new THREE.Box3().setFromObject(object);
-            const bboxCenter = new THREE.Vector3();
-            bbox.getCenter(bboxCenter);
-            // Zarovnáme pivot na snap grid – snap handler v change eventu snapuje
-            // pivot.position, takže pokud pivot startuje na gridovém bodě,
-            // delta bude vždy násobek snap kroku a sousední osy se nepohnou.
-            {
+            const pivotPos = new THREE.Vector3();
+            const pivotQuat = new THREE.Quaternion();
+            const hasCustomPivot = restoreSingleSelectPivotFromObject(object, pivotPos, pivotQuat);
+            if (!hasCustomPivot) {
+                const bbox = new THREE.Box3().setFromObject(object);
+                bbox.getCenter(pivotPos);
+                // Zarovnáme výchozí pivot na snap grid – snap handler v change eventu snapuje
+                // pivot.position, takže pokud pivot startuje na gridovém bodě,
+                // delta bude vždy násobek snap kroku a sousední osy se nepohnou.
                 const snap = viewProp.snapTranslation;
-                bboxCenter.x = Math.round(bboxCenter.x / snap) * snap;
-                bboxCenter.y = Math.round(bboxCenter.y / snap) * snap;
-                bboxCenter.z = Math.round(bboxCenter.z / snap) * snap;
+                pivotPos.x = Math.round(pivotPos.x / snap) * snap;
+                pivotPos.y = Math.round(pivotPos.y / snap) * snap;
+                pivotPos.z = Math.round(pivotPos.z / snap) * snap;
             }
             singleSelectPivot = new THREE.Object3D();
             singleSelectPivot.name = '__singleSelectPivot__';
-            singleSelectPivot.position.copy(bboxCenter);
+            singleSelectPivot.position.copy(pivotPos);
+            if (hasCustomPivot) {
+                singleSelectPivot.quaternion.copy(pivotQuat);
+            }
             scene.add(singleSelectPivot);
             // Objekt NENÍ reparentován – zůstává u původního rodiče.
             // Pohyb pivotu se v change eventu aplikuje jako delta matice na objekt.
-            transformControls.attach(singleSelectPivot);// Připojíme TransformControls na pivot
-            if (!viewProp.transformSpace) syncTransformPivotOrientation();
+            transformControls.attach(singleSelectPivot);
+            // LCS: výchozí pivot zarovnat na objekt; custom orientaci z Pivot only nepřepisovat.
+            if (!hasCustomPivot && !viewProp.transformSpace) syncTransformPivotOrientation();
         }
         outlinerHighlight(object, { scroll: options.outlinerScroll !== false });// Zvýraznění uzlu v scene outlineru   
              
@@ -7582,8 +7640,9 @@ function deselectObject() {
         transformControls.detach();
     }
     hideTransformSpaceGizmo();
-    // Zničíme pivot pro single-select (objekt zůstal u původního rodiče po celou dobu)
+    // Uložíme pivot v local space objektu a zničíme helper (objekt zůstal u původního rodiče)
     if (singleSelectPivot) {
+        saveSingleSelectPivotToObject(lastSelectedObject, singleSelectPivot);
         scene.remove(singleSelectPivot);
         singleSelectPivot = null;
         singleSelectPivotInitMatrix = null;
