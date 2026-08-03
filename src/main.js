@@ -25,7 +25,7 @@ import { updateCrossSectionLines as updateCrossSectionLinesCore, updateSectionCr
 import { exportToHTML, exportToHTMLDraco, exportToHTMLObfuscated, exportToHTMLObfuscatedDraco } from './htmlExport.js';
 import { initOutliner, toggleOutliner, rebuildTree, highlightObject as outlinerHighlight, updateVisibilityIcon, updateSelectableIcon, updateObjectLabel, isOutlinerOpen, navigateOutliner, highlightGroupObjects, clearGroupHighlights, setNavigationPosition, setOnTreeRebuild, setShowAuxiliaryObjects, isOutlinerAuxiliaryObject, notifyOutlinerAuxiliaryChildrenChanged } from './sceneOutliner.js';
 import { positionContextMenu } from './uiMenuUtils.js';
-import { computeModelStats, computeSurfaceAreaAndVolume, formatGeometryMeasure } from './modelInfoUtils.js';
+import { computeModelStats, computeSurfaceAreaAndVolume, formatGeometryMeasure, MODEL_UNIT_OPTIONS, computeMassGrams, formatMass } from './modelInfoUtils.js';
 import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, updateMeasurement3dOrientations, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements, isSelectDimActive, setSelectDimActive, refreshLabelEditListeners, hasSelectedDimension, deselectSelectedDimension, deleteSelectedDimension, resetSelectedMeasurementLabel, getSelectedMeasurementLabelStyle, getSelectedMeasurementLabelDim, setSelectedMeasurementLabelDim, setSelectedMeasurementOrientationMode, setSelectedMeasurementTextColor, setSelectedMeasurementBgColor, setSelectedMeasurementFontSize, initSelectDimension, updateSelectDimensionCamera, reconstructMeasurements, stripMeasurementVisuals, setMeasurementsVisible, setMeasurementDepthTest, removeMeasurementsForOwner, isCadDimActive, setCadDimActive, getCadDimStep, getCadDimAxis, addCadDimPoint, updateCadDimPreview, updateCadDimHoverPreview, cycleCadDimAxis, placeCadDim, clearCadDimMeasurements, removeCadDimMeasurementsForOwner, getSelectedCadDim, setCadDimLabelMode, setCadDimDragMode, selectDimTouchStart, selectDimTouchMove, selectDimTouchEnd, registerLabelForSelection, getSelectedCadDim3d, getSelectedAnnotation, getSelectedAnnotation3d, getSelectedDistance, getSelectedAngle, getCadDimMeasurements, deleteCadDimByRef, convertCadDim3dTo2d, getFlatDimDefaults, applyDefaultsToAllFlatDim, getDistanceLabelDefaults, getAngleLabelDefaults, getDistanceMarkerDefaults, getAngleMarkerDefaults, applyDefaultsToAllDistanceMeasurements, applyDefaultsToAllAngleMeasurements, setDistanceMarkerColor, setAngleMarkerColor, getMeasurementMarkerSettings, setMeasurementMarkerFixedSize, setMeasurementMarkerFixedScreenPx, setMeasurementMarkerWorldSize, getDefaultMeasurementLabelDim, setDefaultMeasurementLabelDim, getMeasurement3dDefaults, setDimMarkerFixedSize, setDimMarkerFixedScreenPx, setDimMarkerWorldSize, setDimMarkerColor, getDimMarkerSettings, setMeasureOnSessionComplete, setAngleOnSessionComplete, setCadDimOnSessionComplete } from './measurementUtils.js';
 import { detectCircleCenterFromHit, clearCircleDetectionCache } from './circleDetectionUtils.js';
 import { removeEdgeOverlays, updateMeshEdgeOverlays, stripEdgeOverlays, syncEdgeOverlayClipping } from './edgeDisplayUtils.js';
@@ -1320,6 +1320,7 @@ const viewProp = {
     toolsLabelMode: '3d', // Flat / 3D režim pro všechny nástroje v panelu Tools
     xrayOnSelect: false, // X-ray efekt při výběru objektu (depthTest off)
     orientedSelectionBox: 'local',
+    modelUnit: 'mm', // Scene length unit for area/volume/mass interpretation (mm|cm|m|inch)
     splitLoosePartsToleranceMode: 'auto', // 'auto' | 'manual'
     splitLoosePartsToleranceMultiplier: 1, // Auto: multiplier on default bbox factor
     splitLoosePartsToleranceManual: 1e-4, // Manual: absolute weld tolerance in model units
@@ -1438,6 +1439,8 @@ const part = {
     bbSize: "",
     surfaceArea: "",
     volume: "",
+    density: 0, // g/cm³ – persisted on object userData.density
+    mass: "",
     worldPos: "",
     showBBox: false,
 };
@@ -2649,6 +2652,13 @@ function addMainGui() {
             }
         }).listen();
         folderProp.add(viewProp, 'orientedSelectionBox', ['local', 'world']).name('Selection box').onChange(function(){ render(); }).listen();
+        folderProp.add(viewProp, 'modelUnit', MODEL_UNIT_OPTIONS).name('Model unit').onChange(function() {
+            if (viewProp.isGroupTransformActive && selectedObjects.length > 0) {
+                updateAreaVolume(selectedObjects);
+            } else if (lastSelectedObject) {
+                updateAreaVolume(lastSelectedObject);
+            }
+        }).listen();
         folderProp.addColor(viewProp, 'backgroundColor').name('Background').onChange(function(value){ scene.background = new THREE.Color(value); render(); });
         folderProp.add(viewProp, 'perspCam').name('Persp. camera').onChange(function(value){setCamera(); render(); });
         folderProp.add(viewProp, 'showSharpEdges').name('Sharp edges').onChange(function() {
@@ -3584,7 +3594,7 @@ function updateBBoxSize(obj) {
 }
 
 /**
- * Surface area + volume of all meshes under one object or a list of objects (world space).
+ * Surface area + volume (+ mass from density) of all meshes under one object or a list of objects.
  * Multi-mesh CAD shells and multi-select of separate solids are both supported.
  * @param {import('three').Object3D|import('three').Object3D[]|null|undefined} rootOrRoots
  */
@@ -3595,6 +3605,7 @@ function updateAreaVolume(rootOrRoots) {
     if (roots.length === 0) {
         part.surfaceArea = '–';
         part.volume = '–';
+        part.mass = '–';
         return;
     }
     const meshes = [];
@@ -3605,18 +3616,55 @@ function updateAreaVolume(rootOrRoots) {
     if (meshes.length === 0) {
         part.surfaceArea = '–';
         part.volume = '–';
+        part.mass = '–';
         return;
     }
     const stats = computeSurfaceAreaAndVolume(meshes);
     if (stats.triangleCount === 0) {
         part.surfaceArea = '–';
         part.volume = '–';
+        part.mass = '–';
         return;
     }
     part.surfaceArea = formatGeometryMeasure(stats.area);
     part.volume = stats.volumeReliable
         ? formatGeometryMeasure(stats.volume)
         : `${formatGeometryMeasure(stats.volume)} (open?)`;
+
+    const density = Number(part.density);
+    if (!(density > 0) || !stats.volumeReliable) {
+        part.mass = !(density > 0) ? '–' : `${formatMass(computeMassGrams(stats.volume, density, viewProp.modelUnit))} (open?)`;
+    } else {
+        part.mass = formatMass(computeMassGrams(stats.volume, density, viewProp.modelUnit));
+    }
+}
+
+/** Read density from root(s) into part.density (g/cm³). */
+function syncPartDensityFromRoots(rootOrRoots) {
+    const roots = Array.isArray(rootOrRoots)
+        ? rootOrRoots.filter(Boolean)
+        : (rootOrRoots ? [rootOrRoots] : []);
+    const values = roots
+        .map(r => Number(r.userData?.density))
+        .filter(d => Number.isFinite(d) && d > 0);
+    if (values.length === 0) {
+        part.density = 0;
+        return;
+    }
+    const first = values[0];
+    part.density = values.every(d => d === first) ? first : first;
+}
+
+/** Persist part.density onto root(s) userData.density. */
+function writePartDensityToRoots(rootOrRoots) {
+    const roots = Array.isArray(rootOrRoots)
+        ? rootOrRoots.filter(Boolean)
+        : (rootOrRoots ? [rootOrRoots] : []);
+    const density = Number(part.density);
+    for (const root of roots) {
+        if (density > 0) root.userData.density = density;
+        else delete root.userData.density;
+    }
 }
 
 /** Update meshDensityGui.triangleInfo from the currently selected object (for the "Mesh Density" GUI folder). */
@@ -3744,9 +3792,15 @@ function refreshSelectedObjGui(obj) {
     updateBBoxSize(obj);
     selectedFolder.add(part, 'bbSize').name('Bounding box').disable().listen();
 
+    syncPartDensityFromRoots(obj);
     updateAreaVolume(obj);
     selectedFolder.add(part, 'surfaceArea').name('Surface area').disable().listen();
     selectedFolder.add(part, 'volume').name('Volume').disable().listen();
+    selectedFolder.add(part, 'density').name('Density (g/cm³)').onChange(function() {
+        writePartDensityToRoots(obj);
+        updateAreaVolume(obj);
+    }).listen();
+    selectedFolder.add(part, 'mass').name('Mass').disable().listen();
 
     // World-space position of TransformControl gizmo (from absolute zero / axis helper origin)
     updateWorldPos();
@@ -3958,9 +4012,15 @@ function refreshGroupGui() {
     const namesStr = selectedObjects.map(o => o.name || 'Unnamed').join(', ');
     selectedFolder.add({ names: namesStr }, 'names').name('Objects').disable();
 
+    syncPartDensityFromRoots(selectedObjects);
     updateAreaVolume(selectedObjects);
     selectedFolder.add(part, 'surfaceArea').name('Surface area').disable().listen();
     selectedFolder.add(part, 'volume').name('Volume').disable().listen();
+    selectedFolder.add(part, 'density').name('Density (g/cm³)').onChange(function() {
+        writePartDensityToRoots(selectedObjects);
+        updateAreaVolume(selectedObjects);
+    }).listen();
+    selectedFolder.add(part, 'mass').name('Mass').disable().listen();
 
     // Color picker – applies to ALL objects in the group
     const groupColor = { color: '#888888' };

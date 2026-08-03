@@ -140,3 +140,46 @@ export function computeSurfaceAreaAndVolume(meshes) {
         volumeReliable,
     };
 }
+
+/** Supported scene length units (1 scene unit = this length). */
+export const MODEL_UNIT_OPTIONS = ['mm', 'cm', 'm', 'inch'];
+
+/** How many cm³ equal one cubic scene unit. */
+const UNIT_VOLUME_TO_CM3 = {
+    mm: 1e-3,       // 1 mm³ = 0.001 cm³
+    cm: 1,
+    m: 1e6,         // 1 m³ = 1_000_000 cm³
+    inch: 16.387064, // 1 in³ in cm³
+};
+
+/**
+ * @param {string} modelUnit
+ * @returns {number}
+ */
+export function unitVolumeToCm3(modelUnit) {
+    return UNIT_VOLUME_TO_CM3[modelUnit] ?? UNIT_VOLUME_TO_CM3.mm;
+}
+
+/**
+ * @param {number} volumeModelUnits – abs signed volume in scene units³
+ * @param {number} densityGPerCm3
+ * @param {string} modelUnit
+ * @returns {number} mass in grams
+ */
+export function computeMassGrams(volumeModelUnits, densityGPerCm3, modelUnit) {
+    if (!(volumeModelUnits > 0) || !(densityGPerCm3 > 0)) return 0;
+    return volumeModelUnits * unitVolumeToCm3(modelUnit) * densityGPerCm3;
+}
+
+/**
+ * @param {number} grams
+ * @returns {string}
+ */
+export function formatMass(grams) {
+    if (!Number.isFinite(grams) || grams <= 0) return '–';
+    if (grams >= 1e6) return `${(grams / 1e6).toFixed(3)} t`;
+    if (grams >= 1000) return `${(grams / 1000).toFixed(3)} kg`;
+    if (grams >= 1) return `${grams.toFixed(2)} g`;
+    if (grams >= 1e-3) return `${(grams * 1000).toFixed(2)} mg`;
+    return `${grams.toExponential(3)} g`;
+}
