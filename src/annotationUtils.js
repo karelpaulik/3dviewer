@@ -31,8 +31,8 @@ const MARKER_PREVIEW_COLOR = 0x88cc88;
 // Persistent settings object – same reference returned by getAnnMarkerSettings so lil-gui .listen() stays in sync
 const _annMarkerSettings = {
     fixedSize:    false,
-    fixedScreenPx: 3,
-    worldSize:    5,
+    fixedScreenPx: 2,
+    worldSize:    2,
     markerColor:  '#44aa44',
 };
 let _annMarkerColor = _annMarkerSettings.markerColor; // shortcut for creation callsites

@@ -312,7 +312,7 @@ function _buildDimensionDefaultsFolder(parentFolder, deps) {
     dimensionFolder.add({ fn() {
         Object.assign(_flatDimDef, { textColor: '#ffffff', bgColor: '#1976d2', fontSize: 11 });
         Object.assign(_cadDim3dDef, { labelScale: 5, rotationCamera: 0, rotationXY: 0, rotationXZ: 0, rotationYZ: 0, orientationMode: 'camera', textColor: '#ffffff', bgColor: '#1976d2' });
-        Object.assign(_dimMarkerOpts, { fixedSize: false, fixedScreenPx: 3, worldSize: 5, markerColor: '#22aacc' });
+        Object.assign(_dimMarkerOpts, { fixedSize: false, fixedScreenPx: 2, worldSize: 2, markerColor: '#22aacc' });
         deps.setDimMarkerFixedSize(_dimMarkerOpts.fixedSize);
         deps.setCadDimMarkerFixedSize(_dimMarkerOpts.fixedSize);
         deps.setDimMarkerFixedScreenPx(_dimMarkerOpts.fixedScreenPx);
@@ -387,7 +387,7 @@ function _buildAnnotationDefaultsFolder(parentFolder, deps) {
     annotationFolder.add({ fn() {
         Object.assign(_flatAnnDef, { textColor: '#ffffff', bgColor: '#388e3c', fontSize: 11 });
         Object.assign(_ann3dDef, { labelScale: 5, rotationCamera: 0, rotationXY: 0, rotationXZ: 0, rotationYZ: 0, orientationMode: 'camera', textColor: '#ffffff', bgColor: '#388e3c' });
-        Object.assign(_annMarkerOpts, { fixedSize: false, fixedScreenPx: 3, worldSize: 5, markerColor: '#44aa44' });
+        Object.assign(_annMarkerOpts, { fixedSize: false, fixedScreenPx: 2, worldSize: 2, markerColor: '#44aa44' });
         deps.setAnnMarkerFixedSize(_annMarkerOpts.fixedSize);
         deps.setAnn3dMarkerFixedSize(_annMarkerOpts.fixedSize);
         deps.setAnnMarkerFixedScreenPx(_annMarkerOpts.fixedScreenPx);
@@ -457,7 +457,7 @@ function _buildMeasurementDefaultsFolder(parentFolder, deps) {
         Object.assign(_angleLabelDef, { textColor: '#ffffff', bgColor: '#2850c8', fontSize: 11 });
         Object.assign(_distanceMarkerOpts, { markerColor: '#ff4444' });
         Object.assign(_angleMarkerOpts, { markerColor: '#4488ff' });
-        Object.assign(_measMarkerSizeOpts, { fixedSize: false, fixedScreenPx: 3, worldSize: 5 });
+        Object.assign(_measMarkerSizeOpts, { fixedSize: false, fixedScreenPx: 2, worldSize: 2 });
         deps.setMeasurementMarkerFixedSize(_measMarkerSizeOpts.fixedSize);
         deps.setMeasurementMarkerFixedScreenPx(_measMarkerSizeOpts.fixedScreenPx);
         deps.setMeasurementMarkerWorldSize(_measMarkerSizeOpts.worldSize);

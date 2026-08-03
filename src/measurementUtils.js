@@ -95,8 +95,8 @@ const MARKER_SCREEN_SIZE = 5; // desired pixel-size (approximate)
 // Persistent settings object – same reference returned by getDimMarkerSettings so lil-gui .listen() stays in sync
 const _dimMarkerSettings = {
     fixedSize:    false,
-    fixedScreenPx: 3,
-    worldSize:    5,
+    fixedScreenPx: 2,
+    worldSize:    2,
     markerColor:  '#22aacc',
 };
 let _dimMarkerColor = _dimMarkerSettings.markerColor; // shortcut kept in sync for creation callsites
@@ -110,8 +110,8 @@ export function getDimMarkerSettings()       { return _dimMarkerSettings; }
 // --- Measurement marker size settings (distance + angle, separate from CAD dimension markers) ---
 const _measurementMarkerSettings = {
     fixedSize:     false,
-    fixedScreenPx: 3,
-    worldSize:     5,
+    fixedScreenPx: 2,
+    worldSize:     2,
 };
 
 export function getMeasurementMarkerSettings()       { return _measurementMarkerSettings; }
