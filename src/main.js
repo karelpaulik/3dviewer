@@ -25,7 +25,7 @@ import { updateCrossSectionLines as updateCrossSectionLinesCore, updateSectionCr
 import { exportToHTML, exportToHTMLDraco, exportToHTMLObfuscated, exportToHTMLObfuscatedDraco } from './htmlExport.js';
 import { initOutliner, toggleOutliner, rebuildTree, highlightObject as outlinerHighlight, updateVisibilityIcon, updateSelectableIcon, updateObjectLabel, isOutlinerOpen, navigateOutliner, highlightGroupObjects, clearGroupHighlights, setNavigationPosition, setOnTreeRebuild, setShowAuxiliaryObjects, isOutlinerAuxiliaryObject, notifyOutlinerAuxiliaryChildrenChanged } from './sceneOutliner.js';
 import { positionContextMenu } from './uiMenuUtils.js';
-import { computeModelStats } from './modelInfoUtils.js';
+import { computeModelStats, computeSurfaceAreaAndVolume, formatGeometryMeasure } from './modelInfoUtils.js';
 import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, updateMeasurement3dOrientations, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements, isSelectDimActive, setSelectDimActive, refreshLabelEditListeners, hasSelectedDimension, deselectSelectedDimension, deleteSelectedDimension, resetSelectedMeasurementLabel, getSelectedMeasurementLabelStyle, getSelectedMeasurementLabelDim, setSelectedMeasurementLabelDim, setSelectedMeasurementOrientationMode, setSelectedMeasurementTextColor, setSelectedMeasurementBgColor, setSelectedMeasurementFontSize, initSelectDimension, updateSelectDimensionCamera, reconstructMeasurements, stripMeasurementVisuals, setMeasurementsVisible, setMeasurementDepthTest, removeMeasurementsForOwner, isCadDimActive, setCadDimActive, getCadDimStep, getCadDimAxis, addCadDimPoint, updateCadDimPreview, updateCadDimHoverPreview, cycleCadDimAxis, placeCadDim, clearCadDimMeasurements, removeCadDimMeasurementsForOwner, getSelectedCadDim, setCadDimLabelMode, setCadDimDragMode, selectDimTouchStart, selectDimTouchMove, selectDimTouchEnd, registerLabelForSelection, getSelectedCadDim3d, getSelectedAnnotation, getSelectedAnnotation3d, getSelectedDistance, getSelectedAngle, getCadDimMeasurements, deleteCadDimByRef, convertCadDim3dTo2d, getFlatDimDefaults, applyDefaultsToAllFlatDim, getDistanceLabelDefaults, getAngleLabelDefaults, getDistanceMarkerDefaults, getAngleMarkerDefaults, applyDefaultsToAllDistanceMeasurements, applyDefaultsToAllAngleMeasurements, setDistanceMarkerColor, setAngleMarkerColor, getMeasurementMarkerSettings, setMeasurementMarkerFixedSize, setMeasurementMarkerFixedScreenPx, setMeasurementMarkerWorldSize, getDefaultMeasurementLabelDim, setDefaultMeasurementLabelDim, getMeasurement3dDefaults, setDimMarkerFixedSize, setDimMarkerFixedScreenPx, setDimMarkerWorldSize, setDimMarkerColor, getDimMarkerSettings, setMeasureOnSessionComplete, setAngleOnSessionComplete, setCadDimOnSessionComplete } from './measurementUtils.js';
 import { detectCircleCenterFromHit, clearCircleDetectionCache } from './circleDetectionUtils.js';
 import { removeEdgeOverlays, updateMeshEdgeOverlays, stripEdgeOverlays, syncEdgeOverlayClipping } from './edgeDisplayUtils.js';
@@ -1436,6 +1436,8 @@ function makeEulerDegProxy(euler) {
 const part = {
     color: "#888888",
     bbSize: "",
+    surfaceArea: "",
+    volume: "",
     worldPos: "",
     showBBox: false,
 };
@@ -3581,6 +3583,32 @@ function updateBBoxSize(obj) {
     part.bbSize = size.x.toFixed(2) + ' × ' + size.y.toFixed(2) + ' × ' + size.z.toFixed(2);
 }
 
+/** Surface area + volume of all meshes under obj (world space; multi-mesh CAD shells supported). */
+function updateAreaVolume(obj) {
+    if (!obj) {
+        part.surfaceArea = '–';
+        part.volume = '–';
+        return;
+    }
+    obj.updateWorldMatrix(true, true);
+    const meshes = collectMeshesForGeometryOps(obj);
+    if (meshes.length === 0) {
+        part.surfaceArea = '–';
+        part.volume = '–';
+        return;
+    }
+    const stats = computeSurfaceAreaAndVolume(meshes);
+    if (stats.triangleCount === 0) {
+        part.surfaceArea = '–';
+        part.volume = '–';
+        return;
+    }
+    part.surfaceArea = formatGeometryMeasure(stats.area);
+    part.volume = stats.volumeReliable
+        ? formatGeometryMeasure(stats.volume)
+        : `${formatGeometryMeasure(stats.volume)} (open?)`;
+}
+
 /** Update meshDensityGui.triangleInfo from the currently selected object (for the "Mesh Density" GUI folder). */
 function updateMeshDensityInfo() {
     if (!meshDensityGui.countTriangles) {
@@ -3706,6 +3734,10 @@ function refreshSelectedObjGui(obj) {
     updateBBoxSize(obj);
     selectedFolder.add(part, 'bbSize').name('Bounding box').disable().listen();
 
+    updateAreaVolume(obj);
+    selectedFolder.add(part, 'surfaceArea').name('Surface area').disable().listen();
+    selectedFolder.add(part, 'volume').name('Volume').disable().listen();
+
     // World-space position of TransformControl gizmo (from absolute zero / axis helper origin)
     updateWorldPos();
     selectedFolder.add(part, 'worldPos').name('Position (X, Y, Z)').disable().listen();
@@ -3796,6 +3828,7 @@ function refreshSelectedObjGui(obj) {
         const paramFolder = selectedFolder.addFolder('Parametric');
         buildParametricGui(paramFolder, obj, () => {
             updateBBoxSize(obj);
+            updateAreaVolume(obj);
             if (bbHelper && part.showBBox) {
                 bbHelper.setFromObject(lastSelectedObject);
             }
