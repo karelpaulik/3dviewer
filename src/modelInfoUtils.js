@@ -176,12 +176,15 @@ export function computeMassGrams(volumeModelUnits, densityGPerCm3, modelUnit) {
  * @returns {string}
  */
 export function formatMass(grams) {
-    if (!Number.isFinite(grams) || grams <= 0) return '–';
-    if (grams >= 1e6) return `${(grams / 1e6).toFixed(3)} t`;
-    if (grams >= 1000) return `${(grams / 1000).toFixed(3)} kg`;
-    if (grams >= 1) return `${grams.toFixed(2)} g`;
-    if (grams >= 1e-3) return `${(grams * 1000).toFixed(2)} mg`;
-    return `${grams.toExponential(3)} g`;
+    if (!Number.isFinite(grams)) return '–';
+    if (grams === 0) return '0 g';
+    const sign = grams < 0 ? '-' : '';
+    const abs = Math.abs(grams);
+    if (abs >= 1e6) return `${sign}${(abs / 1e6).toFixed(3)} t`;
+    if (abs >= 1000) return `${sign}${(abs / 1000).toFixed(3)} kg`;
+    if (abs >= 1) return `${sign}${abs.toFixed(2)} g`;
+    if (abs >= 1e-3) return `${sign}${(abs * 1000).toFixed(2)} mg`;
+    return `${sign}${abs.toExponential(3)} g`;
 }
 
 function _isAuxiliaryObject(obj) {
@@ -217,9 +220,10 @@ function _collectMeshesUnder(root) {
 }
 
 /**
- * Hierarchical mass: mass(node) = ρ(node)×V(all meshes under node) + Σ mass(children).
- * Density 0 / missing → no own contribution (assembly = sum of children only).
- * If both parent and children have density, geometry is double-counted by design (user-controlled).
+ * Hierarchical mass:
+ * mass(node) = ρ(node)×V(all meshes under node) + Σ mass(children) + massOffsetKg(node)×1000.
+ * Density 0 / missing → no density contribution. massOffset (kg in userData) may be +/‑/0.
+ * Negative child mass subtracts from parent. Double-counting ρ on parent+child is intentional.
  *
  * @param {THREE.Object3D} node
  * @param {string} modelUnit
@@ -266,6 +270,12 @@ export function computeRolledUpMass(node, modelUnit) {
             if (!stats.volumeReliable) ownUnreliable = true;
             ownMassGrams = computeMassGrams(stats.volume, density, modelUnit);
         }
+    }
+
+    const massOffsetKg = Number(node.userData?.massOffset);
+    if (Number.isFinite(massOffsetKg) && massOffsetKg !== 0) {
+        hasOwnContribution = true;
+        ownMassGrams += massOffsetKg * 1000;
     }
 
     return {

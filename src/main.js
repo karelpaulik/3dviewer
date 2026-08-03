@@ -1440,6 +1440,7 @@ const part = {
     surfaceArea: "",
     volume: "",
     density: 0, // g/cm³ – persisted on object userData.density
+    massOffset: 0, // kg – persisted on object userData.massOffset (+/‑ correction or fixed mass)
     mass: "",
     worldPos: "",
     showBBox: false,
@@ -3595,7 +3596,8 @@ function updateBBoxSize(obj) {
 
 /**
  * Surface area + volume of meshes under selection; mass uses hierarchical roll-up:
- * mass(node) = ρ(node)×V(all under node) + Σ mass(children).
+ * mass(node) = ρ(node)×V(all under node) + Σ mass(children) + massOffset(node).
+ * massOffset is stored in kg on userData and converted to grams in the roll-up.
  * @param {import('three').Object3D|import('three').Object3D[]|null|undefined} rootOrRoots
  */
 function updateAreaVolume(rootOrRoots) {
@@ -3608,31 +3610,31 @@ function updateAreaVolume(rootOrRoots) {
         part.mass = '–';
         return;
     }
-    const meshes = [];
     for (const root of roots) {
         root.updateWorldMatrix(true, true);
+    }
+    const meshes = [];
+    for (const root of roots) {
         meshes.push(...collectMeshesForGeometryOps(root));
     }
     if (meshes.length === 0) {
         part.surfaceArea = '–';
         part.volume = '–';
-        part.mass = '–';
-        return;
+    } else {
+        const stats = computeSurfaceAreaAndVolume(meshes);
+        if (stats.triangleCount === 0) {
+            part.surfaceArea = '–';
+            part.volume = '–';
+        } else {
+            part.surfaceArea = formatGeometryMeasure(stats.area);
+            part.volume = stats.volumeReliable
+                ? formatGeometryMeasure(stats.volume)
+                : `${formatGeometryMeasure(stats.volume)} (open?)`;
+        }
     }
-    const stats = computeSurfaceAreaAndVolume(meshes);
-    if (stats.triangleCount === 0) {
-        part.surfaceArea = '–';
-        part.volume = '–';
-        part.mass = '–';
-        return;
-    }
-    part.surfaceArea = formatGeometryMeasure(stats.area);
-    part.volume = stats.volumeReliable
-        ? formatGeometryMeasure(stats.volume)
-        : `${formatGeometryMeasure(stats.volume)} (open?)`;
 
     const rolled = computeRolledUpMassForRoots(roots, viewProp.modelUnit);
-    if (!rolled.hasContribution || !(rolled.massGrams > 0)) {
+    if (!rolled.hasContribution) {
         part.mass = '–';
     } else if (rolled.unreliable) {
         part.mass = `${formatMass(rolled.massGrams)} (open?)`;
@@ -3666,6 +3668,34 @@ function writePartDensityToRoots(rootOrRoots) {
     for (const root of roots) {
         if (density > 0) root.userData.density = density;
         else delete root.userData.density;
+    }
+}
+
+/** Read massOffset from root(s) into part.massOffset (kg). */
+function syncPartMassOffsetFromRoots(rootOrRoots) {
+    const roots = Array.isArray(rootOrRoots)
+        ? rootOrRoots.filter(Boolean)
+        : (rootOrRoots ? [rootOrRoots] : []);
+    const values = roots
+        .map(r => Number(r.userData?.massOffset))
+        .filter(d => Number.isFinite(d) && d !== 0);
+    if (values.length === 0) {
+        part.massOffset = 0;
+        return;
+    }
+    const first = values[0];
+    part.massOffset = values.every(d => d === first) ? first : first;
+}
+
+/** Persist part.massOffset onto root(s) userData.massOffset (kg). */
+function writePartMassOffsetToRoots(rootOrRoots) {
+    const roots = Array.isArray(rootOrRoots)
+        ? rootOrRoots.filter(Boolean)
+        : (rootOrRoots ? [rootOrRoots] : []);
+    const massOffset = Number(part.massOffset);
+    for (const root of roots) {
+        if (Number.isFinite(massOffset) && massOffset !== 0) root.userData.massOffset = massOffset;
+        else delete root.userData.massOffset;
     }
 }
 
@@ -3795,11 +3825,16 @@ function refreshSelectedObjGui(obj) {
     selectedFolder.add(part, 'bbSize').name('Bounding box').disable().listen();
 
     syncPartDensityFromRoots(obj);
+    syncPartMassOffsetFromRoots(obj);
     updateAreaVolume(obj);
     selectedFolder.add(part, 'surfaceArea').name('Surface area').disable().listen();
     selectedFolder.add(part, 'volume').name('Volume').disable().listen();
     selectedFolder.add(part, 'density').name('Density (g/cm³)').onChange(function() {
         writePartDensityToRoots(obj);
+        updateAreaVolume(obj);
+    }).listen();
+    selectedFolder.add(part, 'massOffset').name('Mass offset (kg)').onChange(function() {
+        writePartMassOffsetToRoots(obj);
         updateAreaVolume(obj);
     }).listen();
     selectedFolder.add(part, 'mass').name('Mass').disable().listen();
@@ -4015,11 +4050,16 @@ function refreshGroupGui() {
     selectedFolder.add({ names: namesStr }, 'names').name('Objects').disable();
 
     syncPartDensityFromRoots(selectedObjects);
+    syncPartMassOffsetFromRoots(selectedObjects);
     updateAreaVolume(selectedObjects);
     selectedFolder.add(part, 'surfaceArea').name('Surface area').disable().listen();
     selectedFolder.add(part, 'volume').name('Volume').disable().listen();
     selectedFolder.add(part, 'density').name('Density (g/cm³)').onChange(function() {
         writePartDensityToRoots(selectedObjects);
+        updateAreaVolume(selectedObjects);
+    }).listen();
+    selectedFolder.add(part, 'massOffset').name('Mass offset (kg)').onChange(function() {
+        writePartMassOffsetToRoots(selectedObjects);
         updateAreaVolume(selectedObjects);
     }).listen();
     selectedFolder.add(part, 'mass').name('Mass').disable().listen();
