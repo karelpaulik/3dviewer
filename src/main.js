@@ -2876,7 +2876,7 @@ function addMainGui() {
         },
         buildGlbBuffer: (opts) => buildAllModelsGlbArrayBuffer(opts),
         recordSaveHistoryIfEnabled: () => recordSaveHistoryIfEnabled(),
-        fallbackImportGlb: () => importGlbFile(),
+        fallbackImportGlb: () => importGlbFile({ importSettings: true }),
     });
 
     // --- Edit panel ---
@@ -6531,7 +6531,7 @@ function loadStlModel(model, name, scale, colored) {
 }
 
 function loadGlbModel(model, name, scale, colored, options = {}) {
-    const { loadFileHistory = false } = options;
+    const { loadFileHistory = false, importSettings = true } = options;
     if (loadFileHistory) syncFileHistoryToggleUi();
     return new Promise((resolve, reject) => {
         const loader = new GLTFLoader();
@@ -6573,7 +6573,11 @@ function loadGlbModel(model, name, scale, colored, options = {}) {
                 importAssemblyFromGltfScene(gltf.scene);
                 importDocumentsFromGltfScene(gltf.scene);
                 importAttachmentsFromGltfScene(gltf.scene);
-                importSettingsFromGltfScene(gltf.scene);
+                if (importSettings) {
+                    importSettingsFromGltfScene(gltf.scene);
+                } else {
+                    stripSettingsFromGltfScene(gltf.scene);
+                }
 
                 if (loadFileHistory) {
                     importFileHistoryFromGltfScene(gltf.scene);
@@ -6654,7 +6658,11 @@ function loadGlbModel(model, name, scale, colored, options = {}) {
                 importAttachmentsFromGltfScene(gltf.scene);
 
                 // Import 3D dimension defaults, 3D annotation defaults, section settings
-                importSettingsFromGltfScene(gltf.scene);
+                if (importSettings) {
+                    importSettingsFromGltfScene(gltf.scene);
+                } else {
+                    stripSettingsFromGltfScene(gltf.scene);
+                }
 
                 if (loadFileHistory) {
                     importFileHistoryFromGltfScene(gltf.scene);
@@ -9694,16 +9702,17 @@ function showFileHistoryDialog() {
     _fileHistoryDialog.showModal();
 }
 
-function importGlbFile() {
+function importGlbFile(options = {}) {
+    const { importSettings = false } = options;
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '.glb';
     input.addEventListener('change', function() {
         const file = input.files[0];
         if (!file) return;
-        clearCurrentLocalFileHandle();
+        // Keep current file handle so Save still targets the Opened document.
         const url = URL.createObjectURL(file);
-        loadGlbModel(url, file.name, 0.001, true).then(() => {
+        loadGlbModel(url, file.name, 0.001, true, { importSettings }).then(() => {
             URL.revokeObjectURL(url);
             if (!fileNameInput.value) fileNameInput.value = file.name.replace(/\.[^.]+$/, '');
             fitView();
@@ -10434,6 +10443,12 @@ function _collectExportSettingsFromScene(gltfScene) {
         }
     });
     return collected;
+}
+
+// Remove embedded app settings from userData without applying them to the session
+// (used by Import GLB so adding a model does not override current defaults/section).
+function stripSettingsFromGltfScene(gltfScene) {
+    _collectExportSettingsFromScene(gltfScene);
 }
 
 // Apply dimension/annotation/measurement defaults and section settings
