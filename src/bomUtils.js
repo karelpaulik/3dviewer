@@ -11,7 +11,7 @@ const _bomState = {
         { key: 'name',  label: 'Name',  enabled: true },
         { key: 'type',  label: 'Type',  enabled: true },
         { key: 'qty',   label: 'Qty',   enabled: true },
-        { key: 'mass',  label: 'Mass',  enabled: true },
+        { key: 'mass',  label: 'Mass (unit)', enabled: true },
         { key: 'depth', label: 'Depth', enabled: false },
     ],
 };
@@ -312,7 +312,7 @@ function _createDialog() {
         <div class="bom-table-wrap">
             <table id="bom-table">
                 <thead>
-                    <tr><th>No.</th><th>Name</th><th>Type</th><th>Qty</th><th>Mass</th></tr>
+                    <tr><th>No.</th><th>Name</th><th>Type</th><th>Qty</th><th>Mass (unit)</th></tr>
                 </thead>
                 <tbody></tbody>
             </table>
