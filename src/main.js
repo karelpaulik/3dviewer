@@ -3583,15 +3583,25 @@ function updateBBoxSize(obj) {
     part.bbSize = size.x.toFixed(2) + ' × ' + size.y.toFixed(2) + ' × ' + size.z.toFixed(2);
 }
 
-/** Surface area + volume of all meshes under obj (world space; multi-mesh CAD shells supported). */
-function updateAreaVolume(obj) {
-    if (!obj) {
+/**
+ * Surface area + volume of all meshes under one object or a list of objects (world space).
+ * Multi-mesh CAD shells and multi-select of separate solids are both supported.
+ * @param {import('three').Object3D|import('three').Object3D[]|null|undefined} rootOrRoots
+ */
+function updateAreaVolume(rootOrRoots) {
+    const roots = Array.isArray(rootOrRoots)
+        ? rootOrRoots.filter(Boolean)
+        : (rootOrRoots ? [rootOrRoots] : []);
+    if (roots.length === 0) {
         part.surfaceArea = '–';
         part.volume = '–';
         return;
     }
-    obj.updateWorldMatrix(true, true);
-    const meshes = collectMeshesForGeometryOps(obj);
+    const meshes = [];
+    for (const root of roots) {
+        root.updateWorldMatrix(true, true);
+        meshes.push(...collectMeshesForGeometryOps(root));
+    }
     if (meshes.length === 0) {
         part.surfaceArea = '–';
         part.volume = '–';
@@ -3947,6 +3957,10 @@ function refreshGroupGui() {
     // Read-only list of object names
     const namesStr = selectedObjects.map(o => o.name || 'Unnamed').join(', ');
     selectedFolder.add({ names: namesStr }, 'names').name('Objects').disable();
+
+    updateAreaVolume(selectedObjects);
+    selectedFolder.add(part, 'surfaceArea').name('Surface area').disable().listen();
+    selectedFolder.add(part, 'volume').name('Volume').disable().listen();
 
     // Color picker – applies to ALL objects in the group
     const groupColor = { color: '#888888' };
