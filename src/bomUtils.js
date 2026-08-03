@@ -1,14 +1,17 @@
 // bomUtils.js – Bill of Materials generator
+import { computeRolledUpMass, formatMass } from './modelInfoUtils.js';
 
 const _bomState = {
     groupByName: true,
     includeGroups: true,
     includeMeshes: false,
+    modelUnit: 'mm',
     exportCols: [
         { key: 'no',    label: 'No.',   enabled: true },
         { key: 'name',  label: 'Name',  enabled: true },
         { key: 'type',  label: 'Type',  enabled: true },
         { key: 'qty',   label: 'Qty',   enabled: true },
+        { key: 'mass',  label: 'Mass',  enabled: true },
         { key: 'depth', label: 'Depth', enabled: false },
     ],
 };
@@ -76,6 +79,37 @@ function _buildTreeRows(root, includeGroups, includeMeshes, groupByName) {
     return rows;
 }
 
+/**
+ * Unit mass string for one object (rolled-up hierarchy), or '–' if no contribution.
+ * @param {import('three').Object3D|null|undefined} obj
+ * @returns {string}
+ */
+function _formatObjectMass(obj) {
+    if (!obj) return '–';
+    const rolled = computeRolledUpMass(obj, _bomState.modelUnit);
+    if (!rolled.hasOwnContribution && !rolled.hasChildContribution) return '–';
+    return formatMass(rolled.massGrams);
+}
+
+/**
+ * Attach `mass` (unit mass string) to each row from its `_ref`.
+ * @param {object[]} rows
+ * @param {import('three').Object3D} root
+ * @returns {object[]}
+ */
+function _attachMassToRows(rows, root) {
+    if (root) root.updateWorldMatrix(true, true);
+    for (const r of rows) {
+        r.mass = _formatObjectMass(r._ref);
+    }
+    return rows;
+}
+
+function _buildBomRows(root) {
+    const rows = _buildTreeRows(root, _bomState.includeGroups, _bomState.includeMeshes, _bomState.groupByName);
+    return _attachMassToRows(rows, root);
+}
+
 function _downloadBlob(blob, filename) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -87,16 +121,22 @@ function _downloadBlob(blob, filename) {
     URL.revokeObjectURL(url);
 }
 
-function _makeRootRow(active, root) {
-    const row = { no: 0, name: root?.name || '(unnamed)', type: 'Group', qty: 1, depth: 0, isGroup: true };
-    // Return only enabled columns as string map (for CSV/TXT) — raw object used for JSON
-    return row;
+function _makeRootRow(root) {
+    return {
+        no: 0,
+        name: root?.name || '(unnamed)',
+        type: 'Group',
+        qty: 1,
+        depth: 0,
+        isGroup: true,
+        mass: _formatObjectMass(root),
+    };
 }
 
 function _exportCsv(rows, root) {
     const esc = s => String(s).replace(/"/g, '""');
     const active = _bomState.exportCols.filter(c => c.enabled);
-    const rootRow = _makeRootRow(active, root);
+    const rootRow = _makeRootRow(root);
     const allRows = [rootRow, ...rows];
     const header = active.map(c => c.label.replace(/\./g, '')).join(',') + '\r\n';
     const body = allRows.map((r, i) =>
@@ -111,7 +151,7 @@ function _exportCsv(rows, root) {
 
 function _exportJson(rows, root) {
     const active = _bomState.exportCols.filter(c => c.enabled);
-    const rootRow = _makeRootRow(active, root);
+    const rootRow = _makeRootRow(root);
     const allRows = [rootRow, ...rows];
     const out = allRows.map((r, i) => {
         const obj = {};
@@ -133,7 +173,7 @@ function _exportTxt(rows, root) {
         active.forEach(c => {
             if (c.key === 'name')       d[c.key] = '_'.repeat((r.depth + 1) * 2) + r[c.key];
             else if (c.key === 'depth') d[c.key] = String(r.depth + 1);
-            else                        d[c.key] = String(r[c.key]);
+            else                        d[c.key] = String(r[c.key] ?? '');
         });
         return d;
     });
@@ -146,12 +186,14 @@ function _exportTxt(rows, root) {
     });
 
     // Prepend root assembly as row No=0 at depth 0
+    const rootMass = _formatObjectMass(root);
     const rootRow = {};
     active.forEach(c => {
         if (c.key === 'no')        rootRow[c.key] = '0';
         else if (c.key === 'name')  rootRow[c.key] = root?.name || '(unnamed)';
         else if (c.key === 'type')  rootRow[c.key] = 'Group';
         else if (c.key === 'qty')   rootRow[c.key] = '1';
+        else if (c.key === 'mass')  rootRow[c.key] = rootMass;
         else if (c.key === 'depth') rootRow[c.key] = '0';
         else                        rootRow[c.key] = '';
     });
@@ -181,17 +223,20 @@ function _buildTable(rows) {
         const tdName = document.createElement('td');
         const tdType = document.createElement('td');
         const tdQty  = document.createElement('td');
+        const tdMass = document.createElement('td');
 
         tdNo.textContent = r.no;
         tdName.style.paddingLeft = (10 + r.depth * INDENT_PX) + 'px';
         tdName.textContent = r.name;
         tdType.textContent = r.type;
         tdQty.textContent  = r.qty;
+        tdMass.textContent = r.mass ?? '–';
 
         tr.appendChild(tdNo);
         tr.appendChild(tdName);
         tr.appendChild(tdType);
         tr.appendChild(tdQty);
+        tr.appendChild(tdMass);
         tbody.appendChild(tr);
     });
 
@@ -200,7 +245,7 @@ function _buildTable(rows) {
 }
 
 function _refreshBom(root) {
-    const rows = _buildTreeRows(root, _bomState.includeGroups, _bomState.includeMeshes, _bomState.groupByName);
+    const rows = _buildBomRows(root);
     _buildTable(rows);
     return rows;
 }
@@ -267,7 +312,7 @@ function _createDialog() {
         <div class="bom-table-wrap">
             <table id="bom-table">
                 <thead>
-                    <tr><th>No.</th><th>Name</th><th>Type</th><th>Qty</th></tr>
+                    <tr><th>No.</th><th>Name</th><th>Type</th><th>Qty</th><th>Mass</th></tr>
                 </thead>
                 <tbody></tbody>
             </table>
@@ -311,25 +356,31 @@ function _createDialog() {
     _renderExportCols(dlg);
 
     document.getElementById('bom-export-csv').addEventListener('click', () => {
-        _exportCsv(_buildTreeRows(dlg._bomRoot, _bomState.includeGroups, _bomState.includeMeshes, _bomState.groupByName), dlg._bomRoot);
+        _exportCsv(_buildBomRows(dlg._bomRoot), dlg._bomRoot);
     });
 
     document.getElementById('bom-export-json').addEventListener('click', () => {
-        _exportJson(_buildTreeRows(dlg._bomRoot, _bomState.includeGroups, _bomState.includeMeshes, _bomState.groupByName), dlg._bomRoot);
+        _exportJson(_buildBomRows(dlg._bomRoot), dlg._bomRoot);
     });
 
     document.getElementById('bom-export-txt').addEventListener('click', () => {
-        _exportTxt(_buildTreeRows(dlg._bomRoot, _bomState.includeGroups, _bomState.includeMeshes, _bomState.groupByName), dlg._bomRoot);
+        _exportTxt(_buildBomRows(dlg._bomRoot), dlg._bomRoot);
     });
 
     return dlg;
 }
 
-export function openBomDialog(selectedObject) {
+/**
+ * @param {import('three').Object3D} selectedObject
+ * @param {string} [modelUnit='mm']
+ */
+export function openBomDialog(selectedObject, modelUnit = 'mm') {
     if (!selectedObject) {
         alert('No object selected. Please select an assembly or part first.');
         return;
     }
+
+    _bomState.modelUnit = modelUnit || 'mm';
 
     let dlg = document.getElementById('bom-dialog');
     if (!dlg) {

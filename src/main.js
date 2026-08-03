@@ -3915,7 +3915,7 @@ function refreshSelectedObjGui(obj) {
     selectedFolder.add({ fn() { if (lastSelectedObject) hideObject(lastSelectedObject); } }, 'fn').name('Hide Object');
     selectedFolder.add({ fn() { if (lastSelectedObject) { lastSelectedMeshes.forEach(child => applyEmissive(child, 0x000000)); render(); toggleCadStyle(lastSelectedObject, false); } } }, 'fn').name('CAD Style (original colors)');
     selectedFolder.add({ fn() { if (lastSelectedObject) { lastSelectedMeshes.forEach(child => applyEmissive(child, 0x000000)); render(); toggleCadStyle(lastSelectedObject, true); } } }, 'fn').name('CAD Style (random colors)');
-    selectedFolder.add({ fn() { openBomDialog(lastSelectedObject); } }, 'fn').name('BOM…');
+    selectedFolder.add({ fn() { openBomDialog(lastSelectedObject, viewProp.modelUnit); } }, 'fn').name('BOM…');
 
     // Material inspector – only for Mesh objects
     if (obj.isMesh && obj.material) {
