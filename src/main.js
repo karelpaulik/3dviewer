@@ -25,7 +25,7 @@ import { updateCrossSectionLines as updateCrossSectionLinesCore, updateSectionCr
 import { exportToHTML, exportToHTMLDraco, exportToHTMLObfuscated, exportToHTMLObfuscatedDraco } from './htmlExport.js';
 import { initOutliner, toggleOutliner, rebuildTree, highlightObject as outlinerHighlight, updateVisibilityIcon, updateSelectableIcon, updateObjectLabel, isOutlinerOpen, navigateOutliner, highlightGroupObjects, clearGroupHighlights, setNavigationPosition, setOnTreeRebuild, setShowAuxiliaryObjects, isOutlinerAuxiliaryObject, notifyOutlinerAuxiliaryChildrenChanged } from './sceneOutliner.js';
 import { positionContextMenu } from './uiMenuUtils.js';
-import { computeModelStats, computeSurfaceAreaAndVolume, formatGeometryMeasure, MODEL_UNIT_OPTIONS, computeMassGrams, formatMass } from './modelInfoUtils.js';
+import { computeModelStats, computeSurfaceAreaAndVolume, formatGeometryMeasure, MODEL_UNIT_OPTIONS, formatMass, computeRolledUpMassForRoots } from './modelInfoUtils.js';
 import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, updateMeasurement3dOrientations, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements, isSelectDimActive, setSelectDimActive, refreshLabelEditListeners, hasSelectedDimension, deselectSelectedDimension, deleteSelectedDimension, resetSelectedMeasurementLabel, getSelectedMeasurementLabelStyle, getSelectedMeasurementLabelDim, setSelectedMeasurementLabelDim, setSelectedMeasurementOrientationMode, setSelectedMeasurementTextColor, setSelectedMeasurementBgColor, setSelectedMeasurementFontSize, initSelectDimension, updateSelectDimensionCamera, reconstructMeasurements, stripMeasurementVisuals, setMeasurementsVisible, setMeasurementDepthTest, removeMeasurementsForOwner, isCadDimActive, setCadDimActive, getCadDimStep, getCadDimAxis, addCadDimPoint, updateCadDimPreview, updateCadDimHoverPreview, cycleCadDimAxis, placeCadDim, clearCadDimMeasurements, removeCadDimMeasurementsForOwner, getSelectedCadDim, setCadDimLabelMode, setCadDimDragMode, selectDimTouchStart, selectDimTouchMove, selectDimTouchEnd, registerLabelForSelection, getSelectedCadDim3d, getSelectedAnnotation, getSelectedAnnotation3d, getSelectedDistance, getSelectedAngle, getCadDimMeasurements, deleteCadDimByRef, convertCadDim3dTo2d, getFlatDimDefaults, applyDefaultsToAllFlatDim, getDistanceLabelDefaults, getAngleLabelDefaults, getDistanceMarkerDefaults, getAngleMarkerDefaults, applyDefaultsToAllDistanceMeasurements, applyDefaultsToAllAngleMeasurements, setDistanceMarkerColor, setAngleMarkerColor, getMeasurementMarkerSettings, setMeasurementMarkerFixedSize, setMeasurementMarkerFixedScreenPx, setMeasurementMarkerWorldSize, getDefaultMeasurementLabelDim, setDefaultMeasurementLabelDim, getMeasurement3dDefaults, setDimMarkerFixedSize, setDimMarkerFixedScreenPx, setDimMarkerWorldSize, setDimMarkerColor, getDimMarkerSettings, setMeasureOnSessionComplete, setAngleOnSessionComplete, setCadDimOnSessionComplete } from './measurementUtils.js';
 import { detectCircleCenterFromHit, clearCircleDetectionCache } from './circleDetectionUtils.js';
 import { removeEdgeOverlays, updateMeshEdgeOverlays, stripEdgeOverlays, syncEdgeOverlayClipping } from './edgeDisplayUtils.js';
@@ -3594,8 +3594,8 @@ function updateBBoxSize(obj) {
 }
 
 /**
- * Surface area + volume (+ mass from density) of all meshes under one object or a list of objects.
- * Multi-mesh CAD shells and multi-select of separate solids are both supported.
+ * Surface area + volume of meshes under selection; mass uses hierarchical roll-up:
+ * mass(node) = ρ(node)×V(all under node) + Σ mass(children).
  * @param {import('three').Object3D|import('three').Object3D[]|null|undefined} rootOrRoots
  */
 function updateAreaVolume(rootOrRoots) {
@@ -3631,11 +3631,13 @@ function updateAreaVolume(rootOrRoots) {
         ? formatGeometryMeasure(stats.volume)
         : `${formatGeometryMeasure(stats.volume)} (open?)`;
 
-    const density = Number(part.density);
-    if (!(density > 0) || !stats.volumeReliable) {
-        part.mass = !(density > 0) ? '–' : `${formatMass(computeMassGrams(stats.volume, density, viewProp.modelUnit))} (open?)`;
+    const rolled = computeRolledUpMassForRoots(roots, viewProp.modelUnit);
+    if (!rolled.hasContribution || !(rolled.massGrams > 0)) {
+        part.mass = '–';
+    } else if (rolled.unreliable) {
+        part.mass = `${formatMass(rolled.massGrams)} (open?)`;
     } else {
-        part.mass = formatMass(computeMassGrams(stats.volume, density, viewProp.modelUnit));
+        part.mass = formatMass(rolled.massGrams);
     }
 }
 

@@ -183,3 +183,125 @@ export function formatMass(grams) {
     if (grams >= 1e-3) return `${(grams * 1000).toFixed(2)} mg`;
     return `${grams.toExponential(3)} g`;
 }
+
+function _isAuxiliaryObject(obj) {
+    const ud = obj?.userData;
+    return !!(ud && (ud._isMeasurement || ud._isAnnotation || ud._isAnnotation3d || ud._isCadDim3d));
+}
+
+function _isMassStructuralChild(obj) {
+    if (!obj || _isAuxiliaryObject(obj)) return false;
+    if (obj.isLight || obj.isCamera) return false;
+    return !!(obj.isMesh || obj.isGroup || obj.type === 'Object3D');
+}
+
+/**
+ * Meshes under root (including root if it is a mesh), excluding auxiliaries / section meshes.
+ * @param {THREE.Object3D} root
+ * @returns {THREE.Mesh[]}
+ */
+function _collectMeshesUnder(root) {
+    const meshes = [];
+    if (!root) return meshes;
+    if (root.isMesh && root.geometry && !root.isSectionMesh && !_isAuxiliaryObject(root)) {
+        meshes.push(root);
+    }
+    root.traverse(obj => {
+        if (obj === root) return;
+        if (_isAuxiliaryObject(obj)) return;
+        if (obj.isMesh && obj.geometry && !obj.isSectionMesh) {
+            meshes.push(obj);
+        }
+    });
+    return meshes;
+}
+
+/**
+ * Hierarchical mass: mass(node) = ρ(node)×V(all meshes under node) + Σ mass(children).
+ * Density 0 / missing → no own contribution (assembly = sum of children only).
+ * If both parent and children have density, geometry is double-counted by design (user-controlled).
+ *
+ * @param {THREE.Object3D} node
+ * @param {string} modelUnit
+ * @returns {{
+ *   massGrams: number,
+ *   hasOwnContribution: boolean,
+ *   hasChildContribution: boolean,
+ *   ownUnreliable: boolean,
+ *   childUnreliable: boolean
+ * }}
+ */
+export function computeRolledUpMass(node, modelUnit) {
+    const empty = {
+        massGrams: 0,
+        hasOwnContribution: false,
+        hasChildContribution: false,
+        ownUnreliable: false,
+        childUnreliable: false,
+    };
+    if (!node) return empty;
+
+    let childMassGrams = 0;
+    let hasChildContribution = false;
+    let childUnreliable = false;
+
+    for (const child of node.children) {
+        if (!_isMassStructuralChild(child)) continue;
+        const sub = computeRolledUpMass(child, modelUnit);
+        childMassGrams += sub.massGrams;
+        if (sub.hasOwnContribution || sub.hasChildContribution) hasChildContribution = true;
+        if (sub.ownUnreliable || sub.childUnreliable) childUnreliable = true;
+    }
+
+    const density = Number(node.userData?.density);
+    let ownMassGrams = 0;
+    let hasOwnContribution = false;
+    let ownUnreliable = false;
+
+    if (Number.isFinite(density) && density > 0) {
+        hasOwnContribution = true;
+        const meshes = _collectMeshesUnder(node);
+        const stats = computeSurfaceAreaAndVolume(meshes);
+        if (stats.triangleCount > 0) {
+            if (!stats.volumeReliable) ownUnreliable = true;
+            ownMassGrams = computeMassGrams(stats.volume, density, modelUnit);
+        }
+    }
+
+    return {
+        massGrams: ownMassGrams + childMassGrams,
+        hasOwnContribution,
+        hasChildContribution,
+        ownUnreliable,
+        childUnreliable,
+    };
+}
+
+/**
+ * Sum rolled-up mass for one or more selected roots.
+ * @param {THREE.Object3D|THREE.Object3D[]} rootOrRoots
+ * @param {string} modelUnit
+ * @returns {{
+ *   massGrams: number,
+ *   hasContribution: boolean,
+ *   unreliable: boolean
+ * }}
+ */
+export function computeRolledUpMassForRoots(rootOrRoots, modelUnit) {
+    const roots = Array.isArray(rootOrRoots)
+        ? rootOrRoots.filter(Boolean)
+        : (rootOrRoots ? [rootOrRoots] : []);
+
+    let massGrams = 0;
+    let hasContribution = false;
+    let unreliable = false;
+
+    for (const root of roots) {
+        const r = computeRolledUpMass(root, modelUnit);
+        massGrams += r.massGrams;
+        if (r.hasOwnContribution || r.hasChildContribution) hasContribution = true;
+        if (r.ownUnreliable || r.childUnreliable) unreliable = true;
+    }
+
+    return { massGrams, hasContribution, unreliable };
+}
