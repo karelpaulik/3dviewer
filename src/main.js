@@ -2921,6 +2921,7 @@ function addMainGui() {
             updateObjectLabel(obj);
         });
     } }, 'fn').name('Capitalize first letter');
+    editGui.add({ fn: bakeAllObjectsLocation }, 'fn').name('Bake location all objects');
     editGui.add(viewProp, 'transformSpace').name('Transform: World space').onChange(function(value) {
         setTransformSpace(value);
     }).listen();
@@ -4795,9 +4796,35 @@ function resetWholeModel() {
     render();
 }
 
-function bakeSelectedObjectLocation() {
-    const obj = lastSelectedObject;
+function _shouldSkipBakeNode(node) {
+    if (!node) return true;
+    if (node.isSectionMesh) return true;
+    const ud = node.userData || {};
+    return !!(ud._isMeasurement || ud._isAnnotation || ud._isAnnotation3d || ud._isCadDim3d);
+}
+
+function _isIdentityLocalTransform(obj) {
+    return obj.position.x === 0 && obj.position.y === 0 && obj.position.z === 0
+        && obj.rotation.x === 0 && obj.rotation.y === 0 && obj.rotation.z === 0
+        && obj.scale.x === 1 && obj.scale.y === 1 && obj.scale.z === 1;
+}
+
+function _refreshLabelsAndOverlaysAfterBake(root) {
+    stripMeasurementVisuals(root);    removeMeasurementsForOwner(root);
+    stripAnnotationVisuals(root);     removeAnnotationsForOwner(root);
+    stripAnnotation3dVisuals(root);   removeAnnotations3dForOwner(root);
+    stripCadDim3dVisuals(root);       removeCadDim3dMeasurementsForOwner(root);
+    stripEdgeOverlays(root);
+
+    reconstructMeasurements(root, render);
+    reconstructAnnotations(root, render);
+    reconstructAnnotations3d(root, render);
+    reconstructCadDim3d(root);
+}
+
+function bakeObjectLocation(obj, options) {
     if (!obj) return;
+    const refresh = !options || options.refresh !== false;
 
     // Helper: apply a Matrix4 in-place to a plain {x,y,z} record
     function _xyzApply(xyz, mat) {
@@ -4880,21 +4907,55 @@ function bakeSelectedObjectLocation() {
         }
     });
 
+    if (!refresh) return;
+
     // 6. Remove old measurement/annotation visuals from the scene graph and internal records,
     //    then reconstruct them from the freshly-updated userData.
-    stripMeasurementVisuals(obj);    removeMeasurementsForOwner(obj);
-    stripAnnotationVisuals(obj);     removeAnnotationsForOwner(obj);
-    stripAnnotation3dVisuals(obj);   removeAnnotations3dForOwner(obj);
-    stripCadDim3dVisuals(obj);       removeCadDim3dMeasurementsForOwner(obj);
-    stripEdgeOverlays(obj);
-
-    reconstructMeasurements(obj, render);
-    reconstructAnnotations(obj, render);
-    reconstructAnnotations3d(obj, render);
-    reconstructCadDim3d(obj);
+    _refreshLabelsAndOverlaysAfterBake(obj);
     _afterLabelReconstruct();
 
     // Geometry was rebaked above; rebuild edge overlays so they stay aligned with the new surface.
+    refreshEdgeOverlaysAfterSceneChange();
+    refreshOutlinerOverlaysAndTools();
+    render();
+}
+
+function bakeSelectedObjectLocation() {
+    bakeObjectLocation(lastSelectedObject);
+}
+
+function bakeAllObjectsLocation() {
+    if (!loadedModels.length) {
+        alert('No model loaded.');
+        return;
+    }
+    if (!confirm('Bake location for all objects in the model?')) return;
+
+    const toBake = [];
+    loadedModels.forEach(function(model) {
+        if (!model) return;
+        model.traverse(function(node) {
+            if (_shouldSkipBakeNode(node)) return;
+            if (_isIdentityLocalTransform(node)) return;
+            toBake.push(node);
+        });
+    });
+
+    if (toBake.length === 0) {
+        alert('All objects already have identity location.');
+        return;
+    }
+
+    // traverse = DFS parent-before-child → correct bake order
+    toBake.forEach(function(node) {
+        bakeObjectLocation(node, { refresh: false });
+    });
+
+    loadedModels.forEach(function(model) {
+        if (!model) return;
+        _refreshLabelsAndOverlaysAfterBake(model);
+    });
+    _afterLabelReconstruct();
     refreshEdgeOverlaysAfterSceneChange();
     refreshOutlinerOverlaysAndTools();
     render();
