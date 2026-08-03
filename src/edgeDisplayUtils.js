@@ -34,11 +34,13 @@ export function buildEdgeLineGeometry(geometry, thresholdDeg = 12) {
     return lineGeometry;
 }
 
-function _createLineSegments(geometry, color, renderOrder) {
+function _createLineSegments(geometry, color, renderOrder, clippingPlanes, clipIntersection) {
     const material = new THREE.LineBasicMaterial({
         color,
         linewidth: 1,
         depthTest: true,
+        clippingPlanes: clippingPlanes || [],
+        clipIntersection: !!clipIntersection,
     });
     const lines = new THREE.LineSegments(geometry, material);
     lines.renderOrder = renderOrder;
@@ -52,14 +54,20 @@ function _createLineSegments(geometry, color, renderOrder) {
     return lines;
 }
 
-function _createEdgeOverlay(mesh, thresholdDeg, color) {
+function _createEdgeOverlay(mesh, thresholdDeg, color, clippingPlanes, clipIntersection) {
     if (!mesh?.geometry) return null;
 
     const lineGeometry = buildEdgeLineGeometry(mesh.geometry, thresholdDeg);
     if (!lineGeometry) return null;
 
     const lineColor = color ?? DEFAULT_SHARP_COLOR;
-    return _createLineSegments(lineGeometry, lineColor, (mesh.renderOrder || 0) + 1);
+    return _createLineSegments(
+        lineGeometry,
+        lineColor,
+        (mesh.renderOrder || 0) + 1,
+        clippingPlanes,
+        clipIntersection,
+    );
 }
 
 /**
@@ -100,14 +108,35 @@ export function stripEdgeOverlays(root) {
 /**
  * Update sharp edge overlays on a single mesh.
  * @param {THREE.Mesh} mesh
- * @param {{ thresholdDeg?: number, sharpColor?: number }} options
+ * @param {{ thresholdDeg?: number, sharpColor?: number, clippingPlanes?: THREE.Plane[], clipIntersection?: boolean }} options
  */
 export function updateMeshEdgeOverlays(mesh, {
     thresholdDeg = 12,
     sharpColor = DEFAULT_SHARP_COLOR,
+    clippingPlanes = null,
+    clipIntersection = false,
 } = {}) {
     removeEdgeOverlays(mesh);
 
-    const overlay = _createEdgeOverlay(mesh, thresholdDeg, sharpColor);
+    const overlay = _createEdgeOverlay(mesh, thresholdDeg, sharpColor, clippingPlanes, clipIntersection);
     if (overlay) mesh.add(overlay);
+}
+
+/**
+ * Sync section clip settings onto existing edge overlay materials under root.
+ * @param {THREE.Object3D} root
+ * @param {THREE.Plane[]} clipPlanes
+ * @param {boolean} clipIntersection
+ */
+export function syncEdgeOverlayClipping(root, clipPlanes, clipIntersection) {
+    if (!root) return;
+    root.traverse(function (child) {
+        if (!child.userData?._isEdgeOverlay || !child.material) return;
+        const mats = Array.isArray(child.material) ? child.material : [child.material];
+        for (const mat of mats) {
+            if (!mat) continue;
+            mat.clippingPlanes = clipPlanes;
+            mat.clipIntersection = !!clipIntersection;
+        }
+    });
 }

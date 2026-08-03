@@ -28,7 +28,7 @@ import { positionContextMenu } from './uiMenuUtils.js';
 import { computeModelStats } from './modelInfoUtils.js';
 import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, updateMeasurement3dOrientations, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements, isSelectDimActive, setSelectDimActive, refreshLabelEditListeners, hasSelectedDimension, deselectSelectedDimension, deleteSelectedDimension, resetSelectedMeasurementLabel, getSelectedMeasurementLabelStyle, getSelectedMeasurementLabelDim, setSelectedMeasurementLabelDim, setSelectedMeasurementOrientationMode, setSelectedMeasurementTextColor, setSelectedMeasurementBgColor, setSelectedMeasurementFontSize, initSelectDimension, updateSelectDimensionCamera, reconstructMeasurements, stripMeasurementVisuals, setMeasurementsVisible, setMeasurementDepthTest, removeMeasurementsForOwner, isCadDimActive, setCadDimActive, getCadDimStep, getCadDimAxis, addCadDimPoint, updateCadDimPreview, updateCadDimHoverPreview, cycleCadDimAxis, placeCadDim, clearCadDimMeasurements, removeCadDimMeasurementsForOwner, getSelectedCadDim, setCadDimLabelMode, setCadDimDragMode, selectDimTouchStart, selectDimTouchMove, selectDimTouchEnd, registerLabelForSelection, getSelectedCadDim3d, getSelectedAnnotation, getSelectedAnnotation3d, getSelectedDistance, getSelectedAngle, getCadDimMeasurements, deleteCadDimByRef, convertCadDim3dTo2d, getFlatDimDefaults, applyDefaultsToAllFlatDim, getDistanceLabelDefaults, getAngleLabelDefaults, getDistanceMarkerDefaults, getAngleMarkerDefaults, applyDefaultsToAllDistanceMeasurements, applyDefaultsToAllAngleMeasurements, setDistanceMarkerColor, setAngleMarkerColor, getMeasurementMarkerSettings, setMeasurementMarkerFixedSize, setMeasurementMarkerFixedScreenPx, setMeasurementMarkerWorldSize, getDefaultMeasurementLabelDim, setDefaultMeasurementLabelDim, getMeasurement3dDefaults, setDimMarkerFixedSize, setDimMarkerFixedScreenPx, setDimMarkerWorldSize, setDimMarkerColor, getDimMarkerSettings, setMeasureOnSessionComplete, setAngleOnSessionComplete, setCadDimOnSessionComplete } from './measurementUtils.js';
 import { detectCircleCenterFromHit, clearCircleDetectionCache } from './circleDetectionUtils.js';
-import { removeEdgeOverlays, updateMeshEdgeOverlays, stripEdgeOverlays } from './edgeDisplayUtils.js';
+import { removeEdgeOverlays, updateMeshEdgeOverlays, stripEdgeOverlays, syncEdgeOverlayClipping } from './edgeDisplayUtils.js';
 import { initAnnotations, isAnnotationActive, setAnnotationActive, addAnnotationPoint, getAnnotationPendingPoint, updateAnnotationPreview, updateAnnotationMarkerScales, setAnnotationsVisible, clearAnnotations, stripAnnotationVisuals, reconstructAnnotations, setAnnotationDepthTest, removeAnnotationsForOwner, getAnnotations, isAddLeaderLineActive, cancelAddLeaderLine, commitAddLeaderLine, deleteAnnotationByRef, setConvertTo3dFn, reconstructAnnotationFromRec, getFlatAnnDefaults, applyDefaultsToAllFlatAnnotations, setAnnMarkerFixedSize, setAnnMarkerFixedScreenPx, setAnnMarkerWorldSize, setAnnMarkerColor, getAnnMarkerSettings, setAnnotationOnSessionComplete, isAnnotationDialogOpen, showAnnotationContextMenu } from './annotationUtils.js';
 import { initAnnotations3d, isAnnotation3dActive, setAnnotation3dActive, addAnnotation3dPoint, getAnnotation3dPendingPoint, updateAnnotation3dPreview, updateAnnotation3dMarkerScales, updateAnnotation3dOrientations, setAnnotations3dVisible, clearAnnotations3d, stripAnnotation3dVisuals, reconstructAnnotations3d, setAnnotation3dDepthTest, removeAnnotations3dForOwner, isAddLeaderLine3dActive, cancelAddLeaderLine3d, commitAddLeaderLine3d, getAnnotation3dDefaults, deleteAnnotation3dByRef, setConvertTo2dFn, reconstructAnnotation3dFromRec, applyDefaultsToAllAnnotations3d, setAnn3dMarkerFixedSize, setAnn3dMarkerFixedScreenPx, setAnn3dMarkerWorldSize, setAnn3dMarkerColor, setAnnotation3dOnSessionComplete, isAnnotation3dDialogOpen, showAnnotation3dContextMenu } from './annotation3dUtils.js';
 import { initCadDim3d, isCadDim3dActive, getCadDim3dStep, getCadDim3dAxis, setCadDim3dActive, addCadDim3dPoint, updateCadDim3dPreview, updateCadDim3dHoverPreview, cycleCadDim3dAxis, placeCadDim3d, clearCadDim3dMeasurements, removeCadDim3dMeasurementsForOwner, setCadDim3dVisible, setCadDim3dDepthTest, updateCadDim3dOrientations, updateCadDim3dMarkerScales, reconstructCadDim3d, stripCadDim3dVisuals, setCadDim3dLabelMode, setCadDim3dDragMode, setCadDim3dOrientationMode, setCadDim3dRotate, setCadDim3dLabelScaleDialog, setCadDim3dMirrored, setCadDim3dTextColor, setCadDim3dBgColor, getCadDim3dDefaults, convertCadDimTo3d, applyDefaultsToAllCadDim3d, setCadDimMarkerFixedSize, setCadDimMarkerFixedScreenPx, setCadDimMarkerWorldSize, setCadDimMarkerColor, setCadDim3dOnSessionComplete } from './cadDim3dUtils.js';
@@ -1157,7 +1157,7 @@ function getUndoContext() {
         repairChainForObject,
         refreshCrossSectionLinesAfterTransform,
         createSectionMesh,
-        updateMeshEdgeOverlays,
+        updateMeshEdgeOverlays: (mesh) => updateMeshEdgeOverlays(mesh, getEdgeOverlayOptions()),
         updateVertexNormalsHelpers,
         markModelStatsDirty,
         updateHistoryInfo,
@@ -2595,14 +2595,20 @@ function edgesDisplayActive() {
     return viewProp.showSharpEdges;
 }
 
+function getEdgeOverlayOptions() {
+    return {
+        thresholdDeg: viewProp.edgeAngleThreshold,
+        clippingPlanes: clipPlanes,
+        clipIntersection: clipPlanes.length > 1,
+    };
+}
+
 function updateEdgeOverlays() {
     for (const mesh of meshObjects) {
         if (!mesh.isMesh) continue;
         removeEdgeOverlays(mesh);
         if (edgesDisplayActive()) {
-            updateMeshEdgeOverlays(mesh, {
-                thresholdDeg: viewProp.edgeAngleThreshold,
-            });
+            updateMeshEdgeOverlays(mesh, getEdgeOverlayOptions());
         }
     }
     render();
@@ -5302,6 +5308,7 @@ function setSectionMode(mode) {
 
 function updateSectionMeshClipSettings() {
     const clipIntersection = shouldUseClipIntersection(viewProp);
+    const edgeClipIntersection = clipPlanes.length > 1;
     meshObjects.forEach(mesh => {
         mesh.traverse(child => {
             if (!child.isMesh) return;
@@ -5312,6 +5319,7 @@ function updateSectionMeshClipSettings() {
                 mat.clipIntersection = child.isSectionMesh ? clipIntersection : clipPlanes.length > 1;
             });
         });
+        syncEdgeOverlayClipping(mesh, clipPlanes, edgeClipIntersection);
     });
 }
 
