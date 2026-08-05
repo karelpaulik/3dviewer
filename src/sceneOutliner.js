@@ -17,6 +17,8 @@ let onReparent = null;
 let onRemove = null;
 let onRemoveGroup = null;
 let onGetGroupSelection = null;
+/** @type {(() => Array<import('three').Object3D|null|undefined>)|null} */
+let onGetGroupOriginalParents = null;
 let onGroupRemove = null;
 let onHideOthers = null;
 let onShowAll = null;
@@ -564,9 +566,55 @@ export function isOutlinerAuxiliaryObject(obj) {
     return !!obj && isOutlinerAuxiliaryNode(obj);
 }
 
+/**
+ * Logical parent for outliner walks. While group transform is active, members are
+ * reparented under a pivot — use the stored original parent instead.
+ * @param {import('three').Object3D} obj
+ * @returns {import('three').Object3D|null}
+ */
+function getLogicalParent(obj) {
+    if (onGetGroupSelection && onGetGroupOriginalParents) {
+        const objs = onGetGroupSelection();
+        const parents = onGetGroupOriginalParents();
+        if (objs?.length && parents?.length === objs.length) {
+            const idx = objs.indexOf(obj);
+            if (idx !== -1) return parents[idx] || null;
+        }
+    }
+    return obj.parent;
+}
+
+/**
+ * Children shown under obj in the outliner. Merges in group-selection members
+ * whose original parent is obj (they are temporarily attached to the pivot).
+ * @param {import('three').Object3D} obj
+ * @returns {Array<import('three').Object3D>}
+ */
 function getOutlinerChildren(obj) {
-    if (showAuxiliaryObjects) return obj.children;
-    return obj.children.filter(child => !isOutlinerAuxiliaryNode(child));
+    let children = showAuxiliaryObjects
+        ? Array.from(obj.children)
+        : obj.children.filter(child => !isOutlinerAuxiliaryNode(child));
+
+    if (onGetGroupSelection && onGetGroupOriginalParents) {
+        const objs = onGetGroupSelection();
+        const parents = onGetGroupOriginalParents();
+        if (objs?.length && parents?.length === objs.length) {
+            const groupSet = new Set(objs);
+            children = children.filter(child => {
+                if (!groupSet.has(child)) return true;
+                const idx = objs.indexOf(child);
+                return parents[idx] === obj;
+            });
+            for (let i = 0; i < objs.length; i++) {
+                if (parents[i] !== obj) continue;
+                const member = objs[i];
+                if (!member || children.includes(member)) continue;
+                if (!showAuxiliaryObjects && isOutlinerAuxiliaryNode(member)) continue;
+                children.push(member);
+            }
+        }
+    }
+    return children;
 }
 
 // -------------------------------------------------------------------
@@ -578,7 +626,7 @@ function getOutlinerChildren(obj) {
  * @param {{ onSelect: Function, onToggleVisibility: Function }} callbacks
  * @returns {HTMLDivElement} the panel element (for guiWrapper hit-testing)
  */
-export function initOutliner({ onSelect, onToggleVisibility: onVis, onToggleSelectable: onSel, onGroupAdd: onGroupAddCb, onGroupRemove: onGroupRemoveCb, onHideOthers: onHideOthersCb, onShowAll: onShowAllCb, onReparent: onReparentCb, onRemove: onRemoveCb, onRemoveGroup: onRemoveGroupCb, onGetGroupSelection: onGetGroupSelectionCb, onSortChildren: onSortChildrenCb, onCloneObject: onCloneObjectCb, onAddObject3D: onAddObject3DCb, onAddPrimitive: onAddPrimitiveCb, onPromoteToRoot: onPromoteToRootCb }) {
+export function initOutliner({ onSelect, onToggleVisibility: onVis, onToggleSelectable: onSel, onGroupAdd: onGroupAddCb, onGroupRemove: onGroupRemoveCb, onHideOthers: onHideOthersCb, onShowAll: onShowAllCb, onReparent: onReparentCb, onRemove: onRemoveCb, onRemoveGroup: onRemoveGroupCb, onGetGroupSelection: onGetGroupSelectionCb, onGetGroupOriginalParents: onGetGroupOriginalParentsCb, onSortChildren: onSortChildrenCb, onCloneObject: onCloneObjectCb, onAddObject3D: onAddObject3DCb, onAddPrimitive: onAddPrimitiveCb, onPromoteToRoot: onPromoteToRootCb }) {
     onSelectObject = onSelect;
     onToggleVisibility = onVis;
     onToggleSelectable = onSel || null;
@@ -590,6 +638,7 @@ export function initOutliner({ onSelect, onToggleVisibility: onVis, onToggleSele
     onRemove = onRemoveCb || null;
     onRemoveGroup = onRemoveGroupCb || null;
     onGetGroupSelection = onGetGroupSelectionCb || null;
+    onGetGroupOriginalParents = onGetGroupOriginalParentsCb || null;
     onSortChildren = onSortChildrenCb || null;
     onCloneObject = onCloneObjectCb || null;
     onAddObject3D = onAddObject3DCb || null;
@@ -725,6 +774,7 @@ export function rebuildTree(loadedModels, preserveExpanded = false) {
         if (clearBtnEl) clearBtnEl.style.display = 'none';
         if (selectBtnEl) selectBtnEl.style.display = 'none';
     }
+    clearGroupHighlights();
     treeEl.innerHTML = '';
     objectToDom.clear = clearWeakMapViaTree; // WeakMap has no clear — we just rebuild
     activeTreeNode = null;
@@ -739,6 +789,9 @@ export function rebuildTree(loadedModels, preserveExpanded = false) {
     }
     if (preserveExpanded) {
         treeEl.scrollTop = scrollTop;
+    }
+    if (onGetGroupSelection) {
+        highlightGroupObjects(onGetGroupSelection());
     }
 }
 
@@ -776,12 +829,12 @@ export function highlightObject(object, options = {}) {
 
     if (!object) return;
 
-    // Build path from root to target object
+    // Build path from root to target object (logical parents while group-selected)
     const path = [];
     let cur = object;
     while (cur) {
         path.unshift(cur);
-        cur = cur.parent;
+        cur = getLogicalParent(cur);
     }
 
     // Walk the path and ensure each ANCESTOR level is expanded / DOM-created
@@ -817,10 +870,10 @@ export function setNavigationPosition(object) {
     if (activeTreeNode) activeTreeNode.classList.remove('outliner-selected');
     activeTreeNode = null;
     if (!object) return;
-    // Rozbal rodiče stejně jako highlightObject
+    // Rozbal rodiče stejně jako highlightObject (logical parents while group-selected)
     const path = [];
     let cur = object;
-    while (cur) { path.unshift(cur); cur = cur.parent; }
+    while (cur) { path.unshift(cur); cur = getLogicalParent(cur); }
     for (let i = 0; i < path.length - 1; i++) {
         const o = path[i];
         const li = objectToDom.get(o);
@@ -974,6 +1027,14 @@ function createTreeNode(obj, depth) {
     li.className = 'outliner-node';
     domToObject.set(li, obj);
     objectToDom.set(obj, li);
+
+    if (onGetGroupSelection) {
+        const sel = onGetGroupSelection();
+        if (sel && sel.includes(obj)) {
+            li.classList.add('outliner-group-member');
+            groupHighlightNodes.add(li);
+        }
+    }
 
     const hasChildren = getOutlinerChildren(obj).length > 0;
 
@@ -1371,6 +1432,7 @@ function filterTree(pattern) {
             restoreExpandedUUIDs(expanded);
         }
         if (selectedObj) highlightObject(selectedObj);
+        if (onGetGroupSelection) highlightGroupObjects(onGetGroupSelection());
         return;
     }
     if (preFilterExpandedUUIDs === null) {

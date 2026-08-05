@@ -1647,6 +1647,7 @@ outlinerPanelEl = initOutliner({
     onRemove: (obj, skipConfirm) => removeModel(obj, skipConfirm),
     onRemoveGroup: () => removeSelectedGroup(true),
     onGetGroupSelection: () => selectedObjects,
+    onGetGroupOriginalParents: () => multiOriginalParents,
     onPromoteToRoot: (obj) => promoteToRoot(obj),
     onReparent: (draggedObjs, targetObj, position) => {
         const objsToMove = Array.isArray(draggedObjs) ? draggedObjs : [draggedObjs];
