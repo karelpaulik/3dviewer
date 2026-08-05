@@ -543,6 +543,8 @@ let clearBtnEl = null;
 let selectBtnEl = null;
 let renameBtnEl = null;
 let currentMatchSet = new Set();
+/** Expanded node UUIDs captured when the search filter first becomes active. */
+let preFilterExpandedUUIDs = null;
 
 /** When false, overlays and tool objects are hidden from the outliner tree. */
 let showAuxiliaryObjects = false;
@@ -711,6 +713,7 @@ export function isOutlinerOpen() {
  */
 export function rebuildTree(loadedModels, preserveExpanded = false) {
     lastLoadedModels = loadedModels;
+    preFilterExpandedUUIDs = null;
     if (_onTreeRebuild) _onTreeRebuild();
     if (!treeEl) return;
     // Optionally save expanded state and scroll before destroying DOM
@@ -1353,16 +1356,25 @@ function applyFilterVisibility(obj, visibleSet, depth) {
 
 /**
  * Filter the outliner tree by a wildcard pattern.
- * Empty pattern clears the filter and rebuilds the tree to its original state.
+ * Empty pattern clears the filter and restores the expand state from before filtering.
  */
 function filterTree(pattern) {
     if (!treeEl || lastLoadedModels.length === 0) return;
     if (!pattern || !pattern.trim()) {
         currentMatchSet = new Set();
         const selectedObj = activeTreeNode ? domToObject.get(activeTreeNode) : null;
+        const expanded = preFilterExpandedUUIDs;
+        // Clear snapshot before rebuildTree (which also nulls it) so restore uses our copy
+        preFilterExpandedUUIDs = null;
         rebuildTree(lastLoadedModels);
+        if (expanded && expanded.size > 0) {
+            restoreExpandedUUIDs(expanded);
+        }
         if (selectedObj) highlightObject(selectedObj);
         return;
+    }
+    if (preFilterExpandedUUIDs === null) {
+        preFilterExpandedUUIDs = collectExpandedUUIDs();
     }
     const regex = wildcardToRegex(pattern);
     const visibleSet = new Set();
