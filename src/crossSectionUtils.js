@@ -11,6 +11,21 @@ function isWorldVisible(object) {
     return true;
 }
 
+// Tool overlay meshes (markers, annotations, etc.) parented under models — skip in sections
+function isToolOverlayMesh(obj) {
+    const ud = obj.userData || {};
+    return !!(
+        ud._isMeasurement ||
+        ud._isAnnotation ||
+        ud._isAnnotation3d ||
+        ud._isCadDim3d ||
+        ud._isDeviationProbe ||
+        ud._isEdgeOverlay ||
+        ud._isDeviationGhostOverlay ||
+        ud._isTransformSpaceGizmo
+    );
+}
+
 // Funkce pro kontrolu průsečíku hrany s rovinou
 function checkEdge(v1, v2, plane, intersectionPoints) {
     const epsilon = 1e-6; // Tolerance pro floating-point čísla
@@ -157,7 +172,8 @@ export function updateCrossSectionLines(scene, currentCrossSectionLines, viewPro
     
     meshObjects.forEach(obj => {
         obj.traverse((child) => {
-            if (child.isMesh && (viewProp.crossSectionOnHidden || isWorldVisible(child))) {
+            if (child.isMesh && !child.isSectionMesh && !isToolOverlayMesh(child)
+                && (viewProp.crossSectionOnHidden || isWorldVisible(child))) {
                 const lines = createCrossSectionLines(child, plane, viewProp.crossSectionColor);
                 if (lines && lines.geometry.attributes.position.count > 0) {
                     allLines.push(lines);
@@ -217,7 +233,8 @@ export function updateSectionCrossLines(scene, currentLines, viewProp, meshObjec
 
         meshObjects.forEach(obj => {
             obj.traverse((child) => {
-                if (child.isMesh && (viewProp.crossSectionOnHidden || isWorldVisible(child))) {
+                if (child.isMesh && !child.isSectionMesh && !isToolOverlayMesh(child)
+                    && (viewProp.crossSectionOnHidden || isWorldVisible(child))) {
                     const lines = createCrossSectionLines(child, plane, viewProp.crossSectionColor);
                     if (lines && lines.geometry.attributes.position.count > 0) {
                         allLines.push(lines);

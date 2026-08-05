@@ -1272,7 +1272,11 @@ function updateSectionCrossLines() {
     for (let ci = 0; ci < clipPlanes.length; ci++) {
         const plane = clipPlanes[ci];
         sceneRoot.traverse(function(child) {
-            if (child.isMesh && child.visible && !child.isSectionMesh) {
+            const ud = child.userData || {};
+            const isTool = !!(ud._isMeasurement || ud._isAnnotation || ud._isAnnotation3d
+                || ud._isCadDim3d || ud._isDeviationProbe || ud._isEdgeOverlay
+                || ud._isDeviationGhostOverlay || ud._isTransformSpaceGizmo);
+            if (child.isMesh && child.visible && !child.isSectionMesh && !isTool) {
                 const l = createMeshCrossLines(child, plane, '${sectionSettings.crossSectionColor}');
                 if (l && l.geometry.attributes.position.count > 0) allLines.push(l);
             }
