@@ -1,4 +1,5 @@
 // Local GLB open/save via File System Access API + File Handling launchQueue + Web Share Target.
+// PWA file_handlers also launch .stl / .stp / .step into the app (import only; Save still writes GLB).
 
 import {
     SHARE_CACHE_KEY,
@@ -17,6 +18,17 @@ const GLB_PICKER_TYPES = [{
         'application/octet-stream': ['.glb'],
     },
 }];
+
+/** @typedef {'glb' | 'stl' | 'stp'} ModelFileKind */
+
+/** @param {string} fileName */
+function getModelFileKind(fileName) {
+    const lower = (fileName || '').toLowerCase();
+    if (lower.endsWith('.glb')) return 'glb';
+    if (lower.endsWith('.stl')) return 'stl';
+    if (lower.endsWith('.stp') || lower.endsWith('.step')) return 'stp';
+    return null;
+}
 
 let currentFileHandle = null;
 let currentFileName = null;
@@ -44,12 +56,22 @@ const shareTargetSettledPromise = new Promise(resolve => {
  *   hasLoadedContent?: () => boolean,
  *   clearScene?: () => void | Promise<void>,
  *   loadGlbFile?: (file: File) => void | Promise<void>,
+ *   loadStlFile?: (file: File) => void | Promise<void>,
+ *   loadStpFile?: (file: File) => void | Promise<void>,
  *   updateFileUi?: (fileName: string) => void,
  *   buildGlbBuffer?: (opts: { draco?: boolean, finalName?: string, recordHistory?: boolean }) => Promise<{ buffer: ArrayBuffer, suggestedName: string } | null>,
  *   recordSaveHistoryIfEnabled?: () => Promise<boolean>,
  *   fallbackImportGlb?: () => void,
  * }} */
 let _callbacks = {};
+
+function hasAnyModelLoader() {
+    return !!(
+        _callbacks.loadGlbFile
+        || _callbacks.loadStlFile
+        || _callbacks.loadStpFile
+    );
+}
 
 function settleLaunchQueue() {
     if (launchQueueSettled) return;
@@ -173,13 +195,14 @@ if ('serviceWorker' in navigator) {
 void probeShareTargetCache();
 
 async function processPendingLaunchHandles() {
-    if (!_callbacks.loadGlbFile || pendingLaunchHandles.length === 0) return;
+    if (!hasAnyModelLoader() || pendingLaunchHandles.length === 0) return;
     const handles = pendingLaunchHandles.splice(0);
     for (const handle of handles) {
         try {
-            await openGlbFromHandle(handle, { replaceScene: false });
+            await openModelFromHandle(handle, { replaceScene: false });
         } catch (err) {
             console.error('[FileHandling] Failed to open file:', err);
+            alert('Could not open file: ' + (err.message || err));
         }
     }
 }
@@ -285,20 +308,54 @@ export function initLocalFileAccess(callbacks) {
     void tryConsumePendingSharedFile();
 }
 
-async function openGlbFromHandle(handle, { replaceScene }) {
+async function openModelFromHandle(handle, { replaceScene }) {
     const file = await handle.getFile();
+    const kind = getModelFileKind(file.name);
+
+    if (!kind) {
+        console.warn(`[FileHandling] Unsupported file type: ${file.name}`);
+        alert(`Unsupported file type: ${file.name}\nSupported: .glb, .stl, .stp, .step`);
+        return;
+    }
 
     if (replaceScene && _callbacks.hasLoadedContent?.()) {
         if (!confirm('Open file and replace current scene?')) return;
         await _callbacks.clearScene?.();
     }
 
-    currentFileHandle = handle;
-    currentFileName = file.name;
+    if (kind === 'glb') {
+        currentFileHandle = handle;
+        currentFileName = file.name;
+        await _callbacks.loadGlbFile?.(file);
+        _callbacks.updateFileUi?.(file.name);
+        console.log(`[Open] GLB "${file.name}" loaded from local file.`);
+        return;
+    }
 
-    await _callbacks.loadGlbFile?.(file);
+    // STL / STEP are import-only — do not bind Save to the source handle (Save writes GLB).
+    clearCurrentLocalFileHandle();
+
+    if (kind === 'stl') {
+        if (!_callbacks.loadStlFile) {
+            alert('STL import is not available.');
+            return;
+        }
+        await _callbacks.loadStlFile(file);
+        console.log(`[Open] STL "${file.name}" imported from local file.`);
+    } else {
+        if (!_callbacks.loadStpFile) {
+            alert('STEP import is not available.');
+            return;
+        }
+        await _callbacks.loadStpFile(file);
+        console.log(`[Open] STEP "${file.name}" imported from local file.`);
+    }
+
     _callbacks.updateFileUi?.(file.name);
-    console.log(`[Open] GLB "${file.name}" loaded from local file.`);
+}
+
+async function openGlbFromHandle(handle, { replaceScene }) {
+    await openModelFromHandle(handle, { replaceScene });
 }
 
 export async function openLocalGlbFile() {

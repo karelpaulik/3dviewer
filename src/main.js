@@ -2883,6 +2883,12 @@ function addMainGui() {
                 URL.revokeObjectURL(url);
             }
         },
+        loadStlFile: async (file) => {
+            await loadStlFromFile(file);
+        },
+        loadStpFile: async (file) => {
+            await loadStpFromFile(file);
+        },
         updateFileUi: (fileName) => {
             document.getElementById('fileNameLabel').textContent = fileName;
             document.getElementById('pageTitle').textContent = fileName;
@@ -9771,7 +9777,21 @@ function exportSelectedObjectStl() {
     console.log(`[STL Export] "${finalName}" (${binary ? 'binary' : 'ASCII'}) hotovo.`);
 }
 
-// Open a file-picker dialog and load the chosen GLB file.
+// Open a file-picker dialog and load the chosen STL file.
+function loadStlFromFile(file) {
+    const url = URL.createObjectURL(file);
+    return loadStlModel(url, file.name, 0.001, true).then(() => {
+        URL.revokeObjectURL(url);
+        if (!fileNameInput.value) fileNameInput.value = file.name.replace(/\.[^.]+$/, '');
+        fitView();
+        console.log(`[Import] STL "${file.name}" loaded successfully.`);
+    }).catch(err => {
+        URL.revokeObjectURL(url);
+        console.error(`[Import] Failed to load "${file.name}":`, err);
+        throw err;
+    });
+}
+
 function importStlFile() {
     const input = document.createElement('input');
     input.type = 'file';
@@ -9779,16 +9799,7 @@ function importStlFile() {
     input.addEventListener('change', function() {
         const file = input.files[0];
         if (!file) return;
-        const url = URL.createObjectURL(file);
-        loadStlModel(url, file.name, 0.001, true).then(() => {
-            URL.revokeObjectURL(url);
-            if (!fileNameInput.value) fileNameInput.value = file.name.replace(/\.[^.]+$/, '');
-            fitView();
-            console.log(`[Import] STL "${file.name}" loaded successfully.`);
-        }).catch(err => {
-            URL.revokeObjectURL(url);
-            console.error(`[Import] Failed to load "${file.name}":`, err);
-        });
+        loadStlFromFile(file).catch(() => {});
     });
     input.click();
 }
@@ -10328,6 +10339,133 @@ function importFbxFile() {
     input.click();
 }
 
+async function loadStpFromFile(file) {
+    // Loading toast
+    let toast = document.getElementById('stp-loading');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'stp-loading';
+        toast.innerHTML = '<div class="stp-spinner"></div><span id="stp-loading-msg">Loading STP…</span>';
+        document.body.appendChild(toast);
+    }
+    const msg = toast.querySelector('#stp-loading-msg');
+    const showToast = (text) => { msg.textContent = text; toast.classList.add('visible'); };
+    const hideToast = () => toast.classList.remove('visible');
+
+    try {
+        showToast('Initializing OCCT…');
+        if (!window.occtimportjs) {
+            await new Promise((resolve, reject) => {
+                const s = document.createElement('script');
+                s.src = 'https://cdn.jsdelivr.net/npm/occt-import-js@0.0.23/dist/occt-import-js.js';
+                s.onload = resolve;
+                s.onerror = () => reject(new Error('Failed to load occt-import-js from CDN'));
+                document.head.appendChild(s);
+            });
+        }
+        const occt = await window.occtimportjs({
+            locateFile: () => 'https://cdn.jsdelivr.net/npm/occt-import-js@0.0.23/dist/occt-import-js.wasm'
+        });
+        showToast(`Parsing "${file.name}"…`);
+        const buffer = await file.arrayBuffer();
+        const result = occt.ReadStepFile(new Uint8Array(buffer), null);
+        if (!result.success) {
+            hideToast();
+            console.error(`[Import] STP parsing failed for "${file.name}"`);
+            throw new Error(`STP parsing failed for "${file.name}"`);
+        }
+        showToast(`Building scene (${result.meshes.length} meshes)…`);
+        const root = new THREE.Group();
+        root.name = file.name.replace(/\.[^.]+$/, '');
+        root.userData.fileName = file.name;
+
+        // Build a Three.js mesh from a flat result.meshes entry
+        function buildThreeMesh(meshData, fallbackName) {
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(meshData.attributes.position.array, 3));
+            if (meshData.attributes.normal) {
+                geometry.setAttribute('normal', new THREE.Float32BufferAttribute(meshData.attributes.normal.array, 3));
+            } else {
+                geometry.computeVertexNormals();
+            }
+            if (meshData.index) {
+                geometry.setIndex(new THREE.BufferAttribute(new Uint32Array(meshData.index.array), 1));
+            }
+            const color = (meshData.color != null)
+                ? new THREE.Color(meshData.color[0], meshData.color[1], meshData.color[2])
+                : new THREE.Color(0x888888);
+            const material = new THREE.MeshPhongMaterial({
+                color,
+                side: THREE.DoubleSide,
+                clippingPlanes: clipPlanes,
+                clipIntersection: shouldUseClipIntersection(viewProp),
+                polygonOffset: true,
+                polygonOffsetFactor: 1,
+            });
+            const m = new THREE.Mesh(geometry, material);
+            m.name = meshData.name || fallbackName || 'mesh';
+            return m;
+        }
+
+        // Recursively build Three.js hierarchy from occt result.root tree
+        function buildNode(node, parent) {
+            // If this node has meshes, wrap them in a Group named after the node
+            // (or add directly if only one mesh and no children)
+            const hasMeshes = node.meshes && node.meshes.length > 0;
+            const hasChildren = node.children && node.children.length > 0;
+
+            let container;
+            if (hasMeshes && !hasChildren && node.meshes.length === 1) {
+                // Single mesh, no children → create Mesh directly under parent
+                const m = buildThreeMesh(result.meshes[node.meshes[0]], node.name);
+                if (node.name) m.name = node.name;
+                parent.add(m);
+                return;
+            }
+
+            if (hasMeshes || hasChildren) {
+                container = new THREE.Group();
+                container.name = node.name || '';
+                parent.add(container);
+            } else {
+                container = parent;
+            }
+
+            if (hasMeshes) {
+                for (const meshIdx of node.meshes) {
+                    const m = buildThreeMesh(result.meshes[meshIdx], node.name);
+                    container.add(m);
+                }
+            }
+            if (hasChildren) {
+                for (const child of node.children) {
+                    buildNode(child, container);
+                }
+            }
+        }
+
+        buildNode(result.root, root);
+        root.traverse(child => {
+            child.userData.initPosition = child.position.clone();
+            child.userData.initRotation = child.rotation.clone();
+            child.userData.initScale = child.scale.clone();
+            if (child.isMesh) meshObjects.push(child);
+        });
+        scene.add(root);
+        loadedModels.push(root);
+        rebuildTree(loadedModels);
+        if (!fileNameInput.value) fileNameInput.value = root.name;
+        fitView();
+        refreshEdgeOverlaysAfterSceneChange();
+        hideToast();
+        console.log(`[Import] STP "${file.name}" loaded successfully (${result.meshes.length} meshes).`);
+    } catch (err) {
+        hideToast();
+        console.error(`[Import] Failed to load STP "${file.name}":`, err);
+        throw err;
+    }
+}
+
 function importStpFile() {
     const input = document.createElement('input');
     input.type = 'file';
@@ -10335,129 +10473,10 @@ function importStpFile() {
     input.addEventListener('change', async function() {
         const file = input.files[0];
         if (!file) return;
-
-        // Loading toast
-        let toast = document.getElementById('stp-loading');
-        if (!toast) {
-            toast = document.createElement('div');
-            toast.id = 'stp-loading';
-            toast.innerHTML = '<div class="stp-spinner"></div><span id="stp-loading-msg">Loading STP…</span>';
-            document.body.appendChild(toast);
-        }
-        const msg = toast.querySelector('#stp-loading-msg');
-        const showToast = (text) => { msg.textContent = text; toast.classList.add('visible'); };
-        const hideToast = () => toast.classList.remove('visible');
-
         try {
-            showToast('Initializing OCCT…');
-            if (!window.occtimportjs) {
-                await new Promise((resolve, reject) => {
-                    const s = document.createElement('script');
-                    s.src = 'https://cdn.jsdelivr.net/npm/occt-import-js@0.0.23/dist/occt-import-js.js';
-                    s.onload = resolve;
-                    s.onerror = () => reject(new Error('Failed to load occt-import-js from CDN'));
-                    document.head.appendChild(s);
-                });
-            }
-            const occt = await window.occtimportjs({
-                locateFile: () => 'https://cdn.jsdelivr.net/npm/occt-import-js@0.0.23/dist/occt-import-js.wasm'
-            });
-            showToast(`Parsing "${file.name}"…`);
-            const buffer = await file.arrayBuffer();
-            const result = occt.ReadStepFile(new Uint8Array(buffer), null);
-            if (!result.success) {
-                hideToast();
-                console.error(`[Import] STP parsing failed for "${file.name}"`);
-                return;
-            }
-            showToast(`Building scene (${result.meshes.length} meshes)…`);
-            const root = new THREE.Group();
-            root.name = file.name.replace(/\.[^.]+$/, '');
-            root.userData.fileName = file.name;
-
-            // Build a Three.js mesh from a flat result.meshes entry
-            function buildThreeMesh(meshData, fallbackName) {
-                const geometry = new THREE.BufferGeometry();
-                geometry.setAttribute('position', new THREE.Float32BufferAttribute(meshData.attributes.position.array, 3));
-                if (meshData.attributes.normal) {
-                    geometry.setAttribute('normal', new THREE.Float32BufferAttribute(meshData.attributes.normal.array, 3));
-                } else {
-                    geometry.computeVertexNormals();
-                }
-                if (meshData.index) {
-                    geometry.setIndex(new THREE.BufferAttribute(new Uint32Array(meshData.index.array), 1));
-                }
-                const color = (meshData.color != null)
-                    ? new THREE.Color(meshData.color[0], meshData.color[1], meshData.color[2])
-                    : new THREE.Color(0x888888);
-                const material = new THREE.MeshPhongMaterial({
-                    color,
-                    side: THREE.DoubleSide,
-                    clippingPlanes: clipPlanes,
-                    clipIntersection: shouldUseClipIntersection(viewProp),
-                    polygonOffset: true,
-                    polygonOffsetFactor: 1,
-                });
-                const m = new THREE.Mesh(geometry, material);
-                m.name = meshData.name || fallbackName || 'mesh';
-                return m;
-            }
-
-            // Recursively build Three.js hierarchy from occt result.root tree
-            function buildNode(node, parent) {
-                // If this node has meshes, wrap them in a Group named after the node
-                // (or add directly if only one mesh and no children)
-                const hasMeshes = node.meshes && node.meshes.length > 0;
-                const hasChildren = node.children && node.children.length > 0;
-
-                let container;
-                if (hasMeshes && !hasChildren && node.meshes.length === 1) {
-                    // Single mesh, no children → create Mesh directly under parent
-                    const m = buildThreeMesh(result.meshes[node.meshes[0]], node.name);
-                    if (node.name) m.name = node.name;
-                    parent.add(m);
-                    return;
-                }
-
-                if (hasMeshes || hasChildren) {
-                    container = new THREE.Group();
-                    container.name = node.name || '';
-                    parent.add(container);
-                } else {
-                    container = parent;
-                }
-
-                if (hasMeshes) {
-                    for (const meshIdx of node.meshes) {
-                        const m = buildThreeMesh(result.meshes[meshIdx], node.name);
-                        container.add(m);
-                    }
-                }
-                if (hasChildren) {
-                    for (const child of node.children) {
-                        buildNode(child, container);
-                    }
-                }
-            }
-
-            buildNode(result.root, root);
-            root.traverse(child => {
-                child.userData.initPosition = child.position.clone();
-                child.userData.initRotation = child.rotation.clone();
-                child.userData.initScale = child.scale.clone();
-                if (child.isMesh) meshObjects.push(child);
-            });
-            scene.add(root);
-            loadedModels.push(root);
-            rebuildTree(loadedModels);
-            if (!fileNameInput.value) fileNameInput.value = root.name;
-            fitView();
-            refreshEdgeOverlaysAfterSceneChange();
-            hideToast();
-            console.log(`[Import] STP "${file.name}" loaded successfully (${result.meshes.length} meshes).`);
-        } catch (err) {
-            hideToast();
-            console.error(`[Import] Failed to load STP "${file.name}":`, err);
+            await loadStpFromFile(file);
+        } catch {
+            // Error already logged / toasted inside loadStpFromFile
         }
     });
     input.click();
