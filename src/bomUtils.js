@@ -164,6 +164,10 @@ function _exportJson(rows, root) {
     _downloadBlob(new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' }), jsonName);
 }
 
+function _stripNewlines(s) {
+    return String(s ?? '').replace(/\r\n|\r|\n/g, '');
+}
+
 function _exportTxt(rows, root) {
     const active = _bomState.exportCols.filter(c => c.enabled);
 
@@ -171,7 +175,7 @@ function _exportTxt(rows, root) {
     const displayRows = rows.map(r => {
         const d = {};
         active.forEach(c => {
-            if (c.key === 'name')       d[c.key] = '_'.repeat((r.depth + 1) * 2) + r[c.key];
+            if (c.key === 'name')       d[c.key] = '_'.repeat((r.depth + 1) * 2) + _stripNewlines(r[c.key]);
             else if (c.key === 'depth') d[c.key] = String(r.depth + 1);
             else                        d[c.key] = String(r[c.key] ?? '');
         });
@@ -190,7 +194,7 @@ function _exportTxt(rows, root) {
     const rootRow = {};
     active.forEach(c => {
         if (c.key === 'no')        rootRow[c.key] = '0';
-        else if (c.key === 'name')  rootRow[c.key] = root?.name || '(unnamed)';
+        else if (c.key === 'name')  rootRow[c.key] = _stripNewlines(root?.name || '(unnamed)');
         else if (c.key === 'type')  rootRow[c.key] = 'Group';
         else if (c.key === 'qty')   rootRow[c.key] = '1';
         else if (c.key === 'mass')  rootRow[c.key] = rootMass;
