@@ -6,6 +6,7 @@ export const MODE_LABELS = {
     navigate: 'Navigate',
     measure: 'Measuring distance',
     angle: 'Measuring angle',
+    radius: 'Measuring radius',
     dimension: 'Add dimension',
     annotation: 'Add annotation',
     assemblyEdit: 'Assembly Edit',
@@ -13,11 +14,12 @@ export const MODE_LABELS = {
 
 const LABEL_MODE_OPTS = { Flat: 'flat', '3D': '3d' };
 
-const CIRCLE_DETECT_MODES = new Set(['measure', 'angle', 'dimension']);
+const CIRCLE_DETECT_MODES = new Set(['measure', 'angle', 'radius', 'dimension']);
 
 const TOOL_BUTTONS = [
     ['measure', 'Dist. measure'],
     ['angle', 'Angle measure'],
+    ['radius', 'Radius measure'],
     ['dimension', 'Dimension'],
     ['annotation', 'Annotation'],
 ];
@@ -53,6 +55,7 @@ export function getActiveInteractionMode(deps) {
     if (assemblyState?.editMode) return 'assemblyEdit';
     if (viewProp.measureMode) return 'measure';
     if (viewProp.angleMode) return 'angle';
+    if (viewProp.radiusMode) return 'radius';
     if (viewProp.cadDimMode || viewProp.cadDim3dMode) return 'dimension';
     if (viewProp.annotationMode || viewProp.annotation3dMode) return 'annotation';
     return 'navigate';
@@ -67,6 +70,10 @@ function _clearAllToolModes(deps) {
     if (viewProp.angleMode) {
         viewProp.angleMode = false;
         deps.setAngleActive(false);
+    }
+    if (viewProp.radiusMode) {
+        viewProp.radiusMode = false;
+        deps.setRadiusActive(false);
     }
     if (viewProp.cadDimMode) {
         viewProp.cadDimMode = false;
@@ -121,6 +128,10 @@ function _activateInternalTool(internalId, deps) {
         case 'angle':
             viewProp.angleMode = true;
             deps.setAngleActive(true);
+            break;
+        case 'radius':
+            viewProp.radiusMode = true;
+            deps.setRadiusActive(true);
             break;
         case 'cadDim':
             viewProp.cadDimMode = true;
@@ -424,12 +435,22 @@ function _buildMeasurementDefaultsFolder(parentFolder, deps) {
     angleDefaultsFolder.add({ fn() { deps.applyDefaultsToAllAngleMeasurements(deps.render); } }, 'fn').name('Apply to all existing');
     angleDefaultsFolder.close();
 
+    const radiusDefaultsFolder = measurementFolder.addFolder('Radius measure defaults');
+    const _radiusLabelDef = deps.getRadiusLabelDefaults();
+    radiusDefaultsFolder.add(_radiusLabelDef, 'fontSize', 8, 24, 1).name('Size').listen();
+    radiusDefaultsFolder.addColor(_radiusLabelDef, 'textColor').name('Text color').listen();
+    radiusDefaultsFolder.addColor(_radiusLabelDef, 'bgColor').name('Background').listen();
+    radiusDefaultsFolder.add({ fn() { deps.applyDefaultsToAllRadiusMeasurements(deps.render); } }, 'fn').name('Apply to all existing');
+    radiusDefaultsFolder.close();
+
     const measMarkersFolder = measurementFolder.addFolder('Measurement markers defaults');
     const _measMarkerSizeOpts = deps.getMeasurementMarkerSettings();
     const _distanceMarkerOpts = deps.getDistanceMarkerDefaults();
     const _angleMarkerOpts = deps.getAngleMarkerDefaults();
+    const _radiusMarkerOpts = deps.getRadiusMarkerDefaults();
     deps.setDistanceMarkerColor(_distanceMarkerOpts.markerColor);
     deps.setAngleMarkerColor(_angleMarkerOpts.markerColor);
+    deps.setRadiusMarkerColor(_radiusMarkerOpts.markerColor);
     measMarkersFolder.add(_measMarkerSizeOpts, 'fixedSize').name('Fixed size').onChange(v => {
         deps.setMeasurementMarkerFixedSize(v);
         deps.render();
@@ -450,24 +471,32 @@ function _buildMeasurementDefaultsFolder(parentFolder, deps) {
         deps.setAngleMarkerColor(v);
         deps.render();
     }).listen();
+    measMarkersFolder.addColor(_radiusMarkerOpts, 'markerColor').name('Radius marker color').onChange(v => {
+        deps.setRadiusMarkerColor(v);
+        deps.render();
+    }).listen();
     measMarkersFolder.close();
 
     measurementFolder.add({ fn() {
         Object.assign(_distanceLabelDef, { textColor: '#ffffff', bgColor: '#c82828', fontSize: 11 });
         Object.assign(_angleLabelDef, { textColor: '#ffffff', bgColor: '#2850c8', fontSize: 11 });
+        Object.assign(_radiusLabelDef, { textColor: '#ffffff', bgColor: '#1a7a50', fontSize: 11 });
         Object.assign(_distanceMarkerOpts, { markerColor: '#ff4444' });
         Object.assign(_angleMarkerOpts, { markerColor: '#4488ff' });
+        Object.assign(_radiusMarkerOpts, { markerColor: '#28a878' });
         Object.assign(_measMarkerSizeOpts, { fixedSize: false, fixedScreenPx: 2, worldSize: 2 });
         deps.setMeasurementMarkerFixedSize(_measMarkerSizeOpts.fixedSize);
         deps.setMeasurementMarkerFixedScreenPx(_measMarkerSizeOpts.fixedScreenPx);
         deps.setMeasurementMarkerWorldSize(_measMarkerSizeOpts.worldSize);
         deps.setDistanceMarkerColor(_distanceMarkerOpts.markerColor);
         deps.setAngleMarkerColor(_angleMarkerOpts.markerColor);
+        deps.setRadiusMarkerColor(_radiusMarkerOpts.markerColor);
         deps.render();
     } }, 'fn').name('Set to default');
     measurementFolder.add({ fn() {
         deps.applyDefaultsToAllDistanceMeasurements(deps.render);
         deps.applyDefaultsToAllAngleMeasurements(deps.render);
+        deps.applyDefaultsToAllRadiusMeasurements(deps.render);
     } }, 'fn').name('Apply to existing');
     measurementFolder.close();
 }
@@ -537,6 +566,7 @@ export function initToolsPanel(container, deps) {
         if (!confirm('Clear all measurements/dimensions?')) return;
         deps.clearMeasurements(deps.render);
         deps.clearAngleMeasurements(deps.render);
+        deps.clearRadiusMeasurements(deps.render);
         deps.clearCadDimMeasurements(deps.render);
         deps.clearCadDim3dMeasurements(deps.render);
     } }, 'fn').name('Clear all measurements…');

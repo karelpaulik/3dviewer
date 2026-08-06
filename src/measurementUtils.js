@@ -26,16 +26,29 @@ let _anglePreviewLine = null; // dashed preview line from last point to cursor
 let _angleMeasurements = []; // completed angle measurements
 let _angleOwner = null; // Owner object for angle measurement (set on first click)
 
+// --- Radius measurement state (3 points → circumradius + projected) ---
+let _radiusActive = false;
+let _radiusStep = 0; // 0..3: how many points have been clicked
+let _radiusPoints = []; // up to 3 THREE.Vector3
+let _radiusMarkers = []; // markers for clicked points
+let _radiusEdgePreview = null; // solid edges between placed points (pending)
+let _radiusPreviewLine = null; // dashed preview line from last point to cursor
+let _radiusMeasurements = []; // completed radius measurements
+let _radiusOwner = null;
+
 let _onMeasureSessionComplete = null;
 let _onAngleSessionComplete = null;
+let _onRadiusSessionComplete = null;
 let _onCadDimSessionComplete = null;
 
 export function setMeasureOnSessionComplete(fn) { _onMeasureSessionComplete = fn; }
 export function setAngleOnSessionComplete(fn) { _onAngleSessionComplete = fn; }
+export function setRadiusOnSessionComplete(fn) { _onRadiusSessionComplete = fn; }
 export function setCadDimOnSessionComplete(fn) { _onCadDimSessionComplete = fn; }
 
 const _distanceMarkerDefaults = { markerColor: '#ff4444' };
 const _angleMarkerDefaults    = { markerColor: '#4488ff' };
+const _radiusMarkerDefaults   = { markerColor: '#28a878' };
 
 function _lighterColorHex(hex) {
     const c = new THREE.Color(hex);
@@ -74,10 +87,27 @@ function _applyAngleMarkerColors() {
     if (_anglePreviewLine?.material) _anglePreviewLine.material.color.set(color);
 }
 
+function _applyRadiusMarkerColors() {
+    const color = _radiusMarkerDefaults.markerColor;
+    for (const m of _radiusMeasurements) {
+        for (const mk of m.markers) {
+            if (mk?.material) mk.material.color.set(color);
+        }
+        for (const edge of (m.edges || [])) {
+            if (edge?.material) edge.material.color.set(color);
+        }
+    }
+    for (const mk of _radiusMarkers) {
+        if (mk?.material) mk.material.color.set(color);
+    }
+    if (_radiusPreviewLine?.material) _radiusPreviewLine.material.color.set(color);
+    if (_radiusEdgePreview?.material) _radiusEdgePreview.material.color.set(color);
+}
+
 // --- Select dimension state ---
 let _selectDimActive = false;
-let _selectedDim = null; // reference to the selected measurement object (from _measurements or _angleMeasurements)
-let _selectedDimType = null; // 'distance' | 'angle'
+let _selectedDim = null; // reference to the selected measurement object (from _measurements, _angleMeasurements or _radiusMeasurements)
+let _selectedDimType = null; // 'distance' | 'angle' | 'radius'
 let _isDraggingLabel = false;
 let _dragStartMouse = new THREE.Vector2();
 let _dragStartPos = new THREE.Vector3();
@@ -149,6 +179,12 @@ const _angleLabelDefaults = {
     fontSize:  11,
 };
 
+const _radiusLabelDefaults = {
+    textColor: '#ffffff',
+    bgColor:   '#1a7a50',
+    fontSize:  11,
+};
+
 const LABEL_SCALE = 0.2;
 let _defaultMeasurementLabelDim = '3d';
 
@@ -198,7 +234,9 @@ function _measurementLabelDimUserData(meas) {
 }
 
 function _measurementLabelDefaults(type) {
-    return type === 'angle' ? _angleLabelDefaults : _distanceLabelDefaults;
+    if (type === 'angle') return _angleLabelDefaults;
+    if (type === 'radius') return _radiusLabelDefaults;
+    return _distanceLabelDefaults;
 }
 
 function _measurementLabelBaseCss(textColor, bgColor, fontSize) {
@@ -291,6 +329,12 @@ export function updateMeasurement3dOrientations(camera) {
             _applyMeasurement3dOrientation(m, camera);
         }
     }
+    for (const m of _radiusMeasurements) {
+        if (m.labelDim === '3d') {
+            _applyMeasurement3dScale(m);
+            _applyMeasurement3dOrientation(m, camera);
+        }
+    }
 }
 
 function _applyMeasurementLabelStyle(meas, type) {
@@ -309,7 +353,7 @@ function _findMeasurementUserDataRec(meas, type) {
     return owner.userData.measurements.find(d => {
         if (d.type !== type) return false;
         if (type === 'distance') return Math.abs(d.p1.x - meas.p1.x) < 1e-6;
-        if (type === 'angle') return Math.abs(d.points[0].x - meas.points[0].x) < 1e-6;
+        if (type === 'angle' || type === 'radius') return Math.abs(d.points[0].x - meas.points[0].x) < 1e-6;
         return false;
     }) || null;
 }
@@ -360,8 +404,10 @@ export function applyDefaultsToAllFlatDim(renderFn) {
 
 export function getDistanceLabelDefaults() { return _distanceLabelDefaults; }
 export function getAngleLabelDefaults() { return _angleLabelDefaults; }
+export function getRadiusLabelDefaults() { return _radiusLabelDefaults; }
 export function getDistanceMarkerDefaults() { return _distanceMarkerDefaults; }
 export function getAngleMarkerDefaults() { return _angleMarkerDefaults; }
+export function getRadiusMarkerDefaults() { return _radiusMarkerDefaults; }
 
 export function setDistanceMarkerColor(v) {
     _distanceMarkerDefaults.markerColor = v;
@@ -371,6 +417,11 @@ export function setDistanceMarkerColor(v) {
 export function setAngleMarkerColor(v) {
     _angleMarkerDefaults.markerColor = v;
     _applyAngleMarkerColors();
+}
+
+export function setRadiusMarkerColor(v) {
+    _radiusMarkerDefaults.markerColor = v;
+    _applyRadiusMarkerColors();
 }
 
 export function applyDefaultsToAllDistanceMeasurements(renderFn) {
@@ -394,6 +445,18 @@ export function applyDefaultsToAllAngleMeasurements(renderFn) {
         _syncMeasurementLabelStyleToUserData(meas, 'angle');
     }
     _applyAngleMarkerColors();
+    if (renderFn) renderFn();
+}
+
+export function applyDefaultsToAllRadiusMeasurements(renderFn) {
+    for (const meas of _radiusMeasurements) {
+        meas._textColor = _radiusLabelDefaults.textColor;
+        meas._bgColor = _radiusLabelDefaults.bgColor;
+        meas._fontSize = _radiusLabelDefaults.fontSize;
+        _applyMeasurementLabelStyle(meas, 'radius');
+        _syncMeasurementLabelStyleToUserData(meas, 'radius');
+    }
+    _applyRadiusMarkerColors();
     if (renderFn) renderFn();
 }
 
@@ -436,6 +499,7 @@ function _createLabel3d(text, position, style, measOpts) {
 function _createMeasurementLabel(text, position, style, type, labelDim, measOpts) {
     if (labelDim === '3d') return _createLabel3d(text, position, style, measOpts);
     if (type === 'angle') return _createAngleLabel(text, position, style);
+    if (type === 'radius') return _createRadiusLabel(text, position, style);
     return _createLabel(text, position, style);
 }
 
@@ -486,6 +550,70 @@ function _buildAngleLabelTextFromMeas(meas) {
     const v1 = new THREE.Vector3().subVectors(p1w, p0w);
     const v2 = new THREE.Vector3().subVectors(p3w, p2w);
     return _buildAngleLabelText(v1, v2);
+}
+
+function _formatRadiusValue(r) {
+    return r !== null && Number.isFinite(r) ? r.toFixed(2) : 'N/A';
+}
+
+/** Circumradius of triangle p0-p1-p2 in 3D. Returns null if degenerate. */
+function _circumradius3D(p0, p1, p2) {
+    const a = p0.distanceTo(p1);
+    const b = p1.distanceTo(p2);
+    const c = p2.distanceTo(p0);
+    const ab = new THREE.Vector3().subVectors(p1, p0);
+    const ac = new THREE.Vector3().subVectors(p2, p0);
+    const area2 = new THREE.Vector3().crossVectors(ab, ac).length(); // 2 * area
+    if (area2 < 1e-12) return null;
+    return (a * b * c) / (2 * area2);
+}
+
+function _projectPoint2D(p, dropAxis) {
+    if (dropAxis === 'z') return { x: p.x, y: p.y }; // XY
+    if (dropAxis === 'x') return { x: p.y, y: p.z }; // YZ
+    return { x: p.x, y: p.z }; // XZ (drop y)
+}
+
+function _dist2D(a, b) {
+    const dx = b.x - a.x, dy = b.y - a.y;
+    return Math.sqrt(dx * dx + dy * dy);
+}
+
+/** Circumradius after projecting 3 points by dropping one axis. */
+function _circumradiusProjected(p0, p1, p2, dropAxis) {
+    const a = _projectPoint2D(p0, dropAxis);
+    const b = _projectPoint2D(p1, dropAxis);
+    const c = _projectPoint2D(p2, dropAxis);
+    const dAB = _dist2D(a, b);
+    const dBC = _dist2D(b, c);
+    const dCA = _dist2D(c, a);
+    const area2 = Math.abs((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x));
+    if (area2 < 1e-12) return null;
+    return (dAB * dBC * dCA) / (2 * area2);
+}
+
+function _buildRadiusLabelText(p0w, p1w, p2w) {
+    const r3D = _circumradius3D(p0w, p1w, p2w);
+    const rXY = _circumradiusProjected(p0w, p1w, p2w, 'z');
+    const rYZ = _circumradiusProjected(p0w, p1w, p2w, 'x');
+    const rXZ = _circumradiusProjected(p0w, p1w, p2w, 'y');
+    let labelText = '<b>Radius</b><br>';
+    labelText += '3D: ' + _formatRadiusValue(r3D) + '<br>';
+    labelText += '<span style="font-size:10px;opacity:0.85;">';
+    labelText += 'XY: ' + _formatRadiusValue(rXY) + '<br>';
+    labelText += 'YZ: ' + _formatRadiusValue(rYZ) + '<br>';
+    labelText += 'XZ: ' + _formatRadiusValue(rXZ);
+    labelText += '</span>';
+    return labelText;
+}
+
+function _buildRadiusLabelTextFromMeas(meas) {
+    const owner = meas.ownerObject || _scene;
+    owner.updateWorldMatrix(true, false);
+    const p0w = owner.localToWorld(meas.points[0].clone());
+    const p1w = owner.localToWorld(meas.points[1].clone());
+    const p2w = owner.localToWorld(meas.points[2].clone());
+    return _buildRadiusLabelText(p0w, p1w, p2w);
 }
 
 function _finalizeMeasurementLabel(meas, type) {
@@ -694,6 +822,18 @@ export function clearMeasurements(renderFn) {
     }
     _angleMeasurements = [];
 
+    // Also clear radius measurements
+    _cancelRadiusPending();
+    for (const m of _radiusMeasurements) {
+        _disposeRadiusMeasurementVisuals(m);
+        const owner = m.ownerObject || _scene;
+        if (owner.userData.measurements) {
+            owner.userData.measurements = owner.userData.measurements.filter(d => d.type !== 'radius');
+            if (owner.userData.measurements.length === 0) delete owner.userData.measurements;
+        }
+    }
+    _radiusMeasurements = [];
+
     // Also clear CAD dim measurements
     _cadCancelAll();
     for (const m of _cadDimMeasurements) _removeSingleCadDim(m);
@@ -724,6 +864,9 @@ export function removeMeasurementsForOwner(root) {
     for (const m of _angleMeasurements.filter(m => owned.has(m.ownerObject))) {
         _removeSingleMeasurement(m, 'angle');
     }
+    for (const m of _radiusMeasurements.filter(m => owned.has(m.ownerObject))) {
+        _removeSingleMeasurement(m, 'radius');
+    }
     for (const m of _cadDimMeasurements.filter(m => owned.has(m.ownerObject))) {
         _removeSingleMeasurement(m, 'cadDim');
     }
@@ -747,6 +890,12 @@ export function setMeasurementsVisible(visible) {
         m.line1.visible = visible;
         m.line2.visible = visible;
         m.midLine.visible = visible;
+        m.label.visible = visible;
+        for (const mk of m.markers) mk.visible = visible;
+        if (m.leaderLine) m.leaderLine.visible = visible;
+    }
+    for (const m of _radiusMeasurements) {
+        for (const edge of (m.edges || [])) edge.visible = visible;
         m.label.visible = visible;
         for (const mk of m.markers) mk.visible = visible;
         if (m.leaderLine) m.leaderLine.visible = visible;
@@ -783,6 +932,11 @@ export function setMeasurementDepthTest(enabled) {
         m.line1.material.depthTest = enabled; m.line1.renderOrder = ro;
         m.line2.material.depthTest = enabled; m.line2.renderOrder = ro;
         m.midLine.material.depthTest = enabled; m.midLine.renderOrder = ro;
+        if (m.leaderLine) { m.leaderLine.material.depthTest = enabled; m.leaderLine.renderOrder = roLeader; }
+    }
+    for (const m of _radiusMeasurements) {
+        for (const mk of m.markers) { mk.material.depthTest = enabled; mk.renderOrder = ro; }
+        for (const edge of (m.edges || [])) { edge.material.depthTest = enabled; edge.renderOrder = ro; }
         if (m.leaderLine) { m.leaderLine.material.depthTest = enabled; m.leaderLine.renderOrder = roLeader; }
     }
     for (const m of _cadDimMeasurements) {
@@ -884,6 +1038,11 @@ export function updateMarkerScales(camera) {
         measMarkers.push(...m.markers);
     }
     measMarkers.push(..._angleMarkers);
+
+    for (const m of _radiusMeasurements) {
+        measMarkers.push(...m.markers);
+    }
+    measMarkers.push(..._radiusMarkers);
 
     const cadMarkers = [];
     for (const m of _cadDimMeasurements) {
@@ -1205,6 +1364,291 @@ export function getAngleMarkers() {
     return markers;
 }
 
+// ===================== Radius Measurement =====================
+
+function _createRadiusMarker(position) {
+    const geo = new THREE.SphereGeometry(MARKER_RADIUS, 12, 12);
+    const mat = new THREE.MeshBasicMaterial({ color: _radiusMarkerDefaults.markerColor, depthTest: _depthTestEnabled });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.renderOrder = _depthTestEnabled ? 0 : 999;
+    mesh.position.copy(position);
+    mesh.userData._isMeasurement = true;
+    return mesh;
+}
+
+function _createRadiusLine(p1, p2, dashed) {
+    const geo = new THREE.BufferGeometry().setFromPoints([p1, p2]);
+    const mat = dashed
+        ? new THREE.LineDashedMaterial({
+            color: _radiusMarkerDefaults.markerColor,
+            dashSize: 3,
+            gapSize: 2,
+            depthTest: _depthTestEnabled,
+            transparent: true,
+            opacity: 0.7,
+        })
+        : new THREE.LineBasicMaterial({ color: _radiusMarkerDefaults.markerColor, depthTest: _depthTestEnabled });
+    const line = new THREE.Line(geo, mat);
+    if (dashed) line.computeLineDistances();
+    line.renderOrder = _depthTestEnabled ? 0 : 999;
+    line.userData._isMeasurement = true;
+    return line;
+}
+
+function _createRadiusLabel(text, position, style) {
+    const s = style || _radiusLabelDefaults;
+    const div = document.createElement('div');
+    div.className = 'measurement-label';
+    div.innerHTML = text;
+    div.style.cssText = _measurementLabelBaseCss(s.textColor, s.bgColor, s.fontSize);
+    const label = new CSS2DObject(div);
+    label.position.copy(position);
+    label.userData._isMeasurement = true;
+    return label;
+}
+
+function _hideRadiusPreview() {
+    if (_radiusPreviewLine && _scene) {
+        _scene.remove(_radiusPreviewLine);
+        _radiusPreviewLine.geometry.dispose();
+        _radiusPreviewLine.material.dispose();
+        _radiusPreviewLine = null;
+    }
+}
+
+function _clearRadiusEdgePreview() {
+    if (_radiusEdgePreview) {
+        const owner = _radiusOwner || _scene;
+        if (owner) owner.remove(_radiusEdgePreview);
+        _radiusEdgePreview.geometry.dispose();
+        _radiusEdgePreview.material.dispose();
+        _radiusEdgePreview = null;
+    }
+}
+
+function _updateRadiusPendingEdges() {
+    _clearRadiusEdgePreview();
+    if (_radiusPoints.length < 2 || !_radiusOwner) return;
+    const pts = _radiusPoints.slice();
+    // Open polyline while placing; closed triangle only after completion
+    const geo = new THREE.BufferGeometry().setFromPoints(pts);
+    const mat = new THREE.LineBasicMaterial({ color: _radiusMarkerDefaults.markerColor, depthTest: _depthTestEnabled });
+    _radiusEdgePreview = new THREE.Line(geo, mat);
+    _radiusEdgePreview.renderOrder = _depthTestEnabled ? 0 : 999;
+    _radiusEdgePreview.userData._isMeasurement = true;
+    _radiusOwner.add(_radiusEdgePreview);
+}
+
+function _cancelRadiusPending() {
+    const owner = _radiusOwner || _scene;
+    for (const m of _radiusMarkers) {
+        if (owner) owner.remove(m);
+        m.geometry.dispose();
+        m.material.dispose();
+    }
+    _radiusMarkers = [];
+    _clearRadiusEdgePreview();
+    _radiusPoints = [];
+    _radiusStep = 0;
+    _radiusOwner = null;
+    _hideRadiusPreview();
+}
+
+function _disposeRadiusMeasurementVisuals(m) {
+    _removeLeaderLine(m);
+    const owner = m.ownerObject || _scene;
+    if (m.label && m.label.element) m.label.element.remove();
+    if (m.label) owner.remove(m.label);
+    for (const edge of (m.edges || [])) {
+        owner.remove(edge);
+        edge.geometry.dispose();
+        edge.material.dispose();
+    }
+    for (const mk of (m.markers || [])) {
+        owner.remove(mk);
+        mk.geometry.dispose();
+        mk.material.dispose();
+    }
+}
+
+export function isRadiusActive() {
+    return _radiusActive;
+}
+
+export function setRadiusActive(val) {
+    _radiusActive = val;
+    if (!val) {
+        _cancelRadiusPending();
+    }
+}
+
+export function addRadiusPoint(point, ownerObject, renderFn) {
+    if (!_radiusActive || !_scene) return;
+
+    const pWorld = point.clone();
+
+    if (_radiusStep === 0) {
+        _radiusOwner = ownerObject || _scene;
+    }
+    const owner = _radiusOwner;
+    owner.updateWorldMatrix(true, false);
+
+    const p = owner.worldToLocal(pWorld.clone());
+    _radiusPoints.push(p);
+    const marker = _createRadiusMarker(p);
+    owner.add(marker);
+    _radiusMarkers.push(marker);
+    _radiusStep++;
+    _updateRadiusPendingEdges();
+
+    if (_radiusStep === 3) {
+        _clearRadiusEdgePreview();
+
+        const pts = _radiusPoints.slice();
+        const edges = [
+            _createRadiusLine(pts[0], pts[1], false),
+            _createRadiusLine(pts[1], pts[2], false),
+            _createRadiusLine(pts[2], pts[0], false),
+        ];
+        for (const edge of edges) owner.add(edge);
+
+        owner.updateWorldMatrix(true, false);
+        const p0w = owner.localToWorld(pts[0].clone());
+        const p1w = owner.localToWorld(pts[1].clone());
+        const p2w = owner.localToWorld(pts[2].clone());
+        const labelText = _buildRadiusLabelText(p0w, p1w, p2w);
+
+        // Label / leader anchor = midpoint of chord between 1st and 3rd point
+        const defaultLabelPos = new THREE.Vector3().addVectors(pts[0], pts[2]).multiplyScalar(0.5);
+
+        const labelDim = getDefaultMeasurementLabelDim();
+        const meas = {
+            edges,
+            label: null,
+            markers: null,
+            points: pts,
+            ownerObject: owner,
+        };
+        _initMeasurementLabelFields(meas, 'radius');
+        _initMeasurementLabelDim(meas, labelDim, null);
+        const labelStyle = _getMeasurementLabelStyle(meas, 'radius');
+        const label = _createMeasurementLabel(labelText, defaultLabelPos, labelStyle, 'radius', labelDim, meas);
+        owner.add(label);
+        meas.label = label;
+        meas.markers = _radiusMarkers.slice();
+        _finalizeMeasurementLabel(meas, 'radius');
+        _radiusMeasurements.push(meas);
+
+        if (!owner.userData.measurements) owner.userData.measurements = [];
+        owner.userData.measurements.push({
+            type: 'radius',
+            points: pts.map(pt => ({ x: pt.x, y: pt.y, z: pt.z })),
+            labelPos: { x: defaultLabelPos.x, y: defaultLabelPos.y, z: defaultLabelPos.z },
+            ..._measurementLabelStyleUserData(meas),
+            ..._measurementLabelDimUserData(meas),
+        });
+
+        _radiusMarkers = [];
+        _radiusPoints = [];
+        _radiusStep = 0;
+        _radiusOwner = null;
+        _hideRadiusPreview();
+        if (renderFn) renderFn();
+        if (_onRadiusSessionComplete) _onRadiusSessionComplete();
+    } else {
+        _hideRadiusPreview();
+        if (renderFn) renderFn();
+    }
+}
+
+export function updateRadiusPreview(point) {
+    if (!_radiusActive || !_scene) {
+        _hideRadiusPreview();
+        return;
+    }
+    if (!point || _radiusStep === 0) {
+        _hideRadiusPreview();
+        if (_radiusActive && point) {
+            if (!_previewMarker) {
+                const geo = new THREE.SphereGeometry(MARKER_RADIUS, 12, 12);
+                const mat = new THREE.MeshBasicMaterial({
+                    color: _lighterColorHex(_radiusMarkerDefaults.markerColor),
+                    depthTest: false,
+                    transparent: true,
+                    opacity: 0.7,
+                });
+                _previewMarker = new THREE.Mesh(geo, mat);
+                _previewMarker.renderOrder = 999;
+                _previewMarker.userData._isMeasurement = true;
+                _scene.add(_previewMarker);
+            }
+            _previewMarker.position.copy(point);
+        }
+        return;
+    }
+
+    if (!_previewMarker) {
+        const geo = new THREE.SphereGeometry(MARKER_RADIUS, 12, 12);
+        const mat = new THREE.MeshBasicMaterial({
+            color: _lighterColorHex(_radiusMarkerDefaults.markerColor),
+            depthTest: false,
+            transparent: true,
+            opacity: 0.7,
+        });
+        _previewMarker = new THREE.Mesh(geo, mat);
+        _previewMarker.renderOrder = 999;
+        _previewMarker.userData._isMeasurement = true;
+        _scene.add(_previewMarker);
+    }
+    _previewMarker.position.copy(point);
+
+    const lastPoint = _radiusPoints[_radiusPoints.length - 1];
+    if (lastPoint) {
+        _hideRadiusPreview();
+        const owner = _radiusOwner || _scene;
+        owner.updateWorldMatrix(true, false);
+        const lastPointWorld = owner.localToWorld(lastPoint.clone());
+        const geo = new THREE.BufferGeometry().setFromPoints([lastPointWorld, point]);
+        const mat = new THREE.LineDashedMaterial({
+            color: _radiusMarkerDefaults.markerColor,
+            dashSize: 4,
+            gapSize: 3,
+            depthTest: false,
+        });
+        _radiusPreviewLine = new THREE.Line(geo, mat);
+        _radiusPreviewLine.computeLineDistances();
+        _radiusPreviewLine.renderOrder = 999;
+        _radiusPreviewLine.userData._isMeasurement = true;
+        _scene.add(_radiusPreviewLine);
+    }
+}
+
+export function clearRadiusMeasurements(renderFn) {
+    if (!_scene) return;
+
+    _cancelRadiusPending();
+
+    for (const m of _radiusMeasurements) {
+        _disposeRadiusMeasurementVisuals(m);
+        const owner = m.ownerObject || _scene;
+        if (owner.userData.measurements) {
+            owner.userData.measurements = owner.userData.measurements.filter(d => d.type !== 'radius');
+            if (owner.userData.measurements.length === 0) delete owner.userData.measurements;
+        }
+    }
+    _radiusMeasurements = [];
+    if (renderFn) renderFn();
+}
+
+export function getRadiusMarkers() {
+    const markers = [];
+    for (const m of _radiusMeasurements) {
+        markers.push(...m.markers);
+    }
+    markers.push(..._radiusMarkers);
+    return markers;
+}
+
 // ===================== Select Dimension Mode =====================
 
 function _deselectDim() {
@@ -1228,6 +1672,9 @@ function _setLabelPointerEvents(enabled) {
         m.label.element.style.pointerEvents = pe;
     }
     for (const m of _angleMeasurements) {
+        m.label.element.style.pointerEvents = pe;
+    }
+    for (const m of _radiusMeasurements) {
         m.label.element.style.pointerEvents = pe;
     }
     for (const m of _cadDimMeasurements) {
@@ -1257,6 +1704,11 @@ function _onLabelMouseDown(e) {
     if (!found) {
         for (const m of _angleMeasurements) {
             if (m.label.element === el) { found = m; foundType = 'angle'; break; }
+        }
+    }
+    if (!found) {
+        for (const m of _radiusMeasurements) {
+            if (m.label.element === el) { found = m; foundType = 'radius'; break; }
         }
     }
     if (!found) {
@@ -1361,6 +1813,8 @@ function _onLabelMouseDown(e) {
         const mid1 = new THREE.Vector3().addVectors(found.points[0], found.points[1]).multiplyScalar(0.5);
         const mid2 = new THREE.Vector3().addVectors(found.points[2], found.points[3]).multiplyScalar(0.5);
         anchor = new THREE.Vector3().addVectors(mid1, mid2).multiplyScalar(0.5);
+    } else if (foundType === 'radius') {
+        anchor = new THREE.Vector3().addVectors(found.points[0], found.points[2]).multiplyScalar(0.5);
     } else if (foundType === 'annotation') {
         anchor = found.leaderLines.length > 0 ? found.leaderLines[0].anchorLocal.clone() : found.label.position.clone();
     } else if (foundType === 'annotation3d') {
@@ -1648,7 +2102,7 @@ function _onDocumentMouseUp(e) {
                     const rec = owner.userData.measurements.find(d => {
                         if (d.type !== type) return false;
                         if (type === 'distance') return Math.abs(d.p1.x - _selectedDim.p1.x) < 1e-6;
-                        if (type === 'angle') return Math.abs(d.points[0].x - _selectedDim.points[0].x) < 1e-6;
+                        if (type === 'angle' || type === 'radius') return Math.abs(d.points[0].x - _selectedDim.points[0].x) < 1e-6;
                         return false;
                     });
                     if (rec) rec.labelPos = { x: pos.x, y: pos.y, z: pos.z };
@@ -1713,6 +2167,16 @@ function _removeSingleMeasurement(meas, type) {
             if (di !== -1) owner.userData.measurements.splice(di, 1);
             if (owner.userData.measurements.length === 0) delete owner.userData.measurements;
         }
+    } else if (type === 'radius') {
+        _disposeRadiusMeasurementVisuals(meas);
+        const idx = _radiusMeasurements.indexOf(meas);
+        if (idx !== -1) _radiusMeasurements.splice(idx, 1);
+        if (owner.userData.measurements) {
+            const di = owner.userData.measurements.findIndex(d => d.type === 'radius'
+                && Math.abs(d.points[0].x - meas.points[0].x) < 1e-6 && Math.abs(d.points[0].y - meas.points[0].y) < 1e-6);
+            if (di !== -1) owner.userData.measurements.splice(di, 1);
+            if (owner.userData.measurements.length === 0) delete owner.userData.measurements;
+        }
     } else if (type === 'cadDim') {
         _removeSingleCadDim(meas);
         const idx = _cadDimMeasurements.indexOf(meas);
@@ -1757,6 +2221,10 @@ function _attachLabelMousedownListeners() {
         if (!m.label?.element) continue;
         _addLabelInteractionListeners(m.label.element);
     }
+    for (const m of _radiusMeasurements) {
+        if (!m.label?.element) continue;
+        _addLabelInteractionListeners(m.label.element);
+    }
     for (const m of _cadDimMeasurements) {
         if (!m.label?.element) continue;
         _addLabelInteractionListeners(m.label.element);
@@ -1780,6 +2248,9 @@ function _detachLabelMousedownListeners() {
         if (m.label?.element) _removeLabelInteractionListeners(m.label.element);
     }
     for (const m of _angleMeasurements) {
+        if (m.label?.element) _removeLabelInteractionListeners(m.label.element);
+    }
+    for (const m of _radiusMeasurements) {
         if (m.label?.element) _removeLabelInteractionListeners(m.label.element);
     }
     for (const m of _cadDimMeasurements) {
@@ -1910,6 +2381,8 @@ export function reconstructMeasurements(root) {
                 _reconstructDistance(node, rec);
             } else if (rec.type === 'angle') {
                 _reconstructAngle(node, rec);
+            } else if (rec.type === 'radius') {
+                _reconstructRadius(node, rec);
             } else if (rec.type === 'cadDim') {
                 _reconstructCadDim(node, rec);
             }
@@ -2032,6 +2505,62 @@ function _reconstructAngle(owner, rec) {
         _updateLeaderLine(angleMeas, labelPos);
     }
     _angleMeasurements.push(angleMeas);
+}
+
+function _reconstructRadius(owner, rec) {
+    if (!Array.isArray(rec.points) || rec.points.length !== 3) return;
+    const pts = rec.points.map(p => new THREE.Vector3(p.x, p.y, p.z));
+
+    const markers = pts.map(p => {
+        const m = _createRadiusMarker(p);
+        owner.add(m);
+        return m;
+    });
+
+    const edges = [
+        _createRadiusLine(pts[0], pts[1], false),
+        _createRadiusLine(pts[1], pts[2], false),
+        _createRadiusLine(pts[2], pts[0], false),
+    ];
+    for (const edge of edges) owner.add(edge);
+
+    owner.updateWorldMatrix(true, false);
+    const p0w = owner.localToWorld(pts[0].clone());
+    const p1w = owner.localToWorld(pts[1].clone());
+    const p2w = owner.localToWorld(pts[2].clone());
+    const labelText = _buildRadiusLabelText(p0w, p1w, p2w);
+
+    const defaultLabelPos = new THREE.Vector3().addVectors(pts[0], pts[2]).multiplyScalar(0.5);
+
+    const labelPos = rec.labelPos
+        ? new THREE.Vector3(rec.labelPos.x, rec.labelPos.y, rec.labelPos.z)
+        : defaultLabelPos.clone();
+    const labelStyle = {
+        textColor: rec.textColor || _radiusLabelDefaults.textColor,
+        bgColor: rec.bgColor || _radiusLabelDefaults.bgColor,
+        fontSize: rec.fontSize != null ? rec.fontSize : _radiusLabelDefaults.fontSize,
+    };
+    const labelDim = rec.labelDim || '2d';
+    const radiusMeas = {
+        edges,
+        label: null,
+        markers,
+        points: pts,
+        ownerObject: owner,
+    };
+    radiusMeas._textColor = labelStyle.textColor;
+    radiusMeas._bgColor = labelStyle.bgColor;
+    radiusMeas._fontSize = labelStyle.fontSize;
+    _initMeasurementLabelDim(radiusMeas, labelDim, rec);
+    const label = _createMeasurementLabel(labelText, labelPos, labelStyle, 'radius', labelDim, radiusMeas);
+    owner.add(label);
+    radiusMeas.label = label;
+    _finalizeMeasurementLabel(radiusMeas, 'radius');
+    if (labelPos.distanceTo(defaultLabelPos) > 1e-4) {
+        radiusMeas._labelAnchor = defaultLabelPos.clone();
+        _updateLeaderLine(radiusMeas, labelPos);
+    }
+    _radiusMeasurements.push(radiusMeas);
 }
 
 // ===================== CAD Dimension Measurement =====================
@@ -2280,6 +2809,17 @@ export function getSelectedAngle() {
     return (_selectedDimType === 'angle') ? _selectedDim : null;
 }
 
+export function getSelectedRadius() {
+    return (_selectedDimType === 'radius') ? _selectedDim : null;
+}
+
+function _getSelectedBasicMeasurement() {
+    if (_selectedDimType === 'distance') return { type: 'distance', meas: _selectedDim };
+    if (_selectedDimType === 'angle') return { type: 'angle', meas: _selectedDim };
+    if (_selectedDimType === 'radius') return { type: 'radius', meas: _selectedDim };
+    return { type: null, meas: null };
+}
+
 function _defaultMeasurementLabelPos(meas, type) {
     if (type === 'distance') {
         return new THREE.Vector3().addVectors(meas.p1, meas.p2).multiplyScalar(0.5);
@@ -2289,14 +2829,17 @@ function _defaultMeasurementLabelPos(meas, type) {
         const mid2 = new THREE.Vector3().addVectors(meas.points[2], meas.points[3]).multiplyScalar(0.5);
         return new THREE.Vector3().addVectors(mid1, mid2).multiplyScalar(0.5);
     }
+    if (type === 'radius') {
+        return new THREE.Vector3().addVectors(meas.points[0], meas.points[2]).multiplyScalar(0.5);
+    }
     return null;
 }
 
 /**
- * Reset the selected distance/angle label to its default position and remove the leader line.
+ * Reset the selected distance/angle/radius label to its default position and remove the leader line.
  */
 export function resetSelectedMeasurementLabel(renderFn) {
-    if (!_selectedDim || (_selectedDimType !== 'distance' && _selectedDimType !== 'angle')) return;
+    if (!_selectedDim || (_selectedDimType !== 'distance' && _selectedDimType !== 'angle' && _selectedDimType !== 'radius')) return;
     const meas = _selectedDim;
     const type = _selectedDimType;
     const defaultPos = _defaultMeasurementLabelPos(meas, type);
@@ -2306,7 +2849,6 @@ export function resetSelectedMeasurementLabel(renderFn) {
     meas._labelAnchor = null;
     _removeLeaderLine(meas);
 
-    const owner = meas.ownerObject || _scene;
     const rec = _findMeasurementUserDataRec(meas, type);
     if (rec) {
         rec.labelPos = { x: defaultPos.x, y: defaultPos.y, z: defaultPos.z };
@@ -2316,15 +2858,13 @@ export function resetSelectedMeasurementLabel(renderFn) {
 }
 
 export function getSelectedMeasurementLabelStyle() {
-    const type = getSelectedDistance() ? 'distance' : (getSelectedAngle() ? 'angle' : null);
-    const meas = type === 'distance' ? getSelectedDistance() : (type === 'angle' ? getSelectedAngle() : null);
+    const { type, meas } = _getSelectedBasicMeasurement();
     if (!meas || !type) return null;
     return _getMeasurementLabelStyle(meas, type);
 }
 
 export function setSelectedMeasurementTextColor(color, renderFn) {
-    const type = getSelectedDistance() ? 'distance' : (getSelectedAngle() ? 'angle' : null);
-    const meas = type === 'distance' ? getSelectedDistance() : (type === 'angle' ? getSelectedAngle() : null);
+    const { type, meas } = _getSelectedBasicMeasurement();
     if (!meas || !type) return;
     meas._textColor = color;
     _applyMeasurementLabelStyle(meas, type);
@@ -2333,8 +2873,7 @@ export function setSelectedMeasurementTextColor(color, renderFn) {
 }
 
 export function setSelectedMeasurementBgColor(color, renderFn) {
-    const type = getSelectedDistance() ? 'distance' : (getSelectedAngle() ? 'angle' : null);
-    const meas = type === 'distance' ? getSelectedDistance() : (type === 'angle' ? getSelectedAngle() : null);
+    const { type, meas } = _getSelectedBasicMeasurement();
     if (!meas || !type) return;
     meas._bgColor = color;
     _applyMeasurementLabelStyle(meas, type);
@@ -2343,8 +2882,7 @@ export function setSelectedMeasurementBgColor(color, renderFn) {
 }
 
 export function setSelectedMeasurementFontSize(size, renderFn) {
-    const type = getSelectedDistance() ? 'distance' : (getSelectedAngle() ? 'angle' : null);
-    const meas = type === 'distance' ? getSelectedDistance() : (type === 'angle' ? getSelectedAngle() : null);
+    const { type, meas } = _getSelectedBasicMeasurement();
     if (!meas || !type || !Number.isFinite(size)) return;
     if (meas.labelDim === '3d') {
         meas.labelScale = size / 2.2;
@@ -2356,11 +2894,17 @@ export function setSelectedMeasurementFontSize(size, renderFn) {
     if (renderFn) renderFn();
 }
 
+function _buildLabelTextForType(meas, type) {
+    if (type === 'distance') return _buildDistanceLabelTextFromMeas(meas);
+    if (type === 'angle') return _buildAngleLabelTextFromMeas(meas);
+    if (type === 'radius') return _buildRadiusLabelTextFromMeas(meas);
+    return '';
+}
+
 function _swapMeasurementLabel(meas, type, newDim, renderFn) {
     const owner = meas.ownerObject || _scene;
     const labelPos = meas.label.position.clone();
-    const labelText = meas.label.element?.innerHTML
-        || (type === 'distance' ? _buildDistanceLabelTextFromMeas(meas) : _buildAngleLabelTextFromMeas(meas));
+    const labelText = meas.label.element?.innerHTML || _buildLabelTextForType(meas, type);
     const style = _getMeasurementLabelStyle(meas, type);
     const wasSelected = _selectedDim === meas;
     const hadAnchor = meas._labelAnchor ? meas._labelAnchor.clone() : null;
@@ -2406,23 +2950,20 @@ export function convertMeasurementToFlat(meas, type, renderFn) {
 }
 
 export function getSelectedMeasurementLabelDim() {
-    const type = getSelectedDistance() ? 'distance' : (getSelectedAngle() ? 'angle' : null);
-    const meas = type === 'distance' ? getSelectedDistance() : (type === 'angle' ? getSelectedAngle() : null);
+    const { type, meas } = _getSelectedBasicMeasurement();
     if (!meas) return null;
     return meas.labelDim || '2d';
 }
 
 export function setSelectedMeasurementLabelDim(dim, renderFn) {
-    const type = getSelectedDistance() ? 'distance' : (getSelectedAngle() ? 'angle' : null);
-    const meas = type === 'distance' ? getSelectedDistance() : (type === 'angle' ? getSelectedAngle() : null);
+    const { type, meas } = _getSelectedBasicMeasurement();
     if (!meas || !type) return;
     if (dim === '3d') convertMeasurementTo3d(meas, type, renderFn);
     else convertMeasurementToFlat(meas, type, renderFn);
 }
 
 export function setSelectedMeasurementOrientationMode(mode, renderFn) {
-    const type = getSelectedDistance() ? 'distance' : (getSelectedAngle() ? 'angle' : null);
-    const meas = type === 'distance' ? getSelectedDistance() : (type === 'angle' ? getSelectedAngle() : null);
+    const { type, meas } = _getSelectedBasicMeasurement();
     if (!meas || !type || meas.labelDim !== '3d') return;
     meas.orientationMode = mode;
     if (_currentCamera) _applyMeasurement3dOrientation(meas, _currentCamera);

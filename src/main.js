@@ -26,7 +26,7 @@ import { exportToHTML, exportToHTMLDraco, exportToHTMLObfuscated, exportToHTMLOb
 import { initOutliner, toggleOutliner, rebuildTree, highlightObject as outlinerHighlight, updateVisibilityIcon, updateSelectableIcon, updateObjectLabel, isOutlinerOpen, navigateOutliner, highlightGroupObjects, clearGroupHighlights, setNavigationPosition, setOnTreeRebuild, setShowAuxiliaryObjects, isOutlinerAuxiliaryObject, notifyOutlinerAuxiliaryChildrenChanged } from './sceneOutliner.js';
 import { positionContextMenu } from './uiMenuUtils.js';
 import { computeModelStats, computeSurfaceAreaAndVolume, formatGeometryMeasure, MODEL_UNIT_OPTIONS, formatMass, computeRolledUpMassForRoots } from './modelInfoUtils.js';
-import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, updateMeasurement3dOrientations, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements, isSelectDimActive, setSelectDimActive, refreshLabelEditListeners, hasSelectedDimension, deselectSelectedDimension, deleteSelectedDimension, resetSelectedMeasurementLabel, getSelectedMeasurementLabelStyle, getSelectedMeasurementLabelDim, setSelectedMeasurementLabelDim, setSelectedMeasurementOrientationMode, setSelectedMeasurementTextColor, setSelectedMeasurementBgColor, setSelectedMeasurementFontSize, initSelectDimension, updateSelectDimensionCamera, reconstructMeasurements, stripMeasurementVisuals, setMeasurementsVisible, setMeasurementDepthTest, removeMeasurementsForOwner, isCadDimActive, setCadDimActive, getCadDimStep, getCadDimAxis, addCadDimPoint, updateCadDimPreview, updateCadDimHoverPreview, cycleCadDimAxis, placeCadDim, clearCadDimMeasurements, removeCadDimMeasurementsForOwner, getSelectedCadDim, setCadDimLabelMode, setCadDimDragMode, selectDimTouchStart, selectDimTouchMove, selectDimTouchEnd, registerLabelForSelection, getSelectedCadDim3d, getSelectedAnnotation, getSelectedAnnotation3d, getSelectedDistance, getSelectedAngle, getCadDimMeasurements, deleteCadDimByRef, convertCadDim3dTo2d, getFlatDimDefaults, applyDefaultsToAllFlatDim, getDistanceLabelDefaults, getAngleLabelDefaults, getDistanceMarkerDefaults, getAngleMarkerDefaults, applyDefaultsToAllDistanceMeasurements, applyDefaultsToAllAngleMeasurements, setDistanceMarkerColor, setAngleMarkerColor, getMeasurementMarkerSettings, setMeasurementMarkerFixedSize, setMeasurementMarkerFixedScreenPx, setMeasurementMarkerWorldSize, getDefaultMeasurementLabelDim, setDefaultMeasurementLabelDim, getMeasurement3dDefaults, setDimMarkerFixedSize, setDimMarkerFixedScreenPx, setDimMarkerWorldSize, setDimMarkerColor, getDimMarkerSettings, setMeasureOnSessionComplete, setAngleOnSessionComplete, setCadDimOnSessionComplete } from './measurementUtils.js';
+import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, updateMeasurement3dOrientations, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements, isRadiusActive, setRadiusActive, addRadiusPoint, updateRadiusPreview, clearRadiusMeasurements, isSelectDimActive, setSelectDimActive, refreshLabelEditListeners, hasSelectedDimension, deselectSelectedDimension, deleteSelectedDimension, resetSelectedMeasurementLabel, getSelectedMeasurementLabelStyle, getSelectedMeasurementLabelDim, setSelectedMeasurementLabelDim, setSelectedMeasurementOrientationMode, setSelectedMeasurementTextColor, setSelectedMeasurementBgColor, setSelectedMeasurementFontSize, initSelectDimension, updateSelectDimensionCamera, reconstructMeasurements, stripMeasurementVisuals, setMeasurementsVisible, setMeasurementDepthTest, removeMeasurementsForOwner, isCadDimActive, setCadDimActive, getCadDimStep, getCadDimAxis, addCadDimPoint, updateCadDimPreview, updateCadDimHoverPreview, cycleCadDimAxis, placeCadDim, clearCadDimMeasurements, removeCadDimMeasurementsForOwner, getSelectedCadDim, setCadDimLabelMode, setCadDimDragMode, selectDimTouchStart, selectDimTouchMove, selectDimTouchEnd, registerLabelForSelection, getSelectedCadDim3d, getSelectedAnnotation, getSelectedAnnotation3d, getSelectedDistance, getSelectedAngle, getSelectedRadius, getCadDimMeasurements, deleteCadDimByRef, convertCadDim3dTo2d, getFlatDimDefaults, applyDefaultsToAllFlatDim, getDistanceLabelDefaults, getAngleLabelDefaults, getRadiusLabelDefaults, getDistanceMarkerDefaults, getAngleMarkerDefaults, getRadiusMarkerDefaults, applyDefaultsToAllDistanceMeasurements, applyDefaultsToAllAngleMeasurements, applyDefaultsToAllRadiusMeasurements, setDistanceMarkerColor, setAngleMarkerColor, setRadiusMarkerColor, getMeasurementMarkerSettings, setMeasurementMarkerFixedSize, setMeasurementMarkerFixedScreenPx, setMeasurementMarkerWorldSize, getDefaultMeasurementLabelDim, setDefaultMeasurementLabelDim, getMeasurement3dDefaults, setDimMarkerFixedSize, setDimMarkerFixedScreenPx, setDimMarkerWorldSize, setDimMarkerColor, getDimMarkerSettings, setMeasureOnSessionComplete, setAngleOnSessionComplete, setRadiusOnSessionComplete, setCadDimOnSessionComplete } from './measurementUtils.js';
 import { detectCircleCenterFromHit, clearCircleDetectionCache } from './circleDetectionUtils.js';
 import { removeEdgeOverlays, updateMeshEdgeOverlays, stripEdgeOverlays, syncEdgeOverlayClipping } from './edgeDisplayUtils.js';
 import { initAnnotations, isAnnotationActive, setAnnotationActive, addAnnotationPoint, getAnnotationPendingPoint, updateAnnotationPreview, updateAnnotationMarkerScales, setAnnotationsVisible, clearAnnotations, stripAnnotationVisuals, reconstructAnnotations, setAnnotationDepthTest, removeAnnotationsForOwner, getAnnotations, isAddLeaderLineActive, cancelAddLeaderLine, commitAddLeaderLine, deleteAnnotationByRef, setConvertTo3dFn, reconstructAnnotationFromRec, getFlatAnnDefaults, applyDefaultsToAllFlatAnnotations, setAnnMarkerFixedSize, setAnnMarkerFixedScreenPx, setAnnMarkerWorldSize, setAnnMarkerColor, getAnnMarkerSettings, setAnnotationOnSessionComplete, isAnnotationDialogOpen, showAnnotationContextMenu } from './annotationUtils.js';
@@ -674,7 +674,7 @@ function _updateCadDimHintUI(overrideAxis) {
 }
 
 function _isAddAnnotationModeActive() {
-    return viewProp.measureMode || viewProp.angleMode
+    return viewProp.measureMode || viewProp.angleMode || viewProp.radiusMode
         || viewProp.cadDimMode || viewProp.cadDim3dMode
         || viewProp.annotationMode || viewProp.annotation3dMode;
 }
@@ -1309,6 +1309,7 @@ const viewProp = {
     historyInfo: '– žádný záznam –',
     measureMode: false, // Point-to-point measurement mode
     angleMode: false, // Angle measurement mode (4 points → 2 lines → projected angles)
+    radiusMode: false, // Radius measurement mode (3 points → circumradius + projected)
     cadDimMode: false,   // CAD-style dimension (CSS2D, 2 pts + axis-aligned placement mode)
     cadDim3dMode: false, // CAD-style dimension (CSS3D label, same interaction as cadDimMode)
     detectCircleCenter: false, // Snap measurement points to detected circle centers
@@ -3480,6 +3481,7 @@ function addToolsGui() {
         focusViewport,
         setMeasureActive,
         setAngleActive,
+        setRadiusActive,
         setCadDimActive,
         setCadDim3dActive,
         setAnnotationActive,
@@ -3494,6 +3496,7 @@ function addToolsGui() {
         setCadDim3dDepthTest,
         clearMeasurements: (renderFn) => { clearMeasurements(renderFn); refreshOutlinerOverlaysAndTools(); },
         clearAngleMeasurements: (renderFn) => { clearAngleMeasurements(renderFn); refreshOutlinerOverlaysAndTools(); },
+        clearRadiusMeasurements: (renderFn) => { clearRadiusMeasurements(renderFn); refreshOutlinerOverlaysAndTools(); },
         clearCadDimMeasurements: (renderFn) => { clearCadDimMeasurements(renderFn); refreshOutlinerOverlaysAndTools(); },
         clearCadDim3dMeasurements: (renderFn) => { clearCadDim3dMeasurements(renderFn); refreshOutlinerOverlaysAndTools(); },
         clearAnnotations: (renderFn) => { clearAnnotations(renderFn); refreshOutlinerOverlaysAndTools(); },
@@ -3510,12 +3513,16 @@ function addToolsGui() {
         applyDefaultsToAllAnnotations3d,
         getDistanceLabelDefaults,
         getAngleLabelDefaults,
+        getRadiusLabelDefaults,
         getDistanceMarkerDefaults,
         getAngleMarkerDefaults,
+        getRadiusMarkerDefaults,
         applyDefaultsToAllDistanceMeasurements,
         applyDefaultsToAllAngleMeasurements,
+        applyDefaultsToAllRadiusMeasurements,
         setDistanceMarkerColor,
         setAngleMarkerColor,
+        setRadiusMarkerColor,
         getMeasurementMarkerSettings,
         setMeasurementMarkerFixedSize,
         setMeasurementMarkerFixedScreenPx,
@@ -3556,6 +3563,7 @@ function addToolsGui() {
     };
     setMeasureOnSessionComplete(onToolComplete('measure'));
     setAngleOnSessionComplete(onToolComplete('angle'));
+    setRadiusOnSessionComplete(onToolComplete('radius'));
     setCadDimOnSessionComplete(onToolComplete('dimension'));
     setCadDim3dOnSessionComplete(onToolComplete('dimension'));
     setAnnotationOnSessionComplete(onToolComplete('annotation'));
@@ -8145,6 +8153,28 @@ function render() {
         updateAnglePreview(null);
     }
 
+    // Radius measurement hover preview
+    if (viewProp.radiusMode && isRadiusActive() && !docBlocks3dInput && !isMouseOverGui && !isMouseDown) {
+        raycaster.setFromCamera(mouse, currentCamera);
+        const rIntersects = raycaster.intersectObjects(meshObjects);
+        const rIsFullyVisible = (obj) => { let o = obj; while (o) { if (!o.visible) return false; o = o.parent; } return true; };
+        const rVisible = (renderer.localClippingEnabled && clipPlanes.length > 0)
+            ? rIntersects.filter(hit => rIsFullyVisible(hit.object) && clipPlanes.some(plane => plane.distanceToPoint(hit.point) >= 0))
+            : rIntersects.filter(hit => rIsFullyVisible(hit.object));
+        if (rVisible.length > 0) {
+            let previewPoint = rVisible[0].point;
+            if (viewProp.detectCircleCenter) {
+                const center = detectCircleCenterFromHit(rVisible[0]);
+                if (center) previewPoint = center;
+            }
+            updateRadiusPreview(previewPoint);
+        } else {
+            updateRadiusPreview(null);
+        }
+    } else {
+        updateRadiusPreview(null);
+    }
+
     // CAD dimension preview
     if (viewProp.cadDimMode && isCadDimActive() && !docBlocks3dInput && !isMouseOverGui) {
         const cdStep = getCadDimStep();
@@ -9117,6 +9147,31 @@ function onClick( event ) {
             }
             const hitOwner = resolveCADSelection(visibleIntersects[0].object);
             addAnglePoint(point, hitOwner, render);
+        }
+        return;
+    }
+
+    // --- Radius measurement mode ---
+    if (viewProp.radiusMode && isRadiusActive()) {
+        mouseUpPos.x = event.clientX;
+        mouseUpPos.y = event.clientY;
+        const dragDistance = mouseDownPos.distanceTo(mouseUpPos);
+        if (dragDistance > 3) return;
+
+        raycaster.setFromCamera(mouse, currentCamera);
+        const intersects = raycaster.intersectObjects(meshObjects);
+        const isFullyVisible = (obj) => { let o = obj; while (o) { if (!o.visible) return false; o = o.parent; } return true; };
+        const visibleIntersects = (renderer.localClippingEnabled && clipPlanes.length > 0)
+            ? intersects.filter(hit => isFullyVisible(hit.object) && clipPlanes.some(plane => plane.distanceToPoint(hit.point) >= 0))
+            : intersects.filter(hit => isFullyVisible(hit.object));
+        if (visibleIntersects.length > 0) {
+            let point = visibleIntersects[0].point;
+            if (viewProp.detectCircleCenter) {
+                const center = detectCircleCenterFromHit(visibleIntersects[0]);
+                if (center) point = center;
+            }
+            const hitOwner = resolveCADSelection(visibleIntersects[0].object);
+            addRadiusPoint(point, hitOwner, render);
         }
         return;
     }
@@ -10659,8 +10714,10 @@ const _EXPORT_SETTING_KEYS = [
     'annMarkerSettings',
     'distanceLabelDefaults',
     'angleLabelDefaults',
+    'radiusLabelDefaults',
     'distanceMarkerDefaults',
     'angleMarkerDefaults',
+    'radiusMarkerDefaults',
     'measurementMarkerSettings',
     'measurementLabelDimDefault',
     'measurement3dDefaults',
@@ -10676,8 +10733,10 @@ function embedAppSettingsToUserData(userData) {
     userData.annMarkerSettings = { ...getAnnMarkerSettings() };
     userData.distanceLabelDefaults = { ...getDistanceLabelDefaults() };
     userData.angleLabelDefaults = { ...getAngleLabelDefaults() };
+    userData.radiusLabelDefaults = { ...getRadiusLabelDefaults() };
     userData.distanceMarkerDefaults = { ...getDistanceMarkerDefaults() };
     userData.angleMarkerDefaults = { ...getAngleMarkerDefaults() };
+    userData.radiusMarkerDefaults = { ...getRadiusMarkerDefaults() };
     userData.measurementMarkerSettings = { ...getMeasurementMarkerSettings() };
     userData.measurementLabelDimDefault = getDefaultMeasurementLabelDim();
     userData.measurement3dDefaults = { ...getMeasurement3dDefaults() };
@@ -10764,12 +10823,20 @@ function importSettingsFromGltfScene(gltfScene) {
         Object.assign(getAngleLabelDefaults(), s.angleLabelDefaults);
     }
 
+    if (s.radiusLabelDefaults) {
+        Object.assign(getRadiusLabelDefaults(), s.radiusLabelDefaults);
+    }
+
     if (s.distanceMarkerDefaults?.markerColor !== undefined) {
         setDistanceMarkerColor(s.distanceMarkerDefaults.markerColor);
     }
 
     if (s.angleMarkerDefaults?.markerColor !== undefined) {
         setAngleMarkerColor(s.angleMarkerDefaults.markerColor);
+    }
+
+    if (s.radiusMarkerDefaults?.markerColor !== undefined) {
+        setRadiusMarkerColor(s.radiusMarkerDefaults.markerColor);
     }
 
     if (s.measurementMarkerSettings) {
@@ -13441,11 +13508,13 @@ function assemblyMoveStepDown() {
         if (!lbl) return;
         const isDistance = !!getSelectedDistance();
         const isAngle = !!getSelectedAngle();
+        const isRadius = !!getSelectedRadius();
         if (isDistance) lbl.textContent = 'Dist. measure';
         else if (isAngle) lbl.textContent = 'Angle measure';
+        else if (isRadius) lbl.textContent = 'Radius measure';
         else lbl.textContent = 'Measurement';
 
-        const kind = isAngle ? 'angle measure' : 'dist. measure';
+        const kind = isAngle ? 'angle measure' : (isRadius ? 'radius measure' : 'dist. measure');
         const labelDim = getSelectedMeasurementLabelDim();
         const is3d = labelDim === '3d';
         if (labelDim) {
@@ -13462,7 +13531,7 @@ function assemblyMoveStepDown() {
             menuMeasurement._orientSep.style.display = is3d ? '' : 'none';
         }
 
-        const meas = getSelectedDistance() || getSelectedAngle();
+        const meas = getSelectedDistance() || getSelectedAngle() || getSelectedRadius();
         if (is3d && meas) {
             const currentOrient = meas.orientationMode || 'camera';
             for (const [key, item] of Object.entries(menuMeasurement._orientItems)) {
@@ -13543,7 +13612,7 @@ function assemblyMoveStepDown() {
         } else if (isSelectDimActive() && getSelectedAnnotation()) {
             hideAll();
             showAnnotationContextMenu(getSelectedAnnotation(), x, y, render, menuBounds);
-        } else if (isSelectDimActive() && (getSelectedDistance() || getSelectedAngle())) {
+        } else if (isSelectDimActive() && (getSelectedDistance() || getSelectedAngle() || getSelectedRadius())) {
             refreshMeasurementMenu();
             showAt(menuMeasurement, x, y);
         } else if (lastSelectedObject) {
@@ -13610,8 +13679,8 @@ function assemblyMoveStepDown() {
             return;
         }
 
-        // Distance / angle measurement selected
-        if (isSelectDimActive() && (getSelectedDistance() || getSelectedAngle())) {
+        // Distance / angle / radius measurement selected
+        if (isSelectDimActive() && (getSelectedDistance() || getSelectedAngle() || getSelectedRadius())) {
             refreshMeasurementMenu();
             showAt(menuMeasurement, event.clientX, event.clientY);
             return;
