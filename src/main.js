@@ -1096,6 +1096,7 @@ let pivotObject = null;           // pivot pro skupinovou transformaci
 let singleSelectPivot = null;           // pivot pro single-select (gizmo na středu bboxu)
 let singleSelectPivotInitMatrix = null; // world matice pivotu na začátku dragu
 let singleSelectObjectInitMatrix = null; // world matice objektu na začátku dragu
+let singleSelectPivotDirty = false;     // true = pivot upraven v Pivot only → uložit _customPivot při deselectu
 
 // --- Group History ---
 const groupHistory = [];          // pole snapshotů: { name, objects[] }
@@ -2052,6 +2053,10 @@ function init() {
                 savePreviousGroupTransformStates();
             }
         } else { // Dragování skončilo - setTimeout nutný, aby se onClick stihl vykonat s isTransformDragging = true
+            // Pivot only: označit pivot jako dirty (flag přežije vypnutí režimu až do deselectu)
+            if (viewProp.movePivotOnly && !viewProp.isGroupTransformActive && singleSelectPivot) {
+                singleSelectPivotDirty = true;
+            }
             setTimeout(() => {
                 isTransformDragging = false;
                 orbitControls.enabled = true;
@@ -3951,6 +3956,7 @@ function refreshSelectedObjGui(obj) {
         folder2.add(viewProp, 'movePivotOnly').name('Pivot only').onChange(function(value) {
             setMovePivotOnly(value);
         }).listen();
+        folder2.add({ fn() { resetSingleSelectPivotToBBoxCenter(); } }, 'fn').name('Reset pivot');
 
         // Capture "before" state when the object is selected (TransformControl is already attached).
         savePreviousTransformState();
@@ -5072,7 +5078,34 @@ function syncSingleSelectPivotOrientation() {
     singleSelectPivot.updateMatrixWorld(true);
 }
 
-/** Persist gizmo pivot in object-local space so it survives deselect/reselect. */
+/** Place single-select gizmo at snapped bbox center; clear saved custom pivot. */
+function resetSingleSelectPivotToBBoxCenter() {
+    if (!singleSelectPivot || !lastSelectedObject) return;
+    const obj = lastSelectedObject;
+    delete obj.userData._customPivot;
+    obj.updateWorldMatrix(true, true);
+    const bbox = new THREE.Box3().setFromObject(obj);
+    const pivotPos = bbox.isEmpty() ? new THREE.Vector3() : bbox.getCenter(new THREE.Vector3());
+    const snap = viewProp.snapTranslation;
+    pivotPos.x = Math.round(pivotPos.x / snap) * snap;
+    pivotPos.y = Math.round(pivotPos.y / snap) * snap;
+    pivotPos.z = Math.round(pivotPos.z / snap) * snap;
+    singleSelectPivot.position.copy(pivotPos);
+    if (!viewProp.transformSpace) {
+        syncTransformPivotOrientation();
+    } else {
+        singleSelectPivot.quaternion.identity();
+        singleSelectPivot.updateMatrixWorld(true);
+    }
+    singleSelectPivotDirty = false;
+    updateWorldPos();
+    render();
+}
+
+/**
+ * Persist gizmo pivot in object-local space so it survives deselect/reselect.
+ * Call only after Pivot-only edits (singleSelectPivotDirty).
+ */
 function saveSingleSelectPivotToObject(obj, pivot) {
     if (!obj || !pivot) return;
     obj.updateWorldMatrix(true, false);
@@ -7828,6 +7861,7 @@ function selectObject(object, options = {}) {
             if (hasCustomPivot) {
                 singleSelectPivot.quaternion.copy(pivotQuat);
             }
+            singleSelectPivotDirty = false;
             scene.add(singleSelectPivot);
             // Objekt NENÍ reparentován – zůstává u původního rodiče.
             // Pohyb pivotu se v change eventu aplikuje jako delta matice na objekt.
@@ -7873,13 +7907,16 @@ function deselectObject() {
         transformControls.detach();
     }
     hideTransformSpaceGizmo();
-    // Uložíme pivot v local space objektu a zničíme helper (objekt zůstal u původního rodiče)
+    // Uložíme custom pivot jen po Pivot-only úpravě; jinak existující _customPivot neměnit
     if (singleSelectPivot) {
-        saveSingleSelectPivotToObject(lastSelectedObject, singleSelectPivot);
+        if (singleSelectPivotDirty) {
+            saveSingleSelectPivotToObject(lastSelectedObject, singleSelectPivot);
+        }
         scene.remove(singleSelectPivot);
         singleSelectPivot = null;
         singleSelectPivotInitMatrix = null;
         singleSelectObjectInitMatrix = null;
+        singleSelectPivotDirty = false;
     }                
     // Zničíme složku v lil-gui, pokud existuje
     if (selectedFolder) {
