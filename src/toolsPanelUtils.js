@@ -17,9 +17,9 @@ const LABEL_MODE_OPTS = { Flat: 'flat', '3D': '3d' };
 const CIRCLE_DETECT_MODES = new Set(['measure', 'angle', 'radius', 'dimension']);
 
 const TOOL_BUTTONS = [
-    ['measure', 'Dist. measure'],
-    ['angle', 'Angle measure'],
-    ['radius', 'Radius measure'],
+    ['measure', 'Dist. measure (2 points)'],
+    ['angle', 'Angle measure (4 points)'],
+    ['radius', 'Radius measure (3 points)'],
     ['dimension', 'Dimension'],
     ['annotation', 'Annotation'],
 ];
