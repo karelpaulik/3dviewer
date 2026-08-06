@@ -23,6 +23,11 @@ const _point = new THREE.Vector3();
 const _euler = new THREE.Euler(0, 0, 0, 'XYZ');
 const _quat = new THREE.Quaternion();
 const _center = new THREE.Vector3();
+const _uAxis = new THREE.Vector3();
+const _vAxis = new THREE.Vector3();
+const _tmpVec = new THREE.Vector3();
+const _worldUp = new THREE.Vector3(0, 1, 0);
+const _worldX = new THREE.Vector3(1, 0, 0);
 
 /** Per-mode: base clip normal at zero rotation. Plane point is viewProp.px/py/pz. */
 const MODE_CONFIG = {
@@ -213,4 +218,61 @@ export function migrateLegacySectionPoint(viewProp, sceneCenter) {
 
 export function shouldUseClipIntersection(viewProp) {
     return isCornerSectionMode(viewProp);
+}
+
+/**
+ * Orthonormal frame for the active single-plane section (geometry, ignore clip flip).
+ * @returns {{ origin: THREE.Vector3, normal: THREE.Vector3, u: THREE.Vector3, v: THREE.Vector3 }}
+ */
+export function getSectionFrame(viewProp, sceneCenter, target) {
+    const origin = target?.origin || new THREE.Vector3();
+    const normal = target?.normal || new THREE.Vector3();
+    const u = target?.u || new THREE.Vector3();
+    const v = target?.v || new THREE.Vector3();
+
+    getSectionPointFromViewProp(viewProp, sceneCenter, origin);
+    if (isSingleSectionMode(viewProp)) {
+        getSectionNormalFromViewProp(viewProp, normal);
+    } else {
+        // Corner: default to XY-like frame at corner point for callers that still need a frame
+        normal.set(0, 0, -1);
+    }
+
+    // Stable right vector: prefer world up, fall back to world X when nearly parallel
+    if (Math.abs(normal.dot(_worldUp)) > 0.9) {
+        _uAxis.crossVectors(_worldX, normal).normalize();
+    } else {
+        _uAxis.crossVectors(_worldUp, normal).normalize();
+    }
+    if (_uAxis.lengthSq() < 1e-12) {
+        _uAxis.set(1, 0, 0);
+    }
+    u.copy(_uAxis);
+    v.crossVectors(normal, u).normalize();
+    return { origin, normal, u, v };
+}
+
+/** Project world point onto section plane UV (drops normal component). */
+export function worldToPlaneUV(worldPoint, frame, target = { u: 0, v: 0 }) {
+    _tmpVec.subVectors(worldPoint, frame.origin);
+    target.u = _tmpVec.dot(frame.u);
+    target.v = _tmpVec.dot(frame.v);
+    return target;
+}
+
+/** Map plane UV back to world. */
+export function planeUVToWorld(u, v, frame, target = new THREE.Vector3()) {
+    return target.copy(frame.origin)
+        .addScaledVector(frame.u, u)
+        .addScaledVector(frame.v, v);
+}
+
+/**
+ * Plane used for sketch raycasts — same geometry as single clip plane, without flip negate.
+ * @param {THREE.Plane} [targetPlane]
+ */
+export function getSectionSketchPlane(viewProp, sceneCenter, targetPlane = new THREE.Plane()) {
+    getSectionNormalFromViewProp(viewProp, _normal);
+    getSectionPointFromViewProp(viewProp, sceneCenter, _point);
+    return targetPlane.setFromNormalAndCoplanarPoint(_normal, _point);
 }

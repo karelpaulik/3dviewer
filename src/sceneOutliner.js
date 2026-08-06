@@ -558,7 +558,8 @@ function isOutlinerAuxiliaryNode(obj) {
         || !!ud?._isMeasurement
         || !!ud?._isAnnotation
         || !!ud?._isAnnotation3d
-        || !!ud?._isCadDim3d;
+        || !!ud?._isCadDim3d
+        || !!ud?._isSectionSketch;
 }
 
 /** @param {import('three').Object3D|null|undefined} obj */

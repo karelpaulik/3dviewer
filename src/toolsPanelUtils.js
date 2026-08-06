@@ -9,6 +9,7 @@ export const MODE_LABELS = {
     radius: 'Measuring radius',
     dimension: 'Add dimension',
     annotation: 'Add annotation',
+    sectionSketch: 'Section sketch',
     assemblyEdit: 'Assembly Edit',
 };
 
@@ -58,6 +59,7 @@ export function getActiveInteractionMode(deps) {
     if (viewProp.radiusMode) return 'radius';
     if (viewProp.cadDimMode || viewProp.cadDim3dMode) return 'dimension';
     if (viewProp.annotationMode || viewProp.annotation3dMode) return 'annotation';
+    if (viewProp.sectionSketchMode) return 'sectionSketch';
     return 'navigate';
 }
 
@@ -94,6 +96,10 @@ function _clearAllToolModes(deps) {
     if (viewProp.annotation3dMode) {
         viewProp.annotation3dMode = false;
         deps.setAnnotation3dActive(false);
+    }
+    if (viewProp.sectionSketchMode) {
+        viewProp.sectionSketchMode = false;
+        deps.setSectionSketchActive?.(false);
     }
 }
 
@@ -149,6 +155,13 @@ function _activateInternalTool(internalId, deps) {
             viewProp.annotation3dMode = true;
             deps.setAnnotation3dActive(true);
             break;
+        case 'sectionSketch':
+            viewProp.sectionSketchMode = true;
+            viewProp.showSectionSketch = true;
+            deps.setSectionSketchVisible?.(true);
+            deps.setSectionSketchEntityType?.(viewProp.sectionSketchEntity || 'line');
+            deps.setSectionSketchActive?.(true);
+            break;
         default:
             break;
     }
@@ -171,6 +184,11 @@ export function activateTool(logicalId, deps) {
 
     const { viewProp, assemblyState } = deps;
     if (assemblyState?.editMode) return;
+
+    if (logicalId === 'sectionSketch' && deps.canActivateSectionSketch && !deps.canActivateSectionSketch()) {
+        deps.onSectionSketchBlocked?.();
+        return;
+    }
 
     const labelMode = viewProp.toolsLabelMode || '3d';
     _applyLabelMode(deps, labelMode);
@@ -262,6 +280,20 @@ export function syncToolsPanelUI(deps) {
             _cancelBtnCtrl.enable();
         } else {
             _cancelBtnCtrl.hide();
+        }
+    }
+
+    const lengthCtrl = deps._sectionSketchLengthCtrl;
+    if (lengthCtrl) {
+        const showLength = !assemblyEdit
+            && active === 'sectionSketch'
+            && !!deps.hasEntityLengthSelection?.();
+        if (showLength) {
+            lengthCtrl.show();
+            lengthCtrl.enable();
+            lengthCtrl.updateDisplay();
+        } else {
+            lengthCtrl.hide();
         }
     }
 }
@@ -531,6 +563,47 @@ export function initToolsPanel(container, deps) {
     if (_cancelBtn) _cancelBtn.style.color = '#e53935';
     _cancelBtnCtrl.hide();
     toolsFolder.open();
+
+    const sketchFolder = toolsGui.addFolder('Section sketch');
+    _modeBtnCtrls.sectionSketch = sketchFolder.add({ fn() { activateTool('sectionSketch', deps); } }, 'fn')
+        .name('Section sketch');
+    sketchFolder.add(deps.viewProp, 'showSectionSketch').name('Show sketches').onChange((v) => {
+        deps.setSectionSketchVisible?.(v);
+        deps.render?.();
+    }).listen();
+    sketchFolder.add(deps.viewProp, 'showSectionSketchLengths').name('Show length labels').onChange((v) => {
+        deps.setSectionSketchLabelsVisible?.(v);
+        deps.render?.();
+    }).listen();
+    sketchFolder.add(deps.viewProp, 'sectionSketchEntity', { Line: 'line', Polyline: 'polyline' })
+        .name('Sketch entity')
+        .onChange((v) => {
+            deps.setSectionSketchEntityType?.(v);
+            deps.render?.();
+        });
+    sketchFolder.addColor(deps.viewProp, 'sectionSketchColor').name('Sketch color').onChange((v) => {
+        deps.setSectionSketchColor?.(v);
+        deps.render?.();
+    });
+    sketchFolder.add(deps.viewProp, 'sectionSketchMarkerSize', 0.05, 50, 0.05)
+        .name('Marker size')
+        .onChange((v) => {
+            deps.setSectionSketchMarkerSize?.(v);
+            deps.render?.();
+        });
+    const sketchLengthCtrl = sketchFolder.add(deps.viewProp, 'sectionSketchSegLength', 0.001, 1e7, 0.01)
+        .name('Segment length')
+        .onChange((v) => {
+            deps.setSelectedEntityLength?.(v, deps.render);
+        })
+        .listen();
+    sketchLengthCtrl.domElement?.classList.add('section-sketch-length-ctrl');
+    deps._sectionSketchLengthCtrl = sketchLengthCtrl;
+    sketchFolder.add({ fn() {
+        if (!confirm('Clear all section sketches?')) return;
+        deps.clearSectionSketches?.(deps.render);
+    } }, 'fn').name('Clear section sketches…');
+    sketchFolder.open();
 
     const optionsFolder = toolsGui.addFolder('Options');
     optionsFolder.add(deps.viewProp, 'repeatTool').name('Repeat tool');

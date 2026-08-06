@@ -22,7 +22,8 @@ function isToolOverlayMesh(obj) {
         ud._isDeviationProbe ||
         ud._isEdgeOverlay ||
         ud._isDeviationGhostOverlay ||
-        ud._isTransformSpaceGizmo
+        ud._isTransformSpaceGizmo ||
+        ud._isSectionSketch
     );
 }
 

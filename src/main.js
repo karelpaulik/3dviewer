@@ -46,7 +46,43 @@ import {
     isSingleSectionMode,
     normalizeSectionMode,
     SECTION_MODE_OPTIONS,
+    getSectionFrame,
+    worldToPlaneUV,
+    getSectionSketchPlane,
 } from './sectionPlaneUtils.js';
+import {
+    initSectionSketch,
+    isSectionSketchActive,
+    setSectionSketchActive,
+    setSectionSketchEntityType,
+    setSectionSketchColor,
+    setSectionSketchMarkerSize,
+    setSectionSketchVisible,
+    setSectionSketchLabelsVisible,
+    setSectionSketchLengthFormatter,
+    setSectionSketchOnChange,
+    setSectionSketchOnSelectionChanged,
+    syncSketchFrame,
+    addStrokePoint,
+    updateStrokePreview,
+    commitStroke,
+    cancelStroke,
+    clearSectionSketches,
+    hasStrokeInProgress,
+    getSectionSketchCount,
+    pickSketchAtScreen,
+    setSketchSelection,
+    clearSketchSelection,
+    hasSketchSelection,
+    getSketchSelection,
+    beginSelectionDrag,
+    updateSelectionDrag,
+    endSelectionDrag,
+    isSelectionDragActive,
+    deleteSketchSelection,
+    getSelectedEntityLength,
+    setSelectedEntityLength,
+} from './sectionSketchUtils.js';
 import { initDocumentsGui, importDocumentsFromGltfScene, getDocumentsStore, flushDocumentEdits, isDocOverlayBlockingInput, isDocumentEditorOpen, setDocLabelOptions, clearDocumentsStore } from './documentsUtils.js';
 import { isImageEditorOpen } from './imageEditorUtils.js';
 import {
@@ -676,7 +712,8 @@ function _updateCadDimHintUI(overrideAxis) {
 function _isAddAnnotationModeActive() {
     return viewProp.measureMode || viewProp.angleMode || viewProp.radiusMode
         || viewProp.cadDimMode || viewProp.cadDim3dMode
-        || viewProp.annotationMode || viewProp.annotation3dMode;
+        || viewProp.annotationMode || viewProp.annotation3dMode
+        || viewProp.sectionSketchMode;
 }
 
 function _escapeKeyMatches(event) {
@@ -706,6 +743,14 @@ function _shouldSkipGlobalEscape(event) {
 }
 
 function _handleEscapeKey() {
+    if (viewProp.sectionSketchMode && hasStrokeInProgress()) {
+        cancelStroke(render);
+        return;
+    }
+    if (viewProp.sectionSketchMode && hasSketchSelection()) {
+        clearSketchSelection(render);
+        return;
+    }
     if (_isAddAnnotationModeActive()) {
         setInteractionMode('navigate', toolsDeps);
     }
@@ -1316,6 +1361,13 @@ const viewProp = {
     showMeasurements: true, // Toggle visibility of all measurement visuals
     annotationMode: false,   // CSS2D annotation (note) mode
     annotation3dMode: false, // CSS3D annotation (note) mode
+    sectionSketchMode: false, // 2D sketch on single section plane
+    sectionSketchEntity: 'line', // 'line' | 'polyline'
+    sectionSketchColor: '#ff9800',
+    sectionSketchMarkerSize: 1, // world-space radius of sketch vertex markers
+    sectionSketchSegLength: 10, // tools panel: length of selected entity segment 0
+    showSectionSketch: true, // Toggle visibility of section sketch visuals
+    showSectionSketchLengths: true, // Toggle visibility of sketch length labels
     showAnnotations: true, // Toggle visibility of all annotations
     showBehindModel: false, // Zobrazit kóty/poznámky i za modelem (depthTest off)
     repeatTool: false, // Po dokončení nástroje znovu aktivovat stejný nástroj
@@ -2126,6 +2178,7 @@ function init() {
     window.addEventListener( 'mousedown', onMouseDown, false );
     window.addEventListener( 'mouseup', onMouseUp, false );
     window.addEventListener( 'click', onClick, false );
+    window.addEventListener( 'dblclick', onSectionSketchDblClick, false );
     window.addEventListener( 'touchstart', onTouchStart, { passive: false } );
     window.addEventListener( 'touchmove', onTouchMove, { passive: false } );
     window.addEventListener( 'touchend', onTouchEnd, { passive: false } );
@@ -2172,7 +2225,22 @@ function init() {
         }
 
         switch ( event.key ) {
+            case 'Enter':
+                if (viewProp.sectionSketchMode && isSectionSketchActive()
+                    && (viewProp.sectionSketchEntity || 'line') === 'polyline'
+                    && hasStrokeInProgress()) {
+                    event.preventDefault();
+                    commitStroke(render);
+                }
+                break;
             case 'Delete':
+            case 'Backspace':
+                if (viewProp.sectionSketchMode && isSectionSketchActive() && hasSketchSelection()) {
+                    event.preventDefault();
+                    deleteSketchSelection(render);
+                    break;
+                }
+                if (event.key === 'Backspace') break;
                 if (isSelectDimActive() && hasSelectedDimension()) {
                     deleteSelectedDimensionAndRefresh();
                 } else if (selectedObjects.length > 0) {
@@ -2371,6 +2439,24 @@ function init() {
     initSceneUndo();
     applyToolbarPreferences(); // Apply initial toolbar CSS from viewProp defaults
     initMeasurement(scene);
+    initSectionSketch({ scene });
+    setSectionSketchColor(viewProp.sectionSketchColor);
+    setSectionSketchMarkerSize(viewProp.sectionSketchMarkerSize);
+    setSectionSketchVisible(viewProp.showSectionSketch);
+    setSectionSketchLabelsVisible(viewProp.showSectionSketchLengths);
+    setSectionSketchLengthFormatter((len) => {
+        if (!Number.isFinite(len)) return '–';
+        return `${formatGeometryMeasure(len)} ${viewProp.modelUnit || ''}`.trim();
+    });
+    setSectionSketchOnChange(() => { render(); });
+    setSectionSketchOnSelectionChanged(() => {
+        const len = getSelectedEntityLength();
+        if (len != null && Number.isFinite(len)) {
+            viewProp.sectionSketchSegLength = len;
+        }
+        syncToolsPanelUI(toolsDeps);
+        render();
+    });
     initDeviationProbe(scene);
     setDeviationProbeLabelScale(deviationGui.labelScale);
     setDeviationProbeMarkerScale(deviationGui.markerScale);
@@ -3486,6 +3572,25 @@ function addToolsGui() {
         setCadDim3dActive,
         setAnnotationActive,
         setAnnotation3dActive,
+        setSectionSketchActive: (v) => {
+            setSectionSketchActive(v);
+            if (v) syncSectionSketchToPlane();
+            else _endSectionSketchDrag();
+        },
+        setSectionSketchEntityType,
+        setSectionSketchColor,
+        setSectionSketchMarkerSize,
+        setSectionSketchVisible,
+        setSectionSketchLabelsVisible,
+        getSelectedEntityLength,
+        setSelectedEntityLength,
+        hasEntityLengthSelection: () => {
+            const sel = getSketchSelection();
+            return !!(sel && sel.kind === 'entity');
+        },
+        clearSectionSketches: (renderFn) => { clearSectionSketches(renderFn); refreshOutlinerOverlaysAndTools(); },
+        canActivateSectionSketch,
+        onSectionSketchBlocked,
         setMeasurementsVisible,
         setCadDim3dVisible,
         setAnnotationsVisible,
@@ -5499,9 +5604,60 @@ function doComputeSolidSection() {
 }
 
 function refreshSectionDependents() {
+    syncSectionSketchToPlane();
     if (viewProp.sectionCrossLines) updateSectionCrossLines();
     if (viewProp.solidSection) doComputeSolidSection();
     else render();
+}
+
+function syncSectionSketchToPlane() {
+    if (!isSingleSectionMode(viewProp)) return;
+    if (getSectionSketchCount() === 0 && !isSectionSketchActive() && !hasStrokeInProgress()) return;
+    const frame = getSectionFrame(viewProp, getSectionSceneCenter());
+    syncSketchFrame(frame);
+}
+
+const _sectionSketchHitPoint = new THREE.Vector3();
+const _sectionSketchPlane = new THREE.Plane();
+const _sectionSketchUv = { u: 0, v: 0 };
+let _sectionSketchDragging = false;
+let _sectionSketchOrbitWasEnabled = true;
+
+function _pickSectionSketchUv() {
+    if (!viewProp.section || !isSingleSectionMode(viewProp)) return null;
+    raycaster.setFromCamera(mouse, currentCamera);
+    const plane = getSectionSketchPlane(viewProp, getSectionSceneCenter(), _sectionSketchPlane);
+    if (!raycaster.ray.intersectPlane(plane, _sectionSketchHitPoint)) return null;
+    const frame = getSectionFrame(viewProp, getSectionSceneCenter());
+    syncSketchFrame(frame);
+    return worldToPlaneUV(_sectionSketchHitPoint, frame, _sectionSketchUv);
+}
+
+function _getSectionSketchPickHit(clientX, clientY) {
+    const frame = getSectionFrame(viewProp, getSectionSceneCenter());
+    const canvasRect = renderer.domElement.getBoundingClientRect();
+    return pickSketchAtScreen({
+        frame,
+        camera: currentCamera,
+        clientX,
+        clientY,
+        canvasRect,
+    });
+}
+
+function _endSectionSketchDrag() {
+    if (!_sectionSketchDragging && !isSelectionDragActive()) return;
+    endSelectionDrag();
+    _sectionSketchDragging = false;
+    if (orbitControls) orbitControls.enabled = _sectionSketchOrbitWasEnabled;
+}
+
+function canActivateSectionSketch() {
+    return !!(viewProp.section && isSingleSectionMode(viewProp));
+}
+
+function onSectionSketchBlocked() {
+    alert('Enable Section View in a single-plane mode (XY / XZ / YZ) before sketching.');
 }
 
 function isSectionGizmoActive() {
@@ -5551,6 +5707,10 @@ function setSectionMode(mode) {
         viewProp.sectionRx = 0;
         viewProp.sectionRy = 0;
         viewProp.sectionRz = 0;
+    }
+
+    if (viewProp.sectionSketchMode && !isSingleSectionMode(viewProp) && toolsDeps) {
+        setInteractionMode('navigate', toolsDeps);
     }
 
     refreshSectionPlanes();
@@ -5666,6 +5826,9 @@ function setSectionEnabled(enabled) {
         removeSectionMeshesOnly();
         updateSectionCrossLines();
         clearSolidSection(scene, render);
+        if (viewProp.sectionSketchMode && toolsDeps) {
+            setInteractionMode('navigate', toolsDeps);
+        }
     }
     syncSectionToggleUi();
     refreshOutlinerOverlaysAndTools();
@@ -8131,6 +8294,14 @@ function render() {
         updateMeasurePreview(null);
     }
 
+    // Section sketch rubber-band preview
+    if (viewProp.sectionSketchMode && isSectionSketchActive() && !docBlocks3dInput && !isMouseOverGui && !isMouseDown) {
+        const uv = _pickSectionSketchUv();
+        updateStrokePreview(uv);
+    } else if (!viewProp.sectionSketchMode || !isSectionSketchActive()) {
+        updateStrokePreview(null);
+    }
+
     // Angle measurement hover preview
     if (viewProp.angleMode && isAngleActive() && !docBlocks3dInput && !isMouseOverGui && !isMouseDown) {
         raycaster.setFromCamera(mouse, currentCamera);
@@ -8368,7 +8539,13 @@ function onMouseMove( event ) {
     // (-1 to +1) for both components				
     const ndc = clientToNDC(event.clientX, event.clientY);
     mouse.x = ndc.x;
-    mouse.y = ndc.y;				
+    mouse.y = ndc.y;
+
+    if (_sectionSketchDragging && isSelectionDragActive()) {
+        const uv = _pickSectionSketchUv();
+        if (uv) updateSelectionDrag(uv);
+    }
+
     render();
 }
 
@@ -8382,6 +8559,31 @@ function onMouseDown( event ) {
 
     if (!isMouseOnGUI(event)) {
         focusViewport();
+    }
+
+    // Section sketch: start drag on selected/hit geometry
+    if (event.button === 0
+        && viewProp.sectionSketchMode
+        && isSectionSketchActive()
+        && !hasStrokeInProgress()
+        && !isMouseOnGUI(event)
+        && !isDocOverlayBlockingInput()) {
+        const ndcDown = clientToNDC(event.clientX, event.clientY);
+        mouse.x = ndcDown.x;
+        mouse.y = ndcDown.y;
+        const uv = _pickSectionSketchUv();
+        if (uv) {
+            const hit = _getSectionSketchPickHit(event.clientX, event.clientY);
+            if (hit) {
+                setSketchSelection(hit);
+                if (beginSelectionDrag(uv)) {
+                    _sectionSketchDragging = true;
+                    _sectionSketchOrbitWasEnabled = orbitControls ? orbitControls.enabled : true;
+                    if (orbitControls) orbitControls.enabled = false;
+                    render();
+                }
+            }
+        }
     }
 
     const wantBoxSelect = event.button === 0
@@ -9057,7 +9259,21 @@ function onMouseUp( event ) {
     if (boxSelectPending || isBoxSelecting) {
         resetBoxSelectState();
     }
+    if (_sectionSketchDragging || isSelectionDragActive()) {
+        _endSectionSketchDrag();
+        render();
+    }
     isMouseDown = false;
+}
+
+function onSectionSketchDblClick(event) {
+    if (!viewProp.sectionSketchMode || !isSectionSketchActive()) return;
+    if ((viewProp.sectionSketchEntity || 'line') !== 'polyline') return;
+    if (isMouseOnGUI(event)) return;
+    if (isDocOverlayBlockingInput() || isFileHistoryModalBlockingInput()) return;
+    if (!hasStrokeInProgress()) return;
+    event.preventDefault();
+    commitStroke(render, { dropLastIfDuplicate: true });
 }
 
 function onClick( event ) {		
@@ -9097,6 +9313,39 @@ function onClick( event ) {
             addDeviationProbeLabel(probeHit.hit.point, probeHit.sample, tolerance, probeHit.hit.object);
             render();
         }
+        return;
+    }
+
+    // --- Section sketch mode (pick on section plane) ---
+    if (viewProp.sectionSketchMode && isSectionSketchActive()) {
+        mouseUpPos.x = event.clientX;
+        mouseUpPos.y = event.clientY;
+        if (mouseDownPos.distanceTo(mouseUpPos) > 3) return;
+        if (event.detail > 1) return; // double-click handled separately
+
+        const ndcClick = clientToNDC(event.clientX, event.clientY);
+        mouse.x = ndcClick.x;
+        mouse.y = ndcClick.y;
+
+        const uv = _pickSectionSketchUv();
+        if (!uv) return;
+
+        if (hasStrokeInProgress()) {
+            setSectionSketchEntityType(viewProp.sectionSketchEntity || 'line');
+            addStrokePoint(uv, render);
+            return;
+        }
+
+        const hit = _getSectionSketchPickHit(event.clientX, event.clientY);
+        if (hit) {
+            setSketchSelection(hit);
+            render();
+            return;
+        }
+
+        clearSketchSelection();
+        setSectionSketchEntityType(viewProp.sectionSketchEntity || 'line');
+        addStrokePoint(uv, render);
         return;
     }
 
