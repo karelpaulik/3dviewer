@@ -1,7 +1,7 @@
 import {
-	CylinderGeometry,
-	CanvasTexture,
 	Color,
+	CylinderGeometry,
+	DataTexture,
 	Euler,
 	LinearFilter,
 	Mesh,
@@ -9,10 +9,12 @@ import {
 	Object3D,
 	OrthographicCamera,
 	Quaternion,
+	RGBAFormat,
 	Raycaster,
 	Sprite,
 	SpriteMaterial,
 	SRGBColorSpace,
+	UnsignedByteType,
 	Vector2,
 	Vector3,
 	Vector4
@@ -20,9 +22,11 @@ import {
 
 /**
  * Overlay-oriented ViewHelper based on three/addons/helpers/ViewHelper.js.
- * Fills the dedicated gizmo canvas (does not assume a 128px corner of a larger
- * viewport) and draws axis labels on a high-DPI HTML canvas so letters stay
- * readable on mobile Chrome.
+ *
+ * Axis heads are sprites whose RGBA is generated in a pixel buffer (no 2D
+ * canvas, no fillText). Chrome Android otherwise inflates canvas fonts and
+ * can upload opaque quads, which made the gizmo letters unreadable and the
+ * discs look square.
  *
  * @augments Object3D
  */
@@ -65,17 +69,14 @@ class ViewHelper extends Object3D {
 		this.add( zAxis );
 		this.add( yAxis );
 
-		const spriteMaterial1 = getSpriteMaterial( color1 );
-		const spriteMaterial2 = getSpriteMaterial( color2 );
-		const spriteMaterial3 = getSpriteMaterial( color3 );
-		const spriteMaterial4 = getSpriteMaterial( color4 );
-
-		const posXAxisHelper = new Sprite( spriteMaterial1 );
-		const posYAxisHelper = new Sprite( spriteMaterial2 );
-		const posZAxisHelper = new Sprite( spriteMaterial3 );
-		const negXAxisHelper = new Sprite( spriteMaterial4 );
-		const negYAxisHelper = new Sprite( spriteMaterial4 );
-		const negZAxisHelper = new Sprite( spriteMaterial4 );
+		const posXAxisHelper = new Sprite( getHeadMaterial( color1 ) );
+		const posYAxisHelper = new Sprite( getHeadMaterial( color2 ) );
+		const posZAxisHelper = new Sprite( getHeadMaterial( color3 ) );
+		const negMaterial = getHeadMaterial( color4 );
+		negMaterial.opacity = 0.2;
+		const negXAxisHelper = new Sprite( negMaterial );
+		const negYAxisHelper = new Sprite( negMaterial );
+		const negZAxisHelper = new Sprite( negMaterial );
 
 		posXAxisHelper.position.x = 1;
 		posYAxisHelper.position.y = 1;
@@ -83,10 +84,6 @@ class ViewHelper extends Object3D {
 		negXAxisHelper.position.x = - 1;
 		negYAxisHelper.position.y = - 1;
 		negZAxisHelper.position.z = - 1;
-
-		negXAxisHelper.material.opacity = 0.2;
-		negYAxisHelper.material.opacity = 0.2;
-		negZAxisHelper.material.opacity = 0.2;
 
 		posXAxisHelper.userData.type = 'posX';
 		posYAxisHelper.userData.type = 'posY';
@@ -219,21 +216,19 @@ class ViewHelper extends Object3D {
 			yAxis.material.dispose();
 			zAxis.material.dispose();
 
-			posXAxisHelper.material.map.dispose();
-			posYAxisHelper.material.map.dispose();
-			posZAxisHelper.material.map.dispose();
-			negXAxisHelper.material.map.dispose();
-			negYAxisHelper.material.map.dispose();
-			negZAxisHelper.material.map.dispose();
-
-			posXAxisHelper.material.dispose();
-			posYAxisHelper.material.dispose();
-			posZAxisHelper.material.dispose();
-			negXAxisHelper.material.dispose();
-			negYAxisHelper.material.dispose();
-			negZAxisHelper.material.dispose();
+			disposeHeadMaterial( posXAxisHelper.material );
+			disposeHeadMaterial( posYAxisHelper.material );
+			disposeHeadMaterial( posZAxisHelper.material );
+			disposeHeadMaterial( negMaterial );
 
 		};
+
+		function disposeHeadMaterial( material ) {
+
+			material.map?.dispose();
+			material.dispose();
+
+		}
 
 		function prepareAnimationData( object, focusPoint ) {
 
@@ -293,70 +288,172 @@ class ViewHelper extends Object3D {
 
 		}
 
-		function getSpriteDpr() {
+		function getHeadMaterial( color, text ) {
 
-			return Math.min( Math.max( window.devicePixelRatio || 1, 1 ), 3 );
-
-		}
-
-		function getSpriteMaterial( color, text ) {
-
-			const { font = 'bold 18px sans-serif', color: labelColor = '#000000', radius = 22 } = options;
-			const dpr = getSpriteDpr();
-			const logical = 64;
-
-			const canvas = document.createElement( 'canvas' );
-			canvas.width = Math.round( logical * dpr );
-			canvas.height = Math.round( logical * dpr );
-
-			const context = canvas.getContext( '2d' );
-			context.scale( dpr, dpr );
-			context.imageSmoothingEnabled = true;
-			context.imageSmoothingQuality = 'high';
-
-			context.beginPath();
-			context.arc( 32, 32, radius, 0, 2 * Math.PI );
-			context.closePath();
-			context.fillStyle = color.getStyle();
-			context.fill();
-
-			if ( text ) {
-
-				context.font = font;
-				context.textAlign = 'center';
-				context.textBaseline = 'middle';
-				context.fillStyle = labelColor;
-				context.fillText( text, 32, 32 );
-
-			}
-
-			const texture = new CanvasTexture( canvas );
-			texture.colorSpace = SRGBColorSpace;
-			texture.generateMipmaps = false;
-			texture.minFilter = LinearFilter;
-			texture.magFilter = LinearFilter;
-
-			return new SpriteMaterial( { map: texture, toneMapped: false, transparent: true } );
+			const texture = makeHeadTexture( color, text );
+			return new SpriteMaterial( {
+				map: texture,
+				toneMapped: false,
+				transparent: true,
+				alphaTest: 0.2,
+				depthTest: true
+			} );
 
 		}
 
 		function updateLabels() {
 
-			posXAxisHelper.material.map.dispose();
-			posYAxisHelper.material.map.dispose();
-			posZAxisHelper.material.map.dispose();
+			disposeHeadMaterial( posXAxisHelper.material );
+			disposeHeadMaterial( posYAxisHelper.material );
+			disposeHeadMaterial( posZAxisHelper.material );
 
-			posXAxisHelper.material.dispose();
-			posYAxisHelper.material.dispose();
-			posZAxisHelper.material.dispose();
-
-			posXAxisHelper.material = getSpriteMaterial( color1, options.labelX );
-			posYAxisHelper.material = getSpriteMaterial( color2, options.labelY );
-			posZAxisHelper.material = getSpriteMaterial( color3, options.labelZ );
+			posXAxisHelper.material = getHeadMaterial( color1, options.labelX );
+			posYAxisHelper.material = getHeadMaterial( color2, options.labelY );
+			posZAxisHelper.material = getHeadMaterial( color3, options.labelZ );
 
 		}
 
 	}
+
+}
+
+const HEAD_TEXTURE_SIZE = 256;
+
+function makeHeadTexture( color, text ) {
+
+	const size = HEAD_TEXTURE_SIZE;
+	const data = new Uint8Array( size * size * 4 );
+	const hex = color.getHex();
+	const cr = ( hex >> 16 ) & 255;
+	const cg = ( hex >> 8 ) & 255;
+	const cb = hex & 255;
+	const cx = size * 0.5;
+	const cy = size * 0.5;
+	const discR = size * 0.38;
+
+	fillDisc( data, size, cx, cy, discR, cr, cg, cb, 255 );
+
+	if ( text ) {
+
+		const letterColor = new Color( '#000000' );
+		const lh = letterColor.getHex();
+		const lr = ( lh >> 16 ) & 255;
+		const lg = ( lh >> 8 ) & 255;
+		const lb = lh & 255;
+		strokeLetter( data, size, String( text ).toUpperCase().charAt( 0 ), cx, cy, discR, lr, lg, lb );
+
+	}
+
+	const texture = new DataTexture( data, size, size, RGBAFormat, UnsignedByteType );
+	texture.needsUpdate = true;
+	texture.colorSpace = SRGBColorSpace;
+	texture.generateMipmaps = false;
+	texture.minFilter = LinearFilter;
+	texture.magFilter = LinearFilter;
+	texture.flipY = true;
+	return texture;
+
+}
+
+function fillDisc( data, size, cx, cy, radius, r, g, b, a ) {
+
+	const aa = 1.25;
+
+	for ( let y = 0; y < size; y ++ ) {
+
+		for ( let x = 0; x < size; x ++ ) {
+
+			const d = Math.hypot( x + 0.5 - cx, y + 0.5 - cy );
+			let cover = 0;
+			if ( d <= radius - aa ) cover = 1;
+			else if ( d < radius + aa ) cover = ( radius + aa - d ) / ( 2 * aa );
+			if ( cover <= 0 ) continue;
+
+			const i = ( y * size + x ) * 4;
+			data[ i ] = r;
+			data[ i + 1 ] = g;
+			data[ i + 2 ] = b;
+			data[ i + 3 ] = Math.round( a * cover );
+
+		}
+
+	}
+
+}
+
+function strokeLetter( data, size, letter, cx, cy, discR, r, g, b ) {
+
+	const h = discR * 0.42;
+	const thickness = discR * 0.22;
+	const a = 255;
+
+	if ( letter === 'X' ) {
+
+		strokeSegment( data, size, cx - h, cy - h, cx + h, cy + h, thickness, r, g, b, a );
+		strokeSegment( data, size, cx + h, cy - h, cx - h, cy + h, thickness, r, g, b, a );
+
+	} else if ( letter === 'Y' ) {
+
+		strokeSegment( data, size, cx - h, cy - h, cx, cy - h * 0.05, thickness, r, g, b, a );
+		strokeSegment( data, size, cx + h, cy - h, cx, cy - h * 0.05, thickness, r, g, b, a );
+		strokeSegment( data, size, cx, cy - h * 0.05, cx, cy + h, thickness, r, g, b, a );
+
+	} else if ( letter === 'Z' ) {
+
+		strokeSegment( data, size, cx - h, cy - h, cx + h, cy - h, thickness, r, g, b, a );
+		strokeSegment( data, size, cx + h, cy - h, cx - h, cy + h, thickness, r, g, b, a );
+		strokeSegment( data, size, cx - h, cy + h, cx + h, cy + h, thickness, r, g, b, a );
+
+	}
+
+}
+
+function strokeSegment( data, size, x0, y0, x1, y1, thickness, r, g, b, a ) {
+
+	const dx = x1 - x0;
+	const dy = y1 - y0;
+	const len2 = dx * dx + dy * dy;
+	const half = thickness * 0.5;
+	const pad = half + 1.5;
+	const minX = Math.max( 0, Math.floor( Math.min( x0, x1 ) - pad ) );
+	const maxX = Math.min( size - 1, Math.ceil( Math.max( x0, x1 ) + pad ) );
+	const minY = Math.max( 0, Math.floor( Math.min( y0, y1 ) - pad ) );
+	const maxY = Math.min( size - 1, Math.ceil( Math.max( y0, y1 ) + pad ) );
+
+	for ( let y = minY; y <= maxY; y ++ ) {
+
+		for ( let x = minX; x <= maxX; x ++ ) {
+
+			const px = x + 0.5;
+			const py = y + 0.5;
+			const t = len2 > 0 ? Math.max( 0, Math.min( 1, ( ( px - x0 ) * dx + ( py - y0 ) * dy ) / len2 ) ) : 0;
+			const d = Math.hypot( px - ( x0 + t * dx ), py - ( y0 + t * dy ) );
+			let cover = 0;
+			if ( d <= half ) cover = 1;
+			else if ( d < half + 1 ) cover = half + 1 - d;
+			if ( cover <= 0 ) continue;
+
+			blendPixel( data, ( y * size + x ) * 4, r, g, b, a * cover );
+
+		}
+
+	}
+
+}
+
+function blendPixel( data, i, r, g, b, srcA ) {
+
+	const sa = srcA / 255;
+	if ( sa <= 0 ) return;
+
+	const da = data[ i + 3 ] / 255;
+	const outA = sa + da * ( 1 - sa );
+	if ( outA <= 0 ) return;
+
+	data[ i ] = Math.round( ( r * sa + data[ i ] * da * ( 1 - sa ) ) / outA );
+	data[ i + 1 ] = Math.round( ( g * sa + data[ i + 1 ] * da * ( 1 - sa ) ) / outA );
+	data[ i + 2 ] = Math.round( ( b * sa + data[ i + 2 ] * da * ( 1 - sa ) ) / outA );
+	data[ i + 3 ] = Math.round( outA * 255 );
 
 }
 
