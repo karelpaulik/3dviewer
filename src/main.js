@@ -393,13 +393,14 @@ statusSelLabelEl.textContent = 'Selection:';
 const statusSelEl = document.createElement('select');
 statusSelEl.className = 'status-select mode-select';
 [
-    ['cad',      'CAD Selection'],
-    ['detailed', 'Detailed Selection'],
-    ['none',     'No Selection'],
-].forEach(([val, label]) => {
+    ['cad',      'Named parent', 'Nearest named parent of the clicked mesh'],
+    ['detailed', 'Mesh',         'The geometry under the cursor'],
+    ['none',     'No Selection', 'Disable object picking'],
+].forEach(([val, label, title]) => {
     const opt = document.createElement('option');
     opt.value = val;
     opt.textContent = label;
+    opt.title = title;
     statusSelEl.appendChild(opt);
 });
 statusSelEl.addEventListener('change', function() {
@@ -1347,7 +1348,7 @@ const viewProp = {
     lightHelperSize: 100,  // Velikost light helperů (0 = auto z rozsahu scény)
     showRaycastHelper: false, // Zobrazit / skrýt raycasting helper (ArrowHelper)
     raycastHelperSize: 20000,  // Délka paprsku raycasting helperu
-    cadSelection: 'CAD', // CAD selection: 'CAD' = vybere pojmenovaného předka meshe, 'Detailed' = vybere mesh přímo
+    cadSelection: 'CAD', // Named parent ('CAD') = nearest named parent of the mesh; Mesh ('Detailed') = the mesh itself
     multiSelectBoxPadding: 3, // Rozšíření PaddedBoxHelperu pro multiselect (world-units)
     boxSelectMode: 'center', // 'partial' | 'full' | 'center' – režim obdélníkového výběru (Shift+drag)
     isGroupTransformActive: false,
@@ -7949,8 +7950,8 @@ function resolveBooleanPick(object, options = {}) {
     return collectMeshes(root).length > 0 ? root : null;
 }
 
-// Pokud je cadSelection zapnutý, vrátí nejbližšího pojmenovaného předka meshe (nebo mesh samotný, pokud žádný není).
-// Pokud je cadSelection vypnutý, vrátí objekt beze změny.
+// Named parent ('CAD'): nearest named parent of the mesh (or the mesh if none).
+// Mesh ('Detailed'): the clicked object unchanged.
 function resolveCADSelection(object) {
     if (viewProp.cadSelection !== 'CAD' || !object?.isMesh) return object;
     let candidate = object.parent;
@@ -8150,6 +8151,7 @@ function updateModeIndicator() {
     statusModeDisplayEl.className = 'status-mode-display ' + modeCls;
     statusModeDisplayEl.disabled = assemblyState.editMode;
     statusSelEl.value = selVal;
+    statusSelEl.title = statusSelEl.selectedOptions[0]?.title || '';
     statusSelEl.className = 'status-select ' + selCls;
     syncToolsPanelUI(toolsDeps);
 }
