@@ -8664,7 +8664,8 @@ function updateFaceSnapHighlight() {
     faceSnapHighlightMesh.geometry.computeBoundingSphere();
 }
 
-function startFaceSnapMode() {    faceSnapMode = true;
+function startFaceSnapMode() {
+    faceSnapMode = true;
     faceSnapStep = 0;
     faceSnapSourcePoint = null;
     faceSnapSourceNormal = null;
@@ -8672,6 +8673,9 @@ function startFaceSnapMode() {    faceSnapMode = true;
     if (faceSnapArrow) { scene.remove(faceSnapArrow); faceSnapArrow = null; }
     clearFaceSnapHighlight();
     _updateFaceSnapHintUI();
+    // Menu item click sets _suppressNextClick but never reaches onClick (stopPropagation),
+    // so clear it here or the first source-face pick is swallowed.
+    _suppressNextClick = false;
     render();
 }
 
@@ -8703,6 +8707,9 @@ function startPtpSnapMode() {
     clearPtpSnapDot();
     syncToolsPanelUI(toolsDeps);
     _updatePtpSnapHintUI();
+    // Menu item click sets _suppressNextClick but never reaches onClick (stopPropagation),
+    // so clear it here or the first source-point pick is swallowed.
+    _suppressNextClick = false;
     render();
 }
 
