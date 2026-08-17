@@ -1,4 +1,5 @@
 import {
+	CircleGeometry,
 	Color,
 	CylinderGeometry,
 	DataTexture,
@@ -11,8 +12,6 @@ import {
 	Quaternion,
 	RGBAFormat,
 	Raycaster,
-	Sprite,
-	SpriteMaterial,
 	SRGBColorSpace,
 	UnsignedByteType,
 	Vector2,
@@ -20,9 +19,9 @@ import {
 } from 'three';
 
 /**
- * Overlay-oriented ViewHelper based on three/addons/helpers/ViewHelper.js.
- * Rendered by the main WebGLRenderer into a render target; the caller blits
- * that target to a 2D canvas overlay (avoids a second WebGL context on mobile).
+ * Axis heads are CircleGeometry meshes billboarded toward the gizmo camera.
+ * Sprites are avoided: Chrome Android GLES often stretches Sprite quads, which
+ * made the discs look non-circular while the axis cylinders stayed fine.
  *
  * @augments Object3D
  */
@@ -47,11 +46,14 @@ class ViewHelper extends Object3D {
 		const raycaster = new Raycaster();
 		const mouse = new Vector2();
 		const dummy = new Object3D();
+		const billboard = new Quaternion();
+		const axisHeads = [];
 
 		const orthoCamera = new OrthographicCamera( - 2, 2, 2, - 2, 0, 4 );
 		orthoCamera.position.set( 0, 0, 2 );
 
 		const geometry = new CylinderGeometry( 0.04, 0.04, 0.8, 5 ).rotateZ( - Math.PI / 2 ).translate( 0.4, 0, 0 );
+		const headGeometry = new CircleGeometry( 0.32, 48 );
 
 		const xAxis = new Mesh( geometry, getAxisMaterial( color1 ) );
 		const yAxis = new Mesh( geometry, getAxisMaterial( color2 ) );
@@ -64,14 +66,15 @@ class ViewHelper extends Object3D {
 		this.add( zAxis );
 		this.add( yAxis );
 
-		const posXAxisHelper = new Sprite( getHeadMaterial( color1 ) );
-		const posYAxisHelper = new Sprite( getHeadMaterial( color2 ) );
-		const posZAxisHelper = new Sprite( getHeadMaterial( color3 ) );
+		const posXAxisHelper = new Mesh( headGeometry, getHeadMaterial( color1 ) );
+		const posYAxisHelper = new Mesh( headGeometry, getHeadMaterial( color2 ) );
+		const posZAxisHelper = new Mesh( headGeometry, getHeadMaterial( color3 ) );
 		const negMaterial = getHeadMaterial( color4 );
+		negMaterial.transparent = true;
 		negMaterial.opacity = 0.2;
-		const negXAxisHelper = new Sprite( negMaterial );
-		const negYAxisHelper = new Sprite( negMaterial );
-		const negZAxisHelper = new Sprite( negMaterial );
+		const negXAxisHelper = new Mesh( headGeometry, negMaterial );
+		const negYAxisHelper = new Mesh( headGeometry, negMaterial );
+		const negZAxisHelper = new Mesh( headGeometry, negMaterial );
 
 		posXAxisHelper.position.x = 1;
 		posYAxisHelper.position.y = 1;
@@ -101,12 +104,23 @@ class ViewHelper extends Object3D {
 		interactiveObjects.push( negYAxisHelper );
 		interactiveObjects.push( negZAxisHelper );
 
+		axisHeads.push(
+			posXAxisHelper, posYAxisHelper, posZAxisHelper,
+			negXAxisHelper, negYAxisHelper, negZAxisHelper
+		);
+
 		const point = new Vector3();
 		const turnRate = 2 * Math.PI;
 
 		this.render = function ( renderer ) {
 
 			this.quaternion.copy( camera.quaternion ).invert();
+			billboard.copy( this.quaternion ).invert();
+			for ( let i = 0; i < axisHeads.length; i ++ ) {
+
+				axisHeads[ i ].quaternion.copy( billboard );
+
+			}
 			this.updateMatrixWorld();
 
 			point.set( 0, 0, 1 );
@@ -194,6 +208,7 @@ class ViewHelper extends Object3D {
 		this.dispose = function () {
 
 			geometry.dispose();
+			headGeometry.dispose();
 
 			xAxis.material.dispose();
 			yAxis.material.dispose();
@@ -273,14 +288,17 @@ class ViewHelper extends Object3D {
 
 		function getHeadMaterial( color, text ) {
 
-			const texture = makeHeadTexture( color, text );
-			return new SpriteMaterial( {
-				map: texture,
+			const material = new MeshBasicMaterial( {
+				color: color,
 				toneMapped: false,
-				transparent: true,
-				alphaTest: 0.2,
 				depthTest: true
 			} );
+			if ( text ) {
+
+				material.map = makeLetterTexture( text );
+
+			}
+			return material;
 
 		}
 
@@ -302,28 +320,15 @@ class ViewHelper extends Object3D {
 
 const HEAD_TEXTURE_SIZE = 256;
 
-function makeHeadTexture( color, text ) {
+function makeLetterTexture( text ) {
 
 	const size = HEAD_TEXTURE_SIZE;
 	const data = new Uint8Array( size * size * 4 );
-	const hex = color.getHex();
-	const cr = ( hex >> 16 ) & 255;
-	const cg = ( hex >> 8 ) & 255;
-	const cb = hex & 255;
-	const cx = size * 0.5;
-	const cy = size * 0.5;
-	const discR = size * 0.38;
-
-	fillDisc( data, size, cx, cy, discR, cr, cg, cb, 255 );
+	data.fill( 255 );
 
 	if ( text ) {
 
-		const letterColor = new Color( '#000000' );
-		const lh = letterColor.getHex();
-		const lr = ( lh >> 16 ) & 255;
-		const lg = ( lh >> 8 ) & 255;
-		const lb = lh & 255;
-		strokeLetter( data, size, String( text ).toUpperCase().charAt( 0 ), cx, cy, discR, lr, lg, lb );
+		strokeLetter( data, size, String( text ).toUpperCase().charAt( 0 ), size * 0.5, size * 0.5, size * 0.38, 0, 0, 0 );
 
 	}
 
@@ -335,32 +340,6 @@ function makeHeadTexture( color, text ) {
 	texture.magFilter = LinearFilter;
 	texture.flipY = true;
 	return texture;
-
-}
-
-function fillDisc( data, size, cx, cy, radius, r, g, b, a ) {
-
-	const aa = 1.25;
-
-	for ( let y = 0; y < size; y ++ ) {
-
-		for ( let x = 0; x < size; x ++ ) {
-
-			const d = Math.hypot( x + 0.5 - cx, y + 0.5 - cy );
-			let cover = 0;
-			if ( d <= radius - aa ) cover = 1;
-			else if ( d < radius + aa ) cover = ( radius + aa - d ) / ( 2 * aa );
-			if ( cover <= 0 ) continue;
-
-			const i = ( y * size + x ) * 4;
-			data[ i ] = r;
-			data[ i + 1 ] = g;
-			data[ i + 2 ] = b;
-			data[ i + 3 ] = Math.round( a * cover );
-
-		}
-
-	}
 
 }
 
