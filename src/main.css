@@ -905,19 +905,22 @@ canvas {
 }
 
 /* ViewHelper orientation gizmo – bottom-right, above status bar and GUI panels */
+:root {
+    --view-gizmo-size: 128px;
+}
 #view-gizmo {
     position: fixed;
     bottom: 36px;
     right: 8px;
     z-index: 1015;
-    width: 128px;
-    height: 128px;
+    width: var(--view-gizmo-size);
+    height: var(--view-gizmo-size);
     pointer-events: auto;
 }
 #view-gizmo canvas {
     display: block;
-    width: 128px;
-    height: 128px;
+    width: 100%;
+    height: 100%;
 }
 
 /* Bottom-left viewport toolbar – scrollable row, reserved space for view gizmo */
@@ -931,7 +934,7 @@ canvas {
     flex-wrap: nowrap;
     align-items: center;
     gap: 8px;
-    max-width: calc(100vw - 144px);
+    max-width: calc(100vw - var(--view-gizmo-size) - 16px);
     padding: 4px;
     border-radius: 6px;
     background: rgba(17, 17, 17, 0.75);

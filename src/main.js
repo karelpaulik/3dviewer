@@ -15,7 +15,7 @@ import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { STLExporter } from 'three/addons/exporters/STLExporter.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 import { CSS3DRenderer } from 'three/addons/renderers/CSS3DRenderer.js';
-import { ViewHelper } from 'three/addons/helpers/ViewHelper.js';
+import { ViewHelper } from './ViewHelper.js';
 import { VertexNormalsHelper } from 'three/addons/helpers/VertexNormalsHelper.js';
 
 //import { GUI } from 'dat.gui';
@@ -259,7 +259,9 @@ let css2DRenderer;
 let css3DRenderer;
 let viewHelper;
 let viewHelperRenderer;
+let _viewHelperLabelDpr = 0;
 const VIEW_HELPER_SIZE = 128;
+const VIEW_HELPER_SIZE_TOUCH = 160;
 
 const clipPlanes = [];
 const sectionPlaneStore = createSectionPlaneStore();
@@ -2002,10 +2004,9 @@ function init() {
 
     // ViewHelper – orientation gizmo in dedicated overlay (above GUI)
     viewHelperRenderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
-    viewHelperRenderer.setPixelRatio(window.devicePixelRatio);
-    viewHelperRenderer.setSize(VIEW_HELPER_SIZE, VIEW_HELPER_SIZE);
     viewHelperRenderer.setClearColor(0x000000, 0);
     viewHelperContainer.appendChild(viewHelperRenderer.domElement);
+    syncViewHelperRenderer();
     createViewHelper();
 
     transformControls = new TransformControls( currentCamera, renderer.domElement );
@@ -6063,12 +6064,43 @@ function setCamera() {
     onWindowResize();
 }
 
+function getViewHelperCssSize() {
+    return isTouchDevice() ? VIEW_HELPER_SIZE_TOUCH : VIEW_HELPER_SIZE;
+}
+
+function syncViewHelperRenderer() {
+    if (!viewHelperRenderer) return;
+
+    const cssSize = getViewHelperCssSize();
+    document.documentElement.style.setProperty('--view-gizmo-size', `${cssSize}px`);
+
+    let dpr = Math.min(window.devicePixelRatio || 1, 3);
+    viewHelperRenderer.setPixelRatio(dpr);
+    viewHelperRenderer.setSize(cssSize, cssSize);
+
+    const gl = viewHelperRenderer.getContext();
+    if (gl && gl.drawingBufferWidth > 0) {
+        const actualDpr = gl.drawingBufferWidth / cssSize;
+        if (actualDpr < dpr * 0.85) {
+            dpr = Math.max(actualDpr, 1);
+            viewHelperRenderer.setPixelRatio(dpr);
+            viewHelperRenderer.setSize(cssSize, cssSize);
+        }
+    }
+
+    const spriteDpr = Math.min(Math.max(window.devicePixelRatio || 1, 1), 3);
+    if (viewHelper && spriteDpr !== _viewHelperLabelDpr && !viewHelper.animating) {
+        createViewHelper();
+    }
+}
+
 function createViewHelper() {
     if (viewHelper) viewHelper.dispose();
     if (!viewHelperRenderer || !orbitControls) return;
     viewHelper = new ViewHelper(currentCamera, viewHelperRenderer.domElement);
     viewHelper.center = orbitControls.target;
     viewHelper.setLabels('X', 'Y', 'Z');
+    _viewHelperLabelDpr = Math.min(Math.max(window.devicePixelRatio || 1, 1), 3);
 }	
 //GUI----------------------------------------------------------------------------------------------------------------
 function isTouchDevice() {
@@ -7864,6 +7896,7 @@ function onWindowResize() {
     renderer.setSize(width, height, false);
     if (css2DRenderer) applyOverlayRendererSize(css2DRenderer, width, height);
     if (css3DRenderer) applyOverlayRendererSize(css3DRenderer, width, height);
+    syncViewHelperRenderer();
     render();
 }
 
