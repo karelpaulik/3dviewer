@@ -848,9 +848,9 @@ function _updateBooleanHintUI() {
     if (!_booleanHintDiv) return;
     if (booleanMode) {
         const stepText = booleanStep === 0
-            ? 'Boolean: klikněte na první objekt (A) nebo vyberte uzel ve Scene outlineru'
-            : 'Boolean: klikněte na druhý objekt (B) nebo vyberte uzel ve Scene outlineru';
-        _booleanHintDiv.innerHTML = `${stepText} &nbsp;·&nbsp; <button type="button" data-boolean-cancel style="margin-left:6px;padding:2px 10px;border:1px solid rgba(255,255,255,0.7);border-radius:4px;background:rgba(255,255,255,0.15);color:#fff;font-size:12px;cursor:pointer;">Zrušit</button>`;
+            ? 'Boolean: click the first object (A) or select a node in the Scene outliner'
+            : 'Boolean: click the second object (B) or select a node in the Scene outliner';
+        _booleanHintDiv.innerHTML = `${stepText} &nbsp;·&nbsp; <button type="button" data-boolean-cancel style="margin-left:6px;padding:2px 10px;border:1px solid rgba(255,255,255,0.7);border-radius:4px;background:rgba(255,255,255,0.15);color:#fff;font-size:12px;cursor:pointer;">Cancel</button>`;
         _booleanHintDiv.style.display = 'block';
     } else {
         _booleanHintDiv.style.display = 'none';
@@ -1352,7 +1352,7 @@ const viewProp = {
     multiSelectBoxPadding: 3, // Rozšíření PaddedBoxHelperu pro multiselect (world-units)
     boxSelectMode: 'center', // 'partial' | 'full' | 'center' – režim obdélníkového výběru (Shift+drag)
     isGroupTransformActive: false,
-    historyInfo: '– žádný záznam –',
+    historyInfo: '– no entry –',
     measureMode: false, // Point-to-point measurement mode
     angleMode: false, // Angle measurement mode (4 points → 2 lines → projected angles)
     radiusMode: false, // Radius measurement mode (3 points → circumradius + projected)
@@ -3002,8 +3002,8 @@ function addMainGui() {
         loadedModels.forEach(root => root.traverse(obj => {
             if (obj.name && /_\d+$/.test(obj.name)) toRename.push(obj);
         }));
-        if (toRename.length === 0) { alert('Žádné objekty s číselnou příponou nenalezeny.'); return; }
-        if (!confirm(`Odstranit číselnou příponu (_číslo) z ${toRename.length} objektů?`)) return;
+        if (toRename.length === 0) { alert('No objects with a numeric suffix found.'); return; }
+        if (!confirm(`Remove the numeric suffix (_number) from ${toRename.length} objects?`)) return;
         toRename.forEach(obj => {
             obj.name = obj.name.replace(/_\d+$/, '');
             updateObjectLabel(obj);
@@ -3014,8 +3014,8 @@ function addMainGui() {
         loadedModels.forEach(root => root.traverse(obj => {
             if (obj.name && obj.name[0] >= 'a' && obj.name[0] <= 'z') toCapitalize.push(obj);
         }));
-        if (toCapitalize.length === 0) { alert('Žádné objekty s malým prvním písmenem nenalezeny.'); return; }
-        if (!confirm(`Změnit první písmeno na velké u ${toCapitalize.length} objektů?`)) return;
+        if (toCapitalize.length === 0) { alert('No objects with a lowercase first letter found.'); return; }
+        if (!confirm(`Capitalize the first letter of ${toCapitalize.length} objects?`)) return;
         toCapitalize.forEach(obj => {
             obj.name = obj.name[0].toUpperCase() + obj.name.slice(1);
             updateObjectLabel(obj);
@@ -3072,8 +3072,8 @@ function addMainGui() {
         const count = mesh.material.length;
         const matType = mesh.material[0].type || 'Material';
         const groupCount = mesh.geometry.groups?.length ?? 0;
-        const confirmMsg = `Sloučit ${count} materiálů do prvního materiálu (${matType})?\n`
-            + `Geometry groups (${groupCount}) zůstanou; všechny budou používat tento materiál. Ostatní materiály budou odstraněny.`;
+        const confirmMsg = `Flatten ${count} materials into the first material (${matType})?\n`
+            + `Geometry groups (${groupCount}) will remain; all will use this material. Other materials will be removed.`;
         if (!confirm(confirmMsg)) return;
         runFlattenMeshMaterials(mesh, { collapseGroups: false });
     } }, 'fn').name('Flatten Materials');
@@ -3087,9 +3087,9 @@ function addMainGui() {
         const count = mesh.material.length;
         const matType = mesh.material[0].type || 'Material';
         const groupCount = mesh.geometry.groups?.length ?? 0;
-        const confirmMsg = `Sloučit ${count} materiálů do prvního materiálu (${matType}) `
-            + `a sloučit ${groupCount || 'všechny'} geometry groups do jedné?\n`
-            + 'Ostatní materiály budou odstraněny. Separate Mesh pak rozdělí mesh jen do jednoho dílu.';
+        const confirmMsg = `Flatten ${count} materials into the first material (${matType}) `
+            + `and merge ${groupCount || 'all'} geometry groups into one?\n`
+            + 'Other materials will be removed. Separate Mesh will then split the mesh into a single part.';
         if (!confirm(confirmMsg)) return;
         runFlattenMeshMaterials(mesh, { collapseGroups: true });
     } }, 'fn').name('Flatten Materials + geometry');
@@ -3298,7 +3298,7 @@ function addMainGui() {
 
     function tryStartBoolean(operation) {
         if (booleanMode) {
-            alert('Boolean režim je již aktivní. Dokončete výběr nebo zrušte (Cancel / ESC).');
+            alert('Boolean mode is already active. Finish selection or cancel (Cancel / ESC).');
             return;
         }
         if (deviationMapMode) {
@@ -3319,7 +3319,7 @@ function addMainGui() {
     booleanFolder.close();
     function tryStartDeviationMap() {
         if (booleanMode) {
-            alert('Boolean režim je aktivní. Dokončete výběr nebo zrušte (Cancel / ESC).');
+            alert('Boolean mode is active. Finish selection or cancel (Cancel / ESC).');
             return;
         }
         if (deviationMapMode) {
@@ -3443,35 +3443,35 @@ function addMainGui() {
     materialFolder.add({ fn() {
         const { count, affected } = countLegacyMaterials(loadedModels, ['basic']);
         if (count === 0) {
-            alert('Žádné materiály typu MeshBasicMaterial nenalezeny.');
+            alert('No MeshBasicMaterial materials found.');
             return;
         }
-        if (confirm(`Nalezeno ${count} materiál(ů) typu MeshBasicMaterial.\nPřevést na MeshStandardMaterial?`)) {
+        if (confirm(`Found ${count} MeshBasicMaterial material(s).\nConvert to MeshStandardMaterial?`)) {
             applyLegacyMaterialConversion(affected);
         }
     } }, 'fn').name('Check/Convert MeshBasicMaterial');
     materialFolder.add({ fn() {
         const { count, affected } = countLegacyMaterials(loadedModels, ['phong']);
         if (count === 0) {
-            alert('Žádné materiály typu MeshPhongMaterial nenalezeny.');
+            alert('No MeshPhongMaterial materials found.');
             return;
         }
-        if (confirm(`Nalezeno ${count} materiál(ů) typu MeshPhongMaterial.\nPřevést na MeshStandardMaterial?`)) {
+        if (confirm(`Found ${count} MeshPhongMaterial material(s).\nConvert to MeshStandardMaterial?`)) {
             applyLegacyMaterialConversion(affected);
         }
     } }, 'fn').name('Check/Convert MeshPhongMaterial');
     materialFolder.add({ fn() {
         const { count, affected } = countLegacyMaterials(loadedModels, ['lambert']);
         if (count === 0) {
-            alert('Žádné materiály typu MeshLambertMaterial nenalezeny.');
+            alert('No MeshLambertMaterial materials found.');
             return;
         }
-        if (confirm(`Nalezeno ${count} materiál(ů) typu MeshLambertMaterial.\nPřevést na MeshStandardMaterial?`)) {
+        if (confirm(`Found ${count} MeshLambertMaterial material(s).\nConvert to MeshStandardMaterial?`)) {
             applyLegacyMaterialConversion(affected);
         }
     } }, 'fn').name('Check/Convert MeshLambertMaterial');
     materialFolder.add({ fn() {
-        if (loadedModels.length === 0) { alert('Žádné načtené modely.'); return; }
+        if (loadedModels.length === 0) { alert('No models loaded.'); return; }
         const typeCounts = new Map();
         loadedModels.forEach(root => {
             root.traverse(child => {
@@ -3483,14 +3483,14 @@ function addMainGui() {
                 });
             });
         });
-        if (typeCounts.size === 0) { alert('Žádné materiály nenalezeny.'); return; }
+        if (typeCounts.size === 0) { alert('No materials found.'); return; }
         const lines = [...typeCounts.entries()]
             .sort((a, b) => b[1] - a[1])
             .map(([type, count]) => `  ${type}: ${count}x`);
-        alert(`Nalezené typy materiálů (${[...typeCounts.values()].reduce((a, b) => a + b, 0)} celkem, bez section overlay):\n\n${lines.join('\n')}`);
+        alert(`Material types found (${[...typeCounts.values()].reduce((a, b) => a + b, 0)} total, excluding section overlay):\n\n${lines.join('\n')}`);
     } }, 'fn').name('List All Material Types');
     materialFolder.add({ fn() {
-        if (loadedModels.length === 0) { alert('Žádné načtené modely.'); return; }
+        if (loadedModels.length === 0) { alert('No models loaded.'); return; }
         const textures = new Set();
         const textureSlots = ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap',
             'aoMap', 'alphaMap', 'bumpMap', 'displacementMap', 'lightMap',
@@ -3509,8 +3509,8 @@ function addMainGui() {
                 });
             });
         });
-        if (textures.size === 0) { alert('Žádné textury nenalezeny.'); return; }
-        if (!confirm(`Nalezeno ${textures.size} textur(a).\nOdstranit všechny textury ze všech materiálů?`)) return;
+        if (textures.size === 0) { alert('No textures found.'); return; }
+        if (!confirm(`Found ${textures.size} texture(s).\nRemove all textures from all materials?`)) return;
         loadedModels.forEach(root => {
             root.traverse(child => {
                 if (!child.isMesh) return;
@@ -3528,7 +3528,7 @@ function addMainGui() {
         });
         textures.forEach(t => t.dispose());
         render();
-        alert(`Odstraněno ${textures.size} textur(a).`);
+        alert(`Removed ${textures.size} texture(s).`);
     } }, 'fn').name('Check/Remove textures');
     materialFolder.close();
         const rotationFolder = editGui.addFolder("Whole Model Rotation");
@@ -6882,7 +6882,7 @@ function removeFromGroupHistory() {
 // Aktualizuje zobrazovaný text v GUI.
 function updateHistoryInfo() {
     if (groupHistoryIndex < 0 || groupHistory.length === 0) {
-        viewProp.historyInfo = '– žádný záznam –';
+        viewProp.historyInfo = '– no entry –';
     } else {
         const snap = groupHistory[groupHistoryIndex];
         viewProp.historyInfo = `${groupHistoryIndex + 1}/${groupHistory.length}: ${snap.name}`;
@@ -7993,7 +7993,7 @@ function selectObject(object, options = {}) {
         if (object) {
             const picked = resolveBooleanPick(object, { fromOutliner: options.fromOutliner });
             if (!picked) {
-                alert('Vybraný objekt nemá platnou mesh geometrii pro boolean operaci.');
+                alert('Selected object has no valid mesh geometry for the boolean operation.');
                 return;
             }
             handleBooleanPick(picked);
@@ -9157,7 +9157,7 @@ function handleBooleanPick(picked) {
         render();
     } else {
         if (picked === booleanObjectA) {
-            alert('Vyberte jiný objekt pro B.');
+            alert('Select a different object for B.');
             return;
         }
         booleanObjectB = picked;
@@ -9621,13 +9621,13 @@ function onClick( event ) {
 
         const hit = getFreshRaycastTarget();
         if (!hit) {
-            alert(booleanStep === 0 ? 'Klikněte na první objekt (A).' : 'Klikněte na druhý objekt (B).');
+            alert(booleanStep === 0 ? 'Click the first object (A).' : 'Click the second object (B).');
             return;
         }
 
         const picked = resolveBooleanPick(hit);
         if (!picked) {
-            alert('Vybraný objekt nemá platnou mesh geometrii pro boolean operaci.');
+            alert('Selected object has no valid mesh geometry for the boolean operation.');
             return;
         }
         handleBooleanPick(picked);

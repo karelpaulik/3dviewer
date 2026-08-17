@@ -288,7 +288,7 @@ function _attachmentToOcrCanvas(att) {
             canvas.getContext('2d').drawImage(img, 0, 0);
             resolve(canvas);
         };
-        img.onerror = () => reject(new Error('Nepodařilo se načíst obrázek'));
+        img.onerror = () => reject(new Error('Failed to load image'));
         img.src = `data:${att.mimeType};base64,${att.data}`;
     });
 }
@@ -307,7 +307,7 @@ async function _runOcrOnPreviewAttachment(att, ocrBtn) {
         if (text === null) return;
 
         if (!text) {
-            alert('Na obrázku nebyl rozpoznán žádný text.');
+            alert('No text was recognized on the image.');
             return;
         }
 
@@ -317,13 +317,13 @@ async function _runOcrOnPreviewAttachment(att, ocrBtn) {
             canInsertToDoc: isDocumentEditorOpen(),
             onInsertToDoc: val => {
                 if (!insertTextIntoActiveDocument(val)) {
-                    alert('Otevřete dokument v režimu úprav pro vložení textu.');
+                    alert('Open a document in edit mode to insert text.');
                 }
             },
         });
     } catch (err) {
         console.error(err);
-        alert(`OCR selhalo: ${err.message || err}`);
+        alert(`OCR failed: ${err.message || err}`);
     } finally {
         if (ocrBtn) ocrBtn.disabled = false;
     }

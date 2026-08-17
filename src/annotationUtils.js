@@ -198,13 +198,13 @@ export function buildWysiwygEditor(defaultHtml) {
         toolbar.appendChild(s);
     };
 
-    addBtn('<b>B</b>', 'Tučné (Ctrl+B)', 'bold', undefined, true);
-    addBtn('<i>I</i>', 'Kurzíva (Ctrl+I)', 'italic', undefined, true);
-    addBtn('<u>U</u>', 'Podtržení (Ctrl+U)', 'underline', undefined, true);
-    addBtn('<s>S</s>', 'Přeškrtnutí', 'strikeThrough', undefined, true);
+    addBtn('<b>B</b>', 'Bold (Ctrl+B)', 'bold', undefined, true);
+    addBtn('<i>I</i>', 'Italic (Ctrl+I)', 'italic', undefined, true);
+    addBtn('<u>U</u>', 'Underline (Ctrl+U)', 'underline', undefined, true);
+    addBtn('<s>S</s>', 'Strikethrough', 'strikeThrough', undefined, true);
     addSep();
-    addBtn('OL', 'Číslovaný seznam', 'insertOrderedList', undefined, true);
-    addBtn('UL', 'Odrážkový seznam', 'insertUnorderedList', undefined, true);
+    addBtn('OL', 'Numbered list', 'insertOrderedList', undefined, true);
+    addBtn('UL', 'Bulleted list', 'insertUnorderedList', undefined, true);
 
     // Update active states on selection change (keyboard + mouse)
     content.addEventListener('keyup', _updateActiveStates);
@@ -249,7 +249,7 @@ function _showTextDialog(defaultText) {
         btnRow.style.cssText = 'display:flex;justify-content:flex-end;gap:8px;margin-top:12px;';
 
         const btnCancel = document.createElement('button');
-        btnCancel.textContent = 'Zrušit';
+        btnCancel.textContent = 'Cancel';
         btnCancel.style.cssText = 'padding:6px 16px;border:1px solid #666;background:#444;color:#fff;border-radius:4px;cursor:pointer;font-size:12px;';
 
         const btnOk = document.createElement('button');

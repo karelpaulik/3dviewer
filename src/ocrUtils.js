@@ -36,16 +36,16 @@ const _OCR_LOADING_STATUSES = new Set([
 ]);
 
 const OCR_ENGINE_HINT_TEXT =
-    'Načítám OCR engine (~5 MB). Při dalším použití obvykle z cache.';
+    'Loading OCR engine (~5 MB). Subsequent uses are usually from cache.';
 
 function _statusLabel(status) {
     switch (status) {
-        case 'loading tesseract core': return 'Načítám OCR engine…';
-        case 'initializing tesseract': return 'Inicializuji OCR…';
-        case 'loading language traineddata': return 'Načítám jazyková data…';
-        case 'initialized tesseract': return 'OCR připraveno';
-        case 'recognizing text': return 'Rozpoznávám text…';
-        default: return status || 'Zpracovávám…';
+        case 'loading tesseract core': return 'Loading OCR engine…';
+        case 'initializing tesseract': return 'Initializing OCR…';
+        case 'loading language traineddata': return 'Loading language data…';
+        case 'initialized tesseract': return 'OCR ready';
+        case 'recognizing text': return 'Recognizing text…';
+        default: return status || 'Processing…';
     }
 }
 
@@ -120,11 +120,11 @@ export async function runOcrWithProgress(runFn) {
     const panel = document.createElement('div');
     panel.className = 'ocr-progress-panel';
     panel.innerHTML = `
-        <div class="ocr-progress-title">Rozpoznávání textu</div>
+        <div class="ocr-progress-title">Text recognition</div>
         <div class="ocr-progress-hint" style="display:none"></div>
         <div class="ocr-progress-status"></div>
         <div class="ocr-progress-bar-wrap"><div class="ocr-progress-bar"></div></div>
-        <button type="button" class="ocr-progress-cancel img-dialog-btn">Zrušit</button>`;
+        <button type="button" class="ocr-progress-cancel img-dialog-btn">Cancel</button>`;
 
     backdrop.appendChild(panel);
     document.body.appendChild(backdrop);
@@ -135,7 +135,7 @@ export async function runOcrWithProgress(runFn) {
     let cancelled = false;
 
     const engineReady = _isOcrEngineReady();
-    statusEl.textContent = engineReady ? 'Rozpoznávám text…' : 'Připravuji…';
+    statusEl.textContent = engineReady ? 'Recognizing text…' : 'Preparing…';
 
     const close = () => backdrop.remove();
     const cancelBtn = panel.querySelector('.ocr-progress-cancel');

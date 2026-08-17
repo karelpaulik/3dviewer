@@ -76,7 +76,7 @@ export function showImageInsertDialog(file, onInsert, defaultAlt = '') {
     };
     const origLabel = document.createElement('div');
     origLabel.className = 'img-dialog-thumb-label';
-    origLabel.textContent = 'Originál';
+    origLabel.textContent = 'Original';
     const origWrap = document.createElement('div');
     origWrap.className = 'img-dialog-thumb-wrap';
     origWrap.appendChild(origThumb);
@@ -86,7 +86,7 @@ export function showImageInsertDialog(file, onInsert, defaultAlt = '') {
     prevThumb.className = 'img-dialog-thumb';
     const prevLabel = document.createElement('div');
     prevLabel.className = 'img-dialog-thumb-label';
-    prevLabel.textContent = 'Náhled';
+    prevLabel.textContent = 'Preview';
     const prevWrap = document.createElement('div');
     prevWrap.className = 'img-dialog-thumb-wrap';
     prevWrap.appendChild(prevThumb);
@@ -123,8 +123,8 @@ export function showImageInsertDialog(file, onInsert, defaultAlt = '') {
         return row;
     }
 
-    controls.appendChild(makeSliderRow('Max rozměr', 200, 4000, 50, maxPx, ' px', v => { maxPx = v; schedulePreview(); }));
-    controls.appendChild(makeSliderRow('Kvalita', 0.1, 1.0, 0.05, quality, '', v => { quality = v; schedulePreview(); }));
+    controls.appendChild(makeSliderRow('Max size', 200, 4000, 50, maxPx, ' px', v => { maxPx = v; schedulePreview(); }));
+    controls.appendChild(makeSliderRow('Quality', 0.1, 1.0, 0.05, quality, '', v => { quality = v; schedulePreview(); }));
 
     const altRow = document.createElement('div');
     altRow.className = 'img-dialog-row';
@@ -153,7 +153,7 @@ export function showImageInsertDialog(file, onInsert, defaultAlt = '') {
 
     const btnInsert = document.createElement('button');
     btnInsert.className = 'img-dialog-btn img-dialog-btn-primary';
-    btnInsert.textContent = 'Vložit';
+    btnInsert.textContent = 'Insert';
     btnInsert.disabled = true;
     btnInsert.addEventListener('click', () => {
         if (previewDataUrl) {
@@ -164,7 +164,7 @@ export function showImageInsertDialog(file, onInsert, defaultAlt = '') {
 
     const btnOrig = document.createElement('button');
     btnOrig.className = 'img-dialog-btn';
-    btnOrig.textContent = 'Vložit originál';
+    btnOrig.textContent = 'Insert original';
     btnOrig.addEventListener('click', async () => {
         const dataUrl = await new Promise(resolve => {
             const reader = new FileReader();
@@ -177,7 +177,7 @@ export function showImageInsertDialog(file, onInsert, defaultAlt = '') {
 
     const btnCancel = document.createElement('button');
     btnCancel.className = 'img-dialog-btn';
-    btnCancel.textContent = 'Zrušit';
+    btnCancel.textContent = 'Cancel';
     btnCancel.addEventListener('click', closeDialog);
 
     btnRow.appendChild(btnInsert);
@@ -190,7 +190,7 @@ export function showImageInsertDialog(file, onInsert, defaultAlt = '') {
 
     async function generatePreview() {
         btnInsert.disabled = true;
-        prevLabel.textContent = 'Generuji…';
+        prevLabel.textContent = 'Generating…';
         try {
             const dataUrl = await compressImageLib(file, maxPx, quality);
             previewDataUrl = dataUrl;
@@ -199,13 +199,13 @@ export function showImageInsertDialog(file, onInsert, defaultAlt = '') {
             const prevImg = new Image();
             prevImg.onload = () => {
                 prevLabel.textContent = `${prevImg.naturalWidth}×${prevImg.naturalHeight} · ${fmtBytes(prevBytes)}`;
-                previewInfo.textContent = `Úspora: ${fmtBytes(origBytes - prevBytes)} (${Math.round((1 - prevBytes / origBytes) * 100)} %)`;
+                previewInfo.textContent = `Saved: ${fmtBytes(origBytes - prevBytes)} (${Math.round((1 - prevBytes / origBytes) * 100)} %)`;
             };
             prevImg.src = dataUrl;
-            btnInsert.textContent = `Vložit (${fmtBytes(prevBytes)})`;
+            btnInsert.textContent = `Insert (${fmtBytes(prevBytes)})`;
             btnInsert.disabled = false;
         } catch (err) {
-            prevLabel.textContent = 'Chyba komprese';
+            prevLabel.textContent = 'Compression error';
             console.error(err);
         }
     }

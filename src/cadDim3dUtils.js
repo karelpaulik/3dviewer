@@ -311,7 +311,7 @@ function _showCadDim3dSizeDialog(currentScale) {
         const btnRow = document.createElement('div');
         btnRow.style.cssText = 'display:flex;justify-content:flex-end;gap:8px;';
         const btnCancel = document.createElement('button');
-        btnCancel.textContent = 'Zrušit';
+        btnCancel.textContent = 'Cancel';
         btnCancel.style.cssText = 'padding:6px 16px;border:1px solid #666;background:#444;color:#fff;border-radius:4px;cursor:pointer;font-size:12px;';
         const btnOk = document.createElement('button');
         btnOk.textContent = 'OK';

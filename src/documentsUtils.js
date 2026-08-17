@@ -1172,7 +1172,7 @@ function _importDocJson() {
             try {
                 const doc = JSON.parse(e.target.result);
                 if (!doc || typeof doc !== 'object' || !doc.content) {
-                    alert('Neplatný soubor dokumentu.');
+                    alert('Invalid document file.');
                     return;
                 }
                 const titleFromFile = _titleFromImportFileName(file.name);
@@ -1187,7 +1187,7 @@ function _importDocJson() {
                 documentsStore.push(importedDoc);
                 refreshDocumentsGui();
             } catch (err) {
-                alert('Chyba při načítání souboru: ' + err.message);
+                alert('Error loading file: ' + err.message);
             }
         };
         reader.readAsText(file);
@@ -1325,7 +1325,7 @@ function _insertLinkDialog() {
     const isLink = _editor.isActive('link');
     if (isLink) _editor.chain().focus().extendMarkRange('link').run();
     const currentHref = _editor.getAttributes('link').href || '';
-    const href = window.prompt('URL odkazu (prázdné = odebrat):', currentHref);
+    const href = window.prompt('Link URL (empty = remove):', currentHref);
     if (href === null) return;
     if (!href.trim()) { _editor.chain().focus().unsetLink().run(); return; }
     const { from, to } = _editor.state.selection;
@@ -1355,7 +1355,7 @@ function _insertLinkDialog() {
 }
 
 function _insertTableDialog() {
-    const input = window.prompt('Tabulka (řádky x sloupce):', '3x3');
+    const input = window.prompt('Table (rows x columns):', '3x3');
     if (!input) return;
     const parts = input.toLowerCase().split(/[x×,; ]+/);
     const rows = Math.max(1, Math.min(20, parseInt(parts[0]) || 3));
