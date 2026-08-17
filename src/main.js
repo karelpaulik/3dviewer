@@ -15,7 +15,7 @@ import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { STLExporter } from 'three/addons/exporters/STLExporter.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 import { CSS3DRenderer } from 'three/addons/renderers/CSS3DRenderer.js';
-import { ViewHelper } from 'three/addons/helpers/ViewHelper.js';
+import { ViewHelper } from './ViewHelper.js';
 import { VertexNormalsHelper } from 'three/addons/helpers/VertexNormalsHelper.js';
 
 //import { GUI } from 'dat.gui';
