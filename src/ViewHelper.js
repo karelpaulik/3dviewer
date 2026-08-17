@@ -16,17 +16,13 @@ import {
 	SRGBColorSpace,
 	UnsignedByteType,
 	Vector2,
-	Vector3,
-	Vector4
+	Vector3
 } from 'three';
 
 /**
  * Overlay-oriented ViewHelper based on three/addons/helpers/ViewHelper.js.
- *
- * Axis heads are sprites whose RGBA is generated in a pixel buffer (no 2D
- * canvas, no fillText). Chrome Android otherwise inflates canvas fonts and
- * can upload opaque quads, which made the gizmo letters unreadable and the
- * discs look square.
+ * Rendered by the main WebGLRenderer into a render target; the caller blits
+ * that target to a 2D canvas overlay (avoids a second WebGL context on mobile).
  *
  * @augments Object3D
  */
@@ -51,7 +47,6 @@ class ViewHelper extends Object3D {
 		const raycaster = new Raycaster();
 		const mouse = new Vector2();
 		const dummy = new Object3D();
-		const size = new Vector2();
 
 		const orthoCamera = new OrthographicCamera( - 2, 2, 2, - 2, 0, 4 );
 		orthoCamera.position.set( 0, 0, 2 );
@@ -117,18 +112,7 @@ class ViewHelper extends Object3D {
 			point.set( 0, 0, 1 );
 			point.applyQuaternion( camera.quaternion );
 
-			renderer.getSize( size );
-			const width = size.x > 0 ? size.x : 128;
-			const height = size.y > 0 ? size.y : 128;
-
-			renderer.clearDepth();
-
-			renderer.getViewport( viewport );
-			renderer.setViewport( 0, 0, width, height );
-
 			renderer.render( this, orthoCamera );
-
-			renderer.setViewport( viewport.x, viewport.y, viewport.z, viewport.w );
 
 		};
 
@@ -137,7 +121,6 @@ class ViewHelper extends Object3D {
 
 		const q1 = new Quaternion();
 		const q2 = new Quaternion();
-		const viewport = new Vector4();
 		let radius = 0;
 
 		this.handleClick = function ( event ) {

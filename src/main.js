@@ -258,10 +258,15 @@ let camera, cameraTarget, scene, renderer;
 let css2DRenderer;
 let css3DRenderer;
 let viewHelper;
-let viewHelperRenderer;
+let viewHelperOverlayCanvas;
+let viewHelperRT;
+let _viewHelperPixels = null;
 let _viewHelperLabelDpr = 0;
 const VIEW_HELPER_SIZE = 128;
 const VIEW_HELPER_SIZE_TOUCH = 160;
+const _vhViewport = new THREE.Vector4();
+const _vhScissor = new THREE.Vector4();
+const _vhClearColor = new THREE.Color();
 
 const clipPlanes = [];
 const sectionPlaneStore = createSectionPlaneStore();
@@ -2002,11 +2007,10 @@ function init() {
     orbitControls.update();
     orbitControls.addEventListener( 'change', render ); // use if there is no animation loop
 
-    // ViewHelper – orientation gizmo in dedicated overlay (above GUI)
-    viewHelperRenderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
-    viewHelperRenderer.setClearColor(0x000000, 0);
-    viewHelperContainer.appendChild(viewHelperRenderer.domElement);
-    syncViewHelperRenderer();
+    // ViewHelper – 2D overlay above GUI; drawn via the main WebGL renderer
+    viewHelperOverlayCanvas = document.createElement('canvas');
+    viewHelperContainer.appendChild(viewHelperOverlayCanvas);
+    syncViewHelperOverlay();
     createViewHelper();
 
     transformControls = new TransformControls( currentCamera, renderer.domElement );
@@ -6068,24 +6072,38 @@ function getViewHelperCssSize() {
     return isTouchDevice() ? VIEW_HELPER_SIZE_TOUCH : VIEW_HELPER_SIZE;
 }
 
-function syncViewHelperRenderer() {
-    if (!viewHelperRenderer) return;
+function syncViewHelperOverlay() {
+    if (!viewHelperOverlayCanvas) return;
 
     const cssSize = getViewHelperCssSize();
     document.documentElement.style.setProperty('--view-gizmo-size', `${cssSize}px`);
 
-    let dpr = Math.min(window.devicePixelRatio || 1, 3);
-    viewHelperRenderer.setPixelRatio(dpr);
-    viewHelperRenderer.setSize(cssSize, cssSize);
+    const dpr = renderer ? renderer.getPixelRatio() : Math.min(window.devicePixelRatio || 1, 3);
+    const pixelSize = Math.max(1, Math.round(cssSize * dpr));
 
-    const gl = viewHelperRenderer.getContext();
-    if (gl && gl.drawingBufferWidth > 0) {
-        const actualDpr = gl.drawingBufferWidth / cssSize;
-        if (actualDpr < dpr * 0.85) {
-            dpr = Math.max(actualDpr, 1);
-            viewHelperRenderer.setPixelRatio(dpr);
-            viewHelperRenderer.setSize(cssSize, cssSize);
-        }
+    if (viewHelperOverlayCanvas.width !== pixelSize || viewHelperOverlayCanvas.height !== pixelSize) {
+        viewHelperOverlayCanvas.width = pixelSize;
+        viewHelperOverlayCanvas.height = pixelSize;
+    }
+
+    if (!viewHelperRT) {
+        viewHelperRT = new THREE.WebGLRenderTarget(pixelSize, pixelSize, {
+            format: THREE.RGBAFormat,
+            type: THREE.UnsignedByteType,
+            depthBuffer: true,
+            stencilBuffer: false
+        });
+        viewHelperRT.texture.colorSpace = THREE.SRGBColorSpace;
+        viewHelperRT.texture.minFilter = THREE.LinearFilter;
+        viewHelperRT.texture.magFilter = THREE.LinearFilter;
+        viewHelperRT.texture.generateMipmaps = false;
+    } else if (viewHelperRT.width !== pixelSize || viewHelperRT.height !== pixelSize) {
+        viewHelperRT.setSize(pixelSize, pixelSize);
+    }
+
+    const bufSize = pixelSize * pixelSize * 4;
+    if (!_viewHelperPixels || _viewHelperPixels.length !== bufSize) {
+        _viewHelperPixels = new Uint8Array(bufSize);
     }
 
     const spriteDpr = Math.min(Math.max(window.devicePixelRatio || 1, 1), 3);
@@ -6096,11 +6114,62 @@ function syncViewHelperRenderer() {
 
 function createViewHelper() {
     if (viewHelper) viewHelper.dispose();
-    if (!viewHelperRenderer || !orbitControls) return;
-    viewHelper = new ViewHelper(currentCamera, viewHelperRenderer.domElement);
+    if (!viewHelperOverlayCanvas || !orbitControls) return;
+    viewHelper = new ViewHelper(currentCamera, viewHelperOverlayCanvas);
     viewHelper.center = orbitControls.target;
     viewHelper.setLabels('X', 'Y', 'Z');
     _viewHelperLabelDpr = Math.min(Math.max(window.devicePixelRatio || 1, 1), 3);
+}
+
+function renderViewHelperOverlay() {
+    if (!viewHelper || !viewHelperRT || !viewHelperOverlayCanvas) return;
+
+    const pixelSize = viewHelperRT.width;
+    if (pixelSize < 1) return;
+
+    const prevTarget = renderer.getRenderTarget();
+    renderer.getViewport(_vhViewport);
+    renderer.getScissor(_vhScissor);
+    const prevScissorTest = renderer.getScissorTest();
+    renderer.getClearColor(_vhClearColor);
+    const prevClearAlpha = renderer.getClearAlpha();
+    const prevAutoClear = renderer.autoClear;
+
+    renderer.setRenderTarget(viewHelperRT);
+    renderer.setScissorTest(false);
+    renderer.setClearColor(0x000000, 0);
+    renderer.autoClear = true;
+    renderer.clear();
+    viewHelper.render(renderer);
+
+    const bufSize = pixelSize * pixelSize * 4;
+    if (!_viewHelperPixels || _viewHelperPixels.length !== bufSize) {
+        _viewHelperPixels = new Uint8Array(bufSize);
+    }
+    renderer.readRenderTargetPixels(viewHelperRT, 0, 0, pixelSize, pixelSize, _viewHelperPixels);
+
+    renderer.setRenderTarget(prevTarget);
+    renderer.setViewport(_vhViewport.x, _vhViewport.y, _vhViewport.z, _vhViewport.w);
+    renderer.setScissor(_vhScissor.x, _vhScissor.y, _vhScissor.z, _vhScissor.w);
+    renderer.setScissorTest(prevScissorTest);
+    renderer.setClearColor(_vhClearColor, prevClearAlpha);
+    renderer.autoClear = prevAutoClear;
+
+    const ctx = viewHelperOverlayCanvas.getContext('2d');
+    if (!ctx) return;
+    if (viewHelperOverlayCanvas.width !== pixelSize || viewHelperOverlayCanvas.height !== pixelSize) {
+        viewHelperOverlayCanvas.width = pixelSize;
+        viewHelperOverlayCanvas.height = pixelSize;
+    }
+    const imageData = ctx.createImageData(pixelSize, pixelSize);
+    const src = _viewHelperPixels;
+    const dst = imageData.data;
+    const rowBytes = pixelSize * 4;
+    for (let y = 0; y < pixelSize; y++) {
+        const srcOff = (pixelSize - 1 - y) * rowBytes;
+        dst.set(src.subarray(srcOff, srcOff + rowBytes), y * rowBytes);
+    }
+    ctx.putImageData(imageData, 0, 0);
 }	
 //GUI----------------------------------------------------------------------------------------------------------------
 function isTouchDevice() {
@@ -7896,7 +7965,7 @@ function onWindowResize() {
     renderer.setSize(width, height, false);
     if (css2DRenderer) applyOverlayRendererSize(css2DRenderer, width, height);
     if (css3DRenderer) applyOverlayRendererSize(css3DRenderer, width, height);
-    syncViewHelperRenderer();
+    syncViewHelperOverlay();
     render();
 }
 
@@ -8529,7 +8598,7 @@ function render() {
 
     renderer.render(scene, currentCamera);
     if (viewHelper) {
-        viewHelper.render(viewHelperRenderer);
+        renderViewHelperOverlay();
     }
     updateTransformSpaceGizmo();
     if (css2DRenderer) css2DRenderer.render(scene, currentCamera);
