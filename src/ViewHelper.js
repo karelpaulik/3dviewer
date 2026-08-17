@@ -1,16 +1,19 @@
 import {
-	CanvasTexture,
 	CircleGeometry,
 	Color,
 	CylinderGeometry,
+	DataTexture,
 	Euler,
+	LinearFilter,
 	Mesh,
 	MeshBasicMaterial,
 	Object3D,
 	OrthographicCamera,
 	Quaternion,
 	Raycaster,
+	RGBAFormat,
 	SRGBColorSpace,
+	UnsignedByteType,
 	Vector2,
 	Vector3,
 	Vector4
@@ -306,35 +309,11 @@ class ViewHelper extends Object3D {
 
 			if ( text ) {
 
-				material.map = makeLabelTexture( text );
+				material.map = makeLetterTexture( text, options.color || '#000000' );
 
 			}
 
 			return material;
-
-		}
-
-		function makeLabelTexture( text ) {
-
-			const { font = '24px Arial', color: labelColor = '#000000' } = options;
-
-			const canvas = document.createElement( 'canvas' );
-			canvas.width = 64;
-			canvas.height = 64;
-
-			const context = canvas.getContext( '2d' );
-			context.fillStyle = '#ffffff';
-			context.fillRect( 0, 0, 64, 64 );
-
-			context.font = font;
-			context.textAlign = 'center';
-			context.textBaseline = 'middle';
-			context.fillStyle = labelColor;
-			context.fillText( text, 32, 32 );
-
-			const texture = new CanvasTexture( canvas );
-			texture.colorSpace = SRGBColorSpace;
-			return texture;
 
 		}
 
@@ -355,3 +334,106 @@ class ViewHelper extends Object3D {
 }
 
 export { ViewHelper };
+
+const HEAD_TEXTURE_SIZE = 256;
+
+function makeLetterTexture( text, labelColor ) {
+
+	const size = HEAD_TEXTURE_SIZE;
+	const data = new Uint8Array( size * size * 4 );
+	data.fill( 255 );
+
+	const letter = String( text ).toUpperCase().charAt( 0 );
+	const ink = new Color( labelColor );
+	const hex = ink.getHex();
+	strokeLetter(
+		data, size, letter, size * 0.5, size * 0.5, size * 0.38,
+		( hex >> 16 ) & 255, ( hex >> 8 ) & 255, hex & 255
+	);
+
+	const texture = new DataTexture( data, size, size, RGBAFormat, UnsignedByteType );
+	texture.needsUpdate = true;
+	texture.colorSpace = SRGBColorSpace;
+	texture.generateMipmaps = false;
+	texture.minFilter = LinearFilter;
+	texture.magFilter = LinearFilter;
+	texture.flipY = true;
+	return texture;
+
+}
+
+function strokeLetter( data, size, letter, cx, cy, discR, r, g, b ) {
+
+	const h = discR * 0.42;
+	const thickness = discR * 0.22;
+	const a = 255;
+
+	if ( letter === 'X' ) {
+
+		strokeSegment( data, size, cx - h, cy - h, cx + h, cy + h, thickness, r, g, b, a );
+		strokeSegment( data, size, cx + h, cy - h, cx - h, cy + h, thickness, r, g, b, a );
+
+	} else if ( letter === 'Y' ) {
+
+		strokeSegment( data, size, cx - h, cy - h, cx, cy - h * 0.05, thickness, r, g, b, a );
+		strokeSegment( data, size, cx + h, cy - h, cx, cy - h * 0.05, thickness, r, g, b, a );
+		strokeSegment( data, size, cx, cy - h * 0.05, cx, cy + h, thickness, r, g, b, a );
+
+	} else if ( letter === 'Z' ) {
+
+		strokeSegment( data, size, cx - h, cy - h, cx + h, cy - h, thickness, r, g, b, a );
+		strokeSegment( data, size, cx + h, cy - h, cx - h, cy + h, thickness, r, g, b, a );
+		strokeSegment( data, size, cx - h, cy + h, cx + h, cy + h, thickness, r, g, b, a );
+
+	}
+
+}
+
+function strokeSegment( data, size, x0, y0, x1, y1, thickness, r, g, b, a ) {
+
+	const dx = x1 - x0;
+	const dy = y1 - y0;
+	const len2 = dx * dx + dy * dy;
+	const half = thickness * 0.5;
+	const pad = half + 1.5;
+	const minX = Math.max( 0, Math.floor( Math.min( x0, x1 ) - pad ) );
+	const maxX = Math.min( size - 1, Math.ceil( Math.max( x0, x1 ) + pad ) );
+	const minY = Math.max( 0, Math.floor( Math.min( y0, y1 ) - pad ) );
+	const maxY = Math.min( size - 1, Math.ceil( Math.max( y0, y1 ) + pad ) );
+
+	for ( let y = minY; y <= maxY; y ++ ) {
+
+		for ( let x = minX; x <= maxX; x ++ ) {
+
+			const px = x + 0.5;
+			const py = y + 0.5;
+			const t = len2 > 0 ? Math.max( 0, Math.min( 1, ( ( px - x0 ) * dx + ( py - y0 ) * dy ) / len2 ) ) : 0;
+			const d = Math.hypot( px - ( x0 + t * dx ), py - ( y0 + t * dy ) );
+			let cover = 0;
+			if ( d <= half ) cover = 1;
+			else if ( d < half + 1 ) cover = half + 1 - d;
+			if ( cover <= 0 ) continue;
+
+			blendPixel( data, ( y * size + x ) * 4, r, g, b, a * cover );
+
+		}
+
+	}
+
+}
+
+function blendPixel( data, i, r, g, b, srcA ) {
+
+	const sa = srcA / 255;
+	if ( sa <= 0 ) return;
+
+	const da = data[ i + 3 ] / 255;
+	const outA = sa + da * ( 1 - sa );
+	if ( outA <= 0 ) return;
+
+	data[ i ] = Math.round( ( r * sa + data[ i ] * da * ( 1 - sa ) ) / outA );
+	data[ i + 1 ] = Math.round( ( g * sa + data[ i + 1 ] * da * ( 1 - sa ) ) / outA );
+	data[ i + 2 ] = Math.round( ( b * sa + data[ i + 2 ] * da * ( 1 - sa ) ) / outA );
+	data[ i + 3 ] = Math.round( outA * 255 );
+
+}
