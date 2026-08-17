@@ -171,6 +171,10 @@ export function hasStrokeInProgress() {
     return _strokePoints.length > 0;
 }
 
+export function getStrokePointCount() {
+    return _strokePoints.length;
+}
+
 export function getSketchSelection() {
     return _selection;
 }

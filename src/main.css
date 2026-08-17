@@ -1053,6 +1053,38 @@ canvas {
     color: rgba(255, 255, 255, 0.85);
 }
 
+/* Unified tool hint overlay (above status bar) */
+#tool-hint-overlay {
+	position: fixed;
+	bottom: 46px;
+	left: 50%;
+	transform: translateX(-50%);
+	background: rgba(0, 0, 0, 0.75);
+	color: #fff;
+	padding: 5px 14px;
+	border-radius: 5px;
+	font-size: 12px;
+	pointer-events: none;
+	display: none;
+	z-index: 1000;
+	white-space: nowrap;
+	font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+	line-height: 1.4;
+}
+#tool-hint-overlay.is-interactive {
+	pointer-events: auto;
+}
+.tool-hint-btn {
+	margin-left: 6px;
+	padding: 2px 10px;
+	border: 1px solid rgba(255, 255, 255, 0.7);
+	border-radius: 4px;
+	background: rgba(255, 255, 255, 0.15);
+	color: #fff;
+	font-size: 12px;
+	cursor: pointer;
+}
+
 /* Status bar (footer) */
 #status-bar {
 	position: fixed;

@@ -652,6 +652,11 @@ export function isMeasureActive() {
     return _active;
 }
 
+/** 0 = waiting for first point, 1 = waiting for second point. */
+export function getMeasurePendingCount() {
+    return _pendingPoint ? 1 : 0;
+}
+
 /**
  * Enable / disable measurement mode.
  */
@@ -1167,6 +1172,11 @@ export function isAngleActive() {
     return _angleActive;
 }
 
+/** Number of angle points already clicked (0–3 while picking, 0 after complete). */
+export function getAngleStep() {
+    return _angleStep;
+}
+
 export function setAngleActive(val) {
     _angleActive = val;
     if (!val) {
@@ -1473,6 +1483,11 @@ function _disposeRadiusMeasurementVisuals(m) {
 
 export function isRadiusActive() {
     return _radiusActive;
+}
+
+/** Number of radius points already clicked (0–2 while picking, 0 after complete). */
+export function getRadiusStep() {
+    return _radiusStep;
 }
 
 export function setRadiusActive(val) {

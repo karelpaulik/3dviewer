@@ -26,12 +26,13 @@ import { exportToHTML, exportToHTMLDraco, exportToHTMLObfuscated, exportToHTMLOb
 import { initOutliner, toggleOutliner, rebuildTree, highlightObject as outlinerHighlight, updateVisibilityIcon, updateSelectableIcon, updateObjectLabel, isOutlinerOpen, navigateOutliner, highlightGroupObjects, clearGroupHighlights, setNavigationPosition, setOnTreeRebuild, setShowAuxiliaryObjects, isOutlinerAuxiliaryObject, notifyOutlinerAuxiliaryChildrenChanged } from './sceneOutliner.js';
 import { positionContextMenu } from './uiMenuUtils.js';
 import { computeModelStats, computeSurfaceAreaAndVolume, formatGeometryMeasure, MODEL_UNIT_OPTIONS, formatMass, computeRolledUpMassForRoots } from './modelInfoUtils.js';
-import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, updateMeasurement3dOrientations, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements, isRadiusActive, setRadiusActive, addRadiusPoint, updateRadiusPreview, clearRadiusMeasurements, isSelectDimActive, setSelectDimActive, refreshLabelEditListeners, hasSelectedDimension, deselectSelectedDimension, deleteSelectedDimension, resetSelectedMeasurementLabel, getSelectedMeasurementLabelStyle, getSelectedMeasurementLabelDim, setSelectedMeasurementLabelDim, setSelectedMeasurementOrientationMode, setSelectedMeasurementTextColor, setSelectedMeasurementBgColor, setSelectedMeasurementFontSize, initSelectDimension, updateSelectDimensionCamera, reconstructMeasurements, stripMeasurementVisuals, setMeasurementsVisible, setMeasurementDepthTest, removeMeasurementsForOwner, isCadDimActive, setCadDimActive, getCadDimStep, getCadDimAxis, addCadDimPoint, updateCadDimPreview, updateCadDimHoverPreview, cycleCadDimAxis, placeCadDim, clearCadDimMeasurements, removeCadDimMeasurementsForOwner, getSelectedCadDim, setCadDimLabelMode, setCadDimDragMode, selectDimTouchStart, selectDimTouchMove, selectDimTouchEnd, registerLabelForSelection, getSelectedCadDim3d, getSelectedAnnotation, getSelectedAnnotation3d, getSelectedDistance, getSelectedAngle, getSelectedRadius, getCadDimMeasurements, deleteCadDimByRef, convertCadDim3dTo2d, getFlatDimDefaults, applyDefaultsToAllFlatDim, getDistanceLabelDefaults, getAngleLabelDefaults, getRadiusLabelDefaults, getDistanceMarkerDefaults, getAngleMarkerDefaults, getRadiusMarkerDefaults, applyDefaultsToAllDistanceMeasurements, applyDefaultsToAllAngleMeasurements, applyDefaultsToAllRadiusMeasurements, setDistanceMarkerColor, setAngleMarkerColor, setRadiusMarkerColor, getMeasurementMarkerSettings, setMeasurementMarkerFixedSize, setMeasurementMarkerFixedScreenPx, setMeasurementMarkerWorldSize, getDefaultMeasurementLabelDim, setDefaultMeasurementLabelDim, getMeasurement3dDefaults, setDimMarkerFixedSize, setDimMarkerFixedScreenPx, setDimMarkerWorldSize, setDimMarkerColor, getDimMarkerSettings, setMeasureOnSessionComplete, setAngleOnSessionComplete, setRadiusOnSessionComplete, setCadDimOnSessionComplete } from './measurementUtils.js';
+import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, updateMeasurement3dOrientations, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements, isRadiusActive, setRadiusActive, addRadiusPoint, updateRadiusPreview, clearRadiusMeasurements, isSelectDimActive, setSelectDimActive, refreshLabelEditListeners, hasSelectedDimension, deselectSelectedDimension, deleteSelectedDimension, resetSelectedMeasurementLabel, getSelectedMeasurementLabelStyle, getSelectedMeasurementLabelDim, setSelectedMeasurementLabelDim, setSelectedMeasurementOrientationMode, setSelectedMeasurementTextColor, setSelectedMeasurementBgColor, setSelectedMeasurementFontSize, initSelectDimension, updateSelectDimensionCamera, reconstructMeasurements, stripMeasurementVisuals, setMeasurementsVisible, setMeasurementDepthTest, removeMeasurementsForOwner, isCadDimActive, setCadDimActive, getCadDimStep, getCadDimAxis, getMeasurePendingCount, getAngleStep, getRadiusStep, addCadDimPoint, updateCadDimPreview, updateCadDimHoverPreview, cycleCadDimAxis, placeCadDim, clearCadDimMeasurements, removeCadDimMeasurementsForOwner, getSelectedCadDim, setCadDimLabelMode, setCadDimDragMode, selectDimTouchStart, selectDimTouchMove, selectDimTouchEnd, registerLabelForSelection, getSelectedCadDim3d, getSelectedAnnotation, getSelectedAnnotation3d, getSelectedDistance, getSelectedAngle, getSelectedRadius, getCadDimMeasurements, deleteCadDimByRef, convertCadDim3dTo2d, getFlatDimDefaults, applyDefaultsToAllFlatDim, getDistanceLabelDefaults, getAngleLabelDefaults, getRadiusLabelDefaults, getDistanceMarkerDefaults, getAngleMarkerDefaults, getRadiusMarkerDefaults, applyDefaultsToAllDistanceMeasurements, applyDefaultsToAllAngleMeasurements, applyDefaultsToAllRadiusMeasurements, setDistanceMarkerColor, setAngleMarkerColor, setRadiusMarkerColor, getMeasurementMarkerSettings, setMeasurementMarkerFixedSize, setMeasurementMarkerFixedScreenPx, setMeasurementMarkerWorldSize, getDefaultMeasurementLabelDim, setDefaultMeasurementLabelDim, getMeasurement3dDefaults, setDimMarkerFixedSize, setDimMarkerFixedScreenPx, setDimMarkerWorldSize, setDimMarkerColor, getDimMarkerSettings, setMeasureOnSessionComplete, setAngleOnSessionComplete, setRadiusOnSessionComplete, setCadDimOnSessionComplete } from './measurementUtils.js';
 import { detectCircleCenterFromHit, clearCircleDetectionCache } from './circleDetectionUtils.js';
 import { removeEdgeOverlays, updateMeshEdgeOverlays, stripEdgeOverlays, syncEdgeOverlayClipping } from './edgeDisplayUtils.js';
 import { initAnnotations, isAnnotationActive, setAnnotationActive, addAnnotationPoint, getAnnotationPendingPoint, updateAnnotationPreview, updateAnnotationMarkerScales, setAnnotationsVisible, clearAnnotations, stripAnnotationVisuals, reconstructAnnotations, setAnnotationDepthTest, removeAnnotationsForOwner, getAnnotations, isAddLeaderLineActive, cancelAddLeaderLine, commitAddLeaderLine, deleteAnnotationByRef, setConvertTo3dFn, reconstructAnnotationFromRec, getFlatAnnDefaults, applyDefaultsToAllFlatAnnotations, setAnnMarkerFixedSize, setAnnMarkerFixedScreenPx, setAnnMarkerWorldSize, setAnnMarkerColor, getAnnMarkerSettings, setAnnotationOnSessionComplete, isAnnotationDialogOpen, showAnnotationContextMenu } from './annotationUtils.js';
 import { initAnnotations3d, isAnnotation3dActive, setAnnotation3dActive, addAnnotation3dPoint, getAnnotation3dPendingPoint, updateAnnotation3dPreview, updateAnnotation3dMarkerScales, updateAnnotation3dOrientations, setAnnotations3dVisible, clearAnnotations3d, stripAnnotation3dVisuals, reconstructAnnotations3d, setAnnotation3dDepthTest, removeAnnotations3dForOwner, isAddLeaderLine3dActive, cancelAddLeaderLine3d, commitAddLeaderLine3d, getAnnotation3dDefaults, deleteAnnotation3dByRef, setConvertTo2dFn, reconstructAnnotation3dFromRec, applyDefaultsToAllAnnotations3d, setAnn3dMarkerFixedSize, setAnn3dMarkerFixedScreenPx, setAnn3dMarkerWorldSize, setAnn3dMarkerColor, setAnnotation3dOnSessionComplete, isAnnotation3dDialogOpen, showAnnotation3dContextMenu } from './annotation3dUtils.js';
 import { initCadDim3d, isCadDim3dActive, getCadDim3dStep, getCadDim3dAxis, setCadDim3dActive, addCadDim3dPoint, updateCadDim3dPreview, updateCadDim3dHoverPreview, cycleCadDim3dAxis, placeCadDim3d, clearCadDim3dMeasurements, removeCadDim3dMeasurementsForOwner, setCadDim3dVisible, setCadDim3dDepthTest, updateCadDim3dOrientations, updateCadDim3dMarkerScales, reconstructCadDim3d, stripCadDim3dVisuals, setCadDim3dLabelMode, setCadDim3dDragMode, setCadDim3dOrientationMode, setCadDim3dRotate, setCadDim3dLabelScaleDialog, setCadDim3dMirrored, setCadDim3dTextColor, setCadDim3dBgColor, getCadDim3dDefaults, convertCadDimTo3d, applyDefaultsToAllCadDim3d, setCadDimMarkerFixedSize, setCadDimMarkerFixedScreenPx, setCadDimMarkerWorldSize, setCadDimMarkerColor, setCadDim3dOnSessionComplete } from './cadDim3dUtils.js';
+import { initToolHintOverlay, updateToolHintOverlay, hintButton } from './toolHintUtils.js';
 import { computeSolidSection, clearSolidSection } from './solidSectionUtils.js';
 import {
     createSectionPlaneStore,
@@ -55,6 +56,7 @@ import {
     isSectionSketchActive,
     setSectionSketchActive,
     setSectionSketchEntityType,
+    getSectionSketchEntityType,
     setSectionSketchColor,
     setSectionSketchMarkerSize,
     setSectionSketchVisible,
@@ -69,6 +71,7 @@ import {
     cancelStroke,
     clearSectionSketches,
     hasStrokeInProgress,
+    getStrokePointCount,
     getSectionSketchCount,
     pickSketchAtScreen,
     setSketchSelection,
@@ -622,7 +625,7 @@ document.body.appendChild(viewHelperContainer);
 
 // Wrapper reference for hit-testing (toolbar + panels + outliner)
 let outlinerPanelEl = null;
-const guiWrapper = { contains(el) { return guiToolbar.contains(el) || Object.values(guiPanels).some(p => p.gui && p.gui.domElement.style.display !== 'none' && p.gui.domElement.contains(el)) || (outlinerPanelEl && outlinerPanelEl.contains(el)) || statusBar.contains(el) || circleDetectToggleEl.contains(el) || viewportBottomLeftToolbar.contains(el) || viewHelperContainer.contains(el) || (_deviationLegendEl && _deviationLegendEl.contains(el)); } };
+const guiWrapper = { contains(el) { return guiToolbar.contains(el) || Object.values(guiPanels).some(p => p.gui && p.gui.domElement.style.display !== 'none' && p.gui.domElement.contains(el)) || (outlinerPanelEl && outlinerPanelEl.contains(el)) || statusBar.contains(el) || circleDetectToggleEl.contains(el) || viewportBottomLeftToolbar.contains(el) || viewHelperContainer.contains(el) || (_deviationLegendEl && _deviationLegendEl.contains(el)) || document.getElementById('tool-hint-overlay')?.contains(el); } };
 
 let guiView = null;
 let guiAssembly = null;
@@ -697,17 +700,113 @@ const mouseUpPos = new THREE.Vector2();
 const touchStartPos = new THREE.Vector2();
 const touchEndPos = new THREE.Vector2();
 
-// --- CAD Dimension hint overlay (created in init) ---
-let _cadDimHintDiv = null;
-function _updateCadDimHintUI(overrideAxis) {
-    if (!_cadDimHintDiv) return;
-    if (viewProp.cadDimMode && isCadDimActive() && getCadDimStep() === 2) {
-        const ax = (overrideAxis || getCadDimAxis()).toUpperCase();
-        _cadDimHintDiv.innerHTML = 'CAD dim &nbsp;·&nbsp; Axis: <b>' + ax + '</b> &nbsp;·&nbsp; RMB: cycle X/Y/Z &nbsp;·&nbsp; LMB: place';
-        _cadDimHintDiv.style.display = 'block';
-    } else {
-        _cadDimHintDiv.style.display = 'none';
+const _ESC_HINT = ' &nbsp;·&nbsp; ESC: cancel';
+const _ANGLE_HINT_STEPS = [
+    'Click start of first line',
+    'Click end of first line',
+    'Click start of second line',
+    'Click end of second line',
+];
+const _RADIUS_HINT_STEPS = [
+    'Click 1st point on the circle',
+    'Click 2nd point on the circle',
+    'Click 3rd point on the circle',
+];
+
+function _circleSnapHintSuffix() {
+    return viewProp.detectCircleCenter ? ' &nbsp;·&nbsp; circle-center snap on' : '';
+}
+
+function _updateToolHintUI(overrideAxis) {
+    let html = null;
+    let interactive = false;
+
+    if (deviationMapMode) {
+        interactive = true;
+        if (deviationPendingPick) {
+            const stepLabel = deviationStep === 0 ? 'A' : 'B';
+            const pickName = (deviationPendingPick.name && deviationPendingPick.name.trim())
+                ? deviationPendingPick.name.trim()
+                : (deviationPendingPick.type || 'Unnamed');
+            html = `Confirm object ${stepLabel}: «${pickName}» &nbsp;·&nbsp; ${hintButton('deviation-ok', 'OK')} ${hintButton('deviation-cancel-pick', 'Cancel pick')} &nbsp;·&nbsp; ${hintButton('deviation-cancel', 'Cancel')}`;
+        } else {
+            const stepText = deviationStep === 0
+                ? 'Deviation map: click object A or select a node in Scene outliner'
+                : 'Deviation map: click object B or select a node in Scene outliner';
+            html = `${stepText} &nbsp;·&nbsp; ${hintButton('deviation-cancel', 'Cancel')}`;
+        }
+    } else if (deviationProbeMode) {
+        interactive = true;
+        html = `Probe deviation: hover to preview, click to pin value${_formatProbeFilterHint()} &nbsp;·&nbsp; ${hintButton('deviation-probe-cancel', 'Cancel')}`;
+    } else if (booleanMode) {
+        interactive = true;
+        const stepText = booleanStep === 0
+            ? 'Boolean: click the first object (A) or select a node in the Scene outliner'
+            : 'Boolean: click the second object (B) or select a node in the Scene outliner';
+        html = `${stepText} &nbsp;·&nbsp; ${hintButton('boolean-cancel', 'Cancel')}`;
+    } else if (faceSnapMode) {
+        html = faceSnapStep === 0
+            ? '🎯 Face snap &nbsp;·&nbsp; Click the face of the object to move' + _ESC_HINT
+            : '🎯 Face snap &nbsp;·&nbsp; Click target face to align to' + _ESC_HINT;
+    } else if (ptpSnapMode) {
+        html = ptpSnapStep === 0
+            ? '📍 Point snap &nbsp;·&nbsp; Click source point on the object to move' + _ESC_HINT
+            : '📍 Point snap &nbsp;·&nbsp; Click target point to snap to' + _ESC_HINT;
+    } else if (viewProp.measureMode && isMeasureActive()) {
+        const step = getMeasurePendingCount();
+        html = (step === 0
+            ? 'Dist. measure &nbsp;·&nbsp; Click first point'
+            : 'Dist. measure &nbsp;·&nbsp; Click second point') + _circleSnapHintSuffix() + _ESC_HINT;
+    } else if (viewProp.angleMode && isAngleActive()) {
+        const step = getAngleStep();
+        html = 'Angle measure &nbsp;·&nbsp; ' + (_ANGLE_HINT_STEPS[step] || _ANGLE_HINT_STEPS[0]) + _circleSnapHintSuffix() + _ESC_HINT;
+    } else if (viewProp.radiusMode && isRadiusActive()) {
+        const step = getRadiusStep();
+        html = 'Radius measure &nbsp;·&nbsp; ' + (_RADIUS_HINT_STEPS[step] || _RADIUS_HINT_STEPS[0]) + _circleSnapHintSuffix() + _ESC_HINT;
+    } else if (viewProp.cadDimMode && isCadDimActive()) {
+        const step = getCadDimStep();
+        if (step === 2) {
+            const ax = (overrideAxis || getCadDimAxis()).toUpperCase();
+            html = 'CAD dim &nbsp;·&nbsp; Axis: <b>' + ax + '</b> &nbsp;·&nbsp; RMB: cycle X/Y/Z &nbsp;·&nbsp; LMB: place' + _ESC_HINT;
+        } else {
+            html = (step === 0
+                ? 'CAD dim &nbsp;·&nbsp; Click first point'
+                : 'CAD dim &nbsp;·&nbsp; Click second point') + _circleSnapHintSuffix() + _ESC_HINT;
+        }
+    } else if (viewProp.cadDim3dMode && isCadDim3dActive()) {
+        const step = getCadDim3dStep();
+        if (step === 2) {
+            const ax = (overrideAxis || getCadDim3dAxis()).toUpperCase();
+            html = 'CAD dim 3D &nbsp;·&nbsp; Axis: <b>' + ax + '</b> &nbsp;·&nbsp; RMB: cycle X/Y/Z &nbsp;·&nbsp; LMB: place' + _ESC_HINT;
+        } else {
+            html = (step === 0
+                ? 'CAD dim 3D &nbsp;·&nbsp; Click first point'
+                : 'CAD dim 3D &nbsp;·&nbsp; Click second point') + _circleSnapHintSuffix() + _ESC_HINT;
+        }
+    } else if (isAddLeaderLineActive() || isAddLeaderLine3dActive()) {
+        html = 'Annotation &nbsp;·&nbsp; Click new leader-line anchor' + _ESC_HINT;
+    } else if (viewProp.annotationMode && isAnnotationActive()) {
+        html = (getAnnotationPendingPoint()
+            ? 'Annotation &nbsp;·&nbsp; Click label position'
+            : 'Annotation &nbsp;·&nbsp; Click attachment point on the model') + _ESC_HINT;
+    } else if (viewProp.annotation3dMode && isAnnotation3dActive()) {
+        html = (getAnnotation3dPendingPoint()
+            ? 'Annotation &nbsp;·&nbsp; Click label position'
+            : 'Annotation &nbsp;·&nbsp; Click attachment point on the model') + _ESC_HINT;
+    } else if (viewProp.sectionSketchMode && isSectionSketchActive()) {
+        const n = getStrokePointCount();
+        if (getSectionSketchEntityType() === 'polyline') {
+            html = (n === 0
+                ? 'Section sketch &nbsp;·&nbsp; Click start'
+                : 'Section sketch &nbsp;·&nbsp; Click next point &nbsp;·&nbsp; Enter: finish') + _ESC_HINT;
+        } else {
+            html = (n === 0
+                ? 'Section sketch &nbsp;·&nbsp; Click first point'
+                : 'Section sketch &nbsp;·&nbsp; Click second point') + _ESC_HINT;
+        }
     }
+
+    updateToolHintOverlay(html ? { html, interactive } : null);
 }
 
 function _isAddAnnotationModeActive() {
@@ -746,6 +845,7 @@ function _shouldSkipGlobalEscape(event) {
 function _handleEscapeKey() {
     if (viewProp.sectionSketchMode && hasStrokeInProgress()) {
         cancelStroke(render);
+        _updateToolHintUI();
         return;
     }
     if (viewProp.sectionSketchMode && hasSketchSelection()) {
@@ -801,99 +901,11 @@ function _afterLabelReconstruct() {
     refreshLabelEditListeners();
 }
 
-// --- CAD Dimension 3D hint overlay (created in init) ---
-let _cadDim3dHintDiv = null;
-function _updateCadDim3dHintUI(overrideAxis) {
-    if (!_cadDim3dHintDiv) return;
-    if (viewProp.cadDim3dMode && isCadDim3dActive() && getCadDim3dStep() === 2) {
-        const ax = (overrideAxis || getCadDim3dAxis()).toUpperCase();
-        _cadDim3dHintDiv.innerHTML = 'CAD dim 3D &nbsp;·&nbsp; Axis: <b>' + ax + '</b> &nbsp;·&nbsp; RMB: cycle X/Y/Z &nbsp;·&nbsp; LMB: place';
-        _cadDim3dHintDiv.style.display = 'block';
-    } else {
-        _cadDim3dHintDiv.style.display = 'none';
-    }
-}
-
-// --- Face-to-face snap hint overlay (created in init) ---
-let _faceSnapHintDiv = null;
-function _updateFaceSnapHintUI() {
-    if (!_faceSnapHintDiv) return;
-    if (faceSnapMode) {
-        _faceSnapHintDiv.innerHTML = faceSnapStep === 0
-            ? '🎯 Face snap &nbsp;·&nbsp; Click the face of the object to move &nbsp;·&nbsp; ESC: cancel'
-            : '🎯 Face snap &nbsp;·&nbsp; Click target face to align to &nbsp;·&nbsp; ESC: cancel';
-        _faceSnapHintDiv.style.display = 'block';
-    } else {
-        _faceSnapHintDiv.style.display = 'none';
-    }
-}
-
-// --- Point-to-point snap hint overlay (created in init) ---
-let _ptpSnapHintDiv = null;
-function _updatePtpSnapHintUI() {
-    if (!_ptpSnapHintDiv) return;
-    if (ptpSnapMode) {
-        _ptpSnapHintDiv.innerHTML = ptpSnapStep === 0
-            ? '📍 Point snap &nbsp;·&nbsp; Click source point on the object to move &nbsp;·&nbsp; ESC: cancel'
-            : '📍 Point snap &nbsp;·&nbsp; Click target point to snap to &nbsp;·&nbsp; ESC: cancel';
-        _ptpSnapHintDiv.style.display = 'block';
-    } else {
-        _ptpSnapHintDiv.style.display = 'none';
-    }
-}
-
-// --- Boolean operation hint overlay (created in init) ---
-let _booleanHintDiv = null;
-function _updateBooleanHintUI() {
-    if (!_booleanHintDiv) return;
-    if (booleanMode) {
-        const stepText = booleanStep === 0
-            ? 'Boolean: click the first object (A) or select a node in the Scene outliner'
-            : 'Boolean: click the second object (B) or select a node in the Scene outliner';
-        _booleanHintDiv.innerHTML = `${stepText} &nbsp;·&nbsp; <button type="button" data-boolean-cancel style="margin-left:6px;padding:2px 10px;border:1px solid rgba(255,255,255,0.7);border-radius:4px;background:rgba(255,255,255,0.15);color:#fff;font-size:12px;cursor:pointer;">Cancel</button>`;
-        _booleanHintDiv.style.display = 'block';
-    } else {
-        _booleanHintDiv.style.display = 'none';
-    }
-}
-
-function _updateDeviationHintUI() {
-    if (!_deviationHintDiv) return;
-    if (deviationMapMode) {
-        const btnStyle = 'margin-left:6px;padding:2px 10px;border:1px solid rgba(255,255,255,0.7);border-radius:4px;background:rgba(255,255,255,0.15);color:#fff;font-size:12px;cursor:pointer;';
-        if (deviationPendingPick) {
-            const stepLabel = deviationStep === 0 ? 'A' : 'B';
-            const pickName = (deviationPendingPick.name && deviationPendingPick.name.trim())
-                ? deviationPendingPick.name.trim()
-                : (deviationPendingPick.type || 'Unnamed');
-            _deviationHintDiv.innerHTML = `Confirm object ${stepLabel}: «${pickName}» &nbsp;·&nbsp; <button type="button" data-deviation-ok style="${btnStyle}">OK</button> <button type="button" data-deviation-cancel-pick style="${btnStyle}">Cancel pick</button> &nbsp;·&nbsp; <button type="button" data-deviation-cancel style="${btnStyle}">Cancel</button>`;
-        } else {
-            const stepText = deviationStep === 0
-                ? 'Deviation map: click object A or select a node in Scene outliner'
-                : 'Deviation map: click object B or select a node in Scene outliner';
-            _deviationHintDiv.innerHTML = `${stepText} &nbsp;·&nbsp; <button type="button" data-deviation-cancel style="${btnStyle}">Cancel</button>`;
-        }
-        _deviationHintDiv.style.display = 'block';
-    } else {
-        _deviationHintDiv.style.display = 'none';
-    }
-}
-
 function _formatProbeFilterHint() {
     if (!deviationGui.probeFilterEnabled) return '';
     const threshold = deviationGui.probeFilterThreshold.toFixed(3);
     const op = deviationGui.probeFilterMode === 'below' ? '≤' : '≥';
     return ` &nbsp;·&nbsp; filter ${op} ${threshold}`;
-}
-
-function _updateDeviationProbeHintUI() {
-    if (!_deviationProbeHintDiv) return;
-    if (deviationProbeMode) {
-        _deviationProbeHintDiv.innerHTML = `Probe deviation: hover to preview, click to pin value${_formatProbeFilterHint()} &nbsp;·&nbsp; <button type="button" data-deviation-probe-cancel style="margin-left:6px;padding:2px 10px;border:1px solid rgba(255,255,255,0.7);border-radius:4px;background:rgba(255,255,255,0.15);color:#fff;font-size:12px;cursor:pointer;">Cancel</button>`;
-        _deviationProbeHintDiv.style.display = 'block';
-    } else {
-        _deviationProbeHintDiv.style.display = 'none';
-    }
 }
 
 function _updateDeviationProbeStatusText(text) {
@@ -1123,8 +1135,6 @@ const deviationGui = {
 };
 /** @type {import('lil-gui').Controller|null} */
 let deviationWireframeCtrl = null;
-let _deviationHintDiv = null;
-let _deviationProbeHintDiv = null;
 let _deviationLegendEl = null;
 let _deviationLegendHeaderEl = null;
 let _deviationLegendBodyEl = null;
@@ -2232,6 +2242,7 @@ function init() {
                     && hasStrokeInProgress()) {
                     event.preventDefault();
                     commitStroke(render);
+                    _updateToolHintUI();
                 }
                 break;
             case 'Delete':
@@ -2509,67 +2520,15 @@ function init() {
         refreshOutlinerOverlaysAndTools();
     });
 
-    // CAD dim placement hint overlay (created here, referenced by module-level pointer)
-    _cadDimHintDiv = document.createElement('div');
-    _cadDimHintDiv.style.cssText = 'position:fixed;bottom:46px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.75);color:#fff;padding:5px 14px;border-radius:5px;font-size:12px;pointer-events:none;display:none;z-index:1000;white-space:nowrap;';
-    document.body.appendChild(_cadDimHintDiv);
-
-    _cadDim3dHintDiv = document.createElement('div');
-    _cadDim3dHintDiv.style.cssText = 'position:fixed;bottom:68px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.75);color:#fff;padding:5px 14px;border-radius:5px;font-size:12px;pointer-events:none;display:none;z-index:1000;white-space:nowrap;';
-    document.body.appendChild(_cadDim3dHintDiv);
-
-    _faceSnapHintDiv = document.createElement('div');
-    _faceSnapHintDiv.style.cssText = 'position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:rgba(0,80,160,0.88);color:#fff;padding:5px 14px;border-radius:5px;font-size:12px;pointer-events:none;display:none;z-index:1000;white-space:nowrap;';
-    document.body.appendChild(_faceSnapHintDiv);
-
-    _ptpSnapHintDiv = document.createElement('div');
-    _ptpSnapHintDiv.style.cssText = 'position:fixed;bottom:112px;left:50%;transform:translateX(-50%);background:rgba(0,120,60,0.88);color:#fff;padding:5px 14px;border-radius:5px;font-size:12px;pointer-events:none;display:none;z-index:1000;white-space:nowrap;';
-    document.body.appendChild(_ptpSnapHintDiv);
-
-    _booleanHintDiv = document.createElement('div');
-    _booleanHintDiv.style.cssText = 'position:fixed;bottom:134px;left:50%;transform:translateX(-50%);background:rgba(120,40,160,0.88);color:#fff;padding:5px 14px;border-radius:5px;font-size:12px;display:none;z-index:1000;white-space:nowrap;';
-    _booleanHintDiv.addEventListener('click', (e) => {
-        if (e.target.closest('[data-boolean-cancel]')) {
-            e.preventDefault();
-            e.stopPropagation();
-            cancelBooleanMode();
-        }
+    initToolHintOverlay({
+        onAction: (action) => {
+            if (action === 'boolean-cancel') cancelBooleanMode();
+            else if (action === 'deviation-ok') _confirmDeviationPendingPick();
+            else if (action === 'deviation-cancel-pick') _cancelDeviationPendingPick();
+            else if (action === 'deviation-cancel') cancelDeviationMapMode();
+            else if (action === 'deviation-probe-cancel') cancelDeviationProbeMode();
+        },
     });
-    document.body.appendChild(_booleanHintDiv);
-
-    _deviationHintDiv = document.createElement('div');
-    _deviationHintDiv.style.cssText = 'position:fixed;bottom:156px;left:50%;transform:translateX(-50%);background:rgba(180,60,20,0.88);color:#fff;padding:5px 14px;border-radius:5px;font-size:12px;display:none;z-index:1000;white-space:nowrap;';
-    _deviationHintDiv.addEventListener('click', (e) => {
-        if (e.target.closest('[data-deviation-ok]')) {
-            e.preventDefault();
-            e.stopPropagation();
-            _confirmDeviationPendingPick();
-            return;
-        }
-        if (e.target.closest('[data-deviation-cancel-pick]')) {
-            e.preventDefault();
-            e.stopPropagation();
-            _cancelDeviationPendingPick();
-            return;
-        }
-        if (e.target.closest('[data-deviation-cancel]')) {
-            e.preventDefault();
-            e.stopPropagation();
-            cancelDeviationMapMode();
-        }
-    });
-    document.body.appendChild(_deviationHintDiv);
-
-    _deviationProbeHintDiv = document.createElement('div');
-    _deviationProbeHintDiv.style.cssText = 'position:fixed;bottom:178px;left:50%;transform:translateX(-50%);background:rgba(200,90,30,0.88);color:#fff;padding:5px 14px;border-radius:5px;font-size:12px;display:none;z-index:1000;white-space:nowrap;';
-    _deviationProbeHintDiv.addEventListener('click', (e) => {
-        if (e.target.closest('[data-deviation-probe-cancel]')) {
-            e.preventDefault();
-            e.stopPropagation();
-            cancelDeviationProbeMode();
-        }
-    });
-    document.body.appendChild(_deviationProbeHintDiv);
 
     _deviationLegendEl = document.createElement('div');
     _deviationLegendEl.id = 'deviation-legend';
@@ -3413,16 +3372,16 @@ function addMainGui() {
         'Above threshold': 'above',
         'Below threshold': 'below',
     }).name('Probe filter mode').onChange(function() {
-        if (deviationProbeMode) _updateDeviationProbeHintUI();
+        if (deviationProbeMode) _updateToolHintUI();
     });
     const probeFilterThresholdCtrl = deviationFolder.add(deviationGui, 'probeFilterThreshold', 0.001, 100, 0.001)
         .name('Probe filter threshold').onChange(function() {
-            if (deviationProbeMode) _updateDeviationProbeHintUI();
+            if (deviationProbeMode) _updateToolHintUI();
         });
     probeFilterEnabledCtrl.onChange(function(enabled) {
         probeFilterModeCtrl[enabled ? 'enable' : 'disable']();
         probeFilterThresholdCtrl[enabled ? 'enable' : 'disable']();
-        if (deviationProbeMode) _updateDeviationProbeHintUI();
+        if (deviationProbeMode) _updateToolHintUI();
     });
     if (!deviationGui.probeFilterEnabled) {
         probeFilterModeCtrl.disable();
@@ -3651,8 +3610,7 @@ function addToolsGui() {
         setAnn3dMarkerColor,
         setDefaultMeasurementLabelDim,
         syncLabelEditState: _syncLabelEditState,
-        updateCadDimHintUI: _updateCadDimHintUI,
-        updateCadDim3dHintUI: _updateCadDim3dHintUI,
+        updateToolHintUI: _updateToolHintUI,
         invalidateModeIndicatorCache: () => { _modeIndicatorCache = ''; },
         isPtpSnapActive: () => ptpSnapMode,
         syncCircleDetectViewport: (visible, checked) => {
@@ -8159,6 +8117,7 @@ function updateModeIndicator() {
 function render() {   
     updateModeIndicator();
     updateModelInfoDisplay();
+    _updateToolHintUI();
     //console.log("viewProp.isSelectAllowed: ", viewProp.isSelectAllowed);
     // isMouseOverGui - pokud kurzor nad GUI a současně nad objektem, pak má přednost GUI.
     const _client = ndcToClient(mouse.x, mouse.y);
@@ -8378,7 +8337,7 @@ function render() {
     } else {
         updateCadDimHoverPreview(null);
     }
-    _updateCadDimHintUI();
+    _updateToolHintUI();
 
     // CAD dimension 3D preview
     if (viewProp.cadDim3dMode && isCadDim3dActive() && !docBlocks3dInput && !isMouseOverGui) {
@@ -8408,7 +8367,7 @@ function render() {
     } else {
         updateCadDim3dHoverPreview(null);
     }
-    _updateCadDim3dHintUI();
+    _updateToolHintUI();
 
     // Annotation hover preview – CSS2D (regular mode or add-leader mode)
     if ((viewProp.annotationMode && isAnnotationActive() || isAddLeaderLineActive()) && !docBlocks3dInput && !isMouseOverGui && !isMouseDown) {
@@ -8672,7 +8631,7 @@ function startFaceSnapMode() {
     faceSnapSourceObject = null;
     if (faceSnapArrow) { scene.remove(faceSnapArrow); faceSnapArrow = null; }
     clearFaceSnapHighlight();
-    _updateFaceSnapHintUI();
+    _updateToolHintUI();
     // Menu item click sets _suppressNextClick but never reaches onClick (stopPropagation),
     // so clear it here or the first source-face pick is swallowed.
     _suppressNextClick = false;
@@ -8687,7 +8646,7 @@ function cancelFaceSnapMode() {
     faceSnapSourceObject = null;
     if (faceSnapArrow) { scene.remove(faceSnapArrow); faceSnapArrow = null; }
     clearFaceSnapHighlight();
-    _updateFaceSnapHintUI();
+    _updateToolHintUI();
     render();
 }
 
@@ -8706,7 +8665,7 @@ function startPtpSnapMode() {
     ptpSnapSourceObject = null;
     clearPtpSnapDot();
     syncToolsPanelUI(toolsDeps);
-    _updatePtpSnapHintUI();
+    _updateToolHintUI();
     // Menu item click sets _suppressNextClick but never reaches onClick (stopPropagation),
     // so clear it here or the first source-point pick is swallowed.
     _suppressNextClick = false;
@@ -8721,7 +8680,7 @@ function cancelPtpSnapMode() {
     clearPtpSnapDot();
     viewProp.detectCircleCenter = false;
     syncToolsPanelUI(toolsDeps);
-    _updatePtpSnapHintUI();
+    _updateToolHintUI();
     render();
 }
 
@@ -8821,7 +8780,7 @@ function startDeviationProbeMode() {
     setDeviationProbeMarkerScale(deviationGui.markerScale);
     viewProp.isSelectAllowed = false;
     _syncLabelEditState();
-    _updateDeviationProbeHintUI();
+    _updateToolHintUI();
     render();
 }
 
@@ -8842,7 +8801,7 @@ function cancelDeviationProbeMode() {
     setDeviationProbeActive(false);
     viewProp.isSelectAllowed = true;
     _syncLabelEditState();
-    _updateDeviationProbeHintUI();
+    _updateToolHintUI();
     _updateDeviationProbeStatusText('');
     render();
 }
@@ -8883,7 +8842,7 @@ function _confirmDeviationPendingPick() {
         deviationScanObject = picked;
         _clearDeviationPendingPickHighlight();
         deviationStep = 1;
-        _updateDeviationHintUI();
+        _updateToolHintUI();
         render();
         return;
     }
@@ -8895,21 +8854,21 @@ function _confirmDeviationPendingPick() {
 
     deviationRefObject = picked;
     _clearDeviationPendingPickHighlight();
-    _updateDeviationHintUI();
+    _updateToolHintUI();
     runDeviationMapCompute(false);
 }
 
 function _cancelDeviationPendingPick() {
     if (!deviationPendingPick) return;
     _clearDeviationPendingPickHighlight();
-    _updateDeviationHintUI();
+    _updateToolHintUI();
     render();
 }
 
 function handleDeviationMapPick(picked) {
     if (!picked || !deviationMapMode) return;
     _highlightDeviationPendingPick(picked);
-    _updateDeviationHintUI();
+    _updateToolHintUI();
     render();
 }
 
@@ -8925,7 +8884,7 @@ function startDeviationMapMode() {
     _clearDeviationPendingPickHighlight();
     clearDeviationHighlight();
     deselectObject();
-    _updateDeviationHintUI();
+    _updateToolHintUI();
     render();
 }
 
@@ -8934,7 +8893,7 @@ function _exitDeviationPickMode() {
     deviationStep = 0;
     _clearDeviationPendingPickHighlight();
     clearDeviationHighlight();
-    _updateDeviationHintUI();
+    _updateToolHintUI();
 }
 
 function cancelDeviationMapMode() {
@@ -9160,7 +9119,7 @@ function handleBooleanPick(picked) {
         scene.add(booleanHighlightHelper);
         booleanStep = 1;
         outlinerHighlight(picked);
-        _updateBooleanHintUI();
+        _updateToolHintUI();
         render();
     } else {
         if (picked === booleanObjectA) {
@@ -9184,7 +9143,7 @@ function startBooleanMode(operation) {
     booleanObjectB = null;
     clearBooleanHighlight();
     deselectObject();
-    _updateBooleanHintUI();
+    _updateToolHintUI();
     render();
 }
 
@@ -9195,7 +9154,7 @@ function cancelBooleanMode() {
     booleanObjectA = null;
     booleanObjectB = null;
     clearBooleanHighlight();
-    _updateBooleanHintUI();
+    _updateToolHintUI();
     render();
 }
 
@@ -9283,6 +9242,7 @@ function onSectionSketchDblClick(event) {
     if (!hasStrokeInProgress()) return;
     event.preventDefault();
     commitStroke(render, { dropLastIfDuplicate: true });
+    _updateToolHintUI();
 }
 
 function onClick( event ) {		
@@ -9342,6 +9302,7 @@ function onClick( event ) {
         if (hasStrokeInProgress()) {
             setSectionSketchEntityType(viewProp.sectionSketchEntity || 'line');
             addStrokePoint(uv, render);
+            _updateToolHintUI();
             return;
         }
 
@@ -9355,6 +9316,7 @@ function onClick( event ) {
         clearSketchSelection();
         setSectionSketchEntityType(viewProp.sectionSketchEntity || 'line');
         addStrokePoint(uv, render);
+        _updateToolHintUI();
         return;
     }
 
@@ -9380,6 +9342,7 @@ function onClick( event ) {
             }
             const hitOwner = resolveCADSelection(visibleIntersects[0].object);
             addMeasurePoint(point, hitOwner, render);
+            _updateToolHintUI();
         }
         return;
     }
@@ -9405,6 +9368,7 @@ function onClick( event ) {
             }
             const hitOwner = resolveCADSelection(visibleIntersects[0].object);
             addAnglePoint(point, hitOwner, render);
+            _updateToolHintUI();
         }
         return;
     }
@@ -9430,6 +9394,7 @@ function onClick( event ) {
             }
             const hitOwner = resolveCADSelection(visibleIntersects[0].object);
             addRadiusPoint(point, hitOwner, render);
+            _updateToolHintUI();
         }
         return;
     }
@@ -9460,14 +9425,14 @@ function onClick( event ) {
                 addCadDimPoint(point, hitOwner, render);
                 // If we just entered phase 2, show hint (orbit stays enabled)
                 if (getCadDimStep() === 2) {
-                    _updateCadDimHintUI();
+                    _updateToolHintUI();
                 }
             }
         } else {
             // Phase 2: place the dimension at the current mouse position
             placeCadDim(render);
             orbitControls.enabled = true;
-            _updateCadDimHintUI();
+            _updateToolHintUI();
         }
         return;
     }
@@ -9496,13 +9461,13 @@ function onClick( event ) {
                 const hitOwner3d = resolveCADSelection(cd3dVisible[0].object);
                 addCadDim3dPoint(point3d, hitOwner3d, render);
                 if (getCadDim3dStep() === 2) {
-                    _updateCadDim3dHintUI();
+                    _updateToolHintUI();
                 }
             }
         } else {
             placeCadDim3d(render);
             orbitControls.enabled = true;
-            _updateCadDim3dHintUI();
+            _updateToolHintUI();
         }
         return;
     }
@@ -9517,6 +9482,7 @@ function onClick( event ) {
             : _llIntersects.filter(h => { let o = h.object; while (o) { if (!o.visible) return false; o = o.parent; } return true; });
         if (_llVisible.length > 0) {
             commitAddLeaderLine(_llVisible[0].point, _llVisible[0].object, render);
+            _updateToolHintUI();
             refreshOutlinerOverlaysAndTools();
         }
         return;
@@ -9534,6 +9500,7 @@ function onClick( event ) {
             : _ll3Intersects.filter(h => { let o = h.object; while (o) { if (!o.visible) return false; o = o.parent; } return true; });
         if (_ll3Visible.length > 0) {
             commitAddLeaderLine3d(_ll3Visible[0].point, _ll3Visible[0].object, render);
+            _updateToolHintUI();
             refreshOutlinerOverlaysAndTools();
         }
         return;
@@ -9556,6 +9523,7 @@ function onClick( event ) {
             const point = visibleIntersects[0].point;
             const hitOwner = resolveCADSelection(visibleIntersects[0].object);
             addAnnotationPoint(point, hitOwner, render);
+            _updateToolHintUI();
         } else {
             // Second click: allow placing label in empty space (project mouse to same depth as anchor)
             const pending = getAnnotationPendingPoint();
@@ -9564,6 +9532,7 @@ function onClick( event ) {
                 const clickNDC = new THREE.Vector3(mouse.x, mouse.y, pendingNDC.z);
                 const worldPoint = clickNDC.unproject(currentCamera);
                 addAnnotationPoint(worldPoint, null, render);
+                _updateToolHintUI();
             }
         }
         return;
@@ -9586,6 +9555,7 @@ function onClick( event ) {
             const point = visibleIntersects3d[0].point;
             const hitOwner = resolveCADSelection(visibleIntersects3d[0].object);
             addAnnotation3dPoint(point, hitOwner, render);
+            _updateToolHintUI();
         } else {
             // Second click: allow placing label in empty space
             const pending3d = getAnnotation3dPendingPoint();
@@ -9594,6 +9564,7 @@ function onClick( event ) {
                 const clickNDC3d = new THREE.Vector3(mouse.x, mouse.y, pendingNDC3d.z);
                 const worldPoint3d = clickNDC3d.unproject(currentCamera);
                 addAnnotation3dPoint(worldPoint3d, null, render);
+                _updateToolHintUI();
             }
         }
         return;
@@ -9677,7 +9648,7 @@ function onClick( event ) {
 
             faceSnapStep = 1;
             clearFaceSnapHighlight();
-            _updateFaceSnapHintUI();
+            _updateToolHintUI();
             render();
         } else {
             // Step 1: pick target face – compute & apply translation
@@ -9759,7 +9730,7 @@ function onClick( event ) {
             scene.add(ptpSnapDotMesh);
 
             ptpSnapStep = 1;
-            _updatePtpSnapHintUI();
+            _updateToolHintUI();
             render();
         } else {
             // Step 1: compute full 3D translation (target – source) and apply
@@ -13896,7 +13867,7 @@ function assemblyMoveStepDown() {
         // In CAD dim phase 2 – cycle axis instead of showing context menu
         if (viewProp.cadDimMode && isCadDimActive() && getCadDimStep() === 2) {
             const newAxis = cycleCadDimAxis(mouse, currentCamera);
-            _updateCadDimHintUI(newAxis);
+            _updateToolHintUI(newAxis);
             render();
             return;
         }
@@ -13904,7 +13875,7 @@ function assemblyMoveStepDown() {
         // In CAD dim 3D phase 2 – cycle axis instead of showing context menu
         if (viewProp.cadDim3dMode && isCadDim3dActive() && getCadDim3dStep() === 2) {
             const newAxis3d = cycleCadDim3dAxis(mouse, currentCamera);
-            _updateCadDim3dHintUI(newAxis3d);
+            _updateToolHintUI(newAxis3d);
             render();
             return;
         }

@@ -81,13 +81,11 @@ function _clearAllToolModes(deps) {
         viewProp.cadDimMode = false;
         deps.setCadDimActive(false);
         deps.orbitControls.enabled = true;
-        deps.updateCadDimHintUI?.();
     }
     if (viewProp.cadDim3dMode) {
         viewProp.cadDim3dMode = false;
         deps.setCadDim3dActive(false);
         deps.orbitControls.enabled = true;
-        deps.updateCadDim3dHintUI?.();
     }
     if (viewProp.annotationMode) {
         viewProp.annotationMode = false;
@@ -110,6 +108,7 @@ function _syncAfterModeChange(deps, modeId) {
     syncToolsPanelUI(deps);
     deps.syncLabelEditState?.();
     deps.invalidateModeIndicatorCache?.();
+    deps.updateToolHintUI?.();
     deps.render?.();
 }
 
@@ -579,6 +578,7 @@ export function initToolsPanel(container, deps) {
         .name('Sketch entity')
         .onChange((v) => {
             deps.setSectionSketchEntityType?.(v);
+            deps.updateToolHintUI?.();
             deps.render?.();
         });
     sketchFolder.addColor(deps.viewProp, 'sectionSketchColor').name('Sketch color').onChange((v) => {
@@ -609,6 +609,7 @@ export function initToolsPanel(container, deps) {
     optionsFolder.add(deps.viewProp, 'repeatTool').name('Repeat tool');
     _circleDetectCtrl = optionsFolder.add(deps.viewProp, 'detectCircleCenter').name('Detect circle center').onChange(() => {
         deps.syncCircleDetectViewport?.(true, deps.viewProp.detectCircleCenter);
+        deps.updateToolHintUI?.();
         deps.render();
     });
     _circleDetectCtrl.hide();
