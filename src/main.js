@@ -2944,14 +2944,12 @@ function addMainGui() {
     exportGlbFolder.add({ fn: exportAllModels }, 'fn').name('Export all (No compression)');
     exportGlbFolder.add({ fn: exportSelectedObject }, 'fn').name('Export selected (No compression)');
     exportGlbFolder.close();
-    const exportStlFolder = fileGui.addFolder('Export to STL');
-    exportStlFolder.add({ fn: exportAllModelsStl }, 'fn').name('Export all to STL…');
-    exportStlFolder.add({ fn: exportSelectedObjectStl }, 'fn').name('Export selected to STL…');
-    exportStlFolder.close();
-    const exportStpFolder = fileGui.addFolder('Export to STEP');
-    exportStpFolder.add({ fn: exportAllModelsStep }, 'fn').name('Export all to STEP…');
-    exportStpFolder.add({ fn: exportSelectedObjectStep }, 'fn').name('Export selected to STEP…');
-    exportStpFolder.close();
+    const exportOtherFolder = fileGui.addFolder('Export to other');
+    exportOtherFolder.add({ fn: exportAllModelsStl }, 'fn').name('Export all to STL…');
+    exportOtherFolder.add({ fn: exportSelectedObjectStl }, 'fn').name('Export selected to STL…');
+    exportOtherFolder.add({ fn: exportAllModelsStep }, 'fn').name('Export all to STEP…');
+    exportOtherFolder.add({ fn: exportSelectedObjectStep }, 'fn').name('Export selected to STEP…');
+    exportOtherFolder.close();
     const exportHtmlFolder = fileGui.addFolder('Export self-contained HTML');
     exportHtmlFolder.close();
     exportHtmlFolder.add({ fn() { exportToHTML(loadedModels, assemblyGui, viewProp, assemblyWriteToUserData, assemblyClearUserData); } }, 'fn').name('Export to HTML');
@@ -10165,15 +10163,15 @@ function saveStepText(text, filename) {
 }
 
 function promptStepExportOptions(defaultName) {
-    const input = window.prompt('File name (.stp will be added):', defaultName);
-    if (input === null) return null;
-    const finalName = (input.trim() || defaultName).replace(/\.(stp|step)$/i, '') + '.stp';
     const fmt = window.prompt(
         'STEP format:\n  f = AP214 faceted B-Rep (wider CAD support, recommended)\n  t = AP242 tessellated (compact)',
         'f',
     );
     if (fmt === null) return null;
     const format = fmt.trim().toLowerCase() === 't' ? STEP_FORMAT_TESSELLATED : STEP_FORMAT_FACETED;
+    const input = window.prompt('File name (.stp will be added):', defaultName);
+    if (input === null) return null;
+    const finalName = (input.trim() || defaultName).replace(/\.(stp|step)$/i, '') + '.stp';
     return { finalName, format };
 }
 
