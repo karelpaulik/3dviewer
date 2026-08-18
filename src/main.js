@@ -2454,7 +2454,7 @@ function init() {
     setSectionSketchLabelsVisible(viewProp.showSectionSketchLengths);
     setSectionSketchLengthFormatter((len) => {
         if (!Number.isFinite(len)) return '–';
-        return `${formatGeometryMeasure(len)} ${viewProp.modelUnit || ''}`.trim();
+        return formatGeometryMeasure(len);
     });
     setSectionSketchOnChange(() => { render(); });
     setSectionSketchOnSelectionChanged(() => {
