@@ -623,6 +623,25 @@ const viewHelperContainer = document.createElement('div');
 viewHelperContainer.id = 'view-gizmo';
 document.body.appendChild(viewHelperContainer);
 
+const orbitLockBar = document.createElement('div');
+orbitLockBar.id = 'orbit-lock-bar';
+function createOrbitLockBtn(icon, title, flagKey) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = icon;
+    btn.title = title;
+    btn.addEventListener('click', () => {
+        viewProp[flagKey] = !viewProp[flagKey];
+        applyOrbitLocks();
+    });
+    return btn;
+}
+const orbitLockPanBtn = createOrbitLockBtn('✥', 'Lock pan', 'orbitLockPan');
+const orbitLockRotateBtn = createOrbitLockBtn('↻', 'Lock rotate', 'orbitLockRotate');
+const orbitLockZoomBtn = createOrbitLockBtn('⊕', 'Lock zoom', 'orbitLockZoom');
+orbitLockBar.append(orbitLockPanBtn, orbitLockRotateBtn, orbitLockZoomBtn);
+viewHelperContainer.appendChild(orbitLockBar);
+
 // Wrapper reference for hit-testing (toolbar + panels + outliner)
 let outlinerPanelEl = null;
 const guiWrapper = { contains(el) { return guiToolbar.contains(el) || Object.values(guiPanels).some(p => p.gui && p.gui.domElement.style.display !== 'none' && p.gui.domElement.contains(el)) || (outlinerPanelEl && outlinerPanelEl.contains(el)) || statusBar.contains(el) || circleDetectToggleEl.contains(el) || viewportBottomLeftToolbar.contains(el) || viewHelperContainer.contains(el) || (_deviationLegendEl && _deviationLegendEl.contains(el)) || document.getElementById('tool-hint-overlay')?.contains(el); } };
@@ -1389,7 +1408,21 @@ const viewProp = {
     navigationKeepOpen: false, // Keep Navigation folder open when selecting another object
     materialKeepOpen: false, // Keep Material folder open when selecting another object
     materialAllKeepOpen: false, // Keep ALL Material folder open when selecting another object
+    orbitLockPan: false,
+    orbitLockRotate: false,
+    orbitLockZoom: false,
 };
+
+function applyOrbitLocks() {
+    if (orbitControls) {
+        orbitControls.enablePan = !viewProp.orbitLockPan;
+        orbitControls.enableRotate = !viewProp.orbitLockRotate;
+        orbitControls.enableZoom = !viewProp.orbitLockZoom;
+    }
+    orbitLockPanBtn.classList.toggle('active', viewProp.orbitLockPan);
+    orbitLockRotateBtn.classList.toggle('active', viewProp.orbitLockRotate);
+    orbitLockZoomBtn.classList.toggle('active', viewProp.orbitLockZoom);
+}
 
 const snapTransformInitDefaults = {
     transformMode: 'translate',
@@ -2005,6 +2038,7 @@ function init() {
     orbitControls = new OrbitControls( currentCamera, renderer.domElement );
     orbitControls.update();
     orbitControls.addEventListener( 'change', render ); // use if there is no animation loop
+    applyOrbitLocks();
 
     // ViewHelper – orientation gizmo in dedicated overlay (above GUI)
     viewHelperRenderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
