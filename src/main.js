@@ -13,6 +13,13 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { STLExporter } from 'three/addons/exporters/STLExporter.js';
+import {
+    collectStepParts,
+    buildTessellatedStep,
+    buildFacetedStep,
+    STEP_FORMAT_FACETED,
+    STEP_FORMAT_TESSELLATED,
+} from './stepExportUtils.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 import { CSS3DRenderer } from 'three/addons/renderers/CSS3DRenderer.js';
 import { ViewHelper } from './ViewHelper.js';
@@ -2941,6 +2948,10 @@ function addMainGui() {
     exportStlFolder.add({ fn: exportAllModelsStl }, 'fn').name('Export all to STL…');
     exportStlFolder.add({ fn: exportSelectedObjectStl }, 'fn').name('Export selected to STL…');
     exportStlFolder.close();
+    const exportStpFolder = fileGui.addFolder('Export to STEP');
+    exportStpFolder.add({ fn: exportAllModelsStep }, 'fn').name('Export all to STEP…');
+    exportStpFolder.add({ fn: exportSelectedObjectStep }, 'fn').name('Export selected to STEP…');
+    exportStpFolder.close();
     const exportHtmlFolder = fileGui.addFolder('Export self-contained HTML');
     exportHtmlFolder.close();
     exportHtmlFolder.add({ fn() { exportToHTML(loadedModels, assemblyGui, viewProp, assemblyWriteToUserData, assemblyClearUserData); } }, 'fn').name('Export to HTML');
@@ -10127,6 +10138,139 @@ function exportSelectedObjectStl() {
         URL.revokeObjectURL(link.href);
     }
     console.log(`[STL Export] "${finalName}" (${binary ? 'binary' : 'ASCII'}) hotovo.`);
+}
+
+function getStpLoadingToast() {
+    let toast = document.getElementById('stp-loading');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'stp-loading';
+        toast.innerHTML = '<div class="stp-spinner"></div><span id="stp-loading-msg">Working…</span>';
+        document.body.appendChild(toast);
+    }
+    const msg = toast.querySelector('#stp-loading-msg');
+    return {
+        show(text) { msg.textContent = text; toast.classList.add('visible'); },
+        hide() { toast.classList.remove('visible'); },
+    };
+}
+
+function saveStepText(text, filename) {
+    const blob = new Blob([text], { type: 'application/step' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(link.href);
+}
+
+function promptStepExportOptions(defaultName) {
+    const input = window.prompt('File name (.stp will be added):', defaultName);
+    if (input === null) return null;
+    const finalName = (input.trim() || defaultName).replace(/\.(stp|step)$/i, '') + '.stp';
+    const fmt = window.prompt(
+        'STEP format:\n  f = AP214 faceted B-Rep (wider CAD support, recommended)\n  t = AP242 tessellated (compact)',
+        'f',
+    );
+    if (fmt === null) return null;
+    const format = fmt.trim().toLowerCase() === 't' ? STEP_FORMAT_TESSELLATED : STEP_FORMAT_FACETED;
+    return { finalName, format };
+}
+
+function runStepExport(root, finalName, format) {
+    const toast = getStpLoadingToast();
+    toast.show('Preparing STEP export…');
+    setTimeout(() => {
+        try {
+            const { parts, triangleCount } = collectStepParts(root);
+            if (parts.length === 0 || triangleCount === 0) {
+                throw new Error('No mesh geometry to export to STEP.');
+            }
+            if (format === STEP_FORMAT_FACETED && triangleCount > 80000) {
+                toast.hide();
+                const ok = window.confirm(
+                    `Faceted STEP will contain ${triangleCount} triangular faces and may be very large. Continue?`
+                    + '\n\nTip: use tessellated AP242 (option t) for compact files.',
+                );
+                if (!ok) return;
+                toast.show('Exporting STEP…');
+            } else {
+                toast.show('Exporting STEP…');
+            }
+            const options = {
+                productName: finalName.replace(/\.(stp|step)$/i, ''),
+                filename: finalName,
+                modelUnit: viewProp.modelUnit,
+            };
+            const text = format === STEP_FORMAT_FACETED
+                ? buildFacetedStep(parts, options)
+                : buildTessellatedStep(parts, options);
+            saveStepText(text, finalName);
+            toast.hide();
+            console.log(
+                `[STEP Export] "${finalName}" (${format}, ${parts.length} part(s), ${triangleCount} triangles) hotovo.`,
+            );
+        } catch (err) {
+            toast.hide();
+            console.error('[STEP Export] failed:', err);
+            alert(`STEP export failed: ${err.message}`);
+        }
+    }, 30);
+}
+
+function exportAllModelsStep() {
+    if (loadedModels.length === 0) {
+        console.warn('Žádné modely k exportu.');
+        return;
+    }
+    const baseName = fileNameInput.value.trim() || (loadedModels[0]?.userData?.fileName?.replace(/\.[^.]+$/, '') ?? 'export_all');
+    const opts = promptStepExportOptions(baseName);
+    if (!opts) return;
+
+    const group = new THREE.Group();
+    loadedModels.forEach(model => group.add(model.clone(true)));
+    stripSectionMeshes(group);
+    stripEdgeOverlays(group);
+    runStepExport(group, opts.finalName, opts.format);
+}
+
+function exportSelectedObjectStep() {
+    if (!lastSelectedObject && selectedObjects.length > 0) {
+        const defaultName = selectedObjects[0].name || 'group';
+        const opts = promptStepExportOptions(defaultName);
+        if (!opts) return;
+
+        const group = new THREE.Group();
+        selectedObjects.forEach(obj => {
+            const clone = obj.clone(true);
+            obj.updateWorldMatrix(true, false);
+            const worldPos = new THREE.Vector3();
+            const worldQuat = new THREE.Quaternion();
+            const worldScale = new THREE.Vector3();
+            obj.matrixWorld.decompose(worldPos, worldQuat, worldScale);
+            clone.position.copy(worldPos);
+            clone.quaternion.copy(worldQuat);
+            clone.scale.copy(worldScale);
+            group.add(clone);
+        });
+        stripSectionMeshes(group);
+        stripEdgeOverlays(group);
+        runStepExport(group, opts.finalName, opts.format);
+        return;
+    }
+
+    if (!lastSelectedObject) {
+        console.warn('Žádný objekt není vybrán.');
+        return;
+    }
+    const defaultName = lastSelectedObject.name || 'selected';
+    const opts = promptStepExportOptions(defaultName);
+    if (!opts) return;
+
+    const clone = lastSelectedObject.clone(true);
+    stripSectionMeshes(clone);
+    stripEdgeOverlays(clone);
+    runStepExport(clone, opts.finalName, opts.format);
 }
 
 // Open a file-picker dialog and load the chosen STL file.
