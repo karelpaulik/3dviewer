@@ -700,7 +700,7 @@ const mouseUpPos = new THREE.Vector2();
 const touchStartPos = new THREE.Vector2();
 const touchEndPos = new THREE.Vector2();
 
-const _ESC_HINT = ' &nbsp;·&nbsp; ESC: cancel';
+const _ESC_HINT = ' &nbsp;·&nbsp; ' + hintButton('esc-cancel', 'ESC: cancel');
 const _ANGLE_HINT_STEPS = [
     'Click start of first line',
     'Click end of first line',
@@ -719,10 +719,8 @@ function _circleSnapHintSuffix() {
 
 function _updateToolHintUI(overrideAxis) {
     let html = null;
-    let interactive = false;
 
     if (deviationMapMode) {
-        interactive = true;
         if (deviationPendingPick) {
             const stepLabel = deviationStep === 0 ? 'A' : 'B';
             const pickName = (deviationPendingPick.name && deviationPendingPick.name.trim())
@@ -736,10 +734,8 @@ function _updateToolHintUI(overrideAxis) {
             html = `${stepText} &nbsp;·&nbsp; ${hintButton('deviation-cancel', 'Cancel')}`;
         }
     } else if (deviationProbeMode) {
-        interactive = true;
         html = `Probe deviation: hover to preview, click to pin value${_formatProbeFilterHint()} &nbsp;·&nbsp; ${hintButton('deviation-probe-cancel', 'Cancel')}`;
     } else if (booleanMode) {
-        interactive = true;
         const stepText = booleanStep === 0
             ? 'Boolean: click the first object (A) or select a node in the Scene outliner'
             : 'Boolean: click the second object (B) or select a node in the Scene outliner';
@@ -806,7 +802,7 @@ function _updateToolHintUI(overrideAxis) {
         }
     }
 
-    updateToolHintOverlay(html ? { html, interactive } : null);
+    updateToolHintOverlay(html ? { html, interactive: true } : null);
 }
 
 function _isAddAnnotationModeActive() {
@@ -2522,7 +2518,8 @@ function init() {
 
     initToolHintOverlay({
         onAction: (action) => {
-            if (action === 'boolean-cancel') cancelBooleanMode();
+            if (action === 'esc-cancel') _handleEscapeKey();
+            else if (action === 'boolean-cancel') cancelBooleanMode();
             else if (action === 'deviation-ok') _confirmDeviationPendingPick();
             else if (action === 'deviation-cancel-pick') _cancelDeviationPendingPick();
             else if (action === 'deviation-cancel') cancelDeviationMapMode();

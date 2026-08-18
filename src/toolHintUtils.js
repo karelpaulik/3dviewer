@@ -1,6 +1,7 @@
 // toolHintUtils.js – single viewport hint overlay for interactive tools
 
 const ACTION_ATTRS = [
+    'esc-cancel',
     'boolean-cancel',
     'deviation-ok',
     'deviation-cancel-pick',
