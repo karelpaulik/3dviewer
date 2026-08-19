@@ -1589,6 +1589,126 @@ a, button, input, select {
     cursor: grabbing;
 }
 
+/* Selected inspector – draggable overlay (lil-gui in body) */
+#selected-overlay {
+    position: fixed;
+    display: none;
+    z-index: 1010;
+    width: 300px;
+    background: rgba(20, 20, 24, 0.92);
+    color: #eee;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 6px;
+    font-family: sans-serif;
+    font-size: 12px;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
+    user-select: none;
+    overflow: hidden;
+    box-sizing: border-box;
+}
+
+#selected-overlay-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 4px 6px 4px 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+    cursor: move;
+    font-weight: 600;
+    line-height: 1.2;
+    min-height: 28px;
+}
+
+#selected-overlay.selected-overlay-collapsed #selected-overlay-header {
+    border-bottom: none;
+}
+
+#selected-overlay-header-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+#selected-overlay-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+#selected-overlay-header .selected-overlay-grip {
+    opacity: 0.45;
+    font-size: 11px;
+    letter-spacing: 1px;
+    flex: 0 0 auto;
+}
+
+#selected-overlay-controls {
+    display: flex;
+    align-items: center;
+    flex: 0 0 auto;
+    gap: 2px;
+}
+
+.selected-overlay-btn {
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: none;
+    border-radius: 3px;
+    background: transparent;
+    color: #ccc;
+    font-size: 14px;
+    line-height: 22px;
+    cursor: pointer;
+    flex: 0 0 auto;
+}
+
+.selected-overlay-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: #fff;
+}
+
+.selected-overlay-close:hover {
+    background: #c42b1c;
+    color: #fff;
+}
+
+#selected-overlay.selected-overlay-collapsed #selected-overlay-body {
+    display: none;
+}
+
+#selected-overlay.selected-overlay-dragging #selected-overlay-header {
+    cursor: grabbing;
+}
+
+#selected-overlay-body > .lil-gui {
+    width: 100% !important;
+    max-height: calc(100vh - 28px - 32px - 36px);
+    overflow-y: auto;
+}
+
+#selected-overlay-body > .lil-gui > .lil-title {
+    display: none !important;
+}
+
+#selected-overlay .lil-gui .lil-gui > .lil-title {
+    background-color: #333 !important;
+    font-weight: 600 !important;
+    text-transform: none !important;
+    color: #c8a96e !important;
+    border-left: 3px solid #c8a96e !important;
+    padding-left: 6px !important;
+}
+
+#selected-overlay .lil-gui .lil-gui .lil-gui {
+    margin-left: 12px;
+}
+
 /* Context menu ------------------------------------ */
 .ctx-menu {
     position: fixed;

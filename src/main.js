@@ -651,14 +651,14 @@ viewHelperContainer.appendChild(orbitLockBar);
 
 // Wrapper reference for hit-testing (toolbar + panels + outliner)
 let outlinerPanelEl = null;
-const guiWrapper = { contains(el) { return guiToolbar.contains(el) || Object.values(guiPanels).some(p => p.gui && p.gui.domElement.style.display !== 'none' && p.gui.domElement.contains(el)) || (outlinerPanelEl && outlinerPanelEl.contains(el)) || statusBar.contains(el) || circleDetectToggleEl.contains(el) || viewportBottomLeftToolbar.contains(el) || viewHelperContainer.contains(el) || (_deviationLegendEl && _deviationLegendEl.contains(el)) || document.getElementById('tool-hint-overlay')?.contains(el); } };
+const guiWrapper = { contains(el) { return guiToolbar.contains(el) || Object.values(guiPanels).some(p => p.gui && p.gui.domElement.style.display !== 'none' && p.gui.domElement.contains(el)) || (outlinerPanelEl && outlinerPanelEl.contains(el)) || statusBar.contains(el) || circleDetectToggleEl.contains(el) || viewportBottomLeftToolbar.contains(el) || viewHelperContainer.contains(el) || (_deviationLegendEl && _deviationLegendEl.contains(el)) || (_selectedOverlayEl && _selectedOverlayEl.contains(el)) || document.getElementById('tool-hint-overlay')?.contains(el); } };
 
 let guiView = null;
 let guiAssembly = null;
 
 // --- Toolbar panel switching ---
 const guiPanels = {};   // { name: { gui, btn } }
-let activePanel = null; // currently visible panel name (excludes 'Selected')
+let activePanel = null; // currently visible panel name
 let toolsDeps = null;
 
 // Outliner toggle button (left-aligned in toolbar)
@@ -702,21 +702,26 @@ function syncFileHistoryToggleUi() {
     _enableFileHistoryController?.updateDisplay();
 }
 
-// Pre-create all toolbar buttons in desired order: Selected, File, Edit, View, Tools, Assembly, Docs, Help
-['Selected', 'File', 'Edit', 'View', 'Tools', 'Assembly', 'Docs', 'Files', 'Call', 'Help'].forEach(name => {
+// Pre-create all toolbar buttons in desired order: File, Edit, View, Tools, Assembly, Docs, Help
+['File', 'Edit', 'View', 'Tools', 'Assembly', 'Docs', 'Files', 'Call', 'Help'].forEach(name => {
     const btn = document.createElement('button');
     btn.className = 'gui-toolbar-btn';
     btn.textContent = name;
     btn.addEventListener('click', () => showGuiPanel(name));
     guiToolbar.appendChild(btn);
     guiPanels[name] = { gui: null, btn };
-    if (name === 'Selected') btn.style.display = 'none';
 });
 
 let lastSelectedObject = null;
 const lastSelectedMeshes = [];
 const selectionHistory = [];
 let selectedFolder = null;
+let _selectedOverlayEl = null;
+let _selectedOverlayHeaderEl = null;
+let _selectedOverlayTitleEl = null;
+let _selectedOverlayBodyEl = null;
+let _selectedOverlayPositionReady = false;
+const SELECTED_OVERLAY_POS_KEY = 'selectedOverlayPos';
 const xrayBackup = new Map(); // mesh → { renderOrder, depthTests: boolean[] }
 
 const raycaster = new THREE.Raycaster();
@@ -1930,14 +1935,6 @@ function showGuiPanel(name) {
     const panel = guiPanels[name];
     if (!panel || !panel.gui) return;
 
-    // Selected panel is independent — toggles without affecting others
-    if (name === 'Selected') {
-        const isVisible = panel.gui.domElement.style.display !== 'none';
-        panel.gui.domElement.style.display = isVisible ? 'none' : '';
-        panel.btn.classList.toggle('active', !isVisible);
-        return;
-    }
-
     // Other panels: only one visible at a time (toggle among themselves)
     if (activePanel === name) {
         panel.gui.domElement.style.display = 'none';
@@ -1945,9 +1942,7 @@ function showGuiPanel(name) {
         activePanel = null;
         return;
     }
-    // hide all except Selected
     for (const key in guiPanels) {
-        if (key === 'Selected') continue;
         if (guiPanels[key].gui) guiPanels[key].gui.domElement.style.display = 'none';
         guiPanels[key].btn.classList.remove('active');
     }
@@ -2582,6 +2577,8 @@ function init() {
     _deviationLegendEl.appendChild(_deviationLegendBodyEl);
     document.body.appendChild(_deviationLegendEl);
     _initDeviationLegendDrag();
+
+    _initSelectedOverlay();
 } //End init 
 
 // Přepočítá frustum ortografické kamery podle aktuálního obsahu meshObjects.
@@ -2641,7 +2638,7 @@ function recalibratePerspCamera() {
 function applyToolbarPreferences() {
     // GUI panels – lil-gui CSS custom properties applied to ALL .lil-gui elements
     // (nested folders re-declare variables, so we must set on every level)
-    document.querySelectorAll('#gui-container .lil-gui').forEach(el => {
+    document.querySelectorAll('#gui-container .lil-gui, #selected-overlay .lil-gui').forEach(el => {
         el.style.setProperty('--font-size', toolbarDefaults.fontSize + 'px');
         el.style.setProperty('--input-font-size', toolbarDefaults.fontSize + 'px');
         el.style.setProperty('--widget-height', toolbarDefaults.rowHeight + 'px');
@@ -2653,7 +2650,7 @@ function applyToolbarPreferences() {
         el.style.setProperty('width', toolbarDefaults.panelWidth + 'px', 'important');
     });
     // Sub-folder titles font size
-    document.querySelectorAll('#gui-container .lil-gui .lil-gui > .lil-title').forEach(el => {
+    document.querySelectorAll('#gui-container .lil-gui .lil-gui > .lil-title, #selected-overlay .lil-gui .lil-gui > .lil-title').forEach(el => {
         el.style.fontSize = toolbarDefaults.fontSize + 'px';
     });
     // Toolbar buttons
@@ -2668,6 +2665,23 @@ function applyToolbarPreferences() {
     // Panel container offset below toolbar
     const gc = document.getElementById('gui-container');
     if (gc) gc.style.top = toolbarDefaults.toolbarHeight + 'px';
+    if (_selectedOverlayEl) {
+        _selectedOverlayEl.style.width = toolbarDefaults.panelWidth + 'px';
+        if (_selectedOverlayBodyEl) {
+            const guiEl = _selectedOverlayBodyEl.querySelector(':scope > .lil-gui');
+            if (guiEl) {
+                guiEl.style.maxHeight =
+                    `calc(100vh - ${toolbarDefaults.toolbarHeight}px - 32px - 36px)`;
+            }
+        }
+        if (_selectedOverlayEl.style.display !== 'none') {
+            const left = parseFloat(_selectedOverlayEl.style.left);
+            const top = parseFloat(_selectedOverlayEl.style.top);
+            if (Number.isFinite(left) && Number.isFinite(top)) {
+                _applySelectedOverlayPosition(left, top);
+            }
+        }
+    }
 }
 
 function applySnapSettings() {
@@ -3843,6 +3857,230 @@ function updateMeshDensityInfo() {
     meshDensityGui.triangleInfo = `${trianglesBefore.toLocaleString('en-US')} (${meshes.length} mesh${meshes.length === 1 ? '' : 'es'})`;
 }
 
+function _clampSelectedOverlayPosition(left, top) {
+    if (!_selectedOverlayEl) return { left, top };
+    const w = _selectedOverlayEl.offsetWidth || toolbarDefaults.panelWidth || 300;
+    const h = _selectedOverlayEl.offsetHeight || 36;
+    const margin = 8;
+    return {
+        left: Math.max(margin, Math.min(left, window.innerWidth - w - margin)),
+        top: Math.max(margin, Math.min(top, window.innerHeight - h - margin)),
+    };
+}
+
+function _applySelectedOverlayPosition(left, top) {
+    if (!_selectedOverlayEl) return;
+    const clamped = _clampSelectedOverlayPosition(left, top);
+    _selectedOverlayEl.style.left = `${clamped.left}px`;
+    _selectedOverlayEl.style.top = `${clamped.top}px`;
+    _selectedOverlayEl.style.right = 'auto';
+    _selectedOverlayEl.style.bottom = 'auto';
+}
+
+function _loadSelectedOverlayState() {
+    try {
+        const raw = localStorage.getItem(SELECTED_OVERLAY_POS_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (Number.isFinite(parsed.left) && Number.isFinite(parsed.top)) {
+            return {
+                left: parsed.left,
+                top: parsed.top,
+                collapsed: !!parsed.collapsed,
+            };
+        }
+    } catch (_) { /* ignore */ }
+    return null;
+}
+
+function _saveSelectedOverlayState() {
+    if (!_selectedOverlayEl) return;
+    const left = parseFloat(_selectedOverlayEl.style.left);
+    const top = parseFloat(_selectedOverlayEl.style.top);
+    if (!Number.isFinite(left) || !Number.isFinite(top)) return;
+    localStorage.setItem(SELECTED_OVERLAY_POS_KEY, JSON.stringify({
+        left,
+        top,
+        collapsed: _selectedOverlayEl.classList.contains('selected-overlay-collapsed'),
+    }));
+}
+
+function _ensureSelectedOverlayPosition() {
+    if (!_selectedOverlayEl || _selectedOverlayPositionReady) return;
+    const saved = _loadSelectedOverlayState();
+    if (saved) {
+        _setSelectedOverlayCollapsed(saved.collapsed, false);
+        _applySelectedOverlayPosition(saved.left, saved.top);
+    } else {
+        const width = toolbarDefaults.panelWidth || 300;
+        _applySelectedOverlayPosition(
+            window.innerWidth - width - 8,
+            (toolbarDefaults.toolbarHeight || 28) + 8
+        );
+    }
+    _selectedOverlayPositionReady = true;
+}
+
+function _setSelectedOverlayCollapsed(collapsed, save = true) {
+    if (!_selectedOverlayEl) return;
+    _selectedOverlayEl.classList.toggle('selected-overlay-collapsed', !!collapsed);
+    const left = parseFloat(_selectedOverlayEl.style.left);
+    const top = parseFloat(_selectedOverlayEl.style.top);
+    if (Number.isFinite(left) && Number.isFinite(top)) {
+        _applySelectedOverlayPosition(left, top);
+    }
+    if (save) _saveSelectedOverlayState();
+}
+
+function _showSelectedOverlay() {
+    if (!_selectedOverlayEl) return;
+    _selectedOverlayEl.style.display = 'block';
+    _ensureSelectedOverlayPosition();
+    if (Number.isFinite(parseFloat(_selectedOverlayEl.style.left))) {
+        _applySelectedOverlayPosition(
+            parseFloat(_selectedOverlayEl.style.left),
+            parseFloat(_selectedOverlayEl.style.top)
+        );
+    }
+}
+
+function _hideSelectedOverlay() {
+    if (_selectedOverlayEl) _selectedOverlayEl.style.display = 'none';
+}
+
+function _setSelectedOverlayTitle(title) {
+    if (_selectedOverlayTitleEl) _selectedOverlayTitleEl.textContent = title;
+}
+
+function _initSelectedOverlayDrag() {
+    if (!_selectedOverlayHeaderEl || !_selectedOverlayEl) return;
+
+    let dragging = false;
+    let startX = 0;
+    let startY = 0;
+    let startLeft = 0;
+    let startTop = 0;
+
+    _selectedOverlayHeaderEl.addEventListener('mousedown', (e) => {
+        if (e.button !== 0) return;
+        if (e.target.closest('.selected-overlay-btn')) return;
+        e.preventDefault();
+        e.stopPropagation();
+        dragging = true;
+        _selectedOverlayEl.classList.add('selected-overlay-dragging');
+        startX = e.clientX;
+        startY = e.clientY;
+        startLeft = _selectedOverlayEl.offsetLeft;
+        startTop = _selectedOverlayEl.offsetTop;
+    });
+
+    window.addEventListener('mousemove', (e) => {
+        if (!dragging) return;
+        e.preventDefault();
+        _applySelectedOverlayPosition(
+            startLeft + (e.clientX - startX),
+            startTop + (e.clientY - startY)
+        );
+    });
+
+    window.addEventListener('mouseup', () => {
+        if (!dragging) return;
+        dragging = false;
+        _selectedOverlayEl.classList.remove('selected-overlay-dragging');
+        _saveSelectedOverlayState();
+    });
+
+    window.addEventListener('resize', () => {
+        if (!_selectedOverlayEl || _selectedOverlayEl.style.display === 'none') return;
+        const left = parseFloat(_selectedOverlayEl.style.left);
+        const top = parseFloat(_selectedOverlayEl.style.top);
+        if (Number.isFinite(left) && Number.isFinite(top)) {
+            _applySelectedOverlayPosition(left, top);
+        }
+    });
+}
+
+function _initSelectedOverlay() {
+    _selectedOverlayEl = document.createElement('div');
+    _selectedOverlayEl.id = 'selected-overlay';
+
+    _selectedOverlayHeaderEl = document.createElement('div');
+    _selectedOverlayHeaderEl.id = 'selected-overlay-header';
+
+    const headerLeft = document.createElement('div');
+    headerLeft.id = 'selected-overlay-header-left';
+
+    _selectedOverlayTitleEl = document.createElement('span');
+    _selectedOverlayTitleEl.id = 'selected-overlay-title';
+    _selectedOverlayTitleEl.textContent = 'Selected';
+
+    const grip = document.createElement('span');
+    grip.className = 'selected-overlay-grip';
+    grip.setAttribute('aria-hidden', 'true');
+    grip.textContent = '⋮⋮';
+
+    headerLeft.appendChild(_selectedOverlayTitleEl);
+    headerLeft.appendChild(grip);
+
+    const controls = document.createElement('div');
+    controls.id = 'selected-overlay-controls';
+
+    const minBtn = document.createElement('button');
+    minBtn.type = 'button';
+    minBtn.className = 'selected-overlay-btn selected-overlay-min';
+    minBtn.title = 'Minimize';
+    minBtn.setAttribute('aria-label', 'Minimize');
+    minBtn.textContent = '–';
+    minBtn.addEventListener('mousedown', (e) => e.stopPropagation());
+    minBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        _setSelectedOverlayCollapsed(!_selectedOverlayEl.classList.contains('selected-overlay-collapsed'));
+    });
+
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'selected-overlay-btn selected-overlay-close';
+    closeBtn.title = 'Close';
+    closeBtn.setAttribute('aria-label', 'Close');
+    closeBtn.textContent = '×';
+    closeBtn.addEventListener('mousedown', (e) => e.stopPropagation());
+    closeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (viewProp.isGroupTransformActive || selectedObjects.length > 0) clearMultiSelect();
+        else deselectObject();
+    });
+
+    controls.appendChild(minBtn);
+    controls.appendChild(closeBtn);
+    _selectedOverlayHeaderEl.appendChild(headerLeft);
+    _selectedOverlayHeaderEl.appendChild(controls);
+
+    _selectedOverlayBodyEl = document.createElement('div');
+    _selectedOverlayBodyEl.id = 'selected-overlay-body';
+
+    _selectedOverlayEl.appendChild(_selectedOverlayHeaderEl);
+    _selectedOverlayEl.appendChild(_selectedOverlayBodyEl);
+    document.body.appendChild(_selectedOverlayEl);
+    _initSelectedOverlayDrag();
+}
+
+function destroySelectedGui({ hideOverlay = true } = {}) {
+    if (selectedFolder) {
+        saveSelectedGuiScrollForMaterialKeepOpen();
+        selectedFolder.destroy();
+        selectedFolder = null;
+    }
+    if (hideOverlay) _hideSelectedOverlay();
+}
+
+function _attachSelectedGui(title) {
+    selectedFolder = new GUI({ container: _selectedOverlayBodyEl, title });
+    _setSelectedOverlayTitle(title);
+    selectedFolder.domElement.style.display = '';
+    applyToolbarPreferences();
+    _showSelectedOverlay();
+}
+
 let _savedSelectedGuiScrollTop = 0;
 
 function selectedGuiScrollElement() {
@@ -3869,11 +4107,7 @@ function restoreSelectedGuiScrollForMaterialKeepOpen() {
 }
 
 function refreshSelectedObjGui(obj) {
-    if (selectedFolder) {
-        saveSelectedGuiScrollForMaterialKeepOpen();
-        selectedFolder.destroy();
-        selectedFolder = null;
-    }
+    destroySelectedGui({ hideOverlay: false });
     _materialFolder = null;
     _materialFolderAll = null;
 
@@ -3895,14 +4129,11 @@ function refreshSelectedObjGui(obj) {
         }
     })(obj);
                 
-    selectedFolder = new GUI({ container: guiContainer, title: 'Selected part: ' + (obj.name || 'Unnamed') });
-    // Link to permanent toolbar button and auto-show
-    guiPanels['Selected'].gui = selectedFolder;
-    guiPanels['Selected'].btn.style.display = '';
-    selectedFolder.domElement.style.display = '';
-    guiPanels['Selected'].btn.classList.add('active');
-    applyToolbarPreferences(); // Apply current toolbar CSS to the new Selected panel
-    selectedFolder.add(obj, 'name').name('Name').onChange(() => updateObjectLabel(obj)).listen();
+    _attachSelectedGui('Selected part: ' + (obj.name || 'Unnamed'));
+    selectedFolder.add(obj, 'name').name('Name').onChange(() => {
+        updateObjectLabel(obj);
+        _setSelectedOverlayTitle('Selected part: ' + (obj.name || 'Unnamed'));
+    }).listen();
     selectedFolder.addColor(part, 'color').name('Specif. color').onChange(function(value){ changeColor(obj, value); });
 
     // Roughness / Metalness – read initial value from first material found, apply to all
@@ -4158,18 +4389,10 @@ function refreshSelectedObjGui(obj) {
 // Shows the first object's name, operations applied to all selectedObjects,
 // and Location sliders bound directly to the pivotObject.
 function refreshGroupGui() {
-    if (selectedFolder) {
-        selectedFolder.destroy();
-        selectedFolder = null;
-    }
+    destroySelectedGui({ hideOverlay: false });
 
     const n = selectedObjects.length;
-    selectedFolder = new GUI({ container: guiContainer, title: `Group (${n} objects)` });
-    guiPanels['Selected'].gui = selectedFolder;
-    guiPanels['Selected'].btn.style.display = '';
-    selectedFolder.domElement.style.display = '';
-    guiPanels['Selected'].btn.classList.add('active');
-    applyToolbarPreferences();
+    _attachSelectedGui(`Group (${n} objects)`);
 
     // Read-only list of object names
     const namesStr = selectedObjects.map(o => o.name || 'Unnamed').join(', ');
@@ -6433,13 +6656,7 @@ function toggleObjectInMultiSelect(obj) {
             if (pivotObject) { scene.remove(pivotObject); pivotObject = null; }
             viewProp.isGroupTransformActive = false;
             clearGroupHighlights();
-            if (selectedFolder) {
-                selectedFolder.destroy();
-                selectedFolder = null;
-                guiPanels['Selected'].gui = null;
-                guiPanels['Selected'].btn.classList.remove('active');
-                guiPanels['Selected'].btn.style.display = 'none';
-            }
+            destroySelectedGui();
         } else {
             refreshGroupGui();
         }
@@ -6537,14 +6754,7 @@ function deactivateMultiSelect() {
     if (transformControls.object === pivotObject) transformControls.detach();
     hideTransformSpaceGizmo();
 
-    // Zrušíme group GUI
-    if (selectedFolder) {
-        selectedFolder.destroy();
-        selectedFolder = null;
-        guiPanels['Selected'].gui = null;
-        guiPanels['Selected'].btn.classList.remove('active');
-        guiPanels['Selected'].btn.style.display = 'none';
-    }
+    destroySelectedGui();
 
     // Vrátíme objekty zpět jejich původním rodičům (zachová se world-space pozice)
     selectedObjects.forEach((obj, i) => {
@@ -8088,15 +8298,7 @@ function deselectObject() {
         singleSelectObjectInitMatrix = null;
         singleSelectPivotDirty = false;
     }                
-    // Zničíme složku v lil-gui, pokud existuje
-    if (selectedFolder) {
-        saveSelectedGuiScrollForMaterialKeepOpen();
-        selectedFolder.destroy();
-        selectedFolder = null;
-        guiPanels['Selected'].gui = null;
-        guiPanels['Selected'].btn.classList.remove('active');
-        guiPanels['Selected'].btn.style.display = 'none';
-    }                
+    destroySelectedGui();
     // Volitelné: vynulování pomocných proměnných
     lastSelectedMeshes.forEach(child => { applyEmissive(child, 0x000000); clearXray(child); });
 
