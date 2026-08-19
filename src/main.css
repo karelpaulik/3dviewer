@@ -1605,6 +1605,13 @@ a, button, input, select {
     user-select: none;
     overflow: hidden;
     box-sizing: border-box;
+    flex-direction: column;
+    min-width: 200px;
+    position: relative;
+}
+
+#selected-overlay.is-visible {
+    display: flex;
 }
 
 #selected-overlay-header {
@@ -1618,6 +1625,7 @@ a, button, input, select {
     font-weight: 600;
     line-height: 1.2;
     min-height: 28px;
+    flex: 0 0 auto;
 }
 
 #selected-overlay.selected-overlay-collapsed #selected-overlay-header {
@@ -1682,14 +1690,56 @@ a, button, input, select {
     display: none;
 }
 
+#selected-overlay-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+}
+
+#selected-overlay:not(.has-user-height):not(.selected-overlay-collapsed) {
+    max-height: calc(100vh - 16px);
+}
+
 #selected-overlay.selected-overlay-dragging #selected-overlay-header {
     cursor: grabbing;
 }
 
 #selected-overlay-body > .lil-gui {
     width: 100% !important;
-    max-height: calc(100vh - 28px - 32px - 36px);
-    overflow-y: auto;
+    max-height: none;
+}
+
+.selected-overlay-resize {
+    position: absolute;
+    z-index: 2;
+}
+
+.selected-overlay-resize-e {
+    top: 8px;
+    right: 0;
+    bottom: 8px;
+    width: 6px;
+    cursor: ew-resize;
+}
+
+.selected-overlay-resize-s {
+    left: 8px;
+    right: 8px;
+    bottom: 0;
+    height: 6px;
+    cursor: ns-resize;
+}
+
+.selected-overlay-resize-se {
+    right: 0;
+    bottom: 0;
+    width: 12px;
+    height: 12px;
+    cursor: nwse-resize;
+}
+
+#selected-overlay.selected-overlay-collapsed .selected-overlay-resize {
+    display: none;
 }
 
 #selected-overlay-body > .lil-gui > .lil-title {

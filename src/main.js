@@ -721,7 +721,11 @@ let _selectedOverlayHeaderEl = null;
 let _selectedOverlayTitleEl = null;
 let _selectedOverlayBodyEl = null;
 let _selectedOverlayPositionReady = false;
+let _selectedOverlayExpandedHeight = null;
+let _selectedOverlayHeightUserSet = false;
 const SELECTED_OVERLAY_POS_KEY = 'selectedOverlayPos';
+const SELECTED_OVERLAY_MIN_WIDTH = 200;
+const SELECTED_OVERLAY_MIN_HEIGHT = 120;
 const xrayBackup = new Map(); // mesh → { renderOrder, depthTests: boolean[] }
 
 const raycaster = new THREE.Raycaster();
@@ -2665,21 +2669,12 @@ function applyToolbarPreferences() {
     // Panel container offset below toolbar
     const gc = document.getElementById('gui-container');
     if (gc) gc.style.top = toolbarDefaults.toolbarHeight + 'px';
-    if (_selectedOverlayEl) {
-        _selectedOverlayEl.style.width = toolbarDefaults.panelWidth + 'px';
-        if (_selectedOverlayBodyEl) {
-            const guiEl = _selectedOverlayBodyEl.querySelector(':scope > .lil-gui');
-            if (guiEl) {
-                guiEl.style.maxHeight =
-                    `calc(100vh - ${toolbarDefaults.toolbarHeight}px - 32px - 36px)`;
-            }
-        }
-        if (_selectedOverlayEl.style.display !== 'none') {
-            const left = parseFloat(_selectedOverlayEl.style.left);
-            const top = parseFloat(_selectedOverlayEl.style.top);
-            if (Number.isFinite(left) && Number.isFinite(top)) {
-                _applySelectedOverlayPosition(left, top);
-            }
+    if (_selectedOverlayEl && _selectedOverlayEl.classList.contains('is-visible')) {
+        _clampSelectedOverlaySizeToViewport();
+        const left = parseFloat(_selectedOverlayEl.style.left);
+        const top = parseFloat(_selectedOverlayEl.style.top);
+        if (Number.isFinite(left) && Number.isFinite(top)) {
+            _applySelectedOverlayPosition(left, top);
         }
     }
 }
@@ -3857,11 +3852,15 @@ function updateMeshDensityInfo() {
     meshDensityGui.triangleInfo = `${trianglesBefore.toLocaleString('en-US')} (${meshes.length} mesh${meshes.length === 1 ? '' : 'es'})`;
 }
 
+function _selectedOverlayMargin() {
+    return 8;
+}
+
 function _clampSelectedOverlayPosition(left, top) {
     if (!_selectedOverlayEl) return { left, top };
     const w = _selectedOverlayEl.offsetWidth || toolbarDefaults.panelWidth || 300;
     const h = _selectedOverlayEl.offsetHeight || 36;
-    const margin = 8;
+    const margin = _selectedOverlayMargin();
     return {
         left: Math.max(margin, Math.min(left, window.innerWidth - w - margin)),
         top: Math.max(margin, Math.min(top, window.innerHeight - h - margin)),
@@ -3877,6 +3876,51 @@ function _applySelectedOverlayPosition(left, top) {
     _selectedOverlayEl.style.bottom = 'auto';
 }
 
+function _selectedOverlayMaxSize() {
+    const margin = _selectedOverlayMargin();
+    const left = parseFloat(_selectedOverlayEl?.style.left);
+    const top = parseFloat(_selectedOverlayEl?.style.top);
+    const maxWidth = Number.isFinite(left)
+        ? Math.max(SELECTED_OVERLAY_MIN_WIDTH, window.innerWidth - left - margin)
+        : window.innerWidth - 2 * margin;
+    const maxHeight = Number.isFinite(top)
+        ? Math.max(SELECTED_OVERLAY_MIN_HEIGHT, window.innerHeight - top - margin)
+        : window.innerHeight - 2 * margin;
+    return { maxWidth, maxHeight };
+}
+
+function _syncSelectedOverlayHeightClass() {
+    if (!_selectedOverlayEl) return;
+    const collapsed = _selectedOverlayEl.classList.contains('selected-overlay-collapsed');
+    _selectedOverlayEl.classList.toggle('has-user-height', _selectedOverlayHeightUserSet && !collapsed);
+}
+
+function _applySelectedOverlaySize(width, height, { persistHeight = false } = {}) {
+    if (!_selectedOverlayEl) return;
+    const { maxWidth, maxHeight } = _selectedOverlayMaxSize();
+    const w = Math.max(SELECTED_OVERLAY_MIN_WIDTH, Math.min(width, maxWidth));
+    _selectedOverlayEl.style.width = `${w}px`;
+    if (persistHeight || _selectedOverlayHeightUserSet) {
+        const h = Math.max(SELECTED_OVERLAY_MIN_HEIGHT, Math.min(height, maxHeight));
+        _selectedOverlayEl.style.height = `${h}px`;
+        _selectedOverlayExpandedHeight = h;
+        _selectedOverlayHeightUserSet = true;
+    }
+    _syncSelectedOverlayHeightClass();
+}
+
+function _clampSelectedOverlaySizeToViewport() {
+    if (!_selectedOverlayEl) return;
+    const width = _selectedOverlayEl.offsetWidth;
+    if (_selectedOverlayHeightUserSet && !_selectedOverlayEl.classList.contains('selected-overlay-collapsed')) {
+        const height = parseFloat(_selectedOverlayEl.style.height) || _selectedOverlayEl.offsetHeight;
+        _applySelectedOverlaySize(width, height, { persistHeight: true });
+    } else {
+        const { maxWidth } = _selectedOverlayMaxSize();
+        _selectedOverlayEl.style.width = `${Math.max(SELECTED_OVERLAY_MIN_WIDTH, Math.min(width, maxWidth))}px`;
+    }
+}
+
 function _loadSelectedOverlayState() {
     try {
         const raw = localStorage.getItem(SELECTED_OVERLAY_POS_KEY);
@@ -3887,6 +3931,8 @@ function _loadSelectedOverlayState() {
                 left: parsed.left,
                 top: parsed.top,
                 collapsed: !!parsed.collapsed,
+                width: Number.isFinite(parsed.width) ? parsed.width : null,
+                height: Number.isFinite(parsed.height) ? parsed.height : null,
             };
         }
     } catch (_) { /* ignore */ }
@@ -3898,23 +3944,40 @@ function _saveSelectedOverlayState() {
     const left = parseFloat(_selectedOverlayEl.style.left);
     const top = parseFloat(_selectedOverlayEl.style.top);
     if (!Number.isFinite(left) || !Number.isFinite(top)) return;
-    localStorage.setItem(SELECTED_OVERLAY_POS_KEY, JSON.stringify({
+    const width = parseFloat(_selectedOverlayEl.style.width) || _selectedOverlayEl.offsetWidth;
+    const collapsed = _selectedOverlayEl.classList.contains('selected-overlay-collapsed');
+    const state = {
         left,
         top,
-        collapsed: _selectedOverlayEl.classList.contains('selected-overlay-collapsed'),
-    }));
+        collapsed,
+        width,
+    };
+    if (_selectedOverlayHeightUserSet && Number.isFinite(_selectedOverlayExpandedHeight)) {
+        state.height = _selectedOverlayExpandedHeight;
+    }
+    localStorage.setItem(SELECTED_OVERLAY_POS_KEY, JSON.stringify(state));
 }
 
 function _ensureSelectedOverlayPosition() {
     if (!_selectedOverlayEl || _selectedOverlayPositionReady) return;
     const saved = _loadSelectedOverlayState();
+    const defaultWidth = toolbarDefaults.panelWidth || 300;
     if (saved) {
+        if (Number.isFinite(saved.width)) _selectedOverlayEl.style.width = `${saved.width}px`;
+        if (Number.isFinite(saved.height)) {
+            _selectedOverlayHeightUserSet = true;
+            _selectedOverlayExpandedHeight = saved.height;
+            if (!saved.collapsed) _selectedOverlayEl.style.height = `${saved.height}px`;
+        }
         _setSelectedOverlayCollapsed(saved.collapsed, false);
+        _syncSelectedOverlayHeightClass();
+        _applySelectedOverlayPosition(saved.left, saved.top);
+        _clampSelectedOverlaySizeToViewport();
         _applySelectedOverlayPosition(saved.left, saved.top);
     } else {
-        const width = toolbarDefaults.panelWidth || 300;
+        _selectedOverlayEl.style.width = `${defaultWidth}px`;
         _applySelectedOverlayPosition(
-            window.innerWidth - width - 8,
+            window.innerWidth - defaultWidth - 8,
             (toolbarDefaults.toolbarHeight || 28) + 8
         );
     }
@@ -3923,7 +3986,19 @@ function _ensureSelectedOverlayPosition() {
 
 function _setSelectedOverlayCollapsed(collapsed, save = true) {
     if (!_selectedOverlayEl) return;
+    const wasCollapsed = _selectedOverlayEl.classList.contains('selected-overlay-collapsed');
+    if (collapsed && !wasCollapsed) {
+        if (_selectedOverlayHeightUserSet) {
+            const h = parseFloat(_selectedOverlayEl.style.height);
+            _selectedOverlayExpandedHeight = Number.isFinite(h) ? h : _selectedOverlayEl.offsetHeight;
+        }
+        _selectedOverlayEl.style.height = '';
+    } else if (!collapsed && wasCollapsed && _selectedOverlayHeightUserSet && Number.isFinite(_selectedOverlayExpandedHeight)) {
+        _selectedOverlayEl.style.height = `${_selectedOverlayExpandedHeight}px`;
+    }
     _selectedOverlayEl.classList.toggle('selected-overlay-collapsed', !!collapsed);
+    _syncSelectedOverlayHeightClass();
+    _clampSelectedOverlaySizeToViewport();
     const left = parseFloat(_selectedOverlayEl.style.left);
     const top = parseFloat(_selectedOverlayEl.style.top);
     if (Number.isFinite(left) && Number.isFinite(top)) {
@@ -3934,7 +4009,7 @@ function _setSelectedOverlayCollapsed(collapsed, save = true) {
 
 function _showSelectedOverlay() {
     if (!_selectedOverlayEl) return;
-    _selectedOverlayEl.style.display = 'block';
+    _selectedOverlayEl.classList.add('is-visible');
     _ensureSelectedOverlayPosition();
     if (Number.isFinite(parseFloat(_selectedOverlayEl.style.left))) {
         _applySelectedOverlayPosition(
@@ -3945,7 +4020,7 @@ function _showSelectedOverlay() {
 }
 
 function _hideSelectedOverlay() {
-    if (_selectedOverlayEl) _selectedOverlayEl.style.display = 'none';
+    if (_selectedOverlayEl) _selectedOverlayEl.classList.remove('is-visible');
 }
 
 function _setSelectedOverlayTitle(title) {
@@ -3956,10 +4031,14 @@ function _initSelectedOverlayDrag() {
     if (!_selectedOverlayHeaderEl || !_selectedOverlayEl) return;
 
     let dragging = false;
+    let resizing = false;
+    let resizeEdges = '';
     let startX = 0;
     let startY = 0;
     let startLeft = 0;
     let startTop = 0;
+    let startWidth = 0;
+    let startHeight = 0;
 
     _selectedOverlayHeaderEl.addEventListener('mousedown', (e) => {
         if (e.button !== 0) return;
@@ -3974,24 +4053,56 @@ function _initSelectedOverlayDrag() {
         startTop = _selectedOverlayEl.offsetTop;
     });
 
+    _selectedOverlayEl.querySelectorAll('.selected-overlay-resize').forEach((handle) => {
+        handle.addEventListener('mousedown', (e) => {
+            if (e.button !== 0) return;
+            if (_selectedOverlayEl.classList.contains('selected-overlay-collapsed')) return;
+            e.preventDefault();
+            e.stopPropagation();
+            resizing = true;
+            resizeEdges = handle.dataset.resize || '';
+            startX = e.clientX;
+            startY = e.clientY;
+            startWidth = _selectedOverlayEl.offsetWidth;
+            startHeight = _selectedOverlayEl.offsetHeight;
+        });
+    });
+
     window.addEventListener('mousemove', (e) => {
-        if (!dragging) return;
+        if (dragging) {
+            e.preventDefault();
+            _applySelectedOverlayPosition(
+                startLeft + (e.clientX - startX),
+                startTop + (e.clientY - startY)
+            );
+            return;
+        }
+        if (!resizing) return;
         e.preventDefault();
-        _applySelectedOverlayPosition(
-            startLeft + (e.clientX - startX),
-            startTop + (e.clientY - startY)
-        );
+        const dx = e.clientX - startX;
+        const dy = e.clientY - startY;
+        const nextWidth = resizeEdges.includes('e') ? startWidth + dx : startWidth;
+        const nextHeight = resizeEdges.includes('s') ? startHeight + dy : startHeight;
+        _applySelectedOverlaySize(nextWidth, nextHeight, {
+            persistHeight: resizeEdges.includes('s'),
+        });
     });
 
     window.addEventListener('mouseup', () => {
-        if (!dragging) return;
-        dragging = false;
-        _selectedOverlayEl.classList.remove('selected-overlay-dragging');
-        _saveSelectedOverlayState();
+        if (dragging) {
+            dragging = false;
+            _selectedOverlayEl.classList.remove('selected-overlay-dragging');
+            _saveSelectedOverlayState();
+        }
+        if (resizing) {
+            resizing = false;
+            _saveSelectedOverlayState();
+        }
     });
 
     window.addEventListener('resize', () => {
-        if (!_selectedOverlayEl || _selectedOverlayEl.style.display === 'none') return;
+        if (!_selectedOverlayEl || !_selectedOverlayEl.classList.contains('is-visible')) return;
+        _clampSelectedOverlaySizeToViewport();
         const left = parseFloat(_selectedOverlayEl.style.left);
         const top = parseFloat(_selectedOverlayEl.style.top);
         if (Number.isFinite(left) && Number.isFinite(top)) {
@@ -4060,6 +4171,18 @@ function _initSelectedOverlay() {
 
     _selectedOverlayEl.appendChild(_selectedOverlayHeaderEl);
     _selectedOverlayEl.appendChild(_selectedOverlayBodyEl);
+
+    [
+        ['e', 'selected-overlay-resize-e'],
+        ['s', 'selected-overlay-resize-s'],
+        ['se', 'selected-overlay-resize-se'],
+    ].forEach(([edge, extraClass]) => {
+        const handle = document.createElement('div');
+        handle.className = `selected-overlay-resize ${extraClass}`;
+        handle.dataset.resize = edge;
+        _selectedOverlayEl.appendChild(handle);
+    });
+
     document.body.appendChild(_selectedOverlayEl);
     _initSelectedOverlayDrag();
 }
