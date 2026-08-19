@@ -1503,10 +1503,16 @@ function applyExtentStepSettings() {
     for (const ctrl of extentSliderControllers) {
         if (ctrl._extentStepKey) ctrl.step(viewProp[ctrl._extentStepKey]);
     }
-    if (viewProp.isGroupTransformActive && selectedObjects.length > 0) {
-        refreshGroupGui();
-    } else if (lastSelectedObject) {
-        refreshSelectedObjGui(lastSelectedObject);
+}
+
+function untrackExtentSlidersFromGui(gui) {
+    if (!gui?.domElement) return;
+    const root = gui.domElement;
+    for (let i = extentSliderControllers.length - 1; i >= 0; i--) {
+        const ctrl = extentSliderControllers[i];
+        if (ctrl?.domElement && root.contains(ctrl.domElement)) {
+            extentSliderControllers.splice(i, 1);
+        }
     }
 }
 
@@ -1528,6 +1534,26 @@ function resetTransformSnapToDefault() {
 function resetExtentStepsToDefault() {
     Object.assign(viewProp, snapSlidersInitDefaults);
     applyExtentStepSettings();
+}
+
+function addSnapFolder(parentFolder) {
+    const snapFolder = parentFolder.addFolder('Snap');
+    const snapTransformFolder = snapFolder.addFolder('Transform control');
+    snapTransformFolder.add(viewProp, 'transformMode', ['translate', 'rotate', 'scale']).name('Mode').onChange(function(value) { transformControls.setMode(value); }).listen();
+    snapTransformFolder.add(viewProp, 'snapTranslation', 1, 1000, 1).name('Translation').onChange(function() { applySnapSettings(); }).listen();
+    snapTransformFolder.add(viewProp, 'snapRotationDeg', 1, 90, 1).name('Rotation (°)').onChange(function() { applySnapSettings(); }).listen();
+    snapTransformFolder.add(viewProp, 'snapScale', 0.01, 2, 0.01).name('Scale').onChange(function() { applySnapSettings(); }).listen();
+    snapTransformFolder.add({ fn: resetTransformSnapToDefault }, 'fn').name('Set to default');
+    snapTransformFolder.close();
+    const snapSlidersFolder = snapFolder.addFolder('Location sliders, Sections');
+    snapSlidersFolder.add(viewProp, 'pStep', 0.001, 1000, 0.001).name('Translation').onChange(function() { applyExtentStepSettings(); }).listen();
+    snapSlidersFolder.add(viewProp, 'rStep', 0.1, 90, 0.1).name('Rotation (°)').onChange(function() { applyExtentStepSettings(); }).listen();
+    snapSlidersFolder.add(viewProp, 'sStep', 0.001, 10, 0.001).name('Scale').onChange(function() { applyExtentStepSettings(); }).listen();
+    snapSlidersFolder.add({ fn: copyTransformSnapToExtentSteps }, 'fn').name('Copy from Transform control');
+    snapSlidersFolder.add({ fn: resetExtentStepsToDefault }, 'fn').name('Set to default');
+    snapSlidersFolder.close();
+    snapFolder.close();
+    return snapFolder;
 }
 
 /** GUI proxy for THREE.Euler – displays/edits rotation in degrees, stores radians. */
@@ -3548,22 +3574,6 @@ function addMainGui() {
             rotationFolder.add({ fn() { rotateAllModels('z', -Math.PI / 2); } }, 'fn').name('Rotate Z -90°');
             rotationFolder.add({ fn: bakeWholeModelRotation }, 'fn').name('Bake rotation');
             rotationFolder.close();
-        const snapFolder = editGui.addFolder("Snap");
-            const snapTransformFolder = snapFolder.addFolder("Transform control");
-            snapTransformFolder.add(viewProp, 'transformMode', ['translate', 'rotate', 'scale']).name('Mode').onChange(function(value) { transformControls.setMode(value); }).listen();
-            snapTransformFolder.add(viewProp, 'snapTranslation', 1, 1000, 1).name('Translation').onChange(function() { applySnapSettings(); }).listen();
-            snapTransformFolder.add(viewProp, 'snapRotationDeg', 1, 90, 1).name('Rotation (°)').onChange(function() { applySnapSettings(); }).listen();
-            snapTransformFolder.add(viewProp, 'snapScale', 0.01, 2, 0.01).name('Scale').onChange(function() { applySnapSettings(); }).listen();
-            snapTransformFolder.add({ fn: resetTransformSnapToDefault }, 'fn').name('Set to default');
-            snapTransformFolder.close();
-            const snapSlidersFolder = snapFolder.addFolder("Location sliders, Sections");
-            snapSlidersFolder.add(viewProp, 'pStep', 0.001, 1000, 0.001).name('Translation').onChange(function() { applyExtentStepSettings(); }).listen();
-            snapSlidersFolder.add(viewProp, 'rStep', 0.1, 90, 0.1).name('Rotation (°)').onChange(function() { applyExtentStepSettings(); }).listen();
-            snapSlidersFolder.add(viewProp, 'sStep', 0.001, 10, 0.001).name('Scale').onChange(function() { applyExtentStepSettings(); }).listen();
-            snapSlidersFolder.add({ fn: copyTransformSnapToExtentSteps }, 'fn').name('Copy from Transform control');
-            snapSlidersFolder.add({ fn: resetExtentStepsToDefault }, 'fn').name('Set to default');
-            snapSlidersFolder.close();
-            snapFolder.close();
     registerGuiPanel('Edit', editGui);
 }
 
@@ -4190,6 +4200,7 @@ function _initSelectedOverlay() {
 function destroySelectedGui({ hideOverlay = true } = {}) {
     if (selectedFolder) {
         saveSelectedGuiScrollForMaterialKeepOpen();
+        untrackExtentSlidersFromGui(selectedFolder);
         selectedFolder.destroy();
         selectedFolder = null;
     }
@@ -4438,42 +4449,42 @@ function refreshSelectedObjGui(obj) {
             render();
         }
 
-        folder2.add(obj.position, 'x', extent.pn, extent.pp, viewProp.pStep)
+        trackExtentSlider(folder2.add(obj.position, 'x', extent.pn, extent.pp, viewProp.pStep)
             .name('Px')
             .onChange(function(value){obj.position.x=value; _onGuiLocationChange(); })
             .onFinishChange(_onGuiLocationFinish)
-            .listen();
-        folder2.add(obj.position, 'y', extent.pn, extent.pp, viewProp.pStep)
+            .listen(), 'pStep');
+        trackExtentSlider(folder2.add(obj.position, 'y', extent.pn, extent.pp, viewProp.pStep)
             .name('Py')
             .onChange(function(value){obj.position.y=value; _onGuiLocationChange(); })
             .onFinishChange(_onGuiLocationFinish)
-            .listen();
-        folder2.add(obj.position, 'z', extent.pn, extent.pp, viewProp.pStep)
+            .listen(), 'pStep');
+        trackExtentSlider(folder2.add(obj.position, 'z', extent.pn, extent.pp, viewProp.pStep)
             .name('Pz')
             .onChange(function(value){obj.position.z=value; _onGuiLocationChange(); })
             .onFinishChange(_onGuiLocationFinish)
-            .listen();
+            .listen(), 'pStep');
         const rotDeg = makeEulerDegProxy(obj.rotation);
-        folder2.add(rotDeg, 'x', extent.rn, extent.rp, viewProp.rStep)
+        trackExtentSlider(folder2.add(rotDeg, 'x', extent.rn, extent.rp, viewProp.rStep)
             .name('Rx')
             .onChange(function(){ if (!viewProp.transformSpace) syncTransformPivotOrientation(); _onGuiLocationChange(); })
             .onFinishChange(_onGuiLocationFinish)
-            .listen();
-        folder2.add(rotDeg, 'y', extent.rn, extent.rp, viewProp.rStep)
+            .listen(), 'rStep');
+        trackExtentSlider(folder2.add(rotDeg, 'y', extent.rn, extent.rp, viewProp.rStep)
             .name('Ry')
             .onChange(function(){ if (!viewProp.transformSpace) syncTransformPivotOrientation(); _onGuiLocationChange(); })
             .onFinishChange(_onGuiLocationFinish)
-            .listen();
-        folder2.add(rotDeg, 'z', extent.rn, extent.rp, viewProp.rStep)
+            .listen(), 'rStep');
+        trackExtentSlider(folder2.add(rotDeg, 'z', extent.rn, extent.rp, viewProp.rStep)
             .name('Rz')
             .onChange(function(){ if (!viewProp.transformSpace) syncTransformPivotOrientation(); _onGuiLocationChange(); })
             .onFinishChange(_onGuiLocationFinish)
-            .listen();
-        folder2.add(obj.scale, 'x', extent.sn, extent.sp, viewProp.sStep)
+            .listen(), 'rStep');
+        trackExtentSlider(folder2.add(obj.scale, 'x', extent.sn, extent.sp, viewProp.sStep)
             .name('Scale')
             .onChange(function(value){obj.scale.x=value; obj.scale.y=value; obj.scale.z=value; _onGuiLocationChange(); })
             .onFinishChange(_onGuiLocationFinish)
-            .listen();
+            .listen(), 'sStep');
         folder2.add({ fn: bakeSelectedObjectLocation }, 'fn').name('Bake location');
         if (viewProp.locationKeepOpen) folder2.open();
         else folder2.close();
@@ -4485,6 +4496,8 @@ function refreshSelectedObjGui(obj) {
     //         .name('OffsetFactor')
     //         .onChange(function(value){setPolygonOffsetFactor(obj, value);render(); });
     // }
+
+    addSnapFolder(selectedFolder);
 
     // Navigation buttons: Arrow Up / Arrow Down
     const navFolder = selectedFolder.addFolder("Navigation");
@@ -4654,25 +4667,27 @@ function refreshGroupGui() {
             render();
         }
 
-        folder2.add(pivotObject.position, 'x', extent.pn, extent.pp, viewProp.pStep)
-            .name('Px').onChange(_onGroupGuiLocationChange).onFinishChange(_onGroupGuiLocationFinish).listen();
-        folder2.add(pivotObject.position, 'y', extent.pn, extent.pp, viewProp.pStep)
-            .name('Py').onChange(_onGroupGuiLocationChange).onFinishChange(_onGroupGuiLocationFinish).listen();
-        folder2.add(pivotObject.position, 'z', extent.pn, extent.pp, viewProp.pStep)
-            .name('Pz').onChange(_onGroupGuiLocationChange).onFinishChange(_onGroupGuiLocationFinish).listen();
+        trackExtentSlider(folder2.add(pivotObject.position, 'x', extent.pn, extent.pp, viewProp.pStep)
+            .name('Px').onChange(_onGroupGuiLocationChange).onFinishChange(_onGroupGuiLocationFinish).listen(), 'pStep');
+        trackExtentSlider(folder2.add(pivotObject.position, 'y', extent.pn, extent.pp, viewProp.pStep)
+            .name('Py').onChange(_onGroupGuiLocationChange).onFinishChange(_onGroupGuiLocationFinish).listen(), 'pStep');
+        trackExtentSlider(folder2.add(pivotObject.position, 'z', extent.pn, extent.pp, viewProp.pStep)
+            .name('Pz').onChange(_onGroupGuiLocationChange).onFinishChange(_onGroupGuiLocationFinish).listen(), 'pStep');
         const pivotRotDeg = makeEulerDegProxy(pivotObject.rotation);
-        folder2.add(pivotRotDeg, 'x', extent.rn, extent.rp, viewProp.rStep)
-            .name('Rx').onChange(_onGroupGuiLocationChange).onFinishChange(_onGroupGuiLocationFinish).listen();
-        folder2.add(pivotRotDeg, 'y', extent.rn, extent.rp, viewProp.rStep)
-            .name('Ry').onChange(_onGroupGuiLocationChange).onFinishChange(_onGroupGuiLocationFinish).listen();
-        folder2.add(pivotRotDeg, 'z', extent.rn, extent.rp, viewProp.rStep)
-            .name('Rz').onChange(_onGroupGuiLocationChange).onFinishChange(_onGroupGuiLocationFinish).listen();
-        folder2.add(pivotObject.scale, 'x', extent.sn, extent.sp, viewProp.sStep)
+        trackExtentSlider(folder2.add(pivotRotDeg, 'x', extent.rn, extent.rp, viewProp.rStep)
+            .name('Rx').onChange(_onGroupGuiLocationChange).onFinishChange(_onGroupGuiLocationFinish).listen(), 'rStep');
+        trackExtentSlider(folder2.add(pivotRotDeg, 'y', extent.rn, extent.rp, viewProp.rStep)
+            .name('Ry').onChange(_onGroupGuiLocationChange).onFinishChange(_onGroupGuiLocationFinish).listen(), 'rStep');
+        trackExtentSlider(folder2.add(pivotRotDeg, 'z', extent.rn, extent.rp, viewProp.rStep)
+            .name('Rz').onChange(_onGroupGuiLocationChange).onFinishChange(_onGroupGuiLocationFinish).listen(), 'rStep');
+        trackExtentSlider(folder2.add(pivotObject.scale, 'x', extent.sn, extent.sp, viewProp.sStep)
             .name('Scale').onChange(function(value) { pivotObject.scale.set(value, value, value); _onGroupGuiLocationChange(); })
-            .onFinishChange(_onGroupGuiLocationFinish).listen();
+            .onFinishChange(_onGroupGuiLocationFinish).listen(), 'sStep');
         if (viewProp.locationKeepOpen) folder2.open();
         else folder2.close();
     }
+
+    addSnapFolder(selectedFolder);
 
     highlightGroupObjects(selectedObjects);
     selectedFolder.open();
