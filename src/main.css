@@ -2460,7 +2460,7 @@ a, button, input, select {
 .doc-overlay {
     position: fixed;
     inset: 0;
-    z-index: 1050;
+    z-index: 5000;
     --doc-bg-opacity: 1;
     background: rgba(26, 26, 26, var(--doc-bg-opacity));
     display: none;
@@ -3208,7 +3208,7 @@ a, button, input, select {
     top: 0;
     left: 0;
     right: 0;
-    z-index: 99989;
+    z-index: 5000;
     display: flex;
     flex-direction: column;
     background: #2a2a2a;
@@ -3216,6 +3216,12 @@ a, button, input, select {
     flex-shrink: 0;
     user-select: none;
     box-shadow: 0 2px 12px rgba(0,0,0,0.5);
+}
+
+#file-preview-toolbar.overlay-toolbar--inactive,
+#img-editor-toolbar.overlay-toolbar--inactive {
+    visibility: hidden;
+    pointer-events: none;
 }
 
 .fp-toolbar-row {
@@ -3268,7 +3274,7 @@ a, button, input, select {
     box-shadow: 0 8px 40px rgba(0,0,0,0.8);
     resize: both;
     overflow: hidden;
-    z-index: 99990;
+    z-index: 5000;
 }
 
 .file-preview-window--active {
@@ -3425,7 +3431,7 @@ a, button, input, select {
     top: 0;
     left: 0;
     right: 0;
-    z-index: 100002;
+    z-index: 5001;
     display: flex;
     flex-direction: column;
     background: #2a2a2a;
@@ -3450,7 +3456,7 @@ a, button, input, select {
     box-shadow: 0 8px 40px rgba(0,0,0,0.8);
     resize: both;
     overflow: hidden;
-    z-index: 100001;
+    z-index: 5000;
 }
 .img-editor-window--active {
     border-color: #4a8adf;

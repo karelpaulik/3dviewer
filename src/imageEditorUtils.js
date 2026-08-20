@@ -15,6 +15,7 @@ import {
     runOcrWithProgress,
     showOcrResultDialog,
 } from './ocrUtils.js';
+import { raiseOverlaySurface, unregisterOverlaySurface } from './overlayStackUtils.js';
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
@@ -60,10 +61,16 @@ const TOOLS = ['pan', 'crop', 'select', 'pen', 'text', 'rect', 'ellipse', 'line'
 let _instances    = [];       // all open editor instances
 let _activeInst   = null;     // currently focused instance
 let _toolbarEl    = null;     // shared toolbar DOM element
-let _nextZIndex   = 100001;   // z-index counter for window stacking
 let _nextWinPos   = 0;        // cascade offset for new windows
 let _guiOnTop     = false;    // when true, GUI floats above editor windows
 let _showWinChrome = true;    // when false, titlebar & statusbar of all windows are hidden
+
+// GUI z-index is 1001 (see #gui-container in main.css).
+// Editor windows normally share the overlay stack (5000–90000). When _guiOnTop
+// is true we drop editor windows to 999 (below GUI) but keep the toolbar above
+// GUI so the toggle button stays reachable.
+const _Z_EDITOR_BEHIND  = 999;
+const _Z_TOOLBAR_GUITOP = 1002;
 
 // ── Instance factory ──────────────────────────────────────────────────────────
 
@@ -234,6 +241,11 @@ function _ensureToolbar() {
 
     document.body.appendChild(_toolbarEl);
 
+    _toolbarEl.addEventListener('mousedown', () => {
+        if (_activeInst) _focusInstance(_activeInst);
+        else _raiseImageEditorSurface(null);
+    }, true);
+
     TOOLS.forEach(tool => {
         const btn = _toolbarEl.querySelector(`#img-ed-tool-${tool}`);
         if (btn) btn.addEventListener('click', () => { if (_activeInst) _setTool(_activeInst, tool); });
@@ -329,7 +341,7 @@ function _buildInstanceUI(inst) {
     win.className = 'img-editor-window';
     win.style.left = (60 + offset) + 'px';
     win.style.top  = (60 + offset) + 'px';
-    win.style.zIndex = _guiOnTop ? String(_Z_EDITOR_BEHIND) : String(_nextZIndex++);
+    if (_guiOnTop) win.style.zIndex = String(_Z_EDITOR_BEHIND);
     win.innerHTML = `
         <div class="img-editor-titlebar">
             <div class="img-ed-titlebar-title">
@@ -601,14 +613,25 @@ function _makeDraggable(win, handle) {
 
 // ── Focus management ──────────────────────────────────────────────────────────
 
-function _focusInstance(inst) {
-    const z = _guiOnTop ? _Z_EDITOR_BEHIND : _nextZIndex++;
-    if (_activeInst === inst) {
-        inst.winEl.style.zIndex = String(z);
+function _raiseImageEditorSurface(inst, force = false) {
+    if (_guiOnTop) {
+        if (inst?.winEl) inst.winEl.style.zIndex = String(_Z_EDITOR_BEHIND);
+        if (_toolbarEl) _toolbarEl.style.zIndex = String(_Z_TOOLBAR_GUITOP);
         return;
     }
+    raiseOverlaySurface({
+        id: 'imageEditor',
+        windowEl: inst?.winEl || null,
+        toolbarEl: _toolbarEl,
+        force,
+    });
+}
+
+function _focusInstance(inst) {
+    if (!inst) return;
+    _raiseImageEditorSurface(inst);
+    if (_activeInst === inst) return;
     _activeInst = inst;
-    inst.winEl.style.zIndex = String(z);
     _instances.forEach(i => i.winEl.classList.toggle('img-editor-window--active', i === inst));
     _syncToolbarActiveState();
     _syncCropButtons(inst);
@@ -2183,14 +2206,6 @@ function _resizeAll() {
 
 // ── GUI-on-top toggle ─────────────────────────────────────────────────────────
 
-// GUI z-index is 1001 (see #gui-container in main.css).
-// Editor windows normally sit at 100001+. When _guiOnTop is true we drop
-// editor windows to 999 (below GUI) but keep the toolbar above GUI so the
-// toggle button stays reachable.
-const _Z_EDITOR_NORMAL  = 100001;
-const _Z_EDITOR_BEHIND  = 999;
-const _Z_TOOLBAR_GUITOP = 1002;  // just above GUI (1001) so toggle btn is clickable
-
 function _toggleWinChrome() {
     _showWinChrome = !_showWinChrome;
     const btn = _toolbarEl && _toolbarEl.querySelector('#img-ed-chrome-toggle');
@@ -2215,14 +2230,14 @@ function _applyGuiOnTop() {
     if (!_toolbarEl) return;
     const btn = _toolbarEl.querySelector('#img-ed-guitop');
     if (_guiOnTop) {
+        unregisterOverlaySurface('imageEditor');
         _toolbarEl.style.zIndex = String(_Z_TOOLBAR_GUITOP);
         _instances.forEach(inst => { inst.winEl.style.zIndex = String(_Z_EDITOR_BEHIND); });
         if (btn) { btn.classList.add('active'); btn.title = 'Editor on top (click to switch)'; }
     } else {
-        _toolbarEl.style.zIndex = '';          // CSS default (100002 from stylesheet)
-        // Restore each window's original stacking order
-        _instances.forEach((inst, i) => { inst.winEl.style.zIndex = String(_Z_EDITOR_NORMAL + i); });
-        _nextZIndex = _Z_EDITOR_NORMAL + _instances.length;
+        _toolbarEl.style.zIndex = '';
+        _instances.forEach(inst => _raiseImageEditorSurface(inst, true));
+        if (_activeInst) _raiseImageEditorSurface(_activeInst, true);
         if (btn) { btn.classList.remove('active'); btn.title = 'GUI on top (click to switch)'; }
     }
 }
@@ -2259,8 +2274,9 @@ function _autoArrange() {
         win.style.top    = y + 'px';
         win.style.width  = cellW + 'px';
         win.style.height = cellH + 'px';
-        win.style.zIndex = 100001 + i;
     });
+
+    if (_activeInst) _focusInstance(_activeInst);
 
     requestAnimationFrame(() => _instances.forEach(inst => _fitToView(inst)));
 }
@@ -2313,6 +2329,7 @@ function _close(inst) {
     }
 
     if (_instances.length === 0 && _toolbarEl) {
+        unregisterOverlaySurface('imageEditor');
         _toolbarEl.remove();
         _toolbarEl = null;
     }

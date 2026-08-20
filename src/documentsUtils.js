@@ -3,6 +3,7 @@ import { Editor, Extension, Mark } from '@tiptap/core';
 import { pickImageFromDisk, pickImageFromFiles, showImageInsertDialog } from './imageInsertUtils.js';
 import { addPdfAttachmentFromBytes } from './attachmentsUtils.js';
 import { notifyOutlinerProjectContentsChanged } from './sceneOutliner.js';
+import { raiseOverlaySurface, unregisterOverlaySurface } from './overlayStackUtils.js';
 import { PDFDocument } from 'pdf-lib';
 import html2canvas from 'html2canvas';
 import StarterKit from '@tiptap/starter-kit';
@@ -458,6 +459,7 @@ function _showOverlay(doc, editMode) {
 
     _overlayEl.style.display = 'flex';
     _applyDocLayoutMode();
+    raiseOverlaySurface({ id: 'docs', windowEl: _overlayEl });
 }
 
 function _clampSidePanelWidthPx(widthPx) {
@@ -752,6 +754,7 @@ function _closeOverlay() {
         _saveCurrentDocument();
     }
     if (_overlayEl) _overlayEl.style.display = 'none';
+    unregisterOverlaySurface('docs');
     if (_editor) {
         _editor.destroy();
         _editor = null;
@@ -1388,6 +1391,9 @@ function _buildEditorOverlay() {
     const overlay = document.createElement('div');
     overlay.className = 'doc-overlay';
     overlay.style.display = 'none';
+    overlay.addEventListener('mousedown', () => {
+        raiseOverlaySurface({ id: 'docs', windowEl: overlay });
+    }, true);
 
     // Header (two rows: actions, then title + layout)
     const headerWrap = document.createElement('div');

@@ -3,13 +3,11 @@
 // Pattern mirrors imageEditorUtils.js — shared toolbar + draggable resizable windows.
 
 import { buildWysiwygEditor } from './annotationUtils.js';
-
-const _Z_PREVIEW_BASE = 99990;
+import { raiseOverlaySurface, unregisterOverlaySurface } from './overlayStackUtils.js';
 
 let _instances = [];
 let _activeInst = null;
 let _toolbarEl = null;
-let _nextZIndex = _Z_PREVIEW_BASE + 1;
 let _nextWinPos = 0;
 let _globalHandlers = null;
 let _keyHandlerAttached = false;
@@ -106,6 +104,11 @@ function _ensureToolbar() {
         </div>`;
     document.body.appendChild(_toolbarEl);
 
+    _toolbarEl.addEventListener('mousedown', () => {
+        if (_activeInst) _focusInstance(_activeInst);
+        else raiseOverlaySurface({ id: 'filePreview', toolbarEl: _toolbarEl });
+    }, true);
+
     _toolbarEl.querySelector('#fp-arrange').addEventListener('click', () => _autoArrange());
     _toolbarEl.querySelector('#fp-close-all').addEventListener('click', () => {
         while (_instances.length) _close(_instances[0]);
@@ -114,6 +117,7 @@ function _ensureToolbar() {
 
 function _removeToolbarIfEmpty() {
     if (_instances.length === 0 && _toolbarEl) {
+        unregisterOverlaySurface('filePreview');
         _toolbarEl.remove();
         _toolbarEl = null;
     }
@@ -129,7 +133,6 @@ function _buildInstanceUI(inst) {
     win.className = 'file-preview-window';
     win.style.left = (_previewBaseLeft() + offset) + 'px';
     win.style.top = (_toolbarHeight() + 60 + offset) + 'px';
-    win.style.zIndex = String(_allocPreviewZIndex());
 
     win.innerHTML = `
         <div class="file-preview-titlebar">
@@ -170,7 +173,7 @@ function _wireInstanceEvents(inst) {
     const win = inst.winEl;
     const att = inst.att;
 
-    win.addEventListener('mousedown', () => _focusInstance(inst));
+    win.addEventListener('mousedown', () => _focusInstance(inst), true);
 
     win.querySelector('.fp-close-btn').addEventListener('click', () => _close(inst));
     win.querySelector('.fp-maximize-btn').addEventListener('click', () => _toggleMaximize(inst));
@@ -543,16 +546,13 @@ function _mountImagePreview(container, blobUrl) {
 
 // ── Focus / z-index ───────────────────────────────────────────────────────────
 
-function _allocPreviewZIndex() {
-    return _nextZIndex++;
-}
-
 function _focusInstance(inst) {
+    if (!inst) return;
     _activeInst = inst;
     _instances.forEach(i => {
         i.winEl.classList.toggle('file-preview-window--active', i === inst);
     });
-    inst.winEl.style.zIndex = String(_allocPreviewZIndex());
+    raiseOverlaySurface({ id: 'filePreview', windowEl: inst.winEl, toolbarEl: _toolbarEl });
 }
 
 // ── Maximize / tile ───────────────────────────────────────────────────────────
@@ -611,10 +611,9 @@ function _autoArrange() {
         win.style.top = (toolbarH + margin + row * (cellH + margin)) + 'px';
         win.style.width = cellW + 'px';
         win.style.height = cellH + 'px';
-        win.style.zIndex = String(_Z_PREVIEW_BASE + i);
     });
 
-    _nextZIndex = _Z_PREVIEW_BASE + n;
+    if (_activeInst) _focusInstance(_activeInst);
 
     requestAnimationFrame(() => _instances.forEach(inst => inst.imageFitFn?.()));
 }
@@ -629,7 +628,6 @@ function _close(inst) {
     _instances = _instances.filter(i => i !== inst);
     if (_instances.length === 0) {
         _nextWinPos = 0;
-        _nextZIndex = _Z_PREVIEW_BASE + 1;
     }
     _activeInst = _instances.length ? _instances[_instances.length - 1] : null;
     if (_activeInst) _focusInstance(_activeInst);
