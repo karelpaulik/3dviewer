@@ -5,7 +5,6 @@
 import { buildWysiwygEditor } from './annotationUtils.js';
 
 const _Z_PREVIEW_BASE = 99990;
-const _Z_PREVIEW_MAX  = 99999;
 
 let _instances = [];
 let _activeInst = null;
@@ -48,8 +47,6 @@ export function openFilePreview(att, handlers) {
     _ensureToolbar();
     _buildInstanceUI(inst);
     _focusInstance(inst);
-    // Defer maximize one frame so the toolbar is fully rendered and getBoundingClientRect returns correct height
-    requestAnimationFrame(() => _toggleMaximize(inst));
 }
 
 export function closeFilePreviewForAttachment(att) {
@@ -130,7 +127,7 @@ function _buildInstanceUI(inst) {
 
     const win = document.createElement('div');
     win.className = 'file-preview-window';
-    win.style.left = (60 + offset) + 'px';
+    win.style.left = (_previewBaseLeft() + offset) + 'px';
     win.style.top = (_toolbarHeight() + 60 + offset) + 'px';
     win.style.zIndex = String(_allocPreviewZIndex());
 
@@ -261,6 +258,12 @@ function _makeDraggable(inst, handle) {
 
 function _toolbarHeight() {
     return _toolbarEl ? _toolbarEl.getBoundingClientRect().height : 0;
+}
+
+function _previewBaseLeft() {
+    const panel = document.getElementById('outliner-panel');
+    if (!panel) return 60;
+    return Math.max(60, Math.round(panel.getBoundingClientRect().right) + 12);
 }
 
 function _updateTitleFields(inst) {
@@ -541,9 +544,7 @@ function _mountImagePreview(container, blobUrl) {
 // ── Focus / z-index ───────────────────────────────────────────────────────────
 
 function _allocPreviewZIndex() {
-    const z = Math.min(_nextZIndex, _Z_PREVIEW_MAX);
-    _nextZIndex = z >= _Z_PREVIEW_MAX ? _Z_PREVIEW_BASE + 1 : z + 1;
-    return z;
+    return _nextZIndex++;
 }
 
 function _focusInstance(inst) {
@@ -610,10 +611,10 @@ function _autoArrange() {
         win.style.top = (toolbarH + margin + row * (cellH + margin)) + 'px';
         win.style.width = cellW + 'px';
         win.style.height = cellH + 'px';
-        win.style.zIndex = String(Math.min(_Z_PREVIEW_BASE + i, _Z_PREVIEW_MAX));
+        win.style.zIndex = String(_Z_PREVIEW_BASE + i);
     });
 
-    _nextZIndex = Math.min(_Z_PREVIEW_BASE + n, _Z_PREVIEW_MAX + 1);
+    _nextZIndex = _Z_PREVIEW_BASE + n;
 
     requestAnimationFrame(() => _instances.forEach(inst => inst.imageFitFn?.()));
 }
@@ -626,6 +627,10 @@ function _close(inst) {
     if (inst.blobUrl) URL.revokeObjectURL(inst.blobUrl);
     inst.winEl.remove();
     _instances = _instances.filter(i => i !== inst);
+    if (_instances.length === 0) {
+        _nextWinPos = 0;
+        _nextZIndex = _Z_PREVIEW_BASE + 1;
+    }
     _activeInst = _instances.length ? _instances[_instances.length - 1] : null;
     if (_activeInst) _focusInstance(_activeInst);
     _removeToolbarIfEmpty();
