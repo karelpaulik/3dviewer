@@ -1003,34 +1003,42 @@ function _initDeviationLegendDrag() {
     let startY = 0;
     let startLeft = 0;
     let startTop = 0;
+    let activePointerId = null;
 
-    _deviationLegendHeaderEl.addEventListener('mousedown', (e) => {
-        if (e.button !== 0) return;
+    _deviationLegendHeaderEl.addEventListener('pointerdown', (e) => {
+        if (!e.isPrimary) return;
+        if (e.pointerType === 'mouse' && e.button !== 0) return;
         e.preventDefault();
         e.stopPropagation();
         dragging = true;
+        activePointerId = e.pointerId;
         _deviationLegendEl.classList.add('deviation-legend-dragging');
         startX = e.clientX;
         startY = e.clientY;
         startLeft = _deviationLegendEl.offsetLeft;
         startTop = _deviationLegendEl.offsetTop;
+        try { _deviationLegendHeaderEl.setPointerCapture(e.pointerId); } catch (_) { /* ignore */ }
     });
 
-    window.addEventListener('mousemove', (e) => {
-        if (!dragging) return;
+    window.addEventListener('pointermove', (e) => {
+        if (!dragging || e.pointerId !== activePointerId) return;
         e.preventDefault();
         _applyDeviationLegendPosition(
             startLeft + (e.clientX - startX),
             startTop + (e.clientY - startY)
         );
-    });
+    }, { passive: false });
 
-    window.addEventListener('mouseup', () => {
-        if (!dragging) return;
+    function endDrag(e) {
+        if (!dragging || (e && e.pointerId !== activePointerId)) return;
         dragging = false;
+        activePointerId = null;
         _deviationLegendEl.classList.remove('deviation-legend-dragging');
         _saveDeviationLegendPosition();
-    });
+    }
+
+    window.addEventListener('pointerup', endDrag);
+    window.addEventListener('pointercancel', endDrag);
 
     window.addEventListener('resize', () => {
         if (!_deviationLegendEl || _deviationLegendEl.style.display === 'none') return;

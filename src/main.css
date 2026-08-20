@@ -1572,6 +1572,7 @@ a, button, input, select {
     cursor: move;
     font-weight: 600;
     line-height: 1.2;
+    touch-action: none;
 }
 
 #deviation-legend-header .deviation-legend-grip {
