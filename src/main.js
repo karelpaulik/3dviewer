@@ -1638,6 +1638,18 @@ function isSelectionBBoxOverlay(child) {
     return !!(ud._isMeasurement || ud._isAnnotation || ud._isAnnotation3d || ud._isCadDim3d);
 }
 
+/** True if child is visible under root. traverse does not skip subtrees, so a hidden
+ *  group still has visible=true descendants that must be excluded via ancestor walk. */
+function isSelectionBBoxVisible(child, root) {
+    let o = child;
+    while (o) {
+        if (!o.visible) return false;
+        if (o === root) return true;
+        o = o.parent;
+    }
+    return false;
+}
+
 /**
  * Selection bbox used by numbers, Show BBox cube, and bbox axes.
  * Skips hidden children and measurement/annotation/dimension overlays.
@@ -1655,7 +1667,7 @@ function computeSelectionBBox(object, local, outMin, outMax) {
     if (local) {
         const invMatrix = new THREE.Matrix4().copy(object.matrixWorld).invert();
         object.traverse(child => {
-            if (!child.visible) return;
+            if (!isSelectionBBoxVisible(child, object)) return;
             if (isSelectionBBoxOverlay(child)) return;
             if (child.geometry && child.geometry.attributes.position) {
                 const pos = child.geometry.attributes.position;
@@ -1668,7 +1680,7 @@ function computeSelectionBBox(object, local, outMin, outMax) {
         });
     } else {
         object.traverse(child => {
-            if (!child.visible) return;
+            if (!isSelectionBBoxVisible(child, object)) return;
             if (isSelectionBBoxOverlay(child)) return;
             if (child.geometry && child.geometry.attributes.position) {
                 const pos = child.geometry.attributes.position;
