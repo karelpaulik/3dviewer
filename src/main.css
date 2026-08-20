@@ -1607,7 +1607,6 @@ a, button, input, select {
     box-sizing: border-box;
     flex-direction: column;
     min-width: 200px;
-    position: relative;
 }
 
 #selected-overlay.is-visible {
@@ -1626,6 +1625,7 @@ a, button, input, select {
     line-height: 1.2;
     min-height: 28px;
     flex: 0 0 auto;
+    touch-action: none;
 }
 
 #selected-overlay.selected-overlay-collapsed #selected-overlay-header {
@@ -1712,13 +1712,14 @@ a, button, input, select {
 .selected-overlay-resize {
     position: absolute;
     z-index: 2;
+    touch-action: none;
 }
 
 .selected-overlay-resize-e {
     top: 8px;
     right: 0;
     bottom: 8px;
-    width: 6px;
+    width: 16px;
     cursor: ew-resize;
 }
 
@@ -1726,15 +1727,15 @@ a, button, input, select {
     left: 8px;
     right: 8px;
     bottom: 0;
-    height: 6px;
+    height: 16px;
     cursor: ns-resize;
 }
 
 .selected-overlay-resize-se {
     right: 0;
     bottom: 0;
-    width: 12px;
-    height: 12px;
+    width: 28px;
+    height: 28px;
     cursor: nwse-resize;
 }
 

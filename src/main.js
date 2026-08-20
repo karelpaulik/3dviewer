@@ -4049,36 +4049,15 @@ function _initSelectedOverlayDrag() {
     let startTop = 0;
     let startWidth = 0;
     let startHeight = 0;
+    let activePointerId = null;
 
-    _selectedOverlayHeaderEl.addEventListener('mousedown', (e) => {
-        if (e.button !== 0) return;
-        if (e.target.closest('.selected-overlay-btn')) return;
-        e.preventDefault();
-        e.stopPropagation();
-        dragging = true;
-        _selectedOverlayEl.classList.add('selected-overlay-dragging');
-        startX = e.clientX;
-        startY = e.clientY;
-        startLeft = _selectedOverlayEl.offsetLeft;
-        startTop = _selectedOverlayEl.offsetTop;
-    });
+    function isPrimaryPointerDown(e) {
+        if (!e.isPrimary) return false;
+        return e.pointerType !== 'mouse' || e.button === 0;
+    }
 
-    _selectedOverlayEl.querySelectorAll('.selected-overlay-resize').forEach((handle) => {
-        handle.addEventListener('mousedown', (e) => {
-            if (e.button !== 0) return;
-            if (_selectedOverlayEl.classList.contains('selected-overlay-collapsed')) return;
-            e.preventDefault();
-            e.stopPropagation();
-            resizing = true;
-            resizeEdges = handle.dataset.resize || '';
-            startX = e.clientX;
-            startY = e.clientY;
-            startWidth = _selectedOverlayEl.offsetWidth;
-            startHeight = _selectedOverlayEl.offsetHeight;
-        });
-    });
-
-    window.addEventListener('mousemove', (e) => {
+    function onPointerMove(e) {
+        if (e.pointerId !== activePointerId) return;
         if (dragging) {
             e.preventDefault();
             _applySelectedOverlayPosition(
@@ -4096,9 +4075,10 @@ function _initSelectedOverlayDrag() {
         _applySelectedOverlaySize(nextWidth, nextHeight, {
             persistHeight: resizeEdges.includes('s'),
         });
-    });
+    }
 
-    window.addEventListener('mouseup', () => {
+    function endInteraction(e) {
+        if (e && e.pointerId !== activePointerId) return;
         if (dragging) {
             dragging = false;
             _selectedOverlayEl.classList.remove('selected-overlay-dragging');
@@ -4108,7 +4088,47 @@ function _initSelectedOverlayDrag() {
             resizing = false;
             _saveSelectedOverlayState();
         }
+        activePointerId = null;
+    }
+
+    function bindPointerDrag(el, onStart) {
+        el.addEventListener('pointerdown', (e) => {
+            if (!isPrimaryPointerDown(e)) return;
+            if (!onStart(e)) return;
+            e.preventDefault();
+            e.stopPropagation();
+            activePointerId = e.pointerId;
+            startX = e.clientX;
+            startY = e.clientY;
+            try { el.setPointerCapture(e.pointerId); } catch (_) { /* ignore */ }
+        });
+    }
+
+    bindPointerDrag(_selectedOverlayHeaderEl, (e) => {
+        if (e.target.closest('.selected-overlay-btn')) return false;
+        dragging = true;
+        resizing = false;
+        _selectedOverlayEl.classList.add('selected-overlay-dragging');
+        startLeft = _selectedOverlayEl.offsetLeft;
+        startTop = _selectedOverlayEl.offsetTop;
+        return true;
     });
+
+    _selectedOverlayEl.querySelectorAll('.selected-overlay-resize').forEach((handle) => {
+        bindPointerDrag(handle, () => {
+            if (_selectedOverlayEl.classList.contains('selected-overlay-collapsed')) return false;
+            dragging = false;
+            resizing = true;
+            resizeEdges = handle.dataset.resize || '';
+            startWidth = _selectedOverlayEl.offsetWidth;
+            startHeight = _selectedOverlayEl.offsetHeight;
+            return true;
+        });
+    });
+
+    window.addEventListener('pointermove', onPointerMove, { passive: false });
+    window.addEventListener('pointerup', endInteraction);
+    window.addEventListener('pointercancel', endInteraction);
 
     window.addEventListener('resize', () => {
         if (!_selectedOverlayEl || !_selectedOverlayEl.classList.contains('is-visible')) return;
@@ -4152,7 +4172,7 @@ function _initSelectedOverlay() {
     minBtn.title = 'Minimize';
     minBtn.setAttribute('aria-label', 'Minimize');
     minBtn.textContent = '–';
-    minBtn.addEventListener('mousedown', (e) => e.stopPropagation());
+    minBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
     minBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         _setSelectedOverlayCollapsed(!_selectedOverlayEl.classList.contains('selected-overlay-collapsed'));
@@ -4164,7 +4184,7 @@ function _initSelectedOverlay() {
     closeBtn.title = 'Close';
     closeBtn.setAttribute('aria-label', 'Close');
     closeBtn.textContent = '×';
-    closeBtn.addEventListener('mousedown', (e) => e.stopPropagation());
+    closeBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
     closeBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         if (viewProp.isGroupTransformActive || selectedObjects.length > 0) clearMultiSelect();
