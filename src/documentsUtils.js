@@ -2,6 +2,7 @@
 import { Editor, Extension, Mark } from '@tiptap/core';
 import { pickImageFromDisk, pickImageFromFiles, showImageInsertDialog } from './imageInsertUtils.js';
 import { addPdfAttachmentFromBytes } from './attachmentsUtils.js';
+import { notifyOutlinerProjectContentsChanged } from './sceneOutliner.js';
 import { PDFDocument } from 'pdf-lib';
 import html2canvas from 'html2canvas';
 import StarterKit from '@tiptap/starter-kit';
@@ -298,7 +299,10 @@ export function initDocumentsGui(gui) {
 }
 
 export function refreshDocumentsGui() {
-    if (!_guiRef) return;
+    if (!_guiRef) {
+        notifyOutlinerProjectContentsChanged();
+        return;
+    }
 
     // Remove all existing controllers except the "New" button (first)
     const controllers = [..._guiRef.controllers];
@@ -334,6 +338,7 @@ export function refreshDocumentsGui() {
         }
         _guiRef.add({ fn: () => openDocumentViewer(doc.id) }, 'fn').name(docLabel);
     });
+    notifyOutlinerProjectContentsChanged();
 }
 
 export function openDocumentViewer(id) {

@@ -2298,6 +2298,25 @@ a, button, input, select {
     list-style: none;
 }
 
+.outliner-project-section {
+    list-style: none;
+    height: 0;
+    border-bottom: 1px solid #333;
+    margin: 4px 8px 6px;
+    padding: 0;
+    pointer-events: none;
+}
+
+.outliner-asset-folder > .outliner-row .outliner-label {
+    color: #999;
+    font-weight: 600;
+}
+
+.outliner-asset-muted > .outliner-row .outliner-label {
+    color: #666;
+    cursor: default;
+}
+
 .outliner-row {
     display: flex;
     align-items: center;

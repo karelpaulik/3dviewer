@@ -17,6 +17,7 @@ import { openImageEditor, autoArrangeImageEditors } from './imageEditorUtils.js'
 import { runOcr, runOcrWithProgress, showOcrResultDialog } from './ocrUtils.js';
 import { openPdfPageManager } from './pdfPageManagerUtils.js';
 import { normalizeAttachmentFromGltf } from './attachmentCompressionUtils.js';
+import { notifyOutlinerProjectContentsChanged } from './sceneOutliner.js';
 
 let attachmentsStore = []; // [{ id, name, mimeType, data (base64 string), size, addedAt }]
 let _guiRef = null;
@@ -101,7 +102,10 @@ export function addPdfAttachmentFromBytes(pdfBytes, suggestedName) {
 
 /** Rebuild the attachment list in the lil-gui panel. */
 export function refreshAttachmentsGui() {
-    if (!_guiRef) return;
+    if (!_guiRef) {
+        notifyOutlinerProjectContentsChanged();
+        return;
+    }
 
     const openFolderIds = new Set(
         [..._guiRef.folders]
@@ -190,6 +194,7 @@ export function refreshAttachmentsGui() {
         if (openFolderIds.has(att.id)) folder.open();
         else folder.close();
     });
+    notifyOutlinerProjectContentsChanged();
 }
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
@@ -260,6 +265,16 @@ function _canOpenInBrowser(mimeType) {
         mimeType.startsWith('audio/') ||
         mimeType === 'application/pdf'
     );
+}
+
+/** True when the attachment can be opened in an in-app preview window. */
+export function canOpenAttachmentInBrowser(mimeType) {
+    return _canOpenInBrowser(mimeType);
+}
+
+/** Open an attachment in the in-app preview (same as Files → Open). */
+export function openAttachment(att) {
+    if (att) _openAttachment(att);
 }
 
 const _previewHandlers = {

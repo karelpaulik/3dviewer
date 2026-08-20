@@ -93,7 +93,7 @@ import {
     getSelectedEntityLength,
     setSelectedEntityLength,
 } from './sectionSketchUtils.js';
-import { initDocumentsGui, importDocumentsFromGltfScene, getDocumentsStore, flushDocumentEdits, isDocOverlayBlockingInput, isDocumentEditorOpen, setDocLabelOptions, clearDocumentsStore } from './documentsUtils.js';
+import { initDocumentsGui, importDocumentsFromGltfScene, getDocumentsStore, flushDocumentEdits, isDocOverlayBlockingInput, isDocumentEditorOpen, setDocLabelOptions, clearDocumentsStore, openDocumentViewer } from './documentsUtils.js';
 import { isImageEditorOpen } from './imageEditorUtils.js';
 import {
     initUndoManager,
@@ -118,7 +118,7 @@ import {
     createVisibilityCommand,
     createHideOthersCommand,
 } from './undoCommands.js';
-import { initAttachmentsGui, importAttachmentsFromGltfScene, getAttachmentsStore, addImageAttachmentFromBlob, clearAttachmentsStore } from './attachmentsUtils.js';
+import { initAttachmentsGui, importAttachmentsFromGltfScene, getAttachmentsStore, addImageAttachmentFromBlob, clearAttachmentsStore, openAttachment, canOpenAttachmentInBrowser } from './attachmentsUtils.js';
 import { serializeAttachmentsForExport } from './attachmentCompressionUtils.js';
 import { initLocalFileAccess, openLocalGlbFile, saveLocalGlbFile, saveLocalGlbFileAs, clearCurrentLocalFileHandle, waitForExternalFileSignal, wasOpenedWithExternalFile } from './localFileAccess.js';
 import {
@@ -1984,8 +1984,14 @@ outlinerPanelEl = initOutliner({
     },
     onAddPrimitive: (type, parentObj) => {
         addParametricPrimitive(type, parentObj);
-    }
+    },
+    getDocuments: getDocumentsStore,
+    getAttachments: getAttachmentsStore,
+    onOpenDocument: openDocumentViewer,
+    onOpenAttachment: openAttachment,
+    canOpenAttachment: canOpenAttachmentInBrowser,
 });
+rebuildTree(loadedModels);
 
 //initLoad();
 

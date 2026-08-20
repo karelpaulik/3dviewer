@@ -27,6 +27,16 @@ let onCloneObject = null;
 let onAddObject3D = null;
 let onAddPrimitive = null;
 let onPromoteToRoot = null;
+/** @type {(() => Array<{id: string, title?: string}>)|null} */
+let getDocuments = null;
+/** @type {(() => Array<{id: string, name?: string, mimeType?: string}>)|null} */
+let getAttachments = null;
+/** @type {((id: string) => void)|null} */
+let onOpenDocument = null;
+/** @type {((att: object) => void)|null} */
+let onOpenAttachment = null;
+/** @type {((mimeType: string) => boolean)|null} */
+let canOpenAttachment = null;
 
 // -------------------------------------------------------------------
 // Context menu
@@ -627,7 +637,7 @@ function getOutlinerChildren(obj) {
  * @param {{ onSelect: Function, onToggleVisibility: Function }} callbacks
  * @returns {HTMLDivElement} the panel element (for guiWrapper hit-testing)
  */
-export function initOutliner({ onSelect, onToggleVisibility: onVis, onToggleSelectable: onSel, onGroupAdd: onGroupAddCb, onGroupRemove: onGroupRemoveCb, onHideOthers: onHideOthersCb, onShowAll: onShowAllCb, onReparent: onReparentCb, onRemove: onRemoveCb, onRemoveGroup: onRemoveGroupCb, onGetGroupSelection: onGetGroupSelectionCb, onGetGroupOriginalParents: onGetGroupOriginalParentsCb, onSortChildren: onSortChildrenCb, onCloneObject: onCloneObjectCb, onAddObject3D: onAddObject3DCb, onAddPrimitive: onAddPrimitiveCb, onPromoteToRoot: onPromoteToRootCb }) {
+export function initOutliner({ onSelect, onToggleVisibility: onVis, onToggleSelectable: onSel, onGroupAdd: onGroupAddCb, onGroupRemove: onGroupRemoveCb, onHideOthers: onHideOthersCb, onShowAll: onShowAllCb, onReparent: onReparentCb, onRemove: onRemoveCb, onRemoveGroup: onRemoveGroupCb, onGetGroupSelection: onGetGroupSelectionCb, onGetGroupOriginalParents: onGetGroupOriginalParentsCb, onSortChildren: onSortChildrenCb, onCloneObject: onCloneObjectCb, onAddObject3D: onAddObject3DCb, onAddPrimitive: onAddPrimitiveCb, onPromoteToRoot: onPromoteToRootCb, getDocuments: getDocumentsCb, getAttachments: getAttachmentsCb, onOpenDocument: onOpenDocumentCb, onOpenAttachment: onOpenAttachmentCb, canOpenAttachment: canOpenAttachmentCb }) {
     onSelectObject = onSelect;
     onToggleVisibility = onVis;
     onToggleSelectable = onSel || null;
@@ -645,6 +655,11 @@ export function initOutliner({ onSelect, onToggleVisibility: onVis, onToggleSele
     onAddObject3D = onAddObject3DCb || null;
     onAddPrimitive = onAddPrimitiveCb || null;
     onPromoteToRoot = onPromoteToRootCb || null;
+    getDocuments = getDocumentsCb || null;
+    getAttachments = getAttachmentsCb || null;
+    onOpenDocument = onOpenDocumentCb || null;
+    onOpenAttachment = onOpenAttachmentCb || null;
+    canOpenAttachment = canOpenAttachmentCb || null;
 
     // --- Panel container ---
     panelEl = document.createElement('div');
@@ -762,7 +777,7 @@ export function isOutlinerOpen() {
  * @param {Array<import('three').Object3D>} loadedModels
  */
 export function rebuildTree(loadedModels, preserveExpanded = false) {
-    lastLoadedModels = loadedModels;
+    lastLoadedModels = loadedModels || [];
     preFilterExpandedUUIDs = null;
     if (_onTreeRebuild) _onTreeRebuild();
     if (!treeEl) return;
@@ -775,21 +790,37 @@ export function rebuildTree(loadedModels, preserveExpanded = false) {
         if (clearBtnEl) clearBtnEl.style.display = 'none';
         if (selectBtnEl) selectBtnEl.style.display = 'none';
     }
+    rebuildTreeDom(expandedUUIDs);
+    if (preserveExpanded) {
+        treeEl.scrollTop = scrollTop;
+    }
+}
+
+/**
+ * Rebuild the outliner when documents or attachments change.
+ */
+export function notifyOutlinerProjectContentsChanged() {
+    if (!treeEl) return;
+    const searchVal = searchInputEl?.value?.trim() || '';
+    rebuildTree(lastLoadedModels, true);
+    if (searchVal) filterTree(searchVal);
+}
+
+function rebuildTreeDom(expandedUUIDs) {
     clearGroupHighlights();
     treeEl.innerHTML = '';
     objectToDom.clear = clearWeakMapViaTree; // WeakMap has no clear — we just rebuild
     activeTreeNode = null;
 
-    for (const root of loadedModels) {
+    appendProjectSection(expandedUUIDs);
+
+    for (const root of lastLoadedModels) {
         const li = createTreeNode(root, 0);
         treeEl.appendChild(li);
     }
 
     if (expandedUUIDs && expandedUUIDs.size > 0) {
         restoreExpandedUUIDs(expandedUUIDs);
-    }
-    if (preserveExpanded) {
-        treeEl.scrollTop = scrollTop;
     }
     if (onGetGroupSelection) {
         highlightGroupObjects(onGetGroupSelection());
@@ -926,7 +957,7 @@ export function updateSelectableIcon(object) {
  */
 export function navigateOutliner(direction) {
     if (!treeEl) return null;
-    const allNodes = Array.from(treeEl.querySelectorAll('.outliner-node'));
+    const allNodes = Array.from(treeEl.querySelectorAll('.outliner-node:not(.outliner-asset)'));
     const visibleNodes = allNodes.filter(li => isNodeVisible(li));
     if (visibleNodes.length === 0) return null;
 
@@ -982,6 +1013,8 @@ function collectExpandedUUIDs() {
     treeEl.querySelectorAll('.outliner-node.outliner-expanded').forEach(li => {
         const obj = domToObject.get(li);
         if (obj) uuids.add(obj.uuid);
+        const expandId = li.dataset.expandId;
+        if (expandId) uuids.add(expandId);
     });
     return uuids;
 }
@@ -1016,6 +1049,144 @@ function restoreExpandedUUIDs(uuids) {
 function clearDropIndicators() {
     if (_dragOverLi) {
         _dragOverLi.classList.remove('outliner-drop-before', 'outliner-drop-into', 'outliner-drop-after');
+    }
+}
+
+function appendProjectSection(expandedIds) {
+    const docs = getDocuments ? getDocuments() : [];
+    const atts = getAttachments ? getAttachments() : [];
+
+    const docItems = docs.map(doc => createAssetItemNode({
+        expandId: `doc:${doc.id}`,
+        label: doc.title || '(no title)',
+        title: doc.title || '(no title)',
+        onClick: () => { if (onOpenDocument) onOpenDocument(doc.id); },
+    }));
+    const fileItems = atts.map(att => {
+        const viewable = canOpenAttachment ? canOpenAttachment(att.mimeType) : false;
+        return createAssetItemNode({
+            expandId: `file:${att.id}`,
+            label: att.name || '(unnamed)',
+            title: viewable
+                ? (att.name || '')
+                : 'Cannot preview — open from Files panel',
+            muted: !viewable,
+            onClick: viewable
+                ? () => { if (onOpenAttachment) onOpenAttachment(att); }
+                : null,
+        });
+    });
+
+    const docsExpanded = expandedIds ? expandedIds.has('project:documents') : true;
+    const filesExpanded = expandedIds ? expandedIds.has('project:files') : true;
+
+    treeEl.appendChild(createAssetFolderNode({
+        expandId: 'project:documents',
+        label: `Documents (${docs.length})`,
+        children: docItems,
+        expanded: docsExpanded,
+    }));
+    treeEl.appendChild(createAssetFolderNode({
+        expandId: 'project:files',
+        label: `Files (${atts.length})`,
+        children: fileItems,
+        expanded: filesExpanded,
+    }));
+
+    const sep = document.createElement('li');
+    sep.className = 'outliner-project-section';
+    sep.setAttribute('aria-hidden', 'true');
+    treeEl.appendChild(sep);
+}
+
+function createAssetFolderNode({ expandId, label, children, expanded }) {
+    const li = document.createElement('li');
+    li.className = 'outliner-node outliner-asset outliner-asset-folder';
+    li.dataset.expandId = expandId;
+
+    const row = document.createElement('div');
+    row.className = 'outliner-row';
+    row.style.paddingLeft = '4px';
+
+    const hasChildren = children.length > 0;
+    const arrow = document.createElement('span');
+    arrow.className = 'outliner-arrow';
+    if (hasChildren) {
+        arrow.textContent = expanded ? '▼' : '▶';
+        arrow.addEventListener('click', (e) => {
+            e.stopPropagation();
+            toggleAssetExpand(li);
+        });
+    } else {
+        arrow.textContent = ' ';
+        arrow.style.visibility = 'hidden';
+    }
+    row.appendChild(arrow);
+
+    const labelEl = document.createElement('span');
+    labelEl.className = 'outliner-label';
+    labelEl.textContent = label;
+    labelEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (hasChildren) toggleAssetExpand(li);
+    });
+    row.appendChild(labelEl);
+    li.appendChild(row);
+
+    if (hasChildren) {
+        const childList = document.createElement('ul');
+        childList.className = 'outliner-children';
+        childList.style.display = expanded ? '' : 'none';
+        for (const child of children) childList.appendChild(child);
+        li.appendChild(childList);
+        if (expanded) li.classList.add('outliner-expanded');
+    }
+    return li;
+}
+
+function createAssetItemNode({ expandId, label, title, muted, onClick }) {
+    const li = document.createElement('li');
+    li.className = 'outliner-node outliner-asset' + (muted ? ' outliner-asset-muted' : '');
+    li.dataset.expandId = expandId;
+
+    const row = document.createElement('div');
+    row.className = 'outliner-row';
+    row.style.paddingLeft = '20px';
+
+    const arrow = document.createElement('span');
+    arrow.className = 'outliner-arrow';
+    arrow.textContent = ' ';
+    arrow.style.visibility = 'hidden';
+    row.appendChild(arrow);
+
+    const labelEl = document.createElement('span');
+    labelEl.className = 'outliner-label';
+    labelEl.textContent = label;
+    if (title) labelEl.title = title;
+    if (onClick) {
+        labelEl.addEventListener('click', (e) => {
+            e.stopPropagation();
+            onClick();
+        });
+    }
+    row.appendChild(labelEl);
+    li.appendChild(row);
+    return li;
+}
+
+function toggleAssetExpand(li) {
+    const childList = li.querySelector(':scope > .outliner-children');
+    const arrow = li.querySelector(':scope > .outliner-row > .outliner-arrow');
+    if (!childList) return;
+    const isExpanded = childList.style.display !== 'none';
+    if (isExpanded) {
+        childList.style.display = 'none';
+        if (arrow) arrow.textContent = '▶';
+        li.classList.remove('outliner-expanded');
+    } else {
+        childList.style.display = '';
+        if (arrow) arrow.textContent = '▼';
+        li.classList.add('outliner-expanded');
     }
 }
 
@@ -1421,19 +1592,14 @@ function applyFilterVisibility(obj, visibleSet, depth) {
  * Empty pattern clears the filter and restores the expand state from before filtering.
  */
 function filterTree(pattern) {
-    if (!treeEl || lastLoadedModels.length === 0) return;
+    if (!treeEl) return;
     if (!pattern || !pattern.trim()) {
         currentMatchSet = new Set();
         const selectedObj = activeTreeNode ? domToObject.get(activeTreeNode) : null;
         const expanded = preFilterExpandedUUIDs;
-        // Clear snapshot before rebuildTree (which also nulls it) so restore uses our copy
         preFilterExpandedUUIDs = null;
-        rebuildTree(lastLoadedModels);
-        if (expanded && expanded.size > 0) {
-            restoreExpandedUUIDs(expanded);
-        }
+        rebuildTreeDom(expanded);
         if (selectedObj) highlightObject(selectedObj);
-        if (onGetGroupSelection) highlightGroupObjects(onGetGroupSelection());
         return;
     }
     if (preFilterExpandedUUIDs === null) {
@@ -1448,7 +1614,40 @@ function filterTree(pattern) {
     for (const root of lastLoadedModels) {
         applyFilterVisibility(root, visibleSet, 0);
     }
+    filterAssetSection(regex);
+}
 
+function filterAssetSection(regex) {
+    const folders = treeEl.querySelectorAll(':scope > .outliner-asset-folder');
+    let anyFolderVisible = false;
+    for (const folder of folders) {
+        const folderLabel = folder.querySelector(':scope > .outliner-row > .outliner-label');
+        const folderMatch = !!(folderLabel && regex.test(folderLabel.textContent));
+        const childList = folder.querySelector(':scope > .outliner-children');
+        let anyChildMatch = false;
+        if (childList) {
+            for (const child of childList.children) {
+                if (!child.classList.contains('outliner-asset')) continue;
+                const lab = child.querySelector(':scope > .outliner-row > .outliner-label');
+                const match = !!(lab && regex.test(lab.textContent));
+                child.style.display = (folderMatch || match) ? '' : 'none';
+                if (match) anyChildMatch = true;
+            }
+        }
+        const visible = folderMatch || anyChildMatch;
+        folder.style.display = visible ? '' : 'none';
+        if (visible) {
+            anyFolderVisible = true;
+            if (childList && childList.children.length > 0) {
+                childList.style.display = '';
+                const arrow = folder.querySelector(':scope > .outliner-row > .outliner-arrow');
+                if (arrow) arrow.textContent = '▼';
+                folder.classList.add('outliner-expanded');
+            }
+        }
+    }
+    const sep = treeEl.querySelector(':scope > .outliner-project-section');
+    if (sep) sep.style.display = anyFolderVisible ? '' : 'none';
 }
 
 // -------------------------------------------------------------------
