@@ -657,7 +657,7 @@ function isUiOverlayElement(el) {
     if (!el) return false;
     if (guiWrapper.contains(el)) return true;
     return !!el.closest?.(
-        '.lil-gui, .ctx-menu, .outliner-ctx-menu, .file-preview-window, #file-preview-toolbar, .img-editor-window, #img-editor-toolbar'
+        '.lil-gui, .ctx-menu, .outliner-ctx-menu, .doc-overlay, .file-preview-window, #file-preview-toolbar, .img-editor-window, #img-editor-toolbar'
     );
 }
 
