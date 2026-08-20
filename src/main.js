@@ -12562,6 +12562,7 @@ function addAssemblyGui() {
     }).listen() );
     editControls.push( editFolder.add({ fn: assemblyNewStep }, 'fn').name('+ New step') );
     editControls.push( editFolder.add({ fn: assemblyDeleteStep }, 'fn').name('✕  Delete step') );
+    editControls.push( editFolder.add({ fn: assemblyDeleteAllSteps }, 'fn').name('✕  Delete all steps…') );
     editControls.push( editFolder.add({ fn: assemblyMoveStepUp }, 'fn').name('↑  Move step up') );
     editControls.push( editFolder.add({ fn: assemblyMoveStepDown }, 'fn').name('↓  Move step down') );
     editControls.push( editFolder.add({ fn: assemblyRemoveObjectFromStep }, 'fn').name('✕  Remove selected from step') );
@@ -13652,6 +13653,24 @@ function assemblyDeleteStep() {
     updateAssemblyGuiInfo();
     render();
     console.log(`[Assembly] Step "${step.name}" deleted, objects reset to init positions.`);
+}
+
+function assemblyDeleteAllSteps() {
+    const n = assemblyData.steps.length;
+    if (n === 0) {
+        console.log('[Assembly] No steps to delete.');
+        return;
+    }
+    if (!confirm(`Delete all ${n} assembly step${n === 1 ? '' : 's'}?\nObjects will return to the assembled position.`)) return;
+
+    assemblyResetToStart();
+    assemblyData.steps.length = 0;
+    assemblyAnchors.clear();
+    assemblyState.currentStepIndex = -1;
+    assemblyState.disassembledMode = false;
+    updateAssemblyGuiInfo();
+    render();
+    console.log(`[Assembly] All ${n} step${n === 1 ? '' : 's'} deleted, objects reset to assembled positions.`);
 }
 
 // Move the edit step one position up (earlier) in the sequence.
