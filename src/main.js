@@ -653,6 +653,14 @@ viewHelperContainer.appendChild(orbitLockBar);
 let outlinerPanelEl = null;
 const guiWrapper = { contains(el) { return guiToolbar.contains(el) || Object.values(guiPanels).some(p => p.gui && p.gui.domElement.style.display !== 'none' && p.gui.domElement.contains(el)) || (outlinerPanelEl && outlinerPanelEl.contains(el)) || statusBar.contains(el) || circleDetectToggleEl.contains(el) || viewportBottomLeftToolbar.contains(el) || viewHelperContainer.contains(el) || (_deviationLegendEl && _deviationLegendEl.contains(el)) || (_selectedOverlayEl && _selectedOverlayEl.contains(el)) || document.getElementById('tool-hint-overlay')?.contains(el); } };
 
+function isUiOverlayElement(el) {
+    if (!el) return false;
+    if (guiWrapper.contains(el)) return true;
+    return !!el.closest?.(
+        '.lil-gui, .ctx-menu, .outliner-ctx-menu, .file-preview-window, #file-preview-toolbar, .img-editor-window, #img-editor-toolbar'
+    );
+}
+
 let guiView = null;
 let guiAssembly = null;
 
@@ -8523,7 +8531,7 @@ function render() {
     // isMouseOverGui - pokud kurzor nad GUI a současně nad objektem, pak má přednost GUI.
     const _client = ndcToClient(mouse.x, mouse.y);
     const _guiHitEl = document.elementFromPoint(_client.x, _client.y);
-    const isMouseOverGui = _guiHitEl && (guiWrapper.contains(_guiHitEl) || _guiHitEl.closest('.lil-gui') || _guiHitEl.closest('.ctx-menu'));
+    const isMouseOverGui = isUiOverlayElement(_guiHitEl);
     
     // Nezvýrazňujeme objekty při dragování (rotaci/posouvání) nebo při transformaci
     if (!isTransformDragging && !isMouseOverGui && !isMouseDown && !isTouchDragging && viewProp.isSelectAllowed && !isDocOverlayBlockingInput() && !isFileHistoryModalBlockingInput()) {      
@@ -10277,7 +10285,7 @@ function onTouchMove( event ) {
 
 function isMouseOnGUI(event) { // return: true/false
     const element = document.elementFromPoint(event.clientX, event.clientY);
-    return guiWrapper.contains(element);
+    return isUiOverlayElement(element);
 }
 
 // Provádí čerstvý raycast a vrací nejblíže ležící viditelný mesh pod kurzorem, nebo null.
@@ -10299,7 +10307,7 @@ function isTouchOnGUI(event) { // return: true/false
     if (event.changedTouches.length > 0) {
         const touch = event.changedTouches[0];
         const elementAtTouch = document.elementFromPoint(touch.clientX, touch.clientY);
-        return guiWrapper.contains(elementAtTouch);
+        return isUiOverlayElement(elementAtTouch);
     }
     return false;
 }
@@ -14487,7 +14495,7 @@ function assemblyMoveStepDown() {
         const touch = event.touches[0];
         // Skip if touch is on GUI
         const el = document.elementFromPoint(touch.clientX, touch.clientY);
-        if (guiWrapper.contains(el)) return;
+        if (isUiOverlayElement(el)) return;
 
         longPressStartPos.set(touch.clientX, touch.clientY);
         longPressTimer = setTimeout(() => {
