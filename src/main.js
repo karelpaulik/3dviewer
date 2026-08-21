@@ -647,7 +647,6 @@ const orbitLockPanBtn = createOrbitLockBtn('✥', 'Lock pan', 'orbitLockPan');
 const orbitLockRotateBtn = createOrbitLockBtn('↻', 'Lock rotate', 'orbitLockRotate');
 const orbitLockZoomBtn = createOrbitLockBtn('⊕', 'Lock zoom', 'orbitLockZoom');
 orbitLockBar.append(orbitLockPanBtn, orbitLockRotateBtn, orbitLockZoomBtn);
-viewHelperContainer.appendChild(orbitLockBar);
 
 // Wrapper reference for hit-testing (toolbar + panels + outliner)
 let outlinerPanelEl = null;
@@ -2127,6 +2126,7 @@ function init() {
     viewHelperRenderer.setSize(VIEW_HELPER_SIZE, VIEW_HELPER_SIZE);
     viewHelperRenderer.setClearColor(0x000000, 0);
     viewHelperContainer.appendChild(viewHelperRenderer.domElement);
+    viewHelperContainer.appendChild(orbitLockBar);
     createViewHelper();
 
     transformControls = new TransformControls( currentCamera, renderer.domElement );
