@@ -1290,7 +1290,7 @@ function initSceneUndo() {
 }
 
 function _assemblyEditActive() {
-    return assemblyState.editMode && assemblyState.currentStepIndex >= 0;
+    return assemblyState.editMode && assemblyState.currentStepIndex >= -1;
 }
 
 function pushSingleTransformUndoIfChanged() {
@@ -7046,14 +7046,34 @@ function navigateGroupHistory(dir) {
     render();
 }
 
+function collectAssemblyWorkflowObjects() {
+    const seen = new Set();
+    const objs = [];
+    for (const step of assemblyData.steps) {
+        for (const t of step.transformations) {
+            const obj = t.objectRef;
+            if (!obj || !obj.parent || seen.has(obj)) continue;
+            seen.add(obj);
+            objs.push(obj);
+        }
+    }
+    return objs;
+}
+
 // Přidá všechny objekty aktuálního assembly kroku do group selection.
+// Na kroku 0 (Assembled) vybere všechny objekty workflow.
 function assemblySelectStepObjects() {
     const ci = assemblyState.currentStepIndex;
-    if (ci < 0 || ci >= assemblyData.steps.length) return;
-    const step = assemblyData.steps[ci];
-    const objs = step.transformations
-        .map(t => t.objectRef)
-        .filter(o => o && o.parent);
+    let objs;
+    if (ci === -1) {
+        objs = collectAssemblyWorkflowObjects();
+    } else if (ci < 0 || ci >= assemblyData.steps.length) {
+        return;
+    } else {
+        objs = assemblyData.steps[ci].transformations
+            .map(t => t.objectRef)
+            .filter(o => o && o.parent);
+    }
     if (objs.length === 0) return;
 
     // Clear existing multi-select
@@ -7162,6 +7182,7 @@ function resetBoxSelectState() {
 }
 
 // Zobrazí PaddedBoxHelpery kolem objektů aktuálního assembly kroku, pokud je aktivní edit mode.
+// Na kroku 0 (Assembled) kolem všech objektů workflow.
 // Volá se z updateAssemblyGuiInfo() a při přepnutí editMode.
 function updateAssemblyStepHelpers(stepOverride = null) {
     // Odstraníme staré helpery
@@ -7172,14 +7193,17 @@ function updateAssemblyStepHelpers(stepOverride = null) {
     const ci = assemblyState.currentStepIndex;
 
     const step = stepOverride ?? (ci >= 0 && ci < assemblyData.steps.length ? assemblyData.steps[ci] : null);
-    if (!step) { render(); return; }
+    const objs = step
+        ? step.transformations.map(t => t.objectRef)
+        : (ci === -1 ? collectAssemblyWorkflowObjects() : []);
+    if (objs.length === 0) { render(); return; }
 
-    step.transformations.forEach(t => {
-        if (!t.objectRef || !t.objectRef.parent) return;
+    objs.forEach(obj => {
+        if (!obj || !obj.parent) return;
         // Skip objects that are hidden (or have a hidden ancestor)
-        let o = t.objectRef;
+        let o = obj;
         while (o) { if (!o.visible) return; o = o.parent; }
-        const h = new PaddedBoxHelper(t.objectRef, 0xffee00, viewProp.multiSelectBoxPadding);
+        const h = new PaddedBoxHelper(obj, 0xffee00, viewProp.multiSelectBoxPadding);
         scene.add(h);
         assemblyStepHelpers.push(h);
     });
@@ -12548,6 +12572,15 @@ function addAssemblyGui() {
         console.log(`[Assembly] Edit mode: ${value}`);
     }).listen();
     editFolder.add({ fn: function() {
+        assemblyResetToStart();
+        assemblyState.editMode = true;
+        assemblyGui.editMode = true;
+        editControls.forEach(c => c.enable());
+        updateAssemblyStepHelpers();
+        updateAssemblyGuiInfo();
+        console.log('[Assembly] Edit assembled mode activated.');
+    }}, 'fn').name('✏  Edit assembled  [Home]');
+    editFolder.add({ fn: function() {
         assemblyResetToFinish();
         assemblyState.disassembledMode = true;
         assemblyState.editMode = true;
@@ -12827,7 +12860,7 @@ function updateAssemblyGuiInfo() {
         assemblyGui.stepName = es.name;
         assemblyGui.stepDescription = es.description;
     } else {
-        assemblyGui.editStepInfo = 'Assembled';
+        assemblyGui.editStepInfo = assemblyState.editMode ? 'Assembled (edit start positions)' : 'Assembled';
         assemblyGui.stepName = '';
         assemblyGui.stepDescription = '';
     }
@@ -12856,8 +12889,15 @@ function rebuildAssemblyStepsList() {
 
     // Button 0: assembled (base) state
     const isAssembled = assemblyState.currentStepIndex === -1;
+    const isAssembledEdit = isAssembled && assemblyState.editMode;
     const assembledBtn = { go: function() { assemblyGoToAssembled(); } };
-    assemblyStepsListFolder.add(assembledBtn, 'go').name(`${isAssembled ? '▶ ' : '   '}0:  Assembled`);
+    const assembledPrefix = isAssembledEdit ? '✏ ' : isAssembled ? '▶ ' : '   ';
+    const assembledCtrl = assemblyStepsListFolder.add(assembledBtn, 'go').name(`${assembledPrefix}0:  Assembled`);
+    const assembledBtnEl = assembledCtrl.domElement.querySelector('button');
+    if (assembledBtnEl && isAssembledEdit) {
+        assembledBtnEl.style.color = '#88ccff';
+        assembledBtnEl.style.fontWeight = 'bold';
+    }
 
     assemblyData.steps.forEach((step, i) => {
         const isActive = i === assemblyState.currentStepIndex;
@@ -12941,10 +12981,28 @@ function findObjectHomeStep(obj) {
     return homeStep;
 }
 
+function objectInAssemblyWorkflow(obj) {
+    return assemblyData.steps.some(step => step.transformations.some(t => t.objectRef === obj));
+}
+
+// Updates the assembled (base) anchor for an object already in the workflow.
+// repairChainForObject then rewrites first-step initPosition; finals stay unchanged.
+function recordAssembledAnchor(obj, pos, quat, scale) {
+    if (!obj || !objectInAssemblyWorkflow(obj)) return false;
+    assemblyAnchors.set(obj, {
+        position:   { x: pos.x, y: pos.y, z: pos.z },
+        quaternion: { x: quat.x, y: quat.y, z: quat.z, w: quat.w },
+        scale:      { x: scale.x, y: scale.y, z: scale.z },
+    });
+    repairChainForObject(obj);
+    return true;
+}
+
 // Records assembly transformations for all objects in an active group selection.
 // Positions are computed in each object's original-parent local space to survive deactivation.
 function recordGroupTransformations() {
-    if (!assemblyData.steps[assemblyState.currentStepIndex]) return;
+    const isAssembledEdit = assemblyState.currentStepIndex === -1;
+    if (!isAssembledEdit && !assemblyData.steps[assemblyState.currentStepIndex]) return;
 
     previousGroupTransformStates.forEach((state, i) => {
         const obj = state.object;
@@ -12975,6 +13033,13 @@ function recordGroupTransformations() {
         const rotDelta = initQuat.angleTo(finalQuat);
         const scaleDelta = finalScale.distanceTo(initScale);
         if (posDelta < 0.0001 && rotDelta < 0.0001 && scaleDelta < 0.0001) return;
+
+        if (isAssembledEdit) {
+            if (recordAssembledAnchor(obj, finalPos, finalQuat, finalScale)) {
+                console.log(`[Assembly] Assembled: recorded start position of object "${obj.name}" (group)`);
+            }
+            return;
+        }
 
         // In disassembledMode, write to the object's own (home) step instead of the last step.
         const targetStep = (assemblyState.disassembledMode && findObjectHomeStep(obj))
@@ -13017,11 +13082,6 @@ function recordGroupTransformations() {
 function recordAssemblyTransformation() {
     const obj = previousTransformState?.object;
     if (!obj || !previousTransformState) return;
-    // In disassembledMode, route to the object's own (home) step; fall back to current step.
-    const step = (assemblyState.disassembledMode && findObjectHomeStep(obj))
-        ? findObjectHomeStep(obj)
-        : assemblyData.steps[assemblyState.currentStepIndex];
-    if (!step) return;
 
     const prevPos   = previousTransformState.position;   // THREE.Vector3
     const prevRot   = previousTransformState.rotation;   // THREE.Euler
@@ -13035,6 +13095,20 @@ function recordAssemblyTransformation() {
     const rotDelta   = prevQuat.angleTo(curQuat);
     const scaleDelta = obj.scale.distanceTo(prevScale);
     if (posDelta < 0.0001 && rotDelta < 0.0001 && scaleDelta < 0.0001) return;
+
+    if (assemblyState.currentStepIndex === -1) {
+        if (recordAssembledAnchor(obj, obj.position, curQuat, obj.scale)) {
+            console.log(`[Assembly] Assembled: recorded start position of object "${obj.name}"`);
+            updateAssemblyGuiInfo();
+        }
+        return;
+    }
+
+    // In disassembledMode, route to the object's own (home) step; fall back to current step.
+    const step = (assemblyState.disassembledMode && findObjectHomeStep(obj))
+        ? findObjectHomeStep(obj)
+        : assemblyData.steps[assemblyState.currentStepIndex];
+    if (!step) return;
 
     // Check if this object is already tracked in this step
     const existing = step.transformations.find(t => t.objectRef === obj);
