@@ -5337,9 +5337,66 @@ function _refreshLabelsAndOverlaysAfterBake(root) {
     reconstructCadDim3d(root);
 }
 
+function _trsRecordsToMatrix(pos, quat, scale) {
+    const p = new THREE.Vector3(pos.x, pos.y, pos.z);
+    const q = quat
+        ? new THREE.Quaternion(quat.x, quat.y, quat.z, quat.w)
+        : new THREE.Quaternion();
+    const s = scale
+        ? new THREE.Vector3(scale.x, scale.y, scale.z)
+        : new THREE.Vector3(1, 1, 1);
+    return new THREE.Matrix4().compose(p, q, s);
+}
+
+function _matrixToTrsRecords(matrix, hadQuat, hadScale) {
+    const p = new THREE.Vector3();
+    const q = new THREE.Quaternion();
+    const s = new THREE.Vector3();
+    matrix.decompose(p, q, s);
+    return {
+        position: { x: p.x, y: p.y, z: p.z },
+        quaternion: hadQuat ? { x: q.x, y: q.y, z: q.z, w: q.w } : null,
+        scale: hadScale ? { x: s.x, y: s.y, z: s.z } : null,
+    };
+}
+
+function _remapStoredTrs(pos, quat, scale, invBake) {
+    if (!pos) return { position: pos, quaternion: quat, scale: scale };
+    const m = _trsRecordsToMatrix(pos, quat, scale);
+    m.multiply(invBake);
+    return _matrixToTrsRecords(m, !!quat, !!scale);
+}
+
+function _remapAssemblyAfterLocationBake(obj, invBake) {
+    const anchor = assemblyAnchors.get(obj);
+    if (anchor) {
+        const rec = _remapStoredTrs(anchor.position, anchor.quaternion, anchor.scale, invBake);
+        anchor.position = rec.position;
+        if (anchor.quaternion && rec.quaternion) anchor.quaternion = rec.quaternion;
+        if (anchor.scale && rec.scale) anchor.scale = rec.scale;
+    }
+
+    assemblyData.steps.forEach(function(step) {
+        step.transformations.forEach(function(t) {
+            if (t.objectRef !== obj) return;
+            const initRec = _remapStoredTrs(t.initPosition, t.initQuaternion, t.initScale, invBake);
+            t.initPosition = initRec.position;
+            if (t.initQuaternion) t.initQuaternion = initRec.quaternion;
+            if (t.initScale) t.initScale = initRec.scale;
+            const finalRec = _remapStoredTrs(t.finalPosition, t.finalQuaternion, t.finalScale, invBake);
+            t.finalPosition = finalRec.position;
+            if (t.finalQuaternion) t.finalQuaternion = finalRec.quaternion;
+            if (t.finalScale) t.finalScale = finalRec.scale;
+        });
+    });
+
+    repairChainForObject(obj);
+}
+
 function bakeObjectLocation(obj, options) {
     if (!obj) return;
     const refresh = !options || options.refresh !== false;
+    const remapAssembly = !!(options && options.remapAssembly);
 
     // Helper: apply a Matrix4 in-place to a plain {x,y,z} record
     function _xyzApply(xyz, mat) {
@@ -5350,6 +5407,8 @@ function bakeObjectLocation(obj, options) {
 
     // 1. Update all world matrices BEFORE any change
     obj.updateMatrixWorld(true);
+
+    const invBake = remapAssembly ? obj.matrix.clone().invert() : null;
 
     // 2. Store old world matrices for EVERY node (including non-mesh owners of measurements)
     const oldWorldMatrices = new Map();
@@ -5422,6 +5481,8 @@ function bakeObjectLocation(obj, options) {
         }
     });
 
+    if (remapAssembly && invBake) _remapAssemblyAfterLocationBake(obj, invBake);
+
     if (!refresh) return;
 
     // 6. Remove old measurement/annotation visuals from the scene graph and internal records,
@@ -5435,8 +5496,87 @@ function bakeObjectLocation(obj, options) {
     render();
 }
 
+let _bakeAssemblyChoiceOverlay = null;
+
+function _askBakeAssemblyChoice(callback) {
+    if (_bakeAssemblyChoiceOverlay) return;
+
+    function finish(choice) {
+        if (!_bakeAssemblyChoiceOverlay) return;
+        document.removeEventListener('keydown', onKey);
+        _bakeAssemblyChoiceOverlay.remove();
+        _bakeAssemblyChoiceOverlay = null;
+        callback(choice);
+    }
+
+    function onKey(e) {
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            finish('cancel');
+        }
+    }
+
+    function makeBtn(label, choice, primary) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = label;
+        b.style.cssText = primary
+            ? 'padding:8px 16px;cursor:pointer;border:1px solid #ccc;border-radius:4px;background:rgba(255,255,255,0.22);color:#fff;font-size:14px;'
+            : 'padding:8px 16px;cursor:pointer;border:1px solid rgba(255,255,255,0.4);border-radius:4px;background:rgba(255,255,255,0.08);color:#fff;font-size:14px;';
+        b.addEventListener('click', function(e) {
+            e.stopPropagation();
+            finish(choice);
+        });
+        return b;
+    }
+
+    const overlay = document.createElement('div');
+    overlay.id = 'bakeAssemblyChoiceOverlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:99999;color:#fff;font-family:sans-serif;';
+
+    const box = document.createElement('div');
+    box.style.cssText = 'background:#1a1a1a;border:1px solid #555;border-radius:6px;padding:20px 24px;max-width:420px;text-align:center;';
+
+    const msg = document.createElement('p');
+    msg.textContent = 'This object is used in Assembly workflow.';
+    msg.style.cssText = 'margin:0 0 16px;font-size:15px;';
+
+    const btnRow = document.createElement('div');
+    btnRow.style.cssText = 'display:flex;flex-direction:column;gap:8px;';
+    const primaryBtn = makeBtn('Bake and recalculate', 'recalculate', true);
+    btnRow.appendChild(primaryBtn);
+    btnRow.appendChild(makeBtn('Bake without recalculate', 'keep', false));
+    btnRow.appendChild(makeBtn('Cancel', 'cancel', false));
+
+    box.appendChild(msg);
+    box.appendChild(btnRow);
+    overlay.appendChild(box);
+
+    overlay.addEventListener('click', function() { finish('cancel'); });
+    box.addEventListener('click', function(e) { e.stopPropagation(); });
+    document.addEventListener('keydown', onKey);
+
+    document.body.appendChild(overlay);
+    _bakeAssemblyChoiceOverlay = overlay;
+    primaryBtn.focus();
+}
+
+function _prepareAndBakeObjectLocation(obj, options) {
+    if (viewProp.isGroupTransformActive) deactivateMultiSelect();
+    bakeObjectLocation(obj, options);
+}
+
 function bakeSelectedObjectLocation() {
-    bakeObjectLocation(lastSelectedObject);
+    const obj = lastSelectedObject;
+    if (!obj) return;
+    if (!objectInAssemblyWorkflow(obj)) {
+        _prepareAndBakeObjectLocation(obj);
+        return;
+    }
+    _askBakeAssemblyChoice(function(choice) {
+        if (choice === 'cancel') return;
+        _prepareAndBakeObjectLocation(obj, { remapAssembly: choice === 'recalculate' });
+    });
 }
 
 function bakeAllObjectsLocation() {
