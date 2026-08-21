@@ -970,7 +970,8 @@ canvas {
     flex-wrap: nowrap;
     align-items: center;
     gap: 8px;
-    max-width: calc(100vw - 144px);
+    box-sizing: border-box;
+    max-width: calc(100% - 152px); /* 8px left + 128px gizmo + 8px right + 8px gap */
     padding: 4px;
     border-radius: 6px;
     background: rgba(17, 17, 17, 0.75);
