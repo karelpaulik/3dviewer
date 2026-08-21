@@ -5584,7 +5584,6 @@ function bakeAllObjectsLocation() {
         alert('No model loaded.');
         return;
     }
-    if (!confirm('Bake location for all objects in the model?')) return;
 
     const toBake = [];
     loadedModels.forEach(function(model) {
@@ -5600,6 +5599,12 @@ function bakeAllObjectsLocation() {
         alert('All objects already have identity location.');
         return;
     }
+
+    const hasAssembly = assemblyData.steps.length > 0;
+    const confirmed = hasAssembly
+        ? confirm('Bake location for all objects? This can break existing Assembly workflow (steps will not be recalculated).')
+        : confirm('Bake location for all objects in the model?');
+    if (!confirmed) return;
 
     // traverse = DFS parent-before-child → correct bake order
     toBake.forEach(function(node) {
