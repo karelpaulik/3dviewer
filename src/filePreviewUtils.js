@@ -5,6 +5,8 @@
 import { buildWysiwygEditor } from './annotationUtils.js';
 import { raiseOverlaySurface, unregisterOverlaySurface } from './overlayStackUtils.js';
 
+const _MOBILE_BREAKPOINT = 768;
+
 let _instances = [];
 let _activeInst = null;
 let _toolbarEl = null;
@@ -45,6 +47,10 @@ export function openFilePreview(att, handlers) {
     _ensureToolbar();
     _buildInstanceUI(inst);
     _focusInstance(inst);
+    // Defer maximize one frame so the toolbar height is correct (same pattern as image editor).
+    if (window.innerWidth <= _MOBILE_BREAKPOINT) {
+        requestAnimationFrame(() => _toggleMaximize(inst));
+    }
 }
 
 export function closeFilePreviewForAttachment(att) {
