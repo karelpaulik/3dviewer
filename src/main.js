@@ -13130,6 +13130,22 @@ function objectInAssemblyWorkflow(obj) {
     return assemblyData.steps.some(step => step.transformations.some(t => t.objectRef === obj));
 }
 
+// Fill a missing assembled-base anchor from the object's first recorded init pose.
+// Existing anchors are left unchanged (e.g. Edit assembled).
+function ensureAssemblyAnchorFromSteps(objectRef) {
+    if (!objectRef || assemblyAnchors.has(objectRef)) return;
+    for (const step of assemblyData.steps) {
+        const t = step.transformations.find(tr => tr.objectRef === objectRef);
+        if (!t?.initPosition) continue;
+        assemblyAnchors.set(objectRef, {
+            position:   { ...t.initPosition },
+            quaternion: t.initQuaternion ? { ...t.initQuaternion } : { x: 0, y: 0, z: 0, w: 1 },
+            scale:      t.initScale ? { ...t.initScale } : { x: 1, y: 1, z: 1 },
+        });
+        return;
+    }
+}
+
 // Updates the assembled (base) anchor for an object already in the workflow.
 // repairChainForObject then rewrites first-step initPosition; finals stay unchanged.
 function recordAssembledAnchor(obj, pos, quat, scale) {
@@ -13197,8 +13213,8 @@ function recordGroupTransformations() {
             existing.finalQuaternion = { x: finalQuat.x, y: finalQuat.y, z: finalQuat.z, w: finalQuat.w };
             existing.finalScale     = { x: finalScale.x, y: finalScale.y, z: finalScale.z };
         } else {
-            // Store the assembled base state the first time this object enters any step
-            if (!assemblyAnchors.has(obj)) {
+            // Store the assembled base state only the first time this object enters any step
+            if (!assemblyAnchors.has(obj) && !objectInAssemblyWorkflow(obj)) {
                 assemblyAnchors.set(obj, {
                     position:   { x: initPos.x,  y: initPos.y,  z: initPos.z },
                     quaternion: { x: initQuat.x, y: initQuat.y, z: initQuat.z, w: initQuat.w },
@@ -13263,8 +13279,8 @@ function recordAssemblyTransformation() {
         existing.finalQuaternion = { x: curQuat.x, y: curQuat.y, z: curQuat.z, w: curQuat.w };
         existing.finalScale      = { x: obj.scale.x, y: obj.scale.y, z: obj.scale.z };
     } else {
-        // Store the assembled base state the first time this object enters any step
-        if (!assemblyAnchors.has(obj)) {
+        // Store the assembled base state only the first time this object enters any step
+        if (!assemblyAnchors.has(obj) && !objectInAssemblyWorkflow(obj)) {
             assemblyAnchors.set(obj, {
                 position:   { x: prevPos.x, y: prevPos.y, z: prevPos.z },
                 quaternion: { x: prevQuat.x, y: prevQuat.y, z: prevQuat.z, w: prevQuat.w },
@@ -13290,6 +13306,7 @@ function recordAssemblyTransformation() {
 // Propagate finalPosition of each step as initPosition of the next step for the same object.
 // Uses assemblyAnchors as the stable base state so results are order-independent.
 function repairChainForObject(objectRef) {
+    ensureAssemblyAnchorFromSteps(objectRef);
     const anchor = assemblyAnchors.get(objectRef);
     let lastPos   = anchor ? anchor.position   : null;
     let lastQuat  = anchor ? anchor.quaternion : null;
