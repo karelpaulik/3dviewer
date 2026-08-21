@@ -4528,11 +4528,11 @@ function refreshSelectedObjGui(obj) {
 
     addSnapFolder(selectedFolder);
 
-    // Navigation buttons: Arrow Up / Arrow Down
+    // Navigation buttons: Arrow Left / Arrow Right
     const navFolder = selectedFolder.addFolder("Navigation");
         navFolder.add(viewProp, 'navigationKeepOpen').name('Keep open');
-        navFolder.add({ fn: selectParent }, 'fn').name('Select parent (Arrow Up)');
-        navFolder.add({ fn: selectPrevious }, 'fn').name('Select previous (Arrow Down)');
+        navFolder.add({ fn: selectParent }, 'fn').name('Select parent (Arrow Left)');
+        navFolder.add({ fn: selectPrevious }, 'fn').name('Select previous (Arrow Right)');
         if (viewProp.navigationKeepOpen) navFolder.open();
         else navFolder.close();
 
