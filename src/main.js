@@ -13796,19 +13796,113 @@ function animateCameraToView(camData, onComplete) {
     });
 }
 
-// Create a new empty step and make it the active edit step.
-function assemblyNewStep() {
-    const id = assemblyData.steps.length + 1;
-    assemblyData.steps.push({
-        id: id,
-        name: `Step ${id}`,
+function insertNewStepAt(insertIndex) {
+    assemblyData.steps.splice(insertIndex, 0, {
+        id: 0,
+        name: '',
         description: '',
         transformations: [],
     });
-    // New step becomes the active playback/edit step
-    assemblyState.currentStepIndex = assemblyData.steps.length - 1;
+    assemblyData.steps.forEach((s, i) => { s.id = i + 1; });
+    const step = assemblyData.steps[insertIndex];
+    step.name = `Step ${step.id}`;
+    assemblyState.currentStepIndex = insertIndex;
     updateAssemblyGuiInfo();
-    console.log(`[Assembly] New step ${id} created.`);
+    console.log(`[Assembly] New step ${step.id} created.`);
+}
+
+function showInsertStepDialog(hasCurrent) {
+    return new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.45);z-index:200001;display:flex;align-items:center;justify-content:center;';
+        const dialog = document.createElement('div');
+        dialog.style.cssText = 'background:#2a2a2a;color:#fff;border-radius:8px;padding:16px 20px;min-width:280px;box-shadow:0 4px 24px rgba(0,0,0,0.5);font-family:sans-serif;';
+
+        const title = document.createElement('div');
+        title.textContent = 'Insert new step';
+        title.style.cssText = 'font-size:13px;font-weight:bold;margin-bottom:8px;';
+
+        const body = document.createElement('div');
+        body.textContent = 'Where should the new step be added?';
+        body.style.cssText = 'font-size:12px;color:#ccc;margin-bottom:12px;';
+
+        const btnCol = document.createElement('div');
+        btnCol.style.cssText = 'display:flex;flex-direction:column;gap:8px;margin-bottom:12px;';
+
+        const choiceBtnCss = 'padding:8px 12px;border:1px solid #666;background:#3a3a3a;color:#fff;border-radius:4px;cursor:pointer;font-size:12px;text-align:left;';
+        const disabledCss = choiceBtnCss + 'opacity:0.4;cursor:not-allowed;';
+
+        function addChoice(label, value, enabled) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.textContent = label;
+            btn.style.cssText = enabled ? choiceBtnCss : disabledCss;
+            btn.disabled = !enabled;
+            if (enabled) btn.addEventListener('click', () => cleanup(value));
+            btnCol.appendChild(btn);
+            return btn;
+        }
+
+        const beforeBtn = addChoice('Before current step', 'before', hasCurrent);
+        addChoice('After current step', 'after', true);
+        addChoice('At the end', 'end', true);
+
+        const cancelRow = document.createElement('div');
+        cancelRow.style.cssText = 'display:flex;justify-content:flex-end;';
+        const btnCancel = document.createElement('button');
+        btnCancel.type = 'button';
+        btnCancel.textContent = 'Cancel';
+        btnCancel.style.cssText = 'padding:6px 16px;border:1px solid #666;background:#444;color:#fff;border-radius:4px;cursor:pointer;font-size:12px;';
+        cancelRow.appendChild(btnCancel);
+
+        dialog.appendChild(title);
+        dialog.appendChild(body);
+        dialog.appendChild(btnCol);
+        dialog.appendChild(cancelRow);
+        overlay.appendChild(dialog);
+        document.body.appendChild(overlay);
+
+        (hasCurrent ? beforeBtn : btnCancel).focus();
+
+        function cleanup(result) {
+            if (!overlay.parentNode) return;
+            document.removeEventListener('keydown', onKey);
+            overlay.remove();
+            resolve(result);
+        }
+
+        function onKey(e) {
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                cleanup(null);
+            }
+        }
+
+        btnCancel.addEventListener('click', () => cleanup(null));
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) cleanup(null); });
+        dialog.addEventListener('click', (e) => e.stopPropagation());
+        document.addEventListener('keydown', onKey);
+    });
+}
+
+// Create a new empty step and make it the active edit step.
+function assemblyNewStep() {
+    const n = assemblyData.steps.length;
+    const ci = assemblyState.currentStepIndex;
+
+    if (n === 0) {
+        insertNewStepAt(0);
+        return;
+    }
+
+    showInsertStepDialog(ci >= 0).then(choice => {
+        if (!choice) return;
+        let insertIndex;
+        if (choice === 'before') insertIndex = Math.max(0, ci);
+        else if (choice === 'after') insertIndex = ci < 0 ? 0 : ci + 1;
+        else insertIndex = n;
+        insertNewStepAt(insertIndex);
+    });
 }
 
 // Remove the currently selected object from the current step's transformations.
