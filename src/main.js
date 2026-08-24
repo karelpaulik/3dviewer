@@ -1392,7 +1392,7 @@ const viewProp = {
     transformMode: 'translate', // transform mode: translate, rotate, scale
     pStep: 0.1,            // krok sliderů Px/Py/Pz (Location, Sections, context menu)
     rStep: 1,                // krok sliderů Rx/Ry/Rz (°)
-    sStep: 0.1,              // krok slideru Scale
+    sStep: 0.001,            // krok slideru Scale
     wireframe: false,       // Wireframe přepínač
     showSharpEdges: false,
     edgeAngleThreshold: 12,
@@ -1465,7 +1465,7 @@ const snapTransformInitDefaults = {
 const snapSlidersInitDefaults = {
     pStep: 0.1,
     rStep: 1,
-    sStep: 0.1,
+    sStep: 0.001,
 };
 
 const toolbarDefaults = {
@@ -1502,8 +1502,8 @@ const extent = {
     pp: +1000,
     rn: -180,
     rp: 180,
-    sn: 0,
-    sp: 10,
+    sn: 0.001,
+    sp: 1000,
 };
 
 const extentSliderControllers = [];
@@ -14204,7 +14204,12 @@ function assemblyMoveStepDown() {
             { id: 'ctx-rx', label: 'Rx',    stepKey: 'rStep', get: () => lastSelectedObject ? THREE.MathUtils.radToDeg(lastSelectedObject.rotation.x) : undefined, set: v => { if (lastSelectedObject) { lastSelectedObject.rotation.x = THREE.MathUtils.degToRad(v); render(); } } },
             { id: 'ctx-ry', label: 'Ry',    stepKey: 'rStep', get: () => lastSelectedObject ? THREE.MathUtils.radToDeg(lastSelectedObject.rotation.y) : undefined, set: v => { if (lastSelectedObject) { lastSelectedObject.rotation.y = THREE.MathUtils.degToRad(v); render(); } } },
             { id: 'ctx-rz', label: 'Rz',    stepKey: 'rStep', get: () => lastSelectedObject ? THREE.MathUtils.radToDeg(lastSelectedObject.rotation.z) : undefined, set: v => { if (lastSelectedObject) { lastSelectedObject.rotation.z = THREE.MathUtils.degToRad(v); render(); } } },
-            { id: 'ctx-sc', label: 'Scale', stepKey: 'sStep', get: () => lastSelectedObject?.scale.x,     set: v => { if (lastSelectedObject) { lastSelectedObject.scale.set(v, v, v); render(); } } },
+            { id: 'ctx-sc', label: 'Scale', stepKey: 'sStep', min: extent.sn, max: extent.sp, get: () => lastSelectedObject?.scale.x, set: v => {
+                if (!lastSelectedObject || !Number.isFinite(v)) return;
+                const s = Math.min(extent.sp, Math.max(extent.sn, v));
+                lastSelectedObject.scale.set(s, s, s);
+                render();
+            } },
         ];
 
         inputDefs.forEach(def => {
@@ -14217,8 +14222,14 @@ function assemblyMoveStepDown() {
             inp.id = def.id;
             inp.step = viewProp[def.stepKey];
             inp.dataset.stepKey = def.stepKey;
+            if (def.min != null) inp.min = def.min;
+            if (def.max != null) inp.max = def.max;
             inp.addEventListener('click', e => e.stopPropagation());
-            inp.addEventListener('change', e => def.set(parseFloat(e.target.value)));
+            inp.addEventListener('change', e => {
+                def.set(parseFloat(e.target.value));
+                const next = def.get?.();
+                if (Number.isFinite(next)) inp.value = next;
+            });
             row.appendChild(lbl);
             row.appendChild(inp);
             subLoc.appendChild(row);
