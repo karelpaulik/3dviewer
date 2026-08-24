@@ -323,9 +323,18 @@ const assemblyData = {
     steps: []  // { id, name, description, transformations: [{ objectRef, initPosition, finalPosition, initQuaternion, finalQuaternion, initScale, finalScale }] }
 };
 
+// Alternative assembly procedures over the same scene. Only one can be active, because steps
+// physically move objects. assemblyData.steps is always a live reference to the active
+// workflow's steps array, so all step-level code keeps operating on the active workflow.
+const assemblyWorkflows = [
+    { id: 1, name: 'Workflow 1', description: '', steps: assemblyData.steps },
+];
+let activeWorkflowIndex = 0;
+
 // Map: objectRef → { position, quaternion, scale } = the fully-assembled (base) state for each object.
 // Set once when an object is first introduced into any step. Used by repairChain to keep
 // initPositions consistent when steps are edited or reordered.
+// Shared by all workflows — the assembled state of the scene is the same for every procedure.
 const assemblyAnchors = new Map();
 
 const assemblyState = {
@@ -340,9 +349,11 @@ let cameraAnimation = null;            // GSAP tween handle for camera animation
 let cameraAnimationFinalize = null;    // Snaps in-flight camera animation to its end state
 let assemblyStepsListFolder = null; // Dynamicky přebudovávaný subfolder seznamu kroků
 let _assemblyFolderRef = null;      // Reference na hlavní Assembly Workflow folder (pro rebuild)
+let _assemblyWorkflowsFolderRef = null; // Subfolder se seznamem workflow (obsah se přebudovává)
 let lightsFolder = null; // Reference na Lights folder ve View panelu
 
 const assemblyGui = {
+    activeWorkflowIndex: 0,
     stepInfo: '\u2013 no step \u2013',
     editMode: false,
     editStepInfo: '\u2013 no step \u2013',
@@ -1239,8 +1250,12 @@ function getUndoContext() {
         hiddenObjects,
         temporarilyShownObjects,
         assemblyData,
+        assemblyWorkflows,
+        get activeWorkflowIndex() { return activeWorkflowIndex; },
+        set activeWorkflowIndex(v) { activeWorkflowIndex = v; assemblyGui.activeWorkflowIndex = v; },
         assemblyState,
         assemblyAnchors,
+        rebuildAssemblyWorkflowsFolder,
         groupHistory,
         get groupHistoryIndex() { return groupHistoryIndex; },
         set groupHistoryIndex(v) { groupHistoryIndex = v; },
@@ -1623,6 +1638,7 @@ if (import.meta.env.DEV) {
     window.clipPlanes = clipPlanes;
     window.loadedModels = loadedModels;
     window.assemblyData = assemblyData;
+    window.assemblyWorkflows = assemblyWorkflows;
     window.assemblyState = assemblyState;
     window.getAnnotations = getAnnotations;
     window.getDocumentsStore = getDocumentsStore;
@@ -3036,10 +3052,11 @@ function addMainGui() {
     exportOtherFolder.close();
     const exportHtmlFolder = fileGui.addFolder('Export self-contained HTML');
     exportHtmlFolder.close();
-    exportHtmlFolder.add({ fn() { exportToHTML(loadedModels, assemblyGui, viewProp, assemblyWriteToUserData, assemblyClearUserData); } }, 'fn').name('Export to HTML');
-    exportHtmlFolder.add({ fn() { exportToHTMLDraco(loadedModels, assemblyGui, viewProp, assemblyWriteToUserData, assemblyClearUserData); } }, 'fn').name('Export to HTML (Compression)');
-    exportHtmlFolder.add({ fn() { exportToHTMLObfuscated(loadedModels, assemblyGui, viewProp, assemblyWriteToUserData, assemblyClearUserData); } }, 'fn').name('Export to HTML obfuscated');
-    exportHtmlFolder.add({ fn() { exportToHTMLObfuscatedDraco(loadedModels, assemblyGui, viewProp, assemblyWriteToUserData, assemblyClearUserData); } }, 'fn').name('Export to HTML obfuscated (Compression)');
+    // The exported HTML player handles one procedure, so only the active workflow is embedded.
+    exportHtmlFolder.add({ fn() { exportToHTML(loadedModels, assemblyGui, viewProp, assemblyWriteActiveWorkflowToUserData, assemblyClearUserData); } }, 'fn').name('Export to HTML');
+    exportHtmlFolder.add({ fn() { exportToHTMLDraco(loadedModels, assemblyGui, viewProp, assemblyWriteActiveWorkflowToUserData, assemblyClearUserData); } }, 'fn').name('Export to HTML (Compression)');
+    exportHtmlFolder.add({ fn() { exportToHTMLObfuscated(loadedModels, assemblyGui, viewProp, assemblyWriteActiveWorkflowToUserData, assemblyClearUserData); } }, 'fn').name('Export to HTML obfuscated');
+    exportHtmlFolder.add({ fn() { exportToHTMLObfuscatedDraco(loadedModels, assemblyGui, viewProp, assemblyWriteActiveWorkflowToUserData, assemblyClearUserData); } }, 'fn').name('Export to HTML obfuscated (Compression)');
     _enableFileHistoryController = fileGui.add(fileHistoryUi, 'enableFileHistory')
         .name('Enable file history')
         .onChange(v => setFileHistoryOnSaveEnabled(v))
@@ -5376,21 +5393,23 @@ function _remapAssemblyAfterLocationBake(obj, invBake) {
         if (anchor.scale && rec.scale) anchor.scale = rec.scale;
     }
 
-    assemblyData.steps.forEach(function(step) {
-        step.transformations.forEach(function(t) {
-            if (t.objectRef !== obj) return;
-            const initRec = _remapStoredTrs(t.initPosition, t.initQuaternion, t.initScale, invBake);
-            t.initPosition = initRec.position;
-            if (t.initQuaternion) t.initQuaternion = initRec.quaternion;
-            if (t.initScale) t.initScale = initRec.scale;
-            const finalRec = _remapStoredTrs(t.finalPosition, t.finalQuaternion, t.finalScale, invBake);
-            t.finalPosition = finalRec.position;
-            if (t.finalQuaternion) t.finalQuaternion = finalRec.quaternion;
-            if (t.finalScale) t.finalScale = finalRec.scale;
+    assemblyWorkflows.forEach(function(wf) {
+        wf.steps.forEach(function(step) {
+            step.transformations.forEach(function(t) {
+                if (t.objectRef !== obj) return;
+                const initRec = _remapStoredTrs(t.initPosition, t.initQuaternion, t.initScale, invBake);
+                t.initPosition = initRec.position;
+                if (t.initQuaternion) t.initQuaternion = initRec.quaternion;
+                if (t.initScale) t.initScale = initRec.scale;
+                const finalRec = _remapStoredTrs(t.finalPosition, t.finalQuaternion, t.finalScale, invBake);
+                t.finalPosition = finalRec.position;
+                if (t.finalQuaternion) t.finalQuaternion = finalRec.quaternion;
+                if (t.finalScale) t.finalScale = finalRec.scale;
+            });
         });
     });
 
-    repairChainForObject(obj);
+    repairChainForObjectAllWorkflows(obj);
 }
 
 function bakeObjectLocation(obj, options) {
@@ -5569,7 +5588,7 @@ function _prepareAndBakeObjectLocation(obj, options) {
 function bakeSelectedObjectLocation() {
     const obj = lastSelectedObject;
     if (!obj) return;
-    if (!objectInAssemblyWorkflow(obj)) {
+    if (!objectInAnyAssemblyWorkflow(obj)) {
         _prepareAndBakeObjectLocation(obj);
         return;
     }
@@ -5600,7 +5619,7 @@ function bakeAllObjectsLocation() {
         return;
     }
 
-    const hasAssembly = assemblyData.steps.length > 0;
+    const hasAssembly = assemblyWorkflows.some(wf => wf.steps.length > 0);
     const confirmed = hasAssembly
         ? confirm('Bake location for all objects? This can break existing Assembly workflow (steps will not be recalculated).')
         : confirm('Bake location for all objects in the model?');
@@ -7536,7 +7555,7 @@ function loadGlbModel(model, name, scale, colored, options = {}) {
                 const extractedModels = [...wrapperChild.children];
 
                 // Import app-level data (traverses gltf.scene, finds data in userData)
-                importAssemblyFromGltfScene(gltf.scene);
+                importAssemblyFromGltfScene(gltf.scene, name || fileNameWithoutExtension(model));
                 importDocumentsFromGltfScene(gltf.scene);
                 importAttachmentsFromGltfScene(gltf.scene);
                 if (importSettings) {
@@ -7615,7 +7634,7 @@ function loadGlbModel(model, name, scale, colored, options = {}) {
                 });
                 
                 // Import assembly workflow stored in userData (if any)
-                importAssemblyFromGltfScene(gltf.scene);
+                importAssemblyFromGltfScene(gltf.scene, name || fileNameWithoutExtension(model));
                 
                 // Import documents stored in userData (if any)
                 importDocumentsFromGltfScene(gltf.scene);
@@ -7869,9 +7888,7 @@ function clearSceneFully() {
     hiddenObjects.length = 0;
     temporarilyShownObjects = [];
 
-    assemblyData.steps.length = 0;
-    assemblyAnchors.clear();
-    assemblyState.currentStepIndex = -1;
+    resetAssemblyWorkflows();
 
     modelsCopy.forEach(part => {
         if (part.parent) part.parent.remove(part);
@@ -7915,9 +7932,7 @@ function clearSceneKeepDocs() {
         temporarilyShownObjects = [];
 
         // Reset assembly data
-        assemblyData.steps.length = 0;
-        assemblyAnchors.clear();
-        assemblyState.currentStepIndex = -1;
+        resetAssemblyWorkflows();
 
         // Remove all root models from the scene
         modelsCopy.forEach(part => {
@@ -7965,31 +7980,21 @@ function removeModel(part, skipConfirm = false, options = {}) {
             if (hi !== -1) hiddenObjects.splice(hi, 1);
         });
 
-        // Vyčistíme assemblyData — odstraníme transformace odkazující na odebrané objekty.
-        // Poté odebereme kroky, které nemají žádné transformace, a opravíme chain.
-        const affectedChainObjects = new Set();
-        assemblyData.steps.forEach(step => {
-            const before = step.transformations.length;
-            step.transformations = step.transformations.filter(t => {
-                if (removedObjects.has(t.objectRef)) {
-                    return false;
-                }
-                return true;
+        // Vyčistíme všechna workflow — odstraníme transformace odkazující na odebrané objekty
+        // a poté kroky, které tím zůstaly prázdné. Pole kroků se přepisuje na místě, aby
+        // assemblyData.steps zůstalo referencí na aktivní workflow.
+        assemblyWorkflows.forEach(wf => {
+            wf.steps.forEach(step => {
+                step.transformations = step.transformations.filter(t => !removedObjects.has(t.objectRef));
             });
-            if (step.transformations.length !== before) {
-                // Žádné chain objekty k opravě — odebrané objekty již neexistují.
-                // Ale zbývající objekty ve stejném kroku mohou mít správné init díky chain.
+            const nonEmptySteps = wf.steps.filter(s => s.transformations.length > 0);
+            if (nonEmptySteps.length !== wf.steps.length) {
+                wf.steps.length = 0;
+                nonEmptySteps.forEach((s, i) => { s.id = i + 1; wf.steps.push(s); });
             }
         });
-
-        // Odstraníme kroky, které jsou nyní zcela prázdné.
-        const nonEmptySteps = assemblyData.steps.filter(s => s.transformations.length > 0);
-        if (nonEmptySteps.length !== assemblyData.steps.length) {
-            assemblyData.steps.length = 0;
-            nonEmptySteps.forEach((s, i) => { s.id = i + 1; assemblyData.steps.push(s); });
-            if (assemblyState.currentStepIndex >= assemblyData.steps.length) {
-                assemblyState.currentStepIndex = assemblyData.steps.length - 1;
-            }
+        if (assemblyState.currentStepIndex >= assemblyData.steps.length) {
+            assemblyState.currentStepIndex = assemblyData.steps.length - 1;
         }
 
         // Odstraníme z assemblyAnchors
@@ -11835,20 +11840,23 @@ function importSettingsFromGltfScene(gltfScene) {
 
 // ===== Assembly Workflow Export/Import Helpers =================================================
 
-// Write assemblyData.steps into each objectRef's userData.assemblyTransformations
-// so the data survives GLB export/import. Call immediately before cloning for export.
-function assemblyWriteToUserData() {
-    // Reset assembly arrays on all referenced objects
+// Write the given workflows into each objectRef's userData.assemblyTransformations so the data
+// survives GLB export/import. Call immediately before cloning for export.
+function assemblyWriteToUserData(workflows = assemblyWorkflows) {
+    // Reset assembly arrays on all referenced objects. Must cover every workflow being written
+    // before anything is pushed, otherwise a later workflow wipes the entries of an earlier one.
     const allObjects = new Set();
-    assemblyData.steps.forEach(step => {
+    workflows.forEach(wf => wf.steps.forEach(step => {
         step.transformations.forEach(t => allObjects.add(t.objectRef));
-    });
+    }));
     allObjects.forEach(obj => { obj.userData.assemblyTransformations = []; });
 
-    // Populate per-object arrays indexed by step
-    assemblyData.steps.forEach(step => {
+    // Populate per-object arrays indexed by workflow and step
+    workflows.forEach(wf => wf.steps.forEach(step => {
         step.transformations.forEach(t => {
             t.objectRef.userData.assemblyTransformations.push({
+                workflow_id:      wf.id,
+                workflow_name:    wf.name,
                 step_id:          step.id,
                 step_name:        step.name,
                 step_description: step.description,
@@ -11861,31 +11869,60 @@ function assemblyWriteToUserData() {
                 finalScale:       t.finalScale      ? { ...t.finalScale }      : null,
             });
         });
-    });
+    }));
 }
 
-// Remove assemblyTransformations from userData of all objects referenced in assemblyData.
+// HTML export carries a single-workflow player, so only the active procedure is embedded.
+function assemblyWriteActiveWorkflowToUserData() {
+    const wf = getActiveAssemblyWorkflow();
+    assemblyWriteToUserData(wf ? [wf] : []);
+}
+
+// Workflow-level metadata (names, order) cannot be reconstructed from the per-object records
+// alone, so it travels in the export root's userData next to documents and attachments.
+function embedAssemblyWorkflowIndex(userData, workflows = assemblyWorkflows) {
+    const index = workflows
+        .filter(wf => wf.steps.length > 0)
+        .map(wf => ({ id: wf.id, name: wf.name, description: wf.description || '', order: assemblyWorkflows.indexOf(wf) }));
+    if (index.length > 0) userData.assemblyWorkflows = index;
+}
+
+// Remove assemblyTransformations from userData of all objects referenced by any workflow.
 // Call on originals immediately after cloning — clones already carry the data.
 function assemblyClearUserData() {
-    assemblyData.steps.forEach(step => {
+    assemblyWorkflows.forEach(wf => wf.steps.forEach(step => {
         step.transformations.forEach(t => {
             delete t.objectRef.userData.assemblyTransformations;
         });
-    });
+    }));
 }
 
-// Read userData.assemblyTransformations from an imported GLTF scene and
-// integrate the resulting steps into assemblyData according to user choice.
-function importAssemblyFromGltfScene(gltfScene) {
-    // Collect per-object assembly records from userData
-    const importedSteps = new Map(); // step_id → step object
+// Read userData.assemblyTransformations from an imported GLTF scene and add every workflow it
+// contains as a new workflow. The imported objects come along with the file, so its procedures
+// always reference their own parts — nothing has to be merged into an existing workflow.
+function importAssemblyFromGltfScene(gltfScene, sourceName = '') {
+    const imported = new Map(); // workflow_id → { id, name, steps: Map(step_id → step) }
+    let workflowIndex = null;   // root-level metadata, absent in files saved before multi-workflow support
+
     gltfScene.traverse(function(child) {
+        if (Array.isArray(child.userData.assemblyWorkflows)) {
+            workflowIndex = child.userData.assemblyWorkflows;
+            delete child.userData.assemblyWorkflows;
+        }
+
         const arr = child.userData.assemblyTransformations;
         if (!Array.isArray(arr) || arr.length === 0) return;
 
         arr.forEach(entry => {
-            if (!importedSteps.has(entry.step_id)) {
-                importedSteps.set(entry.step_id, {
+            const wfId = entry.workflow_id ?? 1;
+            if (!imported.has(wfId)) {
+                imported.set(wfId, { id: wfId, name: entry.workflow_name || '', steps: new Map() });
+            }
+            const wf = imported.get(wfId);
+            if (!wf.name && entry.workflow_name) wf.name = entry.workflow_name;
+
+            if (!wf.steps.has(entry.step_id)) {
+                wf.steps.set(entry.step_id, {
                     id:          entry.step_id,
                     name:        entry.step_name        || `Step ${entry.step_id}`,
                     description: entry.step_description || '',
@@ -11893,7 +11930,7 @@ function importAssemblyFromGltfScene(gltfScene) {
                     transformations: [],
                 });
             }
-            importedSteps.get(entry.step_id).transformations.push({
+            wf.steps.get(entry.step_id).transformations.push({
                 objectRef:       child,
                 initPosition:    entry.initPosition,
                 finalPosition:   entry.finalPosition,
@@ -11908,70 +11945,43 @@ function importAssemblyFromGltfScene(gltfScene) {
         delete child.userData.assemblyTransformations;
     });
 
-    const sortedImportedSteps = [...importedSteps.values()].sort((a, b) => a.id - b.id);
-    if (sortedImportedSteps.length === 0) return;
+    if (imported.size === 0) return;
 
-    if (assemblyData.steps.length === 0) {
-        // No conflict — load directly
-        assemblyData.steps.push(...sortedImportedSteps);
-        repairChain();
-        console.log(`[Assembly] Imported ${sortedImportedSteps.length} step(s) from GLB.`);
-        updateAssemblyGuiInfo();
-        return;
-    }
+    const meta = new Map((workflowIndex || []).map(e => [e.id, e]));
+    const incoming = [...imported.values()].sort((a, b) => {
+        const oa = meta.get(a.id)?.order ?? a.id;
+        const ob = meta.get(b.id)?.order ?? b.id;
+        return oa - ob;
+    });
 
-    // Existing workflow — ask user how to handle the conflict
-    const existingCount = assemblyData.steps.length;
-    const importedCount = sortedImportedSteps.length;
-    const choice = window.prompt(
-        `Imported model contains Assembly Workflow (${importedCount} step(s)).\n` +
-        `Existing workflow: ${existingCount} step(s).\n\n` +
-        `Choose action:\n` +
-        `  1 — Merge   (combine transformations of steps with matching IDs; keep existing step names)\n` +
-        `  2 — Append  (add imported steps after existing steps)\n` +
-        `  3 — Replace (overwrite existing workflow with imported)\n` +
-        `  4 — Ignore  (discard imported workflow)`,
-        '1'
-    );
+    // A pristine single empty workflow (fresh scene, or right after Open) is reused instead of
+    // being left behind as an empty leftover.
+    const target = getActiveAssemblyWorkflow();
+    let reuseActive = assemblyWorkflows.length === 1 && target && target.steps.length === 0;
+    const fallbackBase = sourceName.replace(/\.[^.]+$/, '') || 'Imported';
 
-    const action = choice !== null ? choice.trim() : '4';
+    incoming.forEach(imp => {
+        const steps = [...imp.steps.values()].sort((a, b) => a.id - b.id);
+        steps.forEach((s, i) => { s.id = i + 1; });
 
-    if (action === '1') {
-        // Merge by step_id — existing step metadata (name/description) is preserved
-        sortedImportedSteps.forEach(importedStep => {
-            const existing = assemblyData.steps.find(s => s.id === importedStep.id);
-            if (existing) {
-                existing.transformations.push(...importedStep.transformations);
-                console.log(`[Assembly] Merge: added ${importedStep.transformations.length} transformation(s) to step ${importedStep.id} "${existing.name}".`);
-            } else {
-                assemblyData.steps.push(importedStep);
-                assemblyData.steps.sort((a, b) => a.id - b.id);
-                console.log(`[Assembly] Merge: new step ${importedStep.id} "${importedStep.name}" inserted.`);
-            }
-        });
-        repairChain();
-    } else if (action === '2') {
-        // Append — remap step IDs to continue after existing ones
-        const maxId = Math.max(...assemblyData.steps.map(s => s.id));
-        sortedImportedSteps.forEach((step, i) => {
-            step.id = maxId + i + 1;
-            assemblyData.steps.push(step);
-        });
-        repairChain();
-        console.log(`[Assembly] Append: ${sortedImportedSteps.length} step(s) added (IDs ${maxId + 1}–${maxId + sortedImportedSteps.length}).`);
-    } else if (action === '3') {
-        // Replace — overwrite entirely
-        assemblyData.steps.length = 0;
-        assemblyData.steps.push(...sortedImportedSteps);
-        assemblyAnchors.clear();
-        repairChain();
-        console.log(`[Assembly] Replace: workflow replaced with ${sortedImportedSteps.length} imported step(s).`);
-    } else {
-        // action === '4' or dialog cancelled — ignore
-        console.log('[Assembly] Import: workflow ignored.');
-    }
+        const name = meta.get(imp.id)?.name || imp.name
+            || (incoming.length > 1 ? `${fallbackBase} ${imp.id}` : fallbackBase);
+        const description = meta.get(imp.id)?.description || '';
 
+        if (reuseActive) {
+            target.name = name;
+            target.description = description;
+            target.steps.push(...steps);
+            reuseActive = false;
+        } else {
+            addAssemblyWorkflow(name, steps).description = description;
+        }
+    });
+
+    repairAllWorkflowChains();
+    rebuildAssemblyWorkflowsFolder();
     updateAssemblyGuiInfo();
+    console.log(`[Assembly] Imported ${incoming.length} workflow(s) from GLB.`);
 }
 
 // ================================================================================================
@@ -12020,6 +12030,7 @@ function buildAllModelsExportGroup(finalName) {
         attachmentCompressionDefaults
     );
     embedAppSettingsToUserData(group.userData);
+    embedAssemblyWorkflowIndex(group.userData);
 
     const history = getFileHistoryForExport();
     if (history.length > 0) {
@@ -12167,6 +12178,7 @@ function exportSelectedObject() {
         const group = new THREE.Group();
         group.userData._appExportRoot = true;
         embedAppSettingsToUserData(group.userData);
+        embedAssemblyWorkflowIndex(group.userData);
 
         selectedObjects.forEach(obj => {
             const clone = obj.clone(true);
@@ -12220,6 +12232,7 @@ function exportSelectedObject() {
     stripSelectionHighlightFromExportSubtree(clone);
 
     embedAppSettingsToUserData(clone.userData);
+    embedAssemblyWorkflowIndex(clone.userData);
 
     // Clean up originals — clone already carries the assembly data
     assemblyClearUserData();
@@ -12282,6 +12295,7 @@ async function exportSelectedObjectDraco() {
         const groupDraco = new THREE.Group();
         groupDraco.userData._appExportRoot = true;
         embedAppSettingsToUserData(groupDraco.userData);
+        embedAssemblyWorkflowIndex(groupDraco.userData);
 
         selectedObjects.forEach(obj => {
             const clone = obj.clone(true);
@@ -12388,6 +12402,7 @@ async function exportSelectedObjectDraco() {
     stripSelectionHighlightFromExportSubtree(clone);
 
     embedAppSettingsToUserData(clone.userData);
+    embedAssemblyWorkflowIndex(clone.userData);
 
     assemblyClearUserData();
 
@@ -12662,6 +12677,10 @@ function addAssemblyGui() {
     const assemblyFolder = new GUI({ container: guiContainer, title: 'Assembly Workflow' });
     guiAssembly = assemblyFolder;
     _assemblyFolderRef = assemblyFolder;
+
+    // --- Workflows ---
+    _assemblyWorkflowsFolderRef = assemblyFolder.addFolder('Workflows');
+    rebuildAssemblyWorkflowsFolder();
 
     // --- Playback ---
     const playbackFolder = assemblyFolder.addFolder('Playback');
@@ -12970,15 +12989,223 @@ function addCallGui() {
     }
 }
 
+// ===== Assembly workflows (alternative procedures over one scene) ===============================
+
+function getActiveAssemblyWorkflow() {
+    return assemblyWorkflows[activeWorkflowIndex] || null;
+}
+
+function nextAssemblyWorkflowId() {
+    return assemblyWorkflows.reduce((max, wf) => Math.max(max, wf.id), 0) + 1;
+}
+
+function uniqueAssemblyWorkflowName(base) {
+    const taken = new Set(assemblyWorkflows.map(wf => wf.name));
+    if (!taken.has(base)) return base;
+    let i = 2;
+    while (taken.has(`${base} (${i})`)) i++;
+    return `${base} (${i})`;
+}
+
+// Run fn with each workflow temporarily active. Lets step-level helpers that read
+// assemblyData.steps operate on every workflow without being rewritten.
+function forEachAssemblyWorkflow(fn) {
+    const savedIndex = activeWorkflowIndex;
+    const savedSteps = assemblyData.steps;
+    try {
+        assemblyWorkflows.forEach((wf, i) => {
+            activeWorkflowIndex = i;
+            assemblyData.steps = wf.steps;
+            fn(wf, i);
+        });
+    } finally {
+        activeWorkflowIndex = savedIndex;
+        assemblyData.steps = savedSteps;
+    }
+}
+
+function objectInAnyAssemblyWorkflow(obj) {
+    return assemblyWorkflows.some(wf => wf.steps.some(step => step.transformations.some(t => t.objectRef === obj)));
+}
+
+// Drop anchors of objects that no longer appear in any workflow.
+function pruneAssemblyAnchors() {
+    const used = new Set();
+    assemblyWorkflows.forEach(wf => wf.steps.forEach(step => {
+        step.transformations.forEach(t => used.add(t.objectRef));
+    }));
+    [...assemblyAnchors.keys()].forEach(obj => {
+        if (!used.has(obj)) assemblyAnchors.delete(obj);
+    });
+}
+
+function cloneAssemblyTransformation(t) {
+    return {
+        objectRef:       t.objectRef,
+        initPosition:    { ...t.initPosition },
+        finalPosition:   { ...t.finalPosition },
+        initQuaternion:  t.initQuaternion  ? { ...t.initQuaternion }  : null,
+        finalQuaternion: t.finalQuaternion ? { ...t.finalQuaternion } : null,
+        initScale:       t.initScale       ? { ...t.initScale }       : null,
+        finalScale:      t.finalScale      ? { ...t.finalScale }      : null,
+    };
+}
+
+// Deep copy of a step list keeping the same objectRef targets.
+function cloneAssemblySteps(steps) {
+    return steps.map(step => ({
+        id:          step.id,
+        name:        step.name,
+        description: step.description,
+        camera:      step.camera ? { position: { ...step.camera.position }, target: { ...step.camera.target }, zoom: step.camera.zoom } : null,
+        transformations: step.transformations.map(cloneAssemblyTransformation),
+    }));
+}
+
+// Repoint assemblyData.steps at another workflow. The scene must already be in the assembled
+// state — the outgoing workflow's transforms are otherwise still applied to the objects.
+function _repointActiveWorkflow(index) {
+    activeWorkflowIndex = index;
+    assemblyGui.activeWorkflowIndex = index;
+    assemblyData.steps = assemblyWorkflows[index].steps;
+    assemblyState.currentStepIndex = -1;
+    assemblyState.disassembledMode = false;
+    updateAssemblyGuiInfo();
+    render();
+}
+
+function setActiveAssemblyWorkflow(index) {
+    if (index < 0 || index >= assemblyWorkflows.length || index === activeWorkflowIndex) return;
+    assemblyResetToStart();
+    _repointActiveWorkflow(index);
+    console.log(`[Assembly] Active workflow: "${assemblyWorkflows[index].name}".`);
+}
+
+function addAssemblyWorkflow(name, steps = []) {
+    const wf = {
+        id: nextAssemblyWorkflowId(),
+        name: uniqueAssemblyWorkflowName(name),
+        description: '',
+        steps,
+    };
+    assemblyWorkflows.push(wf);
+    return wf;
+}
+
+function assemblyNewWorkflow() {
+    const proposed = uniqueAssemblyWorkflowName(`Workflow ${assemblyWorkflows.length + 1}`);
+    const input = prompt('New workflow name:', proposed);
+    if (input === null) return;
+    assemblyResetToStart();
+    const wf = addAssemblyWorkflow(input.trim() || proposed);
+    rebuildAssemblyWorkflowsFolder();
+    _repointActiveWorkflow(assemblyWorkflows.length - 1);
+    console.log(`[Assembly] Workflow "${wf.name}" created.`);
+}
+
+function assemblyDuplicateWorkflow() {
+    const src = getActiveAssemblyWorkflow();
+    if (!src) return;
+    const proposed = uniqueAssemblyWorkflowName(`${src.name} copy`);
+    const input = prompt('Duplicate active workflow as:', proposed);
+    if (input === null) return;
+    assemblyResetToStart();
+    const wf = addAssemblyWorkflow(input.trim() || proposed, cloneAssemblySteps(src.steps));
+    wf.description = src.description;
+    rebuildAssemblyWorkflowsFolder();
+    _repointActiveWorkflow(assemblyWorkflows.length - 1);
+    console.log(`[Assembly] Workflow "${src.name}" duplicated as "${wf.name}" (${wf.steps.length} step(s)).`);
+}
+
+function assemblyRenameWorkflow() {
+    const wf = getActiveAssemblyWorkflow();
+    if (!wf) return;
+    const input = prompt('Rename active workflow:', wf.name);
+    if (input === null) return;
+    const trimmed = input.trim();
+    if (!trimmed || trimmed === wf.name) return;
+    const previous = wf.name;
+    wf.name = uniqueAssemblyWorkflowName(trimmed);
+    rebuildAssemblyWorkflowsFolder();
+    updateAssemblyGuiInfo();
+    console.log(`[Assembly] Workflow "${previous}" renamed to "${wf.name}".`);
+}
+
+function assemblyDeleteWorkflow() {
+    const wf = getActiveAssemblyWorkflow();
+    if (!wf) return;
+    // The last remaining workflow is emptied instead of removed — assemblyData.steps must
+    // always point at a live workflow.
+    if (assemblyWorkflows.length === 1) {
+        if (wf.steps.length === 0) {
+            alert('This is the only workflow and it is already empty.');
+            return;
+        }
+        assemblyDeleteAllSteps();
+        return;
+    }
+    if (!confirm(`Delete workflow "${wf.name}" with ${wf.steps.length} step(s)?\nObjects will return to the assembled position.`)) return;
+    assemblyResetToStart();
+    assemblyWorkflows.splice(activeWorkflowIndex, 1);
+    rebuildAssemblyWorkflowsFolder();
+    _repointActiveWorkflow(Math.min(activeWorkflowIndex, assemblyWorkflows.length - 1));
+    pruneAssemblyAnchors();
+    console.log(`[Assembly] Workflow "${wf.name}" deleted.`);
+}
+
+// Back to a single empty workflow — used when the scene is cleared.
+function resetAssemblyWorkflows() {
+    assemblyWorkflows.length = 0;
+    assemblyData.steps = [];
+    assemblyWorkflows.push({ id: 1, name: 'Workflow 1', description: '', steps: assemblyData.steps });
+    activeWorkflowIndex = 0;
+    assemblyGui.activeWorkflowIndex = 0;
+    assemblyAnchors.clear();
+    assemblyState.currentStepIndex = -1;
+    assemblyState.disassembledMode = false;
+    rebuildAssemblyWorkflowsFolder();
+}
+
+// Rebuild the contents of the persistent "Workflows" subfolder. Only the children are
+// recreated, so the folder keeps its position and open/closed state in the panel.
+function rebuildAssemblyWorkflowsFolder() {
+    const folder = _assemblyWorkflowsFolderRef;
+    if (!folder) return;
+    [...folder.children].forEach(c => c.destroy());
+
+    // The bound value may still point past the end when a workflow was just removed.
+    if (assemblyGui.activeWorkflowIndex >= assemblyWorkflows.length) {
+        assemblyGui.activeWorkflowIndex = assemblyWorkflows.length - 1;
+    }
+
+    folder.title(`Workflows (${assemblyWorkflows.length})`);
+
+    // Names may repeat, so the index prefix keeps the option keys unique.
+    const options = {};
+    assemblyWorkflows.forEach((wf, i) => {
+        options[`${i + 1}:  ${wf.name}`] = i;
+    });
+    folder.add(assemblyGui, 'activeWorkflowIndex', options)
+        .name('Active workflow')
+        .listen()
+        .onChange(v => setActiveAssemblyWorkflow(Number(v)));
+
+    folder.add({ fn: assemblyNewWorkflow }, 'fn').name('+  New workflow');
+    folder.add({ fn: assemblyDuplicateWorkflow }, 'fn').name('⧉  Duplicate workflow');
+    folder.add({ fn: assemblyRenameWorkflow }, 'fn').name('✎  Rename workflow');
+    folder.add({ fn: assemblyDeleteWorkflow }, 'fn').name('✕  Delete workflow');
+}
+
 function updateAssemblyGuiInfo() {
     const n = assemblyData.steps.length;
 
-    // Playback status
+    // Playback status — prefixed with the workflow name once alternatives exist
+    const wfPrefix = assemblyWorkflows.length > 1 ? `[${getActiveAssemblyWorkflow()?.name ?? ''}] ` : '';
     if (assemblyState.currentStepIndex < 0) {
-        assemblyGui.stepInfo = `Assembled (${n} step${n === 1 ? '' : 's'})`;
+        assemblyGui.stepInfo = `${wfPrefix}Assembled (${n} step${n === 1 ? '' : 's'})`;
     } else {
         const step = assemblyData.steps[assemblyState.currentStepIndex];
-        assemblyGui.stepInfo = `${assemblyState.currentStepIndex + 1}/${n}: ${step.name}`;
+        assemblyGui.stepInfo = `${wfPrefix}${assemblyState.currentStepIndex + 1}/${n}: ${step.name}`;
     }
 
     // Viewport step overlay
@@ -13024,7 +13251,8 @@ function rebuildAssemblyStepsList() {
     if (!_assemblyFolderRef) return;
 
     const n = assemblyData.steps.length;
-    const folderTitle = n === 0 ? 'Steps (empty)' : `Steps (${n})`;
+    const wfPrefix = assemblyWorkflows.length > 1 ? `${getActiveAssemblyWorkflow()?.name ?? ''} — ` : '';
+    const folderTitle = n === 0 ? `${wfPrefix}Steps (empty)` : `${wfPrefix}Steps (${n})`;
     assemblyStepsListFolder = _assemblyFolderRef.addFolder(folderTitle);
 
     if (n === 0) {
@@ -13126,6 +13354,7 @@ function findObjectHomeStep(obj) {
     return homeStep;
 }
 
+// Active workflow only — use objectInAnyAssemblyWorkflow for scene-wide checks.
 function objectInAssemblyWorkflow(obj) {
     return assemblyData.steps.some(step => step.transformations.some(t => t.objectRef === obj));
 }
@@ -13146,16 +13375,16 @@ function ensureAssemblyAnchorFromSteps(objectRef) {
     }
 }
 
-// Updates the assembled (base) anchor for an object already in the workflow.
-// repairChainForObject then rewrites first-step initPosition; finals stay unchanged.
+// Updates the assembled (base) anchor for an object that appears in some workflow.
+// The chain repair then rewrites first-step initPosition in every workflow; finals stay unchanged.
 function recordAssembledAnchor(obj, pos, quat, scale) {
-    if (!obj || !objectInAssemblyWorkflow(obj)) return false;
+    if (!obj || !objectInAnyAssemblyWorkflow(obj)) return false;
     assemblyAnchors.set(obj, {
         position:   { x: pos.x, y: pos.y, z: pos.z },
         quaternion: { x: quat.x, y: quat.y, z: quat.z, w: quat.w },
         scale:      { x: scale.x, y: scale.y, z: scale.z },
     });
-    repairChainForObject(obj);
+    repairChainForObjectAllWorkflows(obj);
     return true;
 }
 
@@ -13328,16 +13557,27 @@ function repairChainForObject(objectRef) {
     }
 }
 
-// Repair the full step chain for every object that appears in any step.
+// Repair the full step chain for every object that appears in any step of the active workflow.
 // Not called in the normal edit flow (targeted repairChainForObject is used instead).
 // Reserved for bulk repairs, e.g. after import or future batch operations.
-function repairChain() {
+function repairChain(quiet = false) {
     const allObjects = new Set();
     assemblyData.steps.forEach(step => {
         step.transformations.forEach(t => allObjects.add(t.objectRef));
     });
     allObjects.forEach(obj => repairChainForObject(obj));
-    console.log('[Assembly] Chain repaired.');
+    if (!quiet) console.log('[Assembly] Chain repaired.');
+}
+
+function repairAllWorkflowChains() {
+    forEachAssemblyWorkflow(() => repairChain(true));
+    console.log(`[Assembly] Chains repaired in ${assemblyWorkflows.length} workflow(s).`);
+}
+
+// The anchor is the assembled pose shared by every workflow, so moving it invalidates the first
+// recorded step of each workflow the object appears in, not just the active one.
+function repairChainForObjectAllWorkflows(objectRef) {
+    forEachAssemblyWorkflow(() => repairChainForObject(objectRef));
 }
 
 // Animate all transformations in a step forward (disassembly) or backward (assembly).
@@ -14005,11 +14245,11 @@ function assemblyDeleteAllSteps() {
         console.log('[Assembly] No steps to delete.');
         return;
     }
-    if (!confirm(`Delete all ${n} assembly step${n === 1 ? '' : 's'}?\nObjects will return to the assembled position.`)) return;
+    if (!confirm(`Delete all ${n} assembly step${n === 1 ? '' : 's'} of workflow "${getActiveAssemblyWorkflow()?.name ?? ''}"?\nObjects will return to the assembled position.`)) return;
 
     assemblyResetToStart();
     assemblyData.steps.length = 0;
-    assemblyAnchors.clear();
+    pruneAssemblyAnchors();
     assemblyState.currentStepIndex = -1;
     assemblyState.disassembledMode = false;
     updateAssemblyGuiInfo();

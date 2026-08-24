@@ -24,16 +24,28 @@ function _cloneTransformRec(t) {
     };
 }
 
+function _cloneStep(step) {
+    return {
+        id: step.id,
+        name: step.name,
+        description: step.description,
+        camera: step.camera ? JSON.parse(JSON.stringify(step.camera)) : null,
+        transformations: step.transformations.map(_cloneTransformRec),
+    };
+}
+
+// Every workflow is snapshotted, not just the active one: anchors are shared, so an edit in one
+// procedure can rewrite the first recorded step of the others.
 export function snapshotAssemblyState(ctx) {
-    const { assemblyData, assemblyState, assemblyAnchors } = ctx;
+    const { assemblyWorkflows, assemblyState, assemblyAnchors } = ctx;
     return {
         currentStepIndex: assemblyState.currentStepIndex,
-        steps: assemblyData.steps.map(step => ({
-            id: step.id,
-            name: step.name,
-            description: step.description,
-            camera: step.camera ? JSON.parse(JSON.stringify(step.camera)) : null,
-            transformations: step.transformations.map(_cloneTransformRec),
+        activeWorkflowIndex: ctx.activeWorkflowIndex,
+        workflows: assemblyWorkflows.map(wf => ({
+            id: wf.id,
+            name: wf.name,
+            description: wf.description,
+            steps: wf.steps.map(_cloneStep),
         })),
         anchors: [...assemblyAnchors.entries()].map(([obj, anchor]) => [obj, JSON.parse(JSON.stringify(anchor))]),
     };
@@ -41,30 +53,28 @@ export function snapshotAssemblyState(ctx) {
 
 export function restoreAssemblyState(ctx, snap) {
     if (!snap) return;
-    const { assemblyData, assemblyState, assemblyAnchors } = ctx;
-    assemblyData.steps.length = 0;
-    snap.steps.forEach(step => {
-        assemblyData.steps.push({
-            id: step.id,
-            name: step.name,
-            description: step.description,
-            camera: step.camera ? JSON.parse(JSON.stringify(step.camera)) : null,
-            transformations: step.transformations.map(t => ({
-                objectRef: t.objectRef,
-                initPosition: _cloneVec3(t.initPosition),
-                finalPosition: _cloneVec3(t.finalPosition),
-                initQuaternion: _cloneQuat(t.initQuaternion),
-                finalQuaternion: _cloneQuat(t.finalQuaternion),
-                initScale: _cloneVec3(t.initScale),
-                finalScale: _cloneVec3(t.finalScale),
-            })),
+    const { assemblyData, assemblyWorkflows, assemblyState, assemblyAnchors } = ctx;
+
+    assemblyWorkflows.length = 0;
+    snap.workflows.forEach(wf => {
+        assemblyWorkflows.push({
+            id: wf.id,
+            name: wf.name,
+            description: wf.description,
+            steps: wf.steps.map(_cloneStep),
         });
     });
+
+    const activeIndex = Math.min(Math.max(snap.activeWorkflowIndex ?? 0, 0), assemblyWorkflows.length - 1);
+    ctx.activeWorkflowIndex = activeIndex;
+    assemblyData.steps = assemblyWorkflows[activeIndex].steps;
+
     assemblyAnchors.clear();
     snap.anchors.forEach(([obj, anchor]) => {
         if (obj) assemblyAnchors.set(obj, JSON.parse(JSON.stringify(anchor)));
     });
     assemblyState.currentStepIndex = snap.currentStepIndex;
+    ctx.rebuildAssemblyWorkflowsFolder?.();
     ctx.updateAssemblyGuiInfo?.();
 }
 
