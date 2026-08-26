@@ -3088,7 +3088,10 @@ function addMainGui() {
         loadGlbFile: async (file) => {
             const url = URL.createObjectURL(file);
             try {
-                await loadGlbModel(url, file.name, 0.001, true, { loadFileHistory: true });
+                await loadGlbModel(url, file.name, 0.001, true, {
+                    loadFileHistory: true,
+                    restoreAssemblyPlayback: true,
+                });
                 fitView();
             } finally {
                 URL.revokeObjectURL(url);
@@ -3107,7 +3110,10 @@ function addMainGui() {
         },
         buildGlbBuffer: (opts) => buildAllModelsGlbArrayBuffer(opts),
         recordSaveHistoryIfEnabled: () => recordSaveHistoryIfEnabled(),
-        fallbackImportGlb: () => importGlbFile({ importSettings: true }),
+        fallbackImportGlb: () => importGlbFile({
+            importSettings: true,
+            restoreAssemblyPlayback: loadedModels.length === 0,
+        }),
     });
 
     // --- Edit panel ---
@@ -7535,7 +7541,7 @@ function loadStlModel(model, name, scale, colored) {
 }
 
 function loadGlbModel(model, name, scale, colored, options = {}) {
-    const { loadFileHistory = false, importSettings = true } = options;
+    const { loadFileHistory = false, importSettings = true, restoreAssemblyPlayback = false } = options;
     if (loadFileHistory) syncFileHistoryToggleUi();
     return new Promise((resolve, reject) => {
         const loader = new GLTFLoader();
@@ -7574,7 +7580,9 @@ function loadGlbModel(model, name, scale, colored, options = {}) {
                 const extractedModels = [...wrapperChild.children];
 
                 // Import app-level data (traverses gltf.scene, finds data in userData)
-                importAssemblyFromGltfScene(gltf.scene, name || fileNameWithoutExtension(model));
+                importAssemblyFromGltfScene(gltf.scene, name || fileNameWithoutExtension(model), {
+                    restorePlayback: restoreAssemblyPlayback,
+                });
                 importDocumentsFromGltfScene(gltf.scene);
                 importAttachmentsFromGltfScene(gltf.scene);
                 if (importSettings) {
@@ -7653,7 +7661,9 @@ function loadGlbModel(model, name, scale, colored, options = {}) {
                 });
                 
                 // Import assembly workflow stored in userData (if any)
-                importAssemblyFromGltfScene(gltf.scene, name || fileNameWithoutExtension(model));
+                importAssemblyFromGltfScene(gltf.scene, name || fileNameWithoutExtension(model), {
+                    restorePlayback: restoreAssemblyPlayback,
+                });
                 
                 // Import documents stored in userData (if any)
                 importDocumentsFromGltfScene(gltf.scene);
@@ -10980,7 +10990,7 @@ function showFileHistoryDialog() {
 }
 
 function importGlbFile(options = {}) {
-    const { importSettings = false } = options;
+    const { importSettings = false, restoreAssemblyPlayback = false } = options;
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '.glb';
@@ -10989,7 +10999,7 @@ function importGlbFile(options = {}) {
         if (!file) return;
         // Keep current file handle so Save still targets the Opened document.
         const url = URL.createObjectURL(file);
-        loadGlbModel(url, file.name, 0.001, true, { importSettings }).then(() => {
+        loadGlbModel(url, file.name, 0.001, true, { importSettings, restoreAssemblyPlayback }).then(() => {
             URL.revokeObjectURL(url);
             if (!fileNameInput.value) fileNameInput.value = file.name.replace(/\.[^.]+$/, '');
             fitView();
@@ -11858,9 +11868,19 @@ function importSettingsFromGltfScene(gltfScene) {
 
 // ===== Assembly Workflow Export/Import Helpers =================================================
 
+// Snap in-flight assembly/camera tweens to their end state so a GLB clone is not a mid-step pose.
+function finalizeInFlightAssemblyAnimations() {
+    cameraAnimationFinalize?.();
+    cameraAnimationFinalize = null;
+    assemblyAnimationFinalize?.();
+    assemblyAnimationFinalize = null;
+}
+
 // Write the given workflows into each objectRef's userData.assemblyTransformations so the data
 // survives GLB export/import. Call immediately before cloning for export.
 function assemblyWriteToUserData(workflows = assemblyWorkflows) {
+    finalizeInFlightAssemblyAnimations();
+
     // Reset assembly arrays on all referenced objects. Must cover every workflow being written
     // before anything is pushed, otherwise a later workflow wipes the entries of an earlier one.
     const allObjects = new Set();
@@ -11903,6 +11923,17 @@ function embedAssemblyWorkflowIndex(userData, workflows = assemblyWorkflows) {
         .filter(wf => wf.steps.length > 0)
         .map(wf => ({ id: wf.id, name: wf.name, description: wf.description || '', order: assemblyWorkflows.indexOf(wf) }));
     if (index.length > 0) userData.assemblyWorkflows = index;
+
+    // Playback pointer — which procedure was active and how far it had been applied.
+    // Object poses in the GLB already match this step; Open restores the GUI from this record.
+    const wf = getActiveAssemblyWorkflow();
+    if (wf && index.length > 0) {
+        userData.assemblyPlayback = {
+            activeWorkflowId: wf.id,
+            currentStepIndex: assemblyState.currentStepIndex,
+            disassembledMode: !!assemblyState.disassembledMode,
+        };
+    }
 }
 
 // Remove assemblyTransformations from userData of all objects referenced by any workflow.
@@ -11918,14 +11949,20 @@ function assemblyClearUserData() {
 // Read userData.assemblyTransformations from an imported GLTF scene and add every workflow it
 // contains as a new workflow. The imported objects come along with the file, so its procedures
 // always reference their own parts — nothing has to be merged into an existing workflow.
-function importAssemblyFromGltfScene(gltfScene, sourceName = '') {
+function importAssemblyFromGltfScene(gltfScene, sourceName = '', { restorePlayback = false } = {}) {
     const imported = new Map(); // workflow_id → { id, name, steps: Map(step_id → step) }
     let workflowIndex = null;   // root-level metadata, absent in files saved before multi-workflow support
+    let playback = null;        // { activeWorkflowId, currentStepIndex, disassembledMode }
 
     gltfScene.traverse(function(child) {
         if (Array.isArray(child.userData.assemblyWorkflows)) {
             workflowIndex = child.userData.assemblyWorkflows;
             delete child.userData.assemblyWorkflows;
+        }
+
+        if (child.userData.assemblyPlayback && typeof child.userData.assemblyPlayback === 'object') {
+            if (!playback) playback = child.userData.assemblyPlayback;
+            delete child.userData.assemblyPlayback;
         }
 
         const arr = child.userData.assemblyTransformations;
@@ -11977,6 +12014,7 @@ function importAssemblyFromGltfScene(gltfScene, sourceName = '') {
     const target = getActiveAssemblyWorkflow();
     let reuseActive = assemblyWorkflows.length === 1 && target && target.steps.length === 0;
     const fallbackBase = sourceName.replace(/\.[^.]+$/, '') || 'Imported';
+    const originalIdToWorkflow = new Map();
 
     incoming.forEach(imp => {
         const steps = [...imp.steps.values()].sort((a, b) => a.id - b.id);
@@ -11986,20 +12024,55 @@ function importAssemblyFromGltfScene(gltfScene, sourceName = '') {
             || (incoming.length > 1 ? `${fallbackBase} ${imp.id}` : fallbackBase);
         const description = meta.get(imp.id)?.description || '';
 
+        let live;
         if (reuseActive) {
             target.name = name;
             target.description = description;
             target.steps.push(...steps);
+            live = target;
             reuseActive = false;
         } else {
-            addAssemblyWorkflow(name, steps).description = description;
+            live = addAssemblyWorkflow(name, steps);
+            live.description = description;
         }
+        originalIdToWorkflow.set(Number(imp.id), live);
     });
 
     repairAllWorkflowChains();
+    if (restorePlayback) applyImportedAssemblyPlayback(playback, originalIdToWorkflow);
     rebuildAssemblyWorkflowsFolder();
     updateAssemblyGuiInfo();
     console.log(`[Assembly] Imported ${incoming.length} workflow(s) from GLB.`);
+}
+
+// Restore which workflow was active and which step had been applied. Object poses already match
+// the saved step (they were cloned as-is), so anchors are not applied — same idea as undo restore.
+function applyImportedAssemblyPlayback(playback, originalIdToWorkflow) {
+    if (!playback || assemblyWorkflows.length === 0) return;
+
+    let index = 0;
+    const savedId = playback.activeWorkflowId != null ? Number(playback.activeWorkflowId) : NaN;
+    if (Number.isFinite(savedId) && originalIdToWorkflow?.has(savedId)) {
+        const found = assemblyWorkflows.indexOf(originalIdToWorkflow.get(savedId));
+        if (found >= 0) index = found;
+    } else if (Number.isFinite(savedId)) {
+        const found = assemblyWorkflows.findIndex(wf => wf.id === savedId);
+        if (found >= 0) index = found;
+    }
+
+    _repointActiveWorkflowData(index);
+
+    const n = assemblyData.steps.length;
+    let step = Number(playback.currentStepIndex);
+    if (!Number.isFinite(step)) step = -1;
+    step = Math.min(Math.max(Math.trunc(step), -1), Math.max(n - 1, -1));
+
+    assemblyState.currentStepIndex = step;
+    assemblyState.disassembledMode = !!(playback.disassembledMode && step === n - 1 && n > 0);
+
+    const wf = assemblyWorkflows[index];
+    const stepLabel = step < 0 ? 'Assembled' : `step ${step + 1}/${n}`;
+    console.log(`[Assembly] Restored playback: "${wf?.name ?? ''}" at ${stepLabel}.`);
 }
 
 // ================================================================================================
@@ -13119,14 +13192,18 @@ function applyWorkflowAnchorsToScene() {
     if (viewProp.sectionCrossLines) updateSectionCrossLines();
 }
 
-// Repoint assemblyData.steps and assemblyAnchors at another workflow. The scene must already be in
-// the assembled state — the outgoing workflow's transforms are otherwise still applied to the
-// objects and applyWorkflowAnchorsToScene would only correct the parts the new workflow knows.
-function _repointActiveWorkflow(index) {
+function _repointActiveWorkflowData(index) {
     activeWorkflowIndex = index;
     assemblyGui.activeWorkflowIndex = index;
     assemblyData.steps = assemblyWorkflows[index].steps;
     assemblyAnchors = assemblyWorkflows[index].anchors;
+}
+
+// Repoint assemblyData.steps and assemblyAnchors at another workflow. The scene must already be in
+// the assembled state — the outgoing workflow's transforms are otherwise still applied to the
+// objects and applyWorkflowAnchorsToScene would only correct the parts the new workflow knows.
+function _repointActiveWorkflow(index) {
+    _repointActiveWorkflowData(index);
     assemblyState.currentStepIndex = -1;
     assemblyState.disassembledMode = false;
     applyWorkflowAnchorsToScene();
