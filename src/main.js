@@ -324,18 +324,19 @@ const assemblyData = {
 };
 
 // Alternative assembly procedures over the same scene. Only one can be active, because steps
-// physically move objects. assemblyData.steps is always a live reference to the active
-// workflow's steps array, so all step-level code keeps operating on the active workflow.
+// physically move objects. assemblyData.steps and assemblyAnchors are always live references to
+// the active workflow's data, so all step-level code keeps operating on the active workflow.
 const assemblyWorkflows = [
-    { id: 1, name: 'Workflow 1', description: '', steps: assemblyData.steps },
+    { id: 1, name: 'Workflow 1', description: '', steps: assemblyData.steps, anchors: new Map() },
 ];
 let activeWorkflowIndex = 0;
 
 // Map: objectRef → { position, quaternion, scale } = the fully-assembled (base) state for each object.
 // Set once when an object is first introduced into any step. Used by repairChain to keep
 // initPositions consistent when steps are edited or reordered.
-// Shared by all workflows — the assembled state of the scene is the same for every procedure.
-const assemblyAnchors = new Map();
+// Per workflow — each procedure may define its own assembled pose for the same part.
+// Never capture this map by value; it is repointed whenever the active workflow changes.
+let assemblyAnchors = assemblyWorkflows[0].anchors;
 
 const assemblyState = {
     editMode: false,       // When true, object drags are recorded into the active edit step
@@ -1254,7 +1255,10 @@ function getUndoContext() {
         get activeWorkflowIndex() { return activeWorkflowIndex; },
         set activeWorkflowIndex(v) { activeWorkflowIndex = v; assemblyGui.activeWorkflowIndex = v; },
         assemblyState,
-        assemblyAnchors,
+        // Getter, not a plain reference: the map is swapped when the active workflow changes,
+        // so a value captured at context-creation time would end up writing into the wrong one.
+        get assemblyAnchors() { return assemblyAnchors; },
+        set assemblyAnchors(map) { assemblyAnchors = map; },
         rebuildAssemblyWorkflowsFolder,
         groupHistory,
         get groupHistoryIndex() { return groupHistoryIndex; },
@@ -1646,6 +1650,20 @@ if (import.meta.env.DEV) {
     window.getUserName = getUserName;
     window.setUserName = setUserName;
     window.getFileHistoryStore = getFileHistoryStore;
+
+	// Protože: let activeWorkflowIndex = 0;
+	// console.log(activeWorkflowIndex)
+    Object.defineProperty(window, 'activeWorkflowIndex', {
+        get() { return activeWorkflowIndex; },
+        configurable: true,
+    });
+
+    // Kotvy aktivního workflow — mapa se při přepnutí mění, proto getter a ne reference.
+    Object.defineProperty(window, 'assemblyAnchors', {
+        get() { return assemblyAnchors; },
+        configurable: true,
+    });
+
 
     //NOK - toto není reference
     window.transformControls = transformControls;
@@ -5385,15 +5403,16 @@ function _remapStoredTrs(pos, quat, scale, invBake) {
 }
 
 function _remapAssemblyAfterLocationBake(obj, invBake) {
-    const anchor = assemblyAnchors.get(obj);
-    if (anchor) {
-        const rec = _remapStoredTrs(anchor.position, anchor.quaternion, anchor.scale, invBake);
-        anchor.position = rec.position;
-        if (anchor.quaternion && rec.quaternion) anchor.quaternion = rec.quaternion;
-        if (anchor.scale && rec.scale) anchor.scale = rec.scale;
-    }
-
+    // Baking changes the object's own frame, so every workflow's stored poses must follow.
     assemblyWorkflows.forEach(function(wf) {
+        const anchor = wf.anchors.get(obj);
+        if (anchor) {
+            const rec = _remapStoredTrs(anchor.position, anchor.quaternion, anchor.scale, invBake);
+            anchor.position = rec.position;
+            if (anchor.quaternion && rec.quaternion) anchor.quaternion = rec.quaternion;
+            if (anchor.scale && rec.scale) anchor.scale = rec.scale;
+        }
+
         wf.steps.forEach(function(step) {
             step.transformations.forEach(function(t) {
                 if (t.objectRef !== obj) return;
@@ -5409,7 +5428,7 @@ function _remapAssemblyAfterLocationBake(obj, invBake) {
         });
     });
 
-    repairChainForObjectAllWorkflows(obj);
+    forEachAssemblyWorkflow(() => repairChainForObject(obj));
 }
 
 function bakeObjectLocation(obj, options) {
@@ -7992,13 +8011,12 @@ function removeModel(part, skipConfirm = false, options = {}) {
                 wf.steps.length = 0;
                 nonEmptySteps.forEach((s, i) => { s.id = i + 1; wf.steps.push(s); });
             }
+            // Kotvy má každé workflow vlastní, odebraný objekt musí zmizet ze všech
+            removedObjects.forEach(obj => wf.anchors.delete(obj));
         });
         if (assemblyState.currentStepIndex >= assemblyData.steps.length) {
             assemblyState.currentStepIndex = assemblyData.steps.length - 1;
         }
-
-        // Odstraníme z assemblyAnchors
-        removedObjects.forEach(obj => assemblyAnchors.delete(obj));
 
         // Pokud je součástí skupiny (např. z GLB modelu), odstraníme z rodiče
         if (part.parent) {
@@ -13008,19 +13026,24 @@ function uniqueAssemblyWorkflowName(base) {
 }
 
 // Run fn with each workflow temporarily active. Lets step-level helpers that read
-// assemblyData.steps operate on every workflow without being rewritten.
+// assemblyData.steps and assemblyAnchors operate on every workflow without being rewritten.
+// Both references must be swapped together — repairing one workflow's chain against another's
+// anchors corrupts the step data silently.
 function forEachAssemblyWorkflow(fn) {
     const savedIndex = activeWorkflowIndex;
     const savedSteps = assemblyData.steps;
+    const savedAnchors = assemblyAnchors;
     try {
         assemblyWorkflows.forEach((wf, i) => {
             activeWorkflowIndex = i;
             assemblyData.steps = wf.steps;
+            assemblyAnchors = wf.anchors;
             fn(wf, i);
         });
     } finally {
         activeWorkflowIndex = savedIndex;
         assemblyData.steps = savedSteps;
+        assemblyAnchors = savedAnchors;
     }
 }
 
@@ -13028,14 +13051,21 @@ function objectInAnyAssemblyWorkflow(obj) {
     return assemblyWorkflows.some(wf => wf.steps.some(step => step.transformations.some(t => t.objectRef === obj)));
 }
 
-// Drop anchors of objects that no longer appear in any workflow.
+// Drop the anchor once an object no longer appears in any step of the active workflow.
+// An orphan anchor would still move the object on a workflow switch, yet it is not persisted,
+// so the behaviour would silently differ after a save and reload.
+function dropAssemblyAnchorIfUnused(obj) {
+    if (obj && !objectInAssemblyWorkflow(obj)) assemblyAnchors.delete(obj);
+}
+
+// Drop each workflow's anchors for objects that no longer appear in its own steps.
 function pruneAssemblyAnchors() {
-    const used = new Set();
-    assemblyWorkflows.forEach(wf => wf.steps.forEach(step => {
-        step.transformations.forEach(t => used.add(t.objectRef));
-    }));
-    [...assemblyAnchors.keys()].forEach(obj => {
-        if (!used.has(obj)) assemblyAnchors.delete(obj);
+    assemblyWorkflows.forEach(wf => {
+        const used = new Set();
+        wf.steps.forEach(step => step.transformations.forEach(t => used.add(t.objectRef)));
+        [...wf.anchors.keys()].forEach(obj => {
+            if (!used.has(obj)) wf.anchors.delete(obj);
+        });
     });
 }
 
@@ -13051,6 +13081,19 @@ function cloneAssemblyTransformation(t) {
     };
 }
 
+// Deep copy of an anchor map keeping the same objectRef keys.
+function cloneAssemblyAnchors(anchors) {
+    const copy = new Map();
+    anchors.forEach((anchor, obj) => {
+        copy.set(obj, {
+            position:   { ...anchor.position },
+            quaternion: anchor.quaternion ? { ...anchor.quaternion } : null,
+            scale:      anchor.scale      ? { ...anchor.scale }      : null,
+        });
+    });
+    return copy;
+}
+
 // Deep copy of a step list keeping the same objectRef targets.
 function cloneAssemblySteps(steps) {
     return steps.map(step => ({
@@ -13062,14 +13105,31 @@ function cloneAssemblySteps(steps) {
     }));
 }
 
-// Repoint assemblyData.steps at another workflow. The scene must already be in the assembled
-// state — the outgoing workflow's transforms are otherwise still applied to the objects.
+// Move every object the active workflow knows about onto its own assembled pose. Called after a
+// workflow switch, because each procedure may define a different assembled state for the same part.
+// Objects the workflow has no anchor for are left where the outgoing workflow put them.
+function applyWorkflowAnchorsToScene() {
+    assemblyAnchors.forEach((anchor, obj) => {
+        if (!obj) return;
+        obj.position.set(anchor.position.x, anchor.position.y, anchor.position.z);
+        if (anchor.quaternion) obj.quaternion.set(anchor.quaternion.x, anchor.quaternion.y, anchor.quaternion.z, anchor.quaternion.w);
+        if (anchor.scale) obj.scale.set(anchor.scale.x, anchor.scale.y, anchor.scale.z);
+    });
+    if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) updateCrossSectionLines();
+    if (viewProp.sectionCrossLines) updateSectionCrossLines();
+}
+
+// Repoint assemblyData.steps and assemblyAnchors at another workflow. The scene must already be in
+// the assembled state — the outgoing workflow's transforms are otherwise still applied to the
+// objects and applyWorkflowAnchorsToScene would only correct the parts the new workflow knows.
 function _repointActiveWorkflow(index) {
     activeWorkflowIndex = index;
     assemblyGui.activeWorkflowIndex = index;
     assemblyData.steps = assemblyWorkflows[index].steps;
+    assemblyAnchors = assemblyWorkflows[index].anchors;
     assemblyState.currentStepIndex = -1;
     assemblyState.disassembledMode = false;
+    applyWorkflowAnchorsToScene();
     updateAssemblyGuiInfo();
     render();
 }
@@ -13081,12 +13141,13 @@ function setActiveAssemblyWorkflow(index) {
     console.log(`[Assembly] Active workflow: "${assemblyWorkflows[index].name}".`);
 }
 
-function addAssemblyWorkflow(name, steps = []) {
+function addAssemblyWorkflow(name, steps = [], anchors = new Map()) {
     const wf = {
         id: nextAssemblyWorkflowId(),
         name: uniqueAssemblyWorkflowName(name),
         description: '',
         steps,
+        anchors,
     };
     assemblyWorkflows.push(wf);
     return wf;
@@ -13110,7 +13171,7 @@ function assemblyDuplicateWorkflow() {
     const input = prompt('Duplicate active workflow as:', proposed);
     if (input === null) return;
     assemblyResetToStart();
-    const wf = addAssemblyWorkflow(input.trim() || proposed, cloneAssemblySteps(src.steps));
+    const wf = addAssemblyWorkflow(input.trim() || proposed, cloneAssemblySteps(src.steps), cloneAssemblyAnchors(src.anchors));
     wf.description = src.description;
     rebuildAssemblyWorkflowsFolder();
     _repointActiveWorkflow(assemblyWorkflows.length - 1);
@@ -13157,10 +13218,10 @@ function assemblyDeleteWorkflow() {
 function resetAssemblyWorkflows() {
     assemblyWorkflows.length = 0;
     assemblyData.steps = [];
-    assemblyWorkflows.push({ id: 1, name: 'Workflow 1', description: '', steps: assemblyData.steps });
+    assemblyAnchors = new Map();
+    assemblyWorkflows.push({ id: 1, name: 'Workflow 1', description: '', steps: assemblyData.steps, anchors: assemblyAnchors });
     activeWorkflowIndex = 0;
     assemblyGui.activeWorkflowIndex = 0;
-    assemblyAnchors.clear();
     assemblyState.currentStepIndex = -1;
     assemblyState.disassembledMode = false;
     rebuildAssemblyWorkflowsFolder();
@@ -13359,8 +13420,9 @@ function objectInAssemblyWorkflow(obj) {
     return assemblyData.steps.some(step => step.transformations.some(t => t.objectRef === obj));
 }
 
-// Fill a missing assembled-base anchor from the object's first recorded init pose.
-// Existing anchors are left unchanged (e.g. Edit assembled).
+// Fill a missing assembled-base anchor from the object's first recorded init pose in the active
+// workflow. Existing anchors are left unchanged (e.g. Edit assembled). This is also what makes
+// per-workflow anchors survive a GLB round trip without being stored explicitly.
 function ensureAssemblyAnchorFromSteps(objectRef) {
     if (!objectRef || assemblyAnchors.has(objectRef)) return;
     for (const step of assemblyData.steps) {
@@ -13375,16 +13437,17 @@ function ensureAssemblyAnchorFromSteps(objectRef) {
     }
 }
 
-// Updates the assembled (base) anchor for an object that appears in some workflow.
-// The chain repair then rewrites first-step initPosition in every workflow; finals stay unchanged.
+// Updates the assembled (base) anchor for an object already in the active workflow.
+// repairChainForObject then rewrites first-step initPosition; finals stay unchanged.
+// Other workflows keep their own assembled pose for the same object.
 function recordAssembledAnchor(obj, pos, quat, scale) {
-    if (!obj || !objectInAnyAssemblyWorkflow(obj)) return false;
+    if (!obj || !objectInAssemblyWorkflow(obj)) return false;
     assemblyAnchors.set(obj, {
         position:   { x: pos.x, y: pos.y, z: pos.z },
         quaternion: { x: quat.x, y: quat.y, z: quat.z, w: quat.w },
         scale:      { x: scale.x, y: scale.y, z: scale.z },
     });
-    repairChainForObjectAllWorkflows(obj);
+    repairChainForObject(obj);
     return true;
 }
 
@@ -13442,7 +13505,8 @@ function recordGroupTransformations() {
             existing.finalQuaternion = { x: finalQuat.x, y: finalQuat.y, z: finalQuat.z, w: finalQuat.w };
             existing.finalScale     = { x: finalScale.x, y: finalScale.y, z: finalScale.z };
         } else {
-            // Store the assembled base state only the first time this object enters any step
+            // Store the assembled base state only the first time this object enters a step
+            // of this workflow — other workflows keep their own anchor for the same object.
             if (!assemblyAnchors.has(obj) && !objectInAssemblyWorkflow(obj)) {
                 assemblyAnchors.set(obj, {
                     position:   { x: initPos.x,  y: initPos.y,  z: initPos.z },
@@ -13508,7 +13572,8 @@ function recordAssemblyTransformation() {
         existing.finalQuaternion = { x: curQuat.x, y: curQuat.y, z: curQuat.z, w: curQuat.w };
         existing.finalScale      = { x: obj.scale.x, y: obj.scale.y, z: obj.scale.z };
     } else {
-        // Store the assembled base state only the first time this object enters any step
+        // Store the assembled base state only the first time this object enters a step
+        // of this workflow — other workflows keep their own anchor for the same object.
         if (!assemblyAnchors.has(obj) && !objectInAssemblyWorkflow(obj)) {
             assemblyAnchors.set(obj, {
                 position:   { x: prevPos.x, y: prevPos.y, z: prevPos.z },
@@ -13533,7 +13598,7 @@ function recordAssemblyTransformation() {
 }
 
 // Propagate finalPosition of each step as initPosition of the next step for the same object.
-// Uses assemblyAnchors as the stable base state so results are order-independent.
+// Uses the active workflow's anchor as the stable base state so results are order-independent.
 function repairChainForObject(objectRef) {
     ensureAssemblyAnchorFromSteps(objectRef);
     const anchor = assemblyAnchors.get(objectRef);
@@ -13572,12 +13637,6 @@ function repairChain(quiet = false) {
 function repairAllWorkflowChains() {
     forEachAssemblyWorkflow(() => repairChain(true));
     console.log(`[Assembly] Chains repaired in ${assemblyWorkflows.length} workflow(s).`);
-}
-
-// The anchor is the assembled pose shared by every workflow, so moving it invalidates the first
-// recorded step of each workflow the object appears in, not just the active one.
-function repairChainForObjectAllWorkflows(objectRef) {
-    forEachAssemblyWorkflow(() => repairChainForObject(objectRef));
 }
 
 // Animate all transformations in a step forward (disassembly) or backward (assembly).
@@ -14190,6 +14249,7 @@ function assemblyRemoveObjectFromStep() {
     inStep.forEach(obj => {
         step.transformations = step.transformations.filter(t => t.objectRef !== obj);
         repairChainForObject(obj);
+        dropAssemblyAnchorIfUnused(obj);
         console.log(`[Assembly] Object "${obj.name}" removed from step "${step.name}".`);
     });
 
@@ -14232,7 +14292,10 @@ function assemblyDeleteStep() {
 
     // Repair the step chain for all affected objects so the following step's
     // initPosition/Quaternion/Scale reflects the deleted step's absence.
-    affectedObjects.forEach(obj => repairChainForObject(obj));
+    affectedObjects.forEach(obj => {
+        repairChainForObject(obj);
+        dropAssemblyAnchorIfUnused(obj);
+    });
 
     updateAssemblyGuiInfo();
     render();
