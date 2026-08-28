@@ -423,6 +423,7 @@ export function captureArrangementSceneSnap(ctx, objects) {
         } : null,
         activeId: ctx.getActiveArrangementId ? ctx.getActiveArrangementId() : null,
         dirty: ctx.isArrangementDirty ? ctx.isArrangementDirty() : false,
+        overlaySource: ctx.viewportOverlaySource ?? null,
     };
 }
 
@@ -465,6 +466,7 @@ export function restoreArrangementSceneSnap(ctx, snap) {
 
     ctx.setActiveArrangementId?.(snap.activeId ?? null);
     ctx.setArrangementDirty?.(!!snap.dirty);
+    ctx.viewportOverlaySource = snap.overlaySource ?? null;
     _afterArrangementSceneRestore(ctx);
 }
 

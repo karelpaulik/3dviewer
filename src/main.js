@@ -373,6 +373,7 @@ const assemblyState = {
     editMode: false,       // When true, object drags are recorded into the active edit step
     currentStepIndex: -1,  // -1 = fully assembled; N = steps[0..N] have been applied (also used as the edit target)
     disassembledMode: false, // When true, we are in the fully-disassembled state (via Reset to finish), distinct from editing the last step
+    viewportOverlaySource: null, // 'arrangement' | 'workflow' | null — last action owns the viewport HUD
 };
 
 let assemblyAnimation = null;         // GSAP tween handle for step animation
@@ -1330,6 +1331,8 @@ function getUndoContext() {
         setActiveArrangementId,
         isArrangementDirty,
         setArrangementDirty,
+        get viewportOverlaySource() { return assemblyState.viewportOverlaySource; },
+        set viewportOverlaySource(v) { assemblyState.viewportOverlaySource = v || null; },
         captureArrangementsCatalog,
         restoreArrangementsCatalog,
         updateArrangementsGuiInfo,
@@ -7994,6 +7997,7 @@ function clearSceneFully() {
 
     resetAssemblyWorkflows();
     resetArrangementsCatalog();
+    setAssemblyViewportOverlaySource(null);
 
     modelsCopy.forEach(part => {
         if (part.parent) part.parent.remove(part);
@@ -8039,6 +8043,7 @@ function clearSceneKeepDocs() {
         // Reset assembly data
         resetAssemblyWorkflows();
         resetArrangementsCatalog();
+        setAssemblyViewportOverlaySource(null);
         if (_arrangementsFolderRef) updateArrangementsGuiInfo();
 
         // Remove all root models from the scene
@@ -12165,6 +12170,7 @@ function applyImportedAssemblyPlayback(playback, originalIdToWorkflow) {
 
     assemblyState.currentStepIndex = step;
     assemblyState.disassembledMode = !!(playback.disassembledMode && step === n - 1 && n > 0);
+    if (step >= 0) setAssemblyViewportOverlaySource('workflow');
 
     const wf = assemblyWorkflows[index];
     const stepLabel = step < 0 ? 'Assembled' : `step ${step + 1}/${n}`;
@@ -13452,6 +13458,10 @@ function rebuildAssemblyWorkflowsFolder() {
     folder.add({ fn: assemblyDeleteWorkflow }, 'fn').name('✕  Delete workflow');
 }
 
+function setAssemblyViewportOverlaySource(source) {
+    assemblyState.viewportOverlaySource = source || null;
+}
+
 function updateAssemblyGuiInfo() {
     const n = assemblyData.steps.length;
 
@@ -13464,17 +13474,23 @@ function updateAssemblyGuiInfo() {
         assemblyGui.stepInfo = `${wfPrefix}${assemblyState.currentStepIndex + 1}/${n}: ${step.name}`;
     }
 
-    // Viewport overlay — an applied arrangement takes precedence over the current workflow step
+    // Viewport overlay — last action (arrangement apply vs workflow playback) owns the HUD
     {
+        const source = assemblyState.viewportOverlaySource;
         const activeArrangement = getActiveArrangement();
         const ci = assemblyState.currentStepIndex;
-        if (activeArrangement) {
+        const showArrangement = source === 'arrangement'
+            && !!activeArrangement
+            && !isInitArrangement(activeArrangement);
+        const showWorkflow = (source === 'workflow' && ci >= 0 && ci < n)
+            || (source === 'arrangement' && !activeArrangement && ci >= 0 && ci < n);
+        if (showArrangement) {
             const modifiedHtml = isArrangementDirty() ? ' <span class="aso-desc">(modified)</span>' : '';
             const nameHtml = `<span class="aso-name">${activeArrangement.name || ''}</span>${modifiedHtml}`;
             const descHtml = activeArrangement.description ? `<span class="aso-desc">${activeArrangement.description}</span>` : '';
             assemblyStepOverlay.innerHTML = nameHtml + descHtml;
             assemblyStepOverlay.classList.add('visible');
-        } else if (ci >= 0 && ci < n) {
+        } else if (showWorkflow) {
             const step = assemblyData.steps[ci];
             const nameHtml = `<span class="aso-name">${step.name || ''}</span>`;
             const descHtml = step.description ? `<span class="aso-desc">${step.description}</span>` : '';
@@ -13640,6 +13656,7 @@ function applyAssemblyArrangement(arrangement, { recordUndo = true } = {}) {
 
     setActiveArrangementId(arrangement.id);
     setArrangementDirty(false);
+    setAssemblyViewportOverlaySource('arrangement');
     updateArrangementsGuiInfo();
     updateAssemblyGuiInfo();
 
@@ -13748,6 +13765,7 @@ function assemblyCaptureArrangement() {
         beforeCatalog: before,
         afterCatalog: after,
     }));
+    setAssemblyViewportOverlaySource('arrangement');
     updateArrangementsGuiInfo();
     updateAssemblyGuiInfo();
     console.log(`[Assembly] Captured arrangement "${arrangement.name}" (${arrangement.poses.length} object(s)).`);
@@ -13768,6 +13786,7 @@ function assemblyUpdateActiveArrangement() {
         beforeCatalog: before,
         afterCatalog: after,
     }));
+    setAssemblyViewportOverlaySource('arrangement');
     updateArrangementsGuiInfo();
     updateAssemblyGuiInfo();
     console.log(`[Assembly] Updated arrangement "${arrangement.name}".`);
@@ -13803,6 +13822,7 @@ function assemblyDuplicateActiveArrangement() {
         beforeCatalog: before,
         afterCatalog: after,
     }));
+    setAssemblyViewportOverlaySource('arrangement');
     updateArrangementsGuiInfo();
     updateAssemblyGuiInfo();
 }
@@ -13952,7 +13972,11 @@ function _snapAndAnimate(snapIndex, goingForward) {
 
 // Animate to the fully assembled state (step 0 plays backward).
 function assemblyGoToAssembled() {
-    if (assemblyState.currentStepIndex === -1) return;
+    setAssemblyViewportOverlaySource('workflow');
+    if (assemblyState.currentStepIndex === -1) {
+        updateAssemblyGuiInfo();
+        return;
+    }
     assemblyState.disassembledMode = false;
     _snapAndAnimate(0, false);
 }
@@ -13960,7 +13984,11 @@ function assemblyGoToAssembled() {
 // Jump directly to a given step index (0-based), animating only the boundary move.
 function assemblyGoToStep(targetIndex) {
     if (targetIndex < 0 || targetIndex >= assemblyData.steps.length) return;
-    if (targetIndex === assemblyState.currentStepIndex) return;
+    setAssemblyViewportOverlaySource('workflow');
+    if (targetIndex === assemblyState.currentStepIndex) {
+        updateAssemblyGuiInfo();
+        return;
+    }
     assemblyState.disassembledMode = false;
 
     if (assemblyAnimation) { assemblyAnimation.kill(); assemblyAnimation = null; }
@@ -14345,12 +14373,16 @@ function animateAssemblyStep(transformations, forward, onComplete) {
 
 // Reset to the fully disassembled state (all steps applied).
 function assemblyResetToFinish() {
+    setAssemblyViewportOverlaySource('workflow');
     markArrangementDirty();
     if (assemblyAnimation) {
         assemblyAnimation.kill();
         assemblyAnimation = null;
     }
-    if (assemblyData.steps.length === 0) return;
+    if (assemblyData.steps.length === 0) {
+        updateAssemblyGuiInfo();
+        return;
+    }
 
     // Apply every step's final transforms instantly
     assemblyData.steps.forEach(step => {
@@ -14370,6 +14402,7 @@ function assemblyResetToFinish() {
 
 // Reset every object to its original loaded position (fully assembled state).
 function assemblyResetToStart() {
+    setAssemblyViewportOverlaySource('workflow');
     markArrangementDirty();
     if (assemblyAnimation) {
         assemblyAnimation.kill();
@@ -14397,9 +14430,13 @@ function assemblyResetToStart() {
 
 // Animate all remaining steps forward from current position to the last step.
 function assemblyAnimateToFinish() {
+    setAssemblyViewportOverlaySource('workflow');
     markArrangementDirty();
     const totalSteps = assemblyData.steps.length;
-    if (totalSteps === 0 || assemblyState.currentStepIndex >= totalSteps - 1) return;
+    if (totalSteps === 0 || assemblyState.currentStepIndex >= totalSteps - 1) {
+        updateAssemblyGuiInfo();
+        return;
+    }
 
     let cancelled = false;
 
@@ -14444,8 +14481,12 @@ function assemblyAnimateToFinish() {
 
 // Animate all remaining steps backward from current position to the assembled state.
 function assemblyAnimateToStart() {
+    setAssemblyViewportOverlaySource('workflow');
     markArrangementDirty();
-    if (assemblyState.currentStepIndex < 0) return;
+    if (assemblyState.currentStepIndex < 0) {
+        updateAssemblyGuiInfo();
+        return;
+    }
 
     function animatePrev() {
         if (assemblyState.currentStepIndex < 0) {
@@ -14490,6 +14531,7 @@ function assemblyAnimateToStart() {
 
 // Apply the next disassembly step (move objects to finalPosition).
 function assemblyNextStep() {
+    setAssemblyViewportOverlaySource('workflow');
     markArrangementDirty();
     // Snap any in-flight animations to their end state before advancing to the next step.
     // Camera first: its finalizer calls onComplete which may start the assembly animation.
@@ -14503,6 +14545,7 @@ function assemblyNextStep() {
     const nextIndex = assemblyState.currentStepIndex + 1;
     if (nextIndex >= assemblyData.steps.length) {
         console.log('[Assembly] No more steps – end of disassembly.');
+        updateAssemblyGuiInfo();
         return;
     }
 
@@ -14535,6 +14578,7 @@ function assemblyNextStep() {
 
 // Undo the current disassembly step (move objects back to initPosition).
 function assemblyPrevStep() {
+    setAssemblyViewportOverlaySource('workflow');
     markArrangementDirty();
     // Snap any in-flight animations to their end state before reversing to the previous step.
     // Camera first: its finalizer calls onComplete which may start the assembly animation.
@@ -14547,6 +14591,7 @@ function assemblyPrevStep() {
 
     if (assemblyState.currentStepIndex < 0) {
         console.log('[Assembly] Already at the start.');
+        updateAssemblyGuiInfo();
         return;
     }
 
@@ -14688,6 +14733,7 @@ function animateCameraToView(camData, onComplete) {
 }
 
 function insertNewStepAt(insertIndex) {
+    setAssemblyViewportOverlaySource('workflow');
     assemblyData.steps.splice(insertIndex, 0, {
         id: 0,
         name: '',
@@ -14872,6 +14918,7 @@ function assemblyDeleteStep() {
         dropAssemblyAnchorIfUnused(obj);
     });
 
+    setAssemblyViewportOverlaySource('workflow');
     updateAssemblyGuiInfo();
     render();
     console.log(`[Assembly] Step "${step.name}" deleted, objects reset to init positions.`);
