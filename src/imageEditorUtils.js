@@ -333,6 +333,27 @@ function _syncToolbarActiveState() {
 
 // ── Instance UI (floating window) ─────────────────────────────────────────────
 
+function _updateEditorTitleFields(inst) {
+    if (!inst.winEl) return;
+    const att = inst.att;
+    const lastDot = att.name.lastIndexOf('.');
+    const nameBase = lastDot >= 0 ? att.name.slice(0, lastDot) : att.name;
+    const nameExt = lastDot >= 0 ? att.name.slice(lastDot) : '';
+    inst.winEl.querySelector('.img-editor-titlebar-name').value = nameBase;
+    inst.winEl.querySelector('.img-editor-titlebar-ext').textContent = nameExt;
+}
+
+function _saveEditorName(inst) {
+    const input = inst.winEl.querySelector('.img-editor-titlebar-name');
+    const extSpan = inst.winEl.querySelector('.img-editor-titlebar-ext');
+    const newBase = input.value.trim();
+    if (!newBase) {
+        _updateEditorTitleFields(inst);
+        return;
+    }
+    inst.att.name = newBase + extSpan.textContent;
+}
+
 function _buildInstanceUI(inst) {
     const offset = (_nextWinPos % 8) * 28;
     _nextWinPos++;
@@ -346,7 +367,8 @@ function _buildInstanceUI(inst) {
         <div class="img-editor-titlebar">
             <div class="img-ed-titlebar-title">
                 <span class="img-editor-titlebar-icon">🖼</span>
-                <input class="img-ed-title img-editor-titlebar-name" title="Click to rename" spellcheck="false" value="">
+                <input class="img-editor-titlebar-name" title="Click to rename (extension is read-only)" spellcheck="false" />
+                <span class="img-editor-titlebar-ext"></span>
             </div>
             <div class="img-ed-titlebar-btns">
                 <button class="img-ed-btn" id="img-ed-undo"       title="Undo (Ctrl+Z)">↩</button>
@@ -398,12 +420,15 @@ function _buildInstanceUI(inst) {
     const ovCanvas = win.querySelector('.img-editor-overlay-canvas');
     const ovCtx    = ovCanvas.getContext('2d');
 
+    _updateEditorTitleFields(inst);
     const nameInp = win.querySelector('.img-editor-titlebar-name');
-    nameInp.value = inst.att.name;
-    nameInp.addEventListener('change', e => {
-        const v = e.target.value.trim();
-        if (v) inst.att.name = v;
-        else e.target.value = inst.att.name;
+    nameInp.addEventListener('blur', () => _saveEditorName(inst));
+    nameInp.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); nameInp.blur(); }
+        if (e.key === 'Escape') {
+            _updateEditorTitleFields(inst);
+            nameInp.blur();
+        }
     });
 
     win.addEventListener('mousedown', () => _focusInstance(inst), true);
@@ -2054,8 +2079,7 @@ function _saveNew(inst) {
     const newAtt = inst.onSaveNew(b64, Math.round(b64.length * 0.75), newName.trim(), mime);
     if (newAtt) {
         inst.att = newAtt;
-        const nameInp = inst.winEl && inst.winEl.querySelector('.img-editor-titlebar-name');
-        if (nameInp) nameInp.value = inst.att.name;
+        _updateEditorTitleFields(inst);
     }
 }
 
