@@ -409,6 +409,7 @@ const assemblyGui = {
     zoomCoeff: 1,
     poseStatus: 'Initial',
     poseName: '',
+    animatePoseStates: true,
 };
 // ============================================
 
@@ -12870,6 +12871,7 @@ function addAssemblyGui() {
     // --- States ---
     _poseStatesFolderRef = assemblyFolder.addFolder('States');
     _poseStatesFolderRef.add(assemblyGui, 'poseStatus').name('Status').disable().listen();
+    _poseStatesFolderRef.add(assemblyGui, 'animatePoseStates').name('Animate  (Playback settings)');
     _poseStatesFolderRef.add({ fn: assemblyCapturePoseState }, 'fn').name('+  Capture current');
     _poseStateMutateControls.push(
         _poseStatesFolderRef.add({ fn: assemblyUpdateActivePoseState }, 'fn').name('↻  Update active'),
@@ -13623,24 +13625,18 @@ function applyAssemblyPoseState(state, { recordUndo = true } = {}) {
 
     if (assemblyState.editMode) setAssemblyEditMode(false);
 
-    const poses = resolveStatePoses(state, loadedModels);
+    const poses = resolveStatePoses(state, loadedModels).filter(p => p.objectRef);
     const involved = collectPoseStateObjects(loadedModels);
     const ctx = getUndoContext();
     const beforeSnap = recordUndo ? capturePoseStateSceneSnap(ctx, involved) : null;
 
-    poses.forEach(pose => {
-        pose.objectRef.position.set(pose.position.x, pose.position.y, pose.position.z);
-        pose.objectRef.quaternion.set(pose.quaternion.x, pose.quaternion.y, pose.quaternion.z, pose.quaternion.w);
-        pose.objectRef.scale.set(pose.scale.x, pose.scale.y, pose.scale.z);
-        pose.objectRef.updateMatrixWorld(true, true);
-        applyPoseObjectVisibility(pose.objectRef, pose.visible);
-    });
     setActiveAssemblyStateId(state.id);
     setPoseStateDirty(false);
     updatePoseStatesGuiInfo();
     updateAssemblyGuiInfo();
 
     const useCamera = !!(state.camera && assemblyGui.animationCamera && !isInitPoseState(state));
+    const animate = !!assemblyGui.animatePoseStates;
 
     function finishApply() {
         if (!recordUndo || !beforeSnap) return;
@@ -13652,15 +13648,81 @@ function applyAssemblyPoseState(state, { recordUndo = true } = {}) {
         }));
     }
 
-    if (useCamera) {
-        animateCameraToView(state.camera, finishApply);
-    } else {
-        finishApply();
+    function snapPoseTrs(pose) {
+        pose.objectRef.position.set(pose.position.x, pose.position.y, pose.position.z);
+        pose.objectRef.quaternion.set(pose.quaternion.x, pose.quaternion.y, pose.quaternion.z, pose.quaternion.w);
+        pose.objectRef.scale.set(pose.scale.x, pose.scale.y, pose.scale.z);
+        pose.objectRef.updateMatrixWorld(true, true);
     }
 
-    if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) updateCrossSectionLines();
-    if (viewProp.sectionCrossLines) updateSectionCrossLines();
-    render();
+    function snapCameraToView(camData) {
+        if (!camData) return;
+        currentCamera.position.set(camData.position.x, camData.position.y, camData.position.z);
+        orbitControls.target.set(camData.target.x, camData.target.y, camData.target.z);
+        if (camData.zoom != null) {
+            const zoomCoeff = (currentCamera === cameraOrtho) ? assemblyGui.zoomCoeff : 1;
+            currentCamera.zoom = camData.zoom * zoomCoeff;
+            currentCamera.updateProjectionMatrix();
+        }
+        orbitControls.update();
+    }
+
+    function applyHiddenVisibility() {
+        poses.forEach(pose => {
+            if (pose.visible === false) applyPoseObjectVisibility(pose.objectRef, false);
+        });
+    }
+
+    function refreshSectionOverlays() {
+        if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) updateCrossSectionLines();
+        if (viewProp.sectionCrossLines) updateSectionCrossLines();
+        render();
+    }
+
+    if (!animate) {
+        poses.forEach(pose => {
+            snapPoseTrs(pose);
+            applyPoseObjectVisibility(pose.objectRef, pose.visible);
+        });
+        if (useCamera) snapCameraToView(state.camera);
+        finishApply();
+        refreshSectionOverlays();
+        console.log(`[Assembly] Applied state "${state.name}".`);
+        return;
+    }
+
+    poses.forEach(pose => {
+        if (pose.visible !== false) applyPoseObjectVisibility(pose.objectRef, true);
+    });
+
+    let remaining = 1 + (useCamera ? 1 : 0);
+    function partDone() {
+        if (--remaining > 0) return;
+        applyHiddenVisibility();
+        finishApply();
+        refreshSectionOverlays();
+    }
+
+    const transformations = poses.map(pose => ({
+        objectRef: pose.objectRef,
+        initPosition: pose.position,
+        finalPosition: pose.position,
+        initQuaternion: pose.quaternion,
+        finalQuaternion: pose.quaternion,
+        initScale: pose.scale,
+        finalScale: pose.scale,
+    }));
+
+    if (transformations.length > 0) {
+        animateAssemblyStep(transformations, true, partDone);
+    } else {
+        partDone();
+    }
+
+    if (useCamera) {
+        animateCameraToView(state.camera, partDone);
+    }
+
     console.log(`[Assembly] Applied state "${state.name}".`);
 }
 
