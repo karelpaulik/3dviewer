@@ -1509,11 +1509,17 @@ chkSection.addEventListener('change', function() {
 });
 
 const chkSolidSection = document.getElementById('chk-solid-section');
+const chkSectionMesh = document.getElementById('chk-section-mesh');
 chkSolidSection.addEventListener('change', function() {
     solidSectionEnabled = this.checked;
     if (this.checked) {
         renderer.localClippingEnabled = true;
         chkSection.checked = true;
+        if (sectionMeshEnabled) {
+            sectionMeshEnabled = false;
+            chkSectionMesh.checked = false;
+            updateSectionMeshes();
+        }
         computeSolidSection();
     } else {
         clearSolidSection();
@@ -1521,10 +1527,14 @@ chkSolidSection.addEventListener('change', function() {
     }
 });
 
-const chkSectionMesh = document.getElementById('chk-section-mesh');
 chkSectionMesh.checked = sectionMeshEnabled;
 chkSectionMesh.addEventListener('change', function() {
     sectionMeshEnabled = this.checked;
+    if (this.checked && solidSectionEnabled) {
+        solidSectionEnabled = false;
+        chkSolidSection.checked = false;
+        clearSolidSection();
+    }
     updateSectionMeshes();
     render();
 });

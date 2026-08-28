@@ -581,18 +581,7 @@ solidSectionBtn.id = 'solid-section-btn';
 solidSectionBtn.title = 'Solid Section';
 solidSectionBtn.textContent = '◼';
 solidSectionBtn.addEventListener('click', () => {
-    viewProp.solidSection = !viewProp.solidSection;
-    if (viewProp.solidSection) {
-        if (!viewProp.section) setSectionEnabled(true);
-        viewProp.solidSection = true;
-        doComputeSolidSection();
-        syncSectionToggleUi();
-    } else {
-        clearSolidSection(scene, render);
-        solidSectionBtn.classList.toggle('active', false);
-    }
-    if (solidSectionCtrl) solidSectionCtrl.updateDisplay();
-    render();
+    setSolidSectionEnabled(!viewProp.solidSection);
 });
 viewportBottomLeftToolbar.appendChild(solidSectionBtn);
 
@@ -602,11 +591,7 @@ showSectionMeshBtn.id = 'show-section-mesh-btn';
 showSectionMeshBtn.title = 'Show Section Mesh';
 showSectionMeshBtn.textContent = '⊞';
 showSectionMeshBtn.addEventListener('click', () => {
-    viewProp.showSectionMesh = !viewProp.showSectionMesh;
-    toggleSectionMeshAll();
-    showSectionMeshBtn.classList.toggle('active', viewProp.showSectionMesh);
-    if (showSectionMeshCtrl) showSectionMeshCtrl.updateDisplay();
-    render();
+    setShowSectionMeshEnabled(!viewProp.showSectionMesh);
 });
 viewportBottomLeftToolbar.appendChild(showSectionMeshBtn);
 
@@ -2973,21 +2958,14 @@ function addMainGui() {
             sectionFolder.addColor(viewProp, 'crossSectionColor').name('Cross Lines Color').onChange(function(value){ if(viewProp.sectionCrossLines) { updateSectionCrossLines(); render(); } });
             crossSectionOnHiddenCtrl = sectionFolder.add(viewProp, 'crossSectionOnHidden').name('Apply to hidden').onChange(function(value){ setCrossSectionOnHidden(value); }).listen();
             solidSectionCtrl = sectionFolder.add(viewProp, 'solidSection').name('Solid Section').onChange(function(value) {
-                if (value) {
-                    if (!viewProp.section) setSectionEnabled(true);
-                    viewProp.solidSection = true;
-                    doComputeSolidSection();
-                    syncSectionToggleUi();
-                } else {
-                    clearSolidSection(scene, render);
-                    solidSectionBtn.classList.toggle('active', false);
-                }
-                render();
+                setSolidSectionEnabled(value);
             }).listen();
             sectionFolder.addColor(viewProp, 'capColor').name('Cap Color').onChange(function() {
                 if (viewProp.solidSection) doComputeSolidSection();
             });
-            showSectionMeshCtrl = sectionFolder.add(viewProp, 'showSectionMesh').name('Show Section Mesh').onChange(function(value){ toggleSectionMeshAll(); showSectionMeshBtn.classList.toggle('active', value); render(); }).listen();
+            showSectionMeshCtrl = sectionFolder.add(viewProp, 'showSectionMesh').name('Show Section Mesh').onChange(function(value) {
+                setShowSectionMeshEnabled(value);
+            }).listen();
             sectionFolder.add(viewProp, 'sectionGizmo').name('Gizmo').onChange(function(value){ activateSectionGizmo(value); }).listen();
             sectionGizmoModeCtrl = sectionFolder.add(viewProp, 'sectionGizmoMode', ['translate', 'rotate']).name('Gizmo mode').onChange(function(value){ applySectionGizmoMode(); }).listen();
             sectionFolder.add(viewProp, 'sectionSnapTranslation', 0.1, 100, 0.1).name('Snap translation').onChange(function(value){ sectionTransformControls.setTranslationSnap(value); }).listen();
@@ -6255,6 +6233,40 @@ function applySectionGizmoChange(sceneCenter) {
 
 function doComputeSolidSection() {
     computeSolidSection(scene, meshObjects, viewProp, render, clipPlanes);
+}
+
+function setSolidSectionEnabled(enabled) {
+    if (enabled) {
+        if (!viewProp.section) setSectionEnabled(true);
+        viewProp.solidSection = true;
+        if (viewProp.showSectionMesh) {
+            viewProp.showSectionMesh = false;
+            removeSectionMeshesOnly();
+            refreshOutlinerOverlaysAndTools();
+        }
+        doComputeSolidSection();
+    } else {
+        viewProp.solidSection = false;
+        clearSolidSection(scene, render);
+    }
+    syncSectionToggleUi();
+    render();
+}
+
+function setShowSectionMeshEnabled(enabled) {
+    if (enabled) {
+        if (viewProp.solidSection) {
+            viewProp.solidSection = false;
+            clearSolidSection(scene, render);
+        }
+        viewProp.showSectionMesh = true;
+        toggleSectionMeshAll();
+    } else {
+        viewProp.showSectionMesh = false;
+        toggleSectionMeshAll();
+    }
+    syncSectionToggleUi();
+    render();
 }
 
 function refreshSectionDependents() {
