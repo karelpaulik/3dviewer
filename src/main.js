@@ -206,6 +206,9 @@ import {
     importAssemblyStatesFromGltfScene,
     snapshotPoseStatesCatalog,
     restorePoseStatesCatalog,
+    isPoseStateDirty,
+    setPoseStateDirty,
+    getNextStateId,
 } from './assemblyStateUtils.js';
 import {
     convertMaterial,
@@ -1323,6 +1326,8 @@ function getUndoContext() {
         get orbitControls() { return orbitControls; },
         getActiveAssemblyStateId,
         setActiveAssemblyStateId,
+        isPoseStateDirty,
+        setPoseStateDirty,
         snapshotPoseStatesCatalog,
         restorePoseStatesCatalog,
         updatePoseStatesGuiInfo,
@@ -1383,7 +1388,7 @@ function pushSingleTransformUndoIfChanged() {
         beforeAssembly,
         afterAssembly,
     }));
-    clearActivePoseState();
+    markPoseStateDirty();
 }
 
 function commitGroupTransformUndo() {
@@ -1406,7 +1411,7 @@ function commitGroupTransformUndo() {
         afterAssembly,
     }));
     savePreviousGroupTransformStates();
-    clearActivePoseState();
+    markPoseStateDirty();
 }
 
 function commitDragTransformUndo() {
@@ -1693,6 +1698,24 @@ if (import.meta.env.DEV) {
     window.getUserName = getUserName;
     window.setUserName = setUserName;
     window.getFileHistoryStore = getFileHistoryStore;
+
+    // assemblyStates je pole mutované na místě (push/splice), takže reference zůstává platná.
+    window.assemblyStates = getAssemblyStates();
+
+    // activeAssemblyStateId, poseStateDirty, nextStateId jsou primitiva uvnitř assemblyStateUtils.js
+    // přepisovaná přiřazením — bez getteru by window.* zůstalo na staré hodnotě.
+    Object.defineProperty(window, 'activeAssemblyStateId', {
+        get() { return getActiveAssemblyStateId(); },
+        configurable: true,
+    });
+    Object.defineProperty(window, 'poseStateDirty', {
+        get() { return isPoseStateDirty(); },
+        configurable: true,
+    });
+    Object.defineProperty(window, 'nextStateId', {
+        get() { return getNextStateId(); },
+        configurable: true,
+    });
 
 	// Protože: let activeWorkflowIndex = 0;
 	// console.log(activeWorkflowIndex)
@@ -13301,7 +13324,7 @@ function setActiveAssemblyWorkflow(index) {
     if (index < 0 || index >= assemblyWorkflows.length || index === activeWorkflowIndex) return;
     assemblyResetToStart();
     _repointActiveWorkflow(index);
-    clearActivePoseState();
+    markPoseStateDirty();
     console.log(`[Assembly] Active workflow: "${assemblyWorkflows[index].name}".`);
 }
 
@@ -13438,7 +13461,8 @@ function updateAssemblyGuiInfo() {
         const activePose = getActiveAssemblyState();
         const ci = assemblyState.currentStepIndex;
         if (activePose) {
-            const nameHtml = `<span class="aso-name">${activePose.name || ''}</span>`;
+            const modifiedHtml = isPoseStateDirty() ? ' <span class="aso-desc">(modified)</span>' : '';
+            const nameHtml = `<span class="aso-name">${activePose.name || ''}</span>${modifiedHtml}`;
             const descHtml = activePose.description ? `<span class="aso-desc">${activePose.description}</span>` : '';
             assemblyStepOverlay.innerHTML = nameHtml + descHtml;
             assemblyStepOverlay.classList.add('visible');
@@ -13545,10 +13569,12 @@ function setAssemblyEditMode(enabled) {
 }
 
 // Any manual scene change (drag, workflow navigation, workflow switch) invalidates the notion
-// that the scene still matches a specific saved state.
-function clearActivePoseState() {
-    if (getActiveAssemblyStateId() == null) return;
-    setActiveAssemblyStateId(null);
+// that the scene still matches the selected state's stored poses. The selection itself is kept
+// (not cleared) so Update/Rename/Delete/Save camera remain usable — "Update active" is exactly
+// how the divergence gets saved back into the same state.
+function markPoseStateDirty() {
+    if (getActiveAssemblyStateId() == null || isPoseStateDirty()) return;
+    setPoseStateDirty(true);
     updatePoseStatesGuiInfo();
     updateAssemblyGuiInfo();
 }
@@ -13610,6 +13636,7 @@ function applyAssemblyPoseState(state, { recordUndo = true } = {}) {
         applyPoseObjectVisibility(pose.objectRef, pose.visible);
     });
     setActiveAssemblyStateId(state.id);
+    setPoseStateDirty(false);
     updatePoseStatesGuiInfo();
     updateAssemblyGuiInfo();
 
@@ -13790,7 +13817,8 @@ function updatePoseStatesGuiInfo() {
         assemblyGui.poseName = '';
     } else {
         const idx = getAssemblyStates().indexOf(active);
-        assemblyGui.poseStatus = `${idx}: ${active.name}`;
+        const dirtyTag = isPoseStateDirty() ? ' (modified)' : '';
+        assemblyGui.poseStatus = `${idx}: ${active.name}${dirtyTag}`;
         assemblyGui.poseName = isInitPoseState(active) ? '' : active.name;
     }
 
@@ -13812,16 +13840,19 @@ function rebuildPoseStatesList() {
     _poseStatesListFolder = folder.addFolder(userCount === 0 ? 'Saved states (empty)' : `Saved states (${userCount})`);
 
     const activeId = getActiveAssemblyStateId();
+    const dirty = isPoseStateDirty();
     states.forEach((state, i) => {
         const isActive = state.id === activeId;
+        const isDirty = isActive && dirty;
         const camIcon = state.camera ? '  📷' : '';
-        const prefix = isActive ? '▶ ' : '   ';
-        const label = `${prefix}${i}:  ${state.name}${camIcon}`;
+        const prefix = isActive ? (isDirty ? '● ' : '▶ ') : '   ';
+        const modifiedTag = isDirty ? '  (modified)' : '';
+        const label = `${prefix}${i}:  ${state.name}${camIcon}${modifiedTag}`;
         const btn = { go: function() { applyAssemblyPoseState(state); } };
         const ctrl = _poseStatesListFolder.add(btn, 'go').name(label);
         const btnEl = ctrl.domElement.querySelector('button');
         if (btnEl && isActive) {
-            btnEl.style.color = '#88ccff';
+            btnEl.style.color = isDirty ? '#f0c040' : '#88ccff';
             btnEl.style.fontWeight = 'bold';
         }
     });
@@ -14244,7 +14275,7 @@ function animateAssemblyStep(transformations, forward, onComplete) {
 
 // Reset to the fully disassembled state (all steps applied).
 function assemblyResetToFinish() {
-    clearActivePoseState();
+    markPoseStateDirty();
     if (assemblyAnimation) {
         assemblyAnimation.kill();
         assemblyAnimation = null;
@@ -14269,7 +14300,7 @@ function assemblyResetToFinish() {
 
 // Reset every object to its original loaded position (fully assembled state).
 function assemblyResetToStart() {
-    clearActivePoseState();
+    markPoseStateDirty();
     if (assemblyAnimation) {
         assemblyAnimation.kill();
         assemblyAnimation = null;
@@ -14296,7 +14327,7 @@ function assemblyResetToStart() {
 
 // Animate all remaining steps forward from current position to the last step.
 function assemblyAnimateToFinish() {
-    clearActivePoseState();
+    markPoseStateDirty();
     const totalSteps = assemblyData.steps.length;
     if (totalSteps === 0 || assemblyState.currentStepIndex >= totalSteps - 1) return;
 
@@ -14343,7 +14374,7 @@ function assemblyAnimateToFinish() {
 
 // Animate all remaining steps backward from current position to the assembled state.
 function assemblyAnimateToStart() {
-    clearActivePoseState();
+    markPoseStateDirty();
     if (assemblyState.currentStepIndex < 0) return;
 
     function animatePrev() {
@@ -14389,7 +14420,7 @@ function assemblyAnimateToStart() {
 
 // Apply the next disassembly step (move objects to finalPosition).
 function assemblyNextStep() {
-    clearActivePoseState();
+    markPoseStateDirty();
     // Snap any in-flight animations to their end state before advancing to the next step.
     // Camera first: its finalizer calls onComplete which may start the assembly animation.
     cameraAnimationFinalize?.();
@@ -14434,7 +14465,7 @@ function assemblyNextStep() {
 
 // Undo the current disassembly step (move objects back to initPosition).
 function assemblyPrevStep() {
-    clearActivePoseState();
+    markPoseStateDirty();
     // Snap any in-flight animations to their end state before reversing to the previous step.
     // Camera first: its finalizer calls onComplete which may start the assembly animation.
     cameraAnimationFinalize?.();

@@ -10,6 +10,11 @@ export const INITIAL_POSE_STATE_NAME = 'Initial';
 
 const assemblyStates = [];
 let activeAssemblyStateId = null;
+// True once the scene has diverged from the selected/active state's stored poses (e.g. after a
+// manual drag or workflow navigation). The selection itself (activeAssemblyStateId) is kept —
+// only the "does it still match" bit changes — so Update/Rename/Delete/Save camera stay usable
+// for saving the divergence back into the same state.
+let poseStateDirty = false;
 let nextStateId = 1;
 
 export function getAssemblyStates() {
@@ -22,6 +27,18 @@ export function getActiveAssemblyStateId() {
 
 export function setActiveAssemblyStateId(id) {
     activeAssemblyStateId = id;
+}
+
+export function isPoseStateDirty() {
+    return poseStateDirty;
+}
+
+export function setPoseStateDirty(dirty) {
+    poseStateDirty = !!dirty;
+}
+
+export function getNextStateId() {
+    return nextStateId;
 }
 
 export function getActiveAssemblyState() {
@@ -57,6 +74,7 @@ export function resetPoseStatesCatalog() {
     assemblyStates.length = 0;
     assemblyStates.push(createInitialPoseState());
     activeAssemblyStateId = null;
+    poseStateDirty = false;
     nextStateId = 1;
 }
 
@@ -236,6 +254,7 @@ export function clonePoseState(state) {
 export function snapshotPoseStatesCatalog() {
     return {
         activeId: activeAssemblyStateId,
+        dirty: poseStateDirty,
         nextId: nextStateId,
         states: assemblyStates.map(clonePoseState),
     };
@@ -247,6 +266,7 @@ export function restorePoseStatesCatalog(snap) {
     (snap.states || []).forEach(s => assemblyStates.push(clonePoseState(s)));
     ensureInitialPoseState();
     activeAssemblyStateId = snap.activeId ?? null;
+    poseStateDirty = !!snap.dirty;
     const maxId = assemblyStates.reduce((m, s) => Math.max(m, s.id || 0), 0);
     nextStateId = Math.max(snap.nextId ?? 1, maxId + 1);
 }
@@ -268,6 +288,7 @@ export function capturePoseState(loadedModels, captureCtx, extras = {}) {
     };
     assemblyStates.push(state);
     activeAssemblyStateId = state.id;
+    poseStateDirty = false;
     return state;
 }
 
@@ -280,6 +301,7 @@ export function updatePoseState(state, loadedModels, captureCtx, extras = {}) {
     if (extras.name != null) state.name = extras.name;
     if (extras.description != null) state.description = extras.description;
     activeAssemblyStateId = state.id;
+    poseStateDirty = false;
     return true;
 }
 
@@ -298,6 +320,7 @@ export function duplicatePoseState(state, loadedModels) {
     const insertAt = srcIndex >= 0 ? srcIndex + 1 : assemblyStates.length;
     assemblyStates.splice(insertAt, 0, copy);
     activeAssemblyStateId = copy.id;
+    poseStateDirty = false;
     return copy;
 }
 
@@ -306,7 +329,10 @@ export function deletePoseState(state) {
     const i = assemblyStates.indexOf(state);
     if (i < 0) return false;
     assemblyStates.splice(i, 1);
-    if (activeAssemblyStateId === state.id) activeAssemblyStateId = null;
+    if (activeAssemblyStateId === state.id) {
+        activeAssemblyStateId = null;
+        poseStateDirty = false;
+    }
     return true;
 }
 
@@ -319,6 +345,7 @@ export function deleteAllUserPoseStates() {
     activeAssemblyStateId = activeAssemblyStateId === INITIAL_POSE_STATE_ID
         ? INITIAL_POSE_STATE_ID
         : null;
+    poseStateDirty = false;
 }
 
 export function setPoseStateCamera(state, camera) {

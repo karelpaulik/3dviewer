@@ -422,6 +422,7 @@ export function capturePoseStateSceneSnap(ctx, objects) {
             zoom: cam.zoom,
         } : null,
         activeId: ctx.getActiveAssemblyStateId ? ctx.getActiveAssemblyStateId() : null,
+        dirty: ctx.isPoseStateDirty ? ctx.isPoseStateDirty() : false,
     };
 }
 
@@ -463,6 +464,7 @@ export function restorePoseStateSceneSnap(ctx, snap) {
     }
 
     ctx.setActiveAssemblyStateId?.(snap.activeId ?? null);
+    ctx.setPoseStateDirty?.(!!snap.dirty);
     _afterPoseStateSceneRestore(ctx);
 }
 
