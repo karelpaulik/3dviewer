@@ -1698,6 +1698,9 @@ a, button, input, select {
     flex: 1 1 auto;
     min-height: 0;
     overflow: auto;
+    /* Keep native scrollbar off the east/south resize handles. */
+    margin-right: 8px;
+    margin-bottom: 8px;
 }
 
 #selected-overlay:not(.has-user-height):not(.selected-overlay-collapsed) {
@@ -1723,7 +1726,7 @@ a, button, input, select {
     top: 8px;
     right: 0;
     bottom: 8px;
-    width: 16px;
+    width: 8px;
     cursor: ew-resize;
 }
 
@@ -1731,15 +1734,15 @@ a, button, input, select {
     left: 8px;
     right: 8px;
     bottom: 0;
-    height: 16px;
+    height: 8px;
     cursor: ns-resize;
 }
 
 .selected-overlay-resize-se {
     right: 0;
     bottom: 0;
-    width: 28px;
-    height: 28px;
+    width: 16px;
+    height: 16px;
     cursor: nwse-resize;
 }
 
