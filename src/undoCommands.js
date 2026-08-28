@@ -265,7 +265,7 @@ export function captureRemoveSnapshot(ctx, part) {
         meshEntries: meshEntries.sort((a, b) => a.index - b.index),
         hiddenEntries: hiddenEntries.sort((a, b) => a.index - b.index),
         assemblySnap: snapshotAssemblyState(ctx),
-        poseStatesSnap: ctx.snapshotPoseStatesCatalog ? ctx.snapshotPoseStatesCatalog() : null,
+        arrangementsSnap: ctx.captureArrangementsCatalog ? ctx.captureArrangementsCatalog() : null,
         groupHistorySnap: ctx.groupHistory.map(e => ({ name: e.name, objects: [...e.objects] })),
         groupHistoryIndex: ctx.groupHistoryIndex,
     };
@@ -296,8 +296,8 @@ function _restoreRemovedObject(ctx, snap) {
     });
 
     restoreAssemblyState(ctx, snap.assemblySnap);
-    ctx.restorePoseStatesCatalog?.(snap.poseStatesSnap);
-    ctx.updatePoseStatesGuiInfo?.();
+    ctx.restoreArrangementsCatalog?.(snap.arrangementsSnap);
+    ctx.updateArrangementsGuiInfo?.();
 
     ctx.groupHistory.length = 0;
     snap.groupHistorySnap.forEach(e => ctx.groupHistory.push({ name: e.name, objects: [...e.objects] }));
@@ -399,12 +399,12 @@ export function createHideOthersCommand(ctx, snaps) {
     };
 }
 
-// ── Assembly pose states ────────────────────────────────────────────────────────
+// ── Assembly arrangements ───────────────────────────────────────────────────────
 
-// Snapshot of the scene's TRS+visibility for a set of objects (plus camera), used as the
-// before/after payload when applying a pose state. Distinct from snapshotPoseStatesCatalog,
-// which snapshots the *catalog* of states, not the live scene.
-export function capturePoseStateSceneSnap(ctx, objects) {
+// Capture of the scene's TRS+visibility for a set of objects (plus camera), used as the
+// before/after payload when applying an arrangement. Distinct from captureArrangementsCatalog,
+// which captures the *catalog* of arrangements, not the live scene.
+export function captureArrangementSceneSnap(ctx, objects) {
     const cam = ctx.currentCamera;
     const orbit = ctx.orbitControls;
     return {
@@ -421,23 +421,23 @@ export function capturePoseStateSceneSnap(ctx, objects) {
             target: orbit.target.clone(),
             zoom: cam.zoom,
         } : null,
-        activeId: ctx.getActiveAssemblyStateId ? ctx.getActiveAssemblyStateId() : null,
-        dirty: ctx.isPoseStateDirty ? ctx.isPoseStateDirty() : false,
+        activeId: ctx.getActiveArrangementId ? ctx.getActiveArrangementId() : null,
+        dirty: ctx.isArrangementDirty ? ctx.isArrangementDirty() : false,
     };
 }
 
-function _afterPoseStateSceneRestore(ctx) {
+function _afterArrangementSceneRestore(ctx) {
     if (ctx.viewProp?.showCrossSection && ctx.viewProp?.autoUpdateSectionLines) {
         ctx.updateCrossSectionLines?.();
     }
     if (ctx.viewProp?.sectionCrossLines) ctx.updateSectionCrossLines?.();
     if (ctx.viewProp?.solidSection) ctx.computeSolidSection?.();
-    ctx.updatePoseStatesGuiInfo?.();
+    ctx.updateArrangementsGuiInfo?.();
     ctx.updateAssemblyGuiInfo?.();
     ctx.render?.();
 }
 
-export function restorePoseStateSceneSnap(ctx, snap) {
+export function restoreArrangementSceneSnap(ctx, snap) {
     if (!snap) return;
     (snap.objects || []).forEach(entry => {
         const obj = entry.object;
@@ -463,21 +463,21 @@ export function restorePoseStateSceneSnap(ctx, snap) {
         ctx.orbitControls.update?.();
     }
 
-    ctx.setActiveAssemblyStateId?.(snap.activeId ?? null);
-    ctx.setPoseStateDirty?.(!!snap.dirty);
-    _afterPoseStateSceneRestore(ctx);
+    ctx.setActiveArrangementId?.(snap.activeId ?? null);
+    ctx.setArrangementDirty?.(!!snap.dirty);
+    _afterArrangementSceneRestore(ctx);
 }
 
 /**
  * @param {object} ctx
  * @param {{ label?: string, before: object, after: object }} data
  */
-export function createApplyPoseStateCommand(ctx, data) {
-    const label = data.label || 'Apply assembly state';
+export function createApplyArrangementCommand(ctx, data) {
+    const label = data.label || 'Apply arrangement';
     return {
         label,
-        undo: () => restorePoseStateSceneSnap(ctx, data.before),
-        redo: () => restorePoseStateSceneSnap(ctx, data.after),
+        undo: () => restoreArrangementSceneSnap(ctx, data.before),
+        redo: () => restoreArrangementSceneSnap(ctx, data.after),
     };
 }
 
@@ -486,18 +486,18 @@ export function createApplyPoseStateCommand(ctx, data) {
  * @param {object} ctx
  * @param {{ label?: string, beforeCatalog: object, afterCatalog: object }} data
  */
-export function createPoseStatesCatalogCommand(ctx, data) {
-    const label = data.label || 'Assembly states';
+export function createArrangementsCatalogCommand(ctx, data) {
+    const label = data.label || 'Arrangements';
     return {
         label,
         undo: () => {
-            ctx.restorePoseStatesCatalog?.(data.beforeCatalog);
-            ctx.updatePoseStatesGuiInfo?.();
+            ctx.restoreArrangementsCatalog?.(data.beforeCatalog);
+            ctx.updateArrangementsGuiInfo?.();
             ctx.updateAssemblyGuiInfo?.();
         },
         redo: () => {
-            ctx.restorePoseStatesCatalog?.(data.afterCatalog);
-            ctx.updatePoseStatesGuiInfo?.();
+            ctx.restoreArrangementsCatalog?.(data.afterCatalog);
+            ctx.updateArrangementsGuiInfo?.();
             ctx.updateAssemblyGuiInfo?.();
         },
     };
