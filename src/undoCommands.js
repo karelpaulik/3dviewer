@@ -265,6 +265,7 @@ export function captureRemoveSnapshot(ctx, part) {
         meshEntries: meshEntries.sort((a, b) => a.index - b.index),
         hiddenEntries: hiddenEntries.sort((a, b) => a.index - b.index),
         assemblySnap: snapshotAssemblyState(ctx),
+        poseStatesSnap: ctx.snapshotPoseStatesCatalog ? ctx.snapshotPoseStatesCatalog() : null,
         groupHistorySnap: ctx.groupHistory.map(e => ({ name: e.name, objects: [...e.objects] })),
         groupHistoryIndex: ctx.groupHistoryIndex,
     };
@@ -295,6 +296,8 @@ function _restoreRemovedObject(ctx, snap) {
     });
 
     restoreAssemblyState(ctx, snap.assemblySnap);
+    ctx.restorePoseStatesCatalog?.(snap.poseStatesSnap);
+    ctx.updatePoseStatesGuiInfo?.();
 
     ctx.groupHistory.length = 0;
     snap.groupHistorySnap.forEach(e => ctx.groupHistory.push({ name: e.name, objects: [...e.objects] }));
@@ -392,6 +395,108 @@ export function createHideOthersCommand(ctx, snaps) {
         },
         redo: () => {
             for (const snap of snaps) _applyVisibility(ctx, snap, false);
+        },
+    };
+}
+
+// ── Assembly pose states ────────────────────────────────────────────────────────
+
+// Snapshot of the scene's TRS+visibility for a set of objects (plus camera), used as the
+// before/after payload when applying a pose state. Distinct from snapshotPoseStatesCatalog,
+// which snapshots the *catalog* of states, not the live scene.
+export function capturePoseStateSceneSnap(ctx, objects) {
+    const cam = ctx.currentCamera;
+    const orbit = ctx.orbitControls;
+    return {
+        objects: (objects || []).map(obj => ({
+            object: obj,
+            position: obj.position.clone(),
+            quaternion: obj.quaternion.clone(),
+            scale: obj.scale.clone(),
+            visible: obj.visible !== false,
+        })),
+        hiddenObjects: ctx.hiddenObjects ? [...ctx.hiddenObjects] : [],
+        camera: (cam && orbit) ? {
+            position: cam.position.clone(),
+            target: orbit.target.clone(),
+            zoom: cam.zoom,
+        } : null,
+        activeId: ctx.getActiveAssemblyStateId ? ctx.getActiveAssemblyStateId() : null,
+    };
+}
+
+function _afterPoseStateSceneRestore(ctx) {
+    if (ctx.viewProp?.showCrossSection && ctx.viewProp?.autoUpdateSectionLines) {
+        ctx.updateCrossSectionLines?.();
+    }
+    if (ctx.viewProp?.sectionCrossLines) ctx.updateSectionCrossLines?.();
+    if (ctx.viewProp?.solidSection) ctx.computeSolidSection?.();
+    ctx.updatePoseStatesGuiInfo?.();
+    ctx.updateAssemblyGuiInfo?.();
+    ctx.render?.();
+}
+
+export function restorePoseStateSceneSnap(ctx, snap) {
+    if (!snap) return;
+    (snap.objects || []).forEach(entry => {
+        const obj = entry.object;
+        if (!obj) return;
+        obj.position.copy(entry.position);
+        obj.quaternion.copy(entry.quaternion);
+        obj.scale.copy(entry.scale);
+        obj.visible = entry.visible;
+        obj.updateMatrixWorld(true, true);
+        ctx.updateVisibilityIcon?.(obj);
+    });
+
+    if (Array.isArray(snap.hiddenObjects) && ctx.hiddenObjects) {
+        ctx.hiddenObjects.length = 0;
+        snap.hiddenObjects.forEach(o => ctx.hiddenObjects.push(o));
+    }
+
+    if (snap.camera && ctx.currentCamera && ctx.orbitControls) {
+        ctx.currentCamera.position.copy(snap.camera.position);
+        ctx.orbitControls.target.copy(snap.camera.target);
+        ctx.currentCamera.zoom = snap.camera.zoom;
+        ctx.currentCamera.updateProjectionMatrix?.();
+        ctx.orbitControls.update?.();
+    }
+
+    ctx.setActiveAssemblyStateId?.(snap.activeId ?? null);
+    _afterPoseStateSceneRestore(ctx);
+}
+
+/**
+ * @param {object} ctx
+ * @param {{ label?: string, before: object, after: object }} data
+ */
+export function createApplyPoseStateCommand(ctx, data) {
+    const label = data.label || 'Apply assembly state';
+    return {
+        label,
+        undo: () => restorePoseStateSceneSnap(ctx, data.before),
+        redo: () => restorePoseStateSceneSnap(ctx, data.after),
+    };
+}
+
+/**
+ * Catalog-only undo (capture / update / rename / delete / duplicate / camera).
+ * @param {object} ctx
+ * @param {{ label?: string, beforeCatalog: object, afterCatalog: object }} data
+ */
+export function createPoseStatesCatalogCommand(ctx, data) {
+    const label = data.label || 'Assembly states';
+    return {
+        label,
+        undo: () => {
+            ctx.restorePoseStatesCatalog?.(data.beforeCatalog);
+            ctx.updatePoseStatesGuiInfo?.();
+            ctx.updateAssemblyGuiInfo?.();
+        },
+        redo: () => {
+            ctx.restorePoseStatesCatalog?.(data.afterCatalog);
+            ctx.updatePoseStatesGuiInfo?.();
+            ctx.updateAssemblyGuiInfo?.();
         },
     };
 }

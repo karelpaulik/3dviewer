@@ -117,6 +117,9 @@ import {
     captureVisibilitySnapshot,
     createVisibilityCommand,
     createHideOthersCommand,
+    capturePoseStateSceneSnap,
+    createApplyPoseStateCommand,
+    createPoseStatesCatalogCommand,
 } from './undoCommands.js';
 import { initAttachmentsGui, importAttachmentsFromGltfScene, getAttachmentsStore, addImageAttachmentFromBlob, clearAttachmentsStore, openAttachment, canOpenAttachmentInBrowser } from './attachmentsUtils.js';
 import { serializeAttachmentsForExport } from './attachmentCompressionUtils.js';
@@ -179,6 +182,31 @@ import {
     applyInitTransformFromUserData,
     refreshInitTransformUserData
 } from './createObjectUtils.js';
+import {
+    getAssemblyStates,
+    getActiveAssemblyStateId,
+    setActiveAssemblyStateId,
+    getActiveAssemblyState,
+    isInitPoseState,
+    ensureInitialPoseState,
+    resetPoseStatesCatalog,
+    collectPoseStateObjects,
+    resolveStatePoses,
+    capturePoseState,
+    updatePoseState,
+    duplicatePoseState,
+    deletePoseState,
+    deleteAllUserPoseStates,
+    setPoseStateCamera,
+    purgePoseStateObjects,
+    remapPoseStatesAfterObjectBake,
+    writePoseStatesToUserData,
+    embedAssemblyStateIndex,
+    clearPoseStatesUserData,
+    importAssemblyStatesFromGltfScene,
+    snapshotPoseStatesCatalog,
+    restorePoseStatesCatalog,
+} from './assemblyStateUtils.js';
 import {
     convertMaterial,
     convertToStandardMaterial,
@@ -351,6 +379,10 @@ let cameraAnimationFinalize = null;    // Snaps in-flight camera animation to it
 let assemblyStepsListFolder = null; // Dynamicky přebudovávaný subfolder seznamu kroků
 let _assemblyFolderRef = null;      // Reference na hlavní Assembly Workflow folder (pro rebuild)
 let _assemblyWorkflowsFolderRef = null; // Subfolder se seznamem workflow (obsah se přebudovává)
+let _poseStatesFolderRef = null;    // Reference na "States" subfolder (pro rebuild)
+let _poseStatesListFolder = null;   // Dynamicky přebudovávaný subfolder seznamu stavů
+let _assemblyEditControls = [];     // Ovládací prvky "Edit" folderu (enable/disable podle editMode)
+let _poseStateMutateControls = [];  // Ovládací prvky "States" folderu vyžadující aktivní uživatelský stav
 let lightsFolder = null; // Reference na Lights folder ve View panelu
 
 const assemblyGui = {
@@ -372,6 +404,8 @@ const assemblyGui = {
     animationLoop: false,
     animationCamera: true,
     zoomCoeff: 1,
+    poseStatus: 'Initial',
+    poseName: '',
 };
 // ============================================
 
@@ -1285,6 +1319,13 @@ function getUndoContext() {
         updateHistoryInfo,
         removeModel,
         _updateDeviationComparisonDisplayPosesFromDrag,
+        get currentCamera() { return currentCamera; },
+        get orbitControls() { return orbitControls; },
+        getActiveAssemblyStateId,
+        setActiveAssemblyStateId,
+        snapshotPoseStatesCatalog,
+        restorePoseStatesCatalog,
+        updatePoseStatesGuiInfo,
     };
 }
 
@@ -1342,6 +1383,7 @@ function pushSingleTransformUndoIfChanged() {
         beforeAssembly,
         afterAssembly,
     }));
+    clearActivePoseState();
 }
 
 function commitGroupTransformUndo() {
@@ -1364,6 +1406,7 @@ function commitGroupTransformUndo() {
         afterAssembly,
     }));
     savePreviousGroupTransformStates();
+    clearActivePoseState();
 }
 
 function commitDragTransformUndo() {
@@ -5435,6 +5478,7 @@ function _remapAssemblyAfterLocationBake(obj, invBake) {
     });
 
     forEachAssemblyWorkflow(() => repairChainForObject(obj));
+    remapPoseStatesAfterObjectBake(obj, invBake);
 }
 
 function bakeObjectLocation(obj, options) {
@@ -7583,6 +7627,8 @@ function loadGlbModel(model, name, scale, colored, options = {}) {
                 importAssemblyFromGltfScene(gltf.scene, name || fileNameWithoutExtension(model), {
                     restorePlayback: restoreAssemblyPlayback,
                 });
+                importAssemblyStatesFromGltfScene(gltf.scene);
+                if (_poseStatesFolderRef) updatePoseStatesGuiInfo();
                 importDocumentsFromGltfScene(gltf.scene);
                 importAttachmentsFromGltfScene(gltf.scene);
                 if (importSettings) {
@@ -7664,6 +7710,10 @@ function loadGlbModel(model, name, scale, colored, options = {}) {
                 importAssemblyFromGltfScene(gltf.scene, name || fileNameWithoutExtension(model), {
                     restorePlayback: restoreAssemblyPlayback,
                 });
+
+                // Import assembly pose states stored in userData (if any)
+                importAssemblyStatesFromGltfScene(gltf.scene);
+                if (_poseStatesFolderRef) updatePoseStatesGuiInfo();
                 
                 // Import documents stored in userData (if any)
                 importDocumentsFromGltfScene(gltf.scene);
@@ -7918,6 +7968,7 @@ function clearSceneFully() {
     temporarilyShownObjects = [];
 
     resetAssemblyWorkflows();
+    resetPoseStatesCatalog();
 
     modelsCopy.forEach(part => {
         if (part.parent) part.parent.remove(part);
@@ -7962,6 +8013,8 @@ function clearSceneKeepDocs() {
 
         // Reset assembly data
         resetAssemblyWorkflows();
+        resetPoseStatesCatalog();
+        if (_poseStatesFolderRef) updatePoseStatesGuiInfo();
 
         // Remove all root models from the scene
         modelsCopy.forEach(part => {
@@ -8024,6 +8077,8 @@ function removeModel(part, skipConfirm = false, options = {}) {
             // Kotvy má každé workflow vlastní, odebraný objekt musí zmizet ze všech
             removedObjects.forEach(obj => wf.anchors.delete(obj));
         });
+        purgePoseStateObjects(removedObjects);
+        if (_poseStatesFolderRef) updatePoseStatesGuiInfo();
         if (assemblyState.currentStepIndex >= assemblyData.steps.length) {
             assemblyState.currentStepIndex = assemblyData.steps.length - 1;
         }
@@ -11946,6 +12001,22 @@ function assemblyClearUserData() {
     }));
 }
 
+// Wrappers bundling workflow + pose-state persistence, so every export site touches both.
+function writeGlbAssemblyUserData() {
+    assemblyWriteToUserData();
+    writePoseStatesToUserData();
+}
+
+function embedGlbAssemblyIndexes(userData) {
+    embedAssemblyWorkflowIndex(userData);
+    embedAssemblyStateIndex(userData);
+}
+
+function clearGlbAssemblyUserData() {
+    assemblyClearUserData();
+    clearPoseStatesUserData();
+}
+
 // Read userData.assemblyTransformations from an imported GLTF scene and add every workflow it
 // contains as a new workflow. The imported objects come along with the file, so its procedures
 // always reference their own parts — nothing has to be merged into an existing workflow.
@@ -12102,7 +12173,7 @@ function hideDracoOverlay() {
 }
 
 function buildAllModelsExportGroup(finalName) {
-    assemblyWriteToUserData();
+    writeGlbAssemblyUserData();
     flushDocumentEdits();
 
     const group = new THREE.Group();
@@ -12121,14 +12192,14 @@ function buildAllModelsExportGroup(finalName) {
         attachmentCompressionDefaults
     );
     embedAppSettingsToUserData(group.userData);
-    embedAssemblyWorkflowIndex(group.userData);
+    embedGlbAssemblyIndexes(group.userData);
 
     const history = getFileHistoryForExport();
     if (history.length > 0) {
         group.userData.fileHistory = history;
     }
 
-    assemblyClearUserData();
+    clearGlbAssemblyUserData();
     stripMeasurementVisuals(group);
     stripAnnotationVisuals(group);
     stripAnnotation3dVisuals(group);
@@ -12263,13 +12334,13 @@ function exportSelectedObject() {
         if (input === null) return;
         const finalName = (input.trim() || defaultName.replace(/\.glb$/i, '')).replace(/\.glb$/i, '') + '.glb';
 
-        assemblyWriteToUserData();
+        writeGlbAssemblyUserData();
 
         const exporter = new GLTFExporter();
         const group = new THREE.Group();
         group.userData._appExportRoot = true;
         embedAppSettingsToUserData(group.userData);
-        embedAssemblyWorkflowIndex(group.userData);
+        embedGlbAssemblyIndexes(group.userData);
 
         selectedObjects.forEach(obj => {
             const clone = obj.clone(true);
@@ -12287,7 +12358,7 @@ function exportSelectedObject() {
             group.add(clone);
         });
 
-        assemblyClearUserData();
+        clearGlbAssemblyUserData();
 
         stripMeasurementVisuals(group);
         stripAnnotationVisuals(group);
@@ -12314,8 +12385,8 @@ function exportSelectedObject() {
     if (input === null) return; // uživatel stiskl Cancel
     const finalName = (input.trim() || defaultName.replace(/\.glb$/i, '')).replace(/\.glb$/i, '') + '.glb';
 
-    // Write assembly workflow into userData before cloning
-    assemblyWriteToUserData();
+    // Write assembly workflow + pose states into userData before cloning
+    writeGlbAssemblyUserData();
 
     const exporter = new GLTFExporter();
     const clone = lastSelectedObject.clone(true);
@@ -12323,10 +12394,10 @@ function exportSelectedObject() {
     stripSelectionHighlightFromExportSubtree(clone);
 
     embedAppSettingsToUserData(clone.userData);
-    embedAssemblyWorkflowIndex(clone.userData);
+    embedGlbAssemblyIndexes(clone.userData);
 
     // Clean up originals — clone already carries the assembly data
-    assemblyClearUserData();
+    clearGlbAssemblyUserData();
 
     // Strip measurement visuals from clone (userData.measurements stays for reconstruction)
     stripMeasurementVisuals(clone);
@@ -12379,14 +12450,14 @@ async function exportSelectedObjectDraco() {
         }
         overlay.style.display = 'flex';
 
-        assemblyWriteToUserData();
+        writeGlbAssemblyUserData();
         flushDocumentEdits();
 
         const exporter = new GLTFExporter();
         const groupDraco = new THREE.Group();
         groupDraco.userData._appExportRoot = true;
         embedAppSettingsToUserData(groupDraco.userData);
-        embedAssemblyWorkflowIndex(groupDraco.userData);
+        embedGlbAssemblyIndexes(groupDraco.userData);
 
         selectedObjects.forEach(obj => {
             const clone = obj.clone(true);
@@ -12404,7 +12475,7 @@ async function exportSelectedObjectDraco() {
             groupDraco.add(clone);
         });
 
-        assemblyClearUserData();
+        clearGlbAssemblyUserData();
 
         stripMeasurementVisuals(groupDraco);
         stripAnnotationVisuals(groupDraco);
@@ -12484,7 +12555,7 @@ async function exportSelectedObjectDraco() {
     }
     overlay.style.display = 'flex';
 
-    assemblyWriteToUserData();
+    writeGlbAssemblyUserData();
     flushDocumentEdits();
 
     const exporter = new GLTFExporter();
@@ -12493,9 +12564,9 @@ async function exportSelectedObjectDraco() {
     stripSelectionHighlightFromExportSubtree(clone);
 
     embedAppSettingsToUserData(clone.userData);
-    embedAssemblyWorkflowIndex(clone.userData);
+    embedGlbAssemblyIndexes(clone.userData);
 
-    assemblyClearUserData();
+    clearGlbAssemblyUserData();
 
     stripMeasurementVisuals(clone);
     stripAnnotationVisuals(clone);
@@ -12773,6 +12844,30 @@ function addAssemblyGui() {
     _assemblyWorkflowsFolderRef = assemblyFolder.addFolder('Workflows');
     rebuildAssemblyWorkflowsFolder();
 
+    // --- States ---
+    _poseStatesFolderRef = assemblyFolder.addFolder('States');
+    _poseStatesFolderRef.add(assemblyGui, 'poseStatus').name('Status').disable().listen();
+    _poseStatesFolderRef.add({ fn: assemblyCapturePoseState }, 'fn').name('+  Capture current');
+    _poseStateMutateControls.push(
+        _poseStatesFolderRef.add({ fn: assemblyUpdateActivePoseState }, 'fn').name('↻  Update active'),
+    );
+    _poseStateMutateControls.push(
+        _poseStatesFolderRef.add({ fn: assemblyRenameActivePoseState }, 'fn').name('✎  Rename'),
+    );
+    _poseStatesFolderRef.add({ fn: assemblyDuplicateActivePoseState }, 'fn').name('⧉  Duplicate');
+    _poseStateMutateControls.push(
+        _poseStatesFolderRef.add({ fn: assemblyDeleteActivePoseState }, 'fn').name('✕  Delete'),
+    );
+    _poseStatesFolderRef.add({ fn: assemblyDeleteAllPoseStates }, 'fn').name('✕  Delete all…');
+    _poseStateMutateControls.push(
+        _poseStatesFolderRef.add({ fn: assemblySavePoseStateCamera }, 'fn').name('📷  Save camera view'),
+    );
+    _poseStateMutateControls.push(
+        _poseStatesFolderRef.add({ fn: assemblyClearPoseStateCamera }, 'fn').name('✕  Clear camera view'),
+    );
+    _poseStateMutateControls.forEach(c => c.disable());
+    updatePoseStatesGuiInfo();
+
     // --- Playback ---
     const playbackFolder = assemblyFolder.addFolder('Playback');
     playbackFolder.add(assemblyGui, 'stepInfo').name('Status').disable().listen();
@@ -12818,30 +12913,20 @@ function addAssemblyGui() {
     // --- Edit ---
     const editFolder = assemblyFolder.addFolder('Edit');
     editFolder.add(assemblyGui, 'editMode').name('Edit mode').onChange(function(value) {
-        assemblyState.editMode = value;
-        editControls.forEach(c => value ? c.enable() : c.disable());
-        updateAssemblyStepHelpers();
-        syncToolsPanelUI(toolsDeps);
-        _modeIndicatorCache = '';
+        setAssemblyEditMode(value);
         render();
         console.log(`[Assembly] Edit mode: ${value}`);
     }).listen();
     editFolder.add({ fn: function() {
         assemblyResetToStart();
-        assemblyState.editMode = true;
-        assemblyGui.editMode = true;
-        editControls.forEach(c => c.enable());
-        updateAssemblyStepHelpers();
+        setAssemblyEditMode(true);
         updateAssemblyGuiInfo();
         console.log('[Assembly] Edit assembled mode activated.');
     }}, 'fn').name('✏  Edit assembled  [Home]');
     editFolder.add({ fn: function() {
         assemblyResetToFinish();
         assemblyState.disassembledMode = true;
-        assemblyState.editMode = true;
-        assemblyGui.editMode = true;
-        editControls.forEach(c => c.enable());
-        updateAssemblyStepHelpers();
+        setAssemblyEditMode(true);
         updateAssemblyGuiInfo();
         console.log('[Assembly] Edit disassembled mode activated.');
     }}, 'fn').name('✏  Edit disassembled  [End]');
@@ -12874,6 +12959,7 @@ function addAssemblyGui() {
 
     // Start disabled (editMode defaults to false)
     editControls.forEach(c => c.disable());
+    _assemblyEditControls = editControls;
 
     editFolder.close();
 
@@ -13215,6 +13301,7 @@ function setActiveAssemblyWorkflow(index) {
     if (index < 0 || index >= assemblyWorkflows.length || index === activeWorkflowIndex) return;
     assemblyResetToStart();
     _repointActiveWorkflow(index);
+    clearActivePoseState();
     console.log(`[Assembly] Active workflow: "${assemblyWorkflows[index].name}".`);
 }
 
@@ -13346,10 +13433,16 @@ function updateAssemblyGuiInfo() {
         assemblyGui.stepInfo = `${wfPrefix}${assemblyState.currentStepIndex + 1}/${n}: ${step.name}`;
     }
 
-    // Viewport step overlay
+    // Viewport overlay — an applied pose state takes precedence over the current workflow step
     {
+        const activePose = getActiveAssemblyState();
         const ci = assemblyState.currentStepIndex;
-        if (ci >= 0 && ci < n) {
+        if (activePose) {
+            const nameHtml = `<span class="aso-name">${activePose.name || ''}</span>`;
+            const descHtml = activePose.description ? `<span class="aso-desc">${activePose.description}</span>` : '';
+            assemblyStepOverlay.innerHTML = nameHtml + descHtml;
+            assemblyStepOverlay.classList.add('visible');
+        } else if (ci >= 0 && ci < n) {
             const step = assemblyData.steps[ci];
             const nameHtml = `<span class="aso-name">${step.name || ''}</span>`;
             const descHtml = step.description ? `<span class="aso-desc">${step.description}</span>` : '';
@@ -13377,6 +13470,7 @@ function updateAssemblyGuiInfo() {
 
     updateAssemblyStepHelpers();
     rebuildAssemblyStepsList();
+    if (_poseStatesFolderRef) updatePoseStatesGuiInfo();
 }
 
 // Rebuild the "Steps" subfolder with one button per step.
@@ -13435,6 +13529,303 @@ function rebuildAssemblyStepsList() {
     });
 
     assemblyStepsListFolder.open();
+}
+
+// ===== Assembly pose states (saved snapshots of object poses, independent of workflow steps) ===
+
+// Centralizes editMode toggling so it can be driven both from the GUI checkbox/buttons and
+// from applying a pose state (which must leave edit mode before moving objects).
+function setAssemblyEditMode(enabled) {
+    assemblyState.editMode = !!enabled;
+    assemblyGui.editMode = !!enabled;
+    _assemblyEditControls.forEach(c => enabled ? c.enable() : c.disable());
+    updateAssemblyStepHelpers();
+    syncToolsPanelUI(toolsDeps);
+    _modeIndicatorCache = '';
+}
+
+// Any manual scene change (drag, workflow navigation, workflow switch) invalidates the notion
+// that the scene still matches a specific saved state.
+function clearActivePoseState() {
+    if (getActiveAssemblyStateId() == null) return;
+    setActiveAssemblyStateId(null);
+    updatePoseStatesGuiInfo();
+    updateAssemblyGuiInfo();
+}
+
+function applyPoseObjectVisibility(obj, visible) {
+    obj.visible = !!visible;
+    const hi = hiddenObjects.indexOf(obj);
+    if (!visible) {
+        if (hi === -1) hiddenObjects.push(obj);
+        const ti = temporarilyShownObjects.indexOf(obj);
+        if (ti !== -1) temporarilyShownObjects.splice(ti, 1);
+    } else if (hi !== -1) {
+        hiddenObjects.splice(hi, 1);
+    }
+    updateVisibilityIcon(obj);
+}
+
+// Context object passed to assemblyStateUtils capture functions so group-transform-active
+// objects are captured in their original-parent local space (mirrors recordGroupTransformations).
+function currentPoseCaptureCtx() {
+    return {
+        isGroupTransformActive: viewProp.isGroupTransformActive,
+        selectedObjects,
+        multiOriginalParents,
+    };
+}
+
+function currentPoseCameraRecord() {
+    return {
+        position: { x: currentCamera.position.x, y: currentCamera.position.y, z: currentCamera.position.z },
+        target: { x: orbitControls.target.x, y: orbitControls.target.y, z: orbitControls.target.z },
+        zoom: currentCamera.zoom,
+    };
+}
+
+// Apply a saved state to the scene: move/show/hide every referenced object, optionally animate
+// the camera to the state's saved view, and record the whole thing as a single undo step.
+function applyAssemblyPoseState(state, { recordUndo = true } = {}) {
+    if (!state) return;
+    ensureInitialPoseState();
+
+    cameraAnimationFinalize?.();
+    cameraAnimationFinalize = null;
+    assemblyAnimationFinalize?.();
+    assemblyAnimationFinalize = null;
+
+    if (assemblyState.editMode) setAssemblyEditMode(false);
+
+    const poses = resolveStatePoses(state, loadedModels);
+    const involved = collectPoseStateObjects(loadedModels);
+    const ctx = getUndoContext();
+    const beforeSnap = recordUndo ? capturePoseStateSceneSnap(ctx, involved) : null;
+
+    poses.forEach(pose => {
+        pose.objectRef.position.set(pose.position.x, pose.position.y, pose.position.z);
+        pose.objectRef.quaternion.set(pose.quaternion.x, pose.quaternion.y, pose.quaternion.z, pose.quaternion.w);
+        pose.objectRef.scale.set(pose.scale.x, pose.scale.y, pose.scale.z);
+        pose.objectRef.updateMatrixWorld(true, true);
+        applyPoseObjectVisibility(pose.objectRef, pose.visible);
+    });
+    setActiveAssemblyStateId(state.id);
+    updatePoseStatesGuiInfo();
+    updateAssemblyGuiInfo();
+
+    const useCamera = !!(state.camera && assemblyGui.animationCamera && !isInitPoseState(state));
+
+    function finishApply() {
+        if (!recordUndo || !beforeSnap) return;
+        const afterSnap = capturePoseStateSceneSnap(ctx, involved);
+        pushCommand(createApplyPoseStateCommand(ctx, {
+            label: `Apply state ${state.name}`,
+            before: beforeSnap,
+            after: afterSnap,
+        }));
+    }
+
+    if (useCamera) {
+        animateCameraToView(state.camera, finishApply);
+    } else {
+        finishApply();
+    }
+
+    if (viewProp.showCrossSection && viewProp.autoUpdateSectionLines) updateCrossSectionLines();
+    if (viewProp.sectionCrossLines) updateSectionCrossLines();
+    render();
+    console.log(`[Assembly] Applied state "${state.name}".`);
+}
+
+function assemblyCapturePoseState() {
+    const name = prompt('State name:', `State ${getAssemblyStates().filter(s => !isInitPoseState(s)).length + 1}`);
+    if (name === null) return;
+    const ctx = getUndoContext();
+    const before = snapshotPoseStatesCatalog();
+    const state = capturePoseState(loadedModels, currentPoseCaptureCtx(), {
+        name: name.trim() || undefined,
+    });
+    const after = snapshotPoseStatesCatalog();
+    pushCommand(createPoseStatesCatalogCommand(ctx, {
+        label: `Capture state ${state.name}`,
+        beforeCatalog: before,
+        afterCatalog: after,
+    }));
+    updatePoseStatesGuiInfo();
+    updateAssemblyGuiInfo();
+    console.log(`[Assembly] Captured state "${state.name}" (${state.poses.length} object(s)).`);
+}
+
+function assemblyUpdateActivePoseState() {
+    const state = getActiveAssemblyState();
+    if (!state || isInitPoseState(state)) {
+        console.log('[Assembly] Select a captured state before Update.');
+        return;
+    }
+    const ctx = getUndoContext();
+    const before = snapshotPoseStatesCatalog();
+    updatePoseState(state, loadedModels, currentPoseCaptureCtx());
+    const after = snapshotPoseStatesCatalog();
+    pushCommand(createPoseStatesCatalogCommand(ctx, {
+        label: `Update state ${state.name}`,
+        beforeCatalog: before,
+        afterCatalog: after,
+    }));
+    updatePoseStatesGuiInfo();
+    updateAssemblyGuiInfo();
+    console.log(`[Assembly] Updated state "${state.name}".`);
+}
+
+function assemblyRenameActivePoseState() {
+    const state = getActiveAssemblyState();
+    if (!state || isInitPoseState(state)) return;
+    const input = prompt('State name:', state.name);
+    if (input === null) return;
+    const ctx = getUndoContext();
+    const before = snapshotPoseStatesCatalog();
+    state.name = input.trim() || state.name;
+    const after = snapshotPoseStatesCatalog();
+    pushCommand(createPoseStatesCatalogCommand(ctx, {
+        label: `Rename state ${state.name}`,
+        beforeCatalog: before,
+        afterCatalog: after,
+    }));
+    updatePoseStatesGuiInfo();
+    updateAssemblyGuiInfo();
+}
+
+function assemblyDuplicateActivePoseState() {
+    const state = getActiveAssemblyState() || getAssemblyStates()[0];
+    if (!state) return;
+    const ctx = getUndoContext();
+    const before = snapshotPoseStatesCatalog();
+    const copy = duplicatePoseState(state, loadedModels);
+    const after = snapshotPoseStatesCatalog();
+    pushCommand(createPoseStatesCatalogCommand(ctx, {
+        label: `Duplicate state ${copy.name}`,
+        beforeCatalog: before,
+        afterCatalog: after,
+    }));
+    updatePoseStatesGuiInfo();
+    updateAssemblyGuiInfo();
+}
+
+function assemblyDeleteActivePoseState() {
+    const state = getActiveAssemblyState();
+    if (!state || isInitPoseState(state)) return;
+    if (!confirm(`Delete state "${state.name}"?`)) return;
+    const ctx = getUndoContext();
+    const before = snapshotPoseStatesCatalog();
+    deletePoseState(state);
+    const after = snapshotPoseStatesCatalog();
+    pushCommand(createPoseStatesCatalogCommand(ctx, {
+        label: `Delete state ${state.name}`,
+        beforeCatalog: before,
+        afterCatalog: after,
+    }));
+    updatePoseStatesGuiInfo();
+    updateAssemblyGuiInfo();
+}
+
+function assemblyDeleteAllPoseStates() {
+    const userCount = getAssemblyStates().filter(s => !isInitPoseState(s)).length;
+    if (userCount === 0) return;
+    if (!confirm(`Delete all ${userCount} captured state(s)? Initial is kept.`)) return;
+    const ctx = getUndoContext();
+    const before = snapshotPoseStatesCatalog();
+    deleteAllUserPoseStates();
+    const after = snapshotPoseStatesCatalog();
+    pushCommand(createPoseStatesCatalogCommand(ctx, {
+        label: 'Delete all assembly states',
+        beforeCatalog: before,
+        afterCatalog: after,
+    }));
+    updatePoseStatesGuiInfo();
+    updateAssemblyGuiInfo();
+}
+
+function assemblySavePoseStateCamera() {
+    const state = getActiveAssemblyState();
+    if (!state || isInitPoseState(state)) return;
+    const ctx = getUndoContext();
+    const before = snapshotPoseStatesCatalog();
+    setPoseStateCamera(state, currentPoseCameraRecord());
+    const after = snapshotPoseStatesCatalog();
+    pushCommand(createPoseStatesCatalogCommand(ctx, {
+        label: `Save camera ${state.name}`,
+        beforeCatalog: before,
+        afterCatalog: after,
+    }));
+    updatePoseStatesGuiInfo();
+    updateAssemblyGuiInfo();
+}
+
+function assemblyClearPoseStateCamera() {
+    const state = getActiveAssemblyState();
+    if (!state || isInitPoseState(state)) return;
+    const ctx = getUndoContext();
+    const before = snapshotPoseStatesCatalog();
+    setPoseStateCamera(state, null);
+    const after = snapshotPoseStatesCatalog();
+    pushCommand(createPoseStatesCatalogCommand(ctx, {
+        label: `Clear camera ${state.name}`,
+        beforeCatalog: before,
+        afterCatalog: after,
+    }));
+    updatePoseStatesGuiInfo();
+    updateAssemblyGuiInfo();
+}
+
+function syncPoseStateMutateControls() {
+    const state = getActiveAssemblyState();
+    const canMutate = !!(state && !isInitPoseState(state));
+    _poseStateMutateControls.forEach(c => canMutate ? c.enable() : c.disable());
+}
+
+function updatePoseStatesGuiInfo() {
+    ensureInitialPoseState();
+    const active = getActiveAssemblyState();
+    if (!active) {
+        assemblyGui.poseStatus = '– not applied –';
+        assemblyGui.poseName = '';
+    } else {
+        const idx = getAssemblyStates().indexOf(active);
+        assemblyGui.poseStatus = `${idx}: ${active.name}`;
+        assemblyGui.poseName = isInitPoseState(active) ? '' : active.name;
+    }
+
+    syncPoseStateMutateControls();
+    rebuildPoseStatesList();
+}
+
+// Rebuild the "Saved states" subfolder with one button per state.
+function rebuildPoseStatesList() {
+    if (_poseStatesListFolder) {
+        _poseStatesListFolder.destroy();
+        _poseStatesListFolder = null;
+    }
+    const folder = _poseStatesFolderRef;
+    if (!folder) return;
+
+    const states = getAssemblyStates();
+    const userCount = states.filter(s => !isInitPoseState(s)).length;
+    _poseStatesListFolder = folder.addFolder(userCount === 0 ? 'Saved states (empty)' : `Saved states (${userCount})`);
+
+    const activeId = getActiveAssemblyStateId();
+    states.forEach((state, i) => {
+        const isActive = state.id === activeId;
+        const camIcon = state.camera ? '  📷' : '';
+        const prefix = isActive ? '▶ ' : '   ';
+        const label = `${prefix}${i}:  ${state.name}${camIcon}`;
+        const btn = { go: function() { applyAssemblyPoseState(state); } };
+        const ctrl = _poseStatesListFolder.add(btn, 'go').name(label);
+        const btnEl = ctrl.domElement.querySelector('button');
+        if (btnEl && isActive) {
+            btnEl.style.color = '#88ccff';
+            btnEl.style.fontWeight = 'bold';
+        }
+    });
+    _poseStatesListFolder.open();
 }
 
 // Animate to the fully assembled state (step 0 plays backward, final → init).
@@ -13853,6 +14244,7 @@ function animateAssemblyStep(transformations, forward, onComplete) {
 
 // Reset to the fully disassembled state (all steps applied).
 function assemblyResetToFinish() {
+    clearActivePoseState();
     if (assemblyAnimation) {
         assemblyAnimation.kill();
         assemblyAnimation = null;
@@ -13877,6 +14269,7 @@ function assemblyResetToFinish() {
 
 // Reset every object to its original loaded position (fully assembled state).
 function assemblyResetToStart() {
+    clearActivePoseState();
     if (assemblyAnimation) {
         assemblyAnimation.kill();
         assemblyAnimation = null;
@@ -13903,6 +14296,7 @@ function assemblyResetToStart() {
 
 // Animate all remaining steps forward from current position to the last step.
 function assemblyAnimateToFinish() {
+    clearActivePoseState();
     const totalSteps = assemblyData.steps.length;
     if (totalSteps === 0 || assemblyState.currentStepIndex >= totalSteps - 1) return;
 
@@ -13949,6 +14343,7 @@ function assemblyAnimateToFinish() {
 
 // Animate all remaining steps backward from current position to the assembled state.
 function assemblyAnimateToStart() {
+    clearActivePoseState();
     if (assemblyState.currentStepIndex < 0) return;
 
     function animatePrev() {
@@ -13994,6 +14389,7 @@ function assemblyAnimateToStart() {
 
 // Apply the next disassembly step (move objects to finalPosition).
 function assemblyNextStep() {
+    clearActivePoseState();
     // Snap any in-flight animations to their end state before advancing to the next step.
     // Camera first: its finalizer calls onComplete which may start the assembly animation.
     cameraAnimationFinalize?.();
@@ -14038,6 +14434,7 @@ function assemblyNextStep() {
 
 // Undo the current disassembly step (move objects back to initPosition).
 function assemblyPrevStep() {
+    clearActivePoseState();
     // Snap any in-flight animations to their end state before reversing to the previous step.
     // Camera first: its finalizer calls onComplete which may start the assembly animation.
     cameraAnimationFinalize?.();
