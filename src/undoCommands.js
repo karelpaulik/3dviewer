@@ -484,7 +484,7 @@ export function createApplyArrangementCommand(ctx, data) {
 }
 
 /**
- * Catalog-only undo (capture / update / rename / delete / duplicate / camera).
+ * Catalog-only undo (capture / update / rename / delete / duplicate / move / camera).
  * @param {object} ctx
  * @param {{ label?: string, beforeCatalog: object, afterCatalog: object }} data
  */

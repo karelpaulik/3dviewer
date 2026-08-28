@@ -195,6 +195,8 @@ import {
     captureArrangement,
     updateArrangement,
     duplicateArrangement,
+    canMoveArrangement,
+    moveArrangement,
     deleteArrangement,
     deleteAllUserArrangements,
     setArrangementCamera,
@@ -388,6 +390,8 @@ let _arrangementsFolderRef = null;    // Reference na "Arrangements" subfolder (
 let _arrangementsListFolder = null;   // Dynamicky přebudovávaný subfolder seznamu arrangementů
 let _assemblyEditControls = [];     // Ovládací prvky "Edit" folderu (enable/disable podle editMode)
 let _arrangementMutateControls = [];  // Ovládací prvky "Arrangements" folderu vyžadující aktivní uživatelský arrangement
+let _arrangementMoveUpControl = null;
+let _arrangementMoveDownControl = null;
 let lightsFolder = null; // Reference na Lights folder ve View panelu
 
 const assemblyGui = {
@@ -12883,6 +12887,8 @@ function addAssemblyGui() {
         _arrangementsFolderRef.add({ fn: assemblyRenameActiveArrangement }, 'fn').name('✎  Rename'),
     );
     _arrangementsFolderRef.add({ fn: assemblyDuplicateActiveArrangement }, 'fn').name('⧉  Duplicate');
+    _arrangementMoveUpControl = _arrangementsFolderRef.add({ fn: assemblyMoveActiveArrangementUp }, 'fn').name('↑  Move up');
+    _arrangementMoveDownControl = _arrangementsFolderRef.add({ fn: assemblyMoveActiveArrangementDown }, 'fn').name('↓  Move down');
     _arrangementMutateControls.push(
         _arrangementsFolderRef.add({ fn: assemblyDeleteActiveArrangement }, 'fn').name('✕  Delete'),
     );
@@ -12894,6 +12900,8 @@ function addAssemblyGui() {
         _arrangementsFolderRef.add({ fn: assemblyClearArrangementCamera }, 'fn').name('✕  Clear camera view'),
     );
     _arrangementMutateControls.forEach(c => c.disable());
+    _arrangementMoveUpControl.disable();
+    _arrangementMoveDownControl.disable();
     updateArrangementsGuiInfo();
 
     const workflowGroup = assemblyFolder.addFolder('Workflow');
@@ -13827,6 +13835,30 @@ function assemblyDuplicateActiveArrangement() {
     updateAssemblyGuiInfo();
 }
 
+function assemblyMoveActiveArrangement(delta) {
+    const arrangement = getActiveArrangement();
+    if (!canMoveArrangement(arrangement, delta)) return;
+    const ctx = getUndoContext();
+    const before = captureArrangementsCatalog();
+    moveArrangement(arrangement, delta);
+    const after = captureArrangementsCatalog();
+    pushCommand(createArrangementsCatalogCommand(ctx, {
+        label: `Move arrangement ${arrangement.name}`,
+        beforeCatalog: before,
+        afterCatalog: after,
+    }));
+    updateArrangementsGuiInfo();
+    updateAssemblyGuiInfo();
+}
+
+function assemblyMoveActiveArrangementUp() {
+    assemblyMoveActiveArrangement(-1);
+}
+
+function assemblyMoveActiveArrangementDown() {
+    assemblyMoveActiveArrangement(1);
+}
+
 function assemblyDeleteActiveArrangement() {
     const arrangement = getActiveArrangement();
     if (!arrangement || isInitArrangement(arrangement)) return;
@@ -13897,6 +13929,12 @@ function syncArrangementMutateControls() {
     const arrangement = getActiveArrangement();
     const canMutate = !!(arrangement && !isInitArrangement(arrangement));
     _arrangementMutateControls.forEach(c => canMutate ? c.enable() : c.disable());
+    if (_arrangementMoveUpControl) {
+        canMoveArrangement(arrangement, -1) ? _arrangementMoveUpControl.enable() : _arrangementMoveUpControl.disable();
+    }
+    if (_arrangementMoveDownControl) {
+        canMoveArrangement(arrangement, 1) ? _arrangementMoveDownControl.enable() : _arrangementMoveDownControl.disable();
+    }
 }
 
 function updateArrangementsGuiInfo() {

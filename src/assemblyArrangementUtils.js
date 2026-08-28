@@ -251,7 +251,7 @@ export function cloneArrangement(arrangement) {
 }
 
 // Whole-catalog capture/restore — used as the before/after payload of catalog-mutating undo
-// commands (capture / update / rename / delete / duplicate / clear camera).
+// commands (capture / update / rename / delete / duplicate / move / clear camera).
 export function captureArrangementsCatalog() {
     return {
         activeId: activeArrangementId,
@@ -323,6 +323,23 @@ export function duplicateArrangement(arrangement, loadedModels) {
     activeArrangementId = copy.id;
     arrangementDirty = false;
     return copy;
+}
+
+// User-defined arrangements occupy indices 1..length-1; Initial is pinned at 0.
+export function canMoveArrangement(arrangement, delta) {
+    if (!arrangement || isInitArrangement(arrangement) || !delta) return false;
+    const i = assemblyArrangements.indexOf(arrangement);
+    const j = i + delta;
+    return i >= 1 && j >= 1 && j < assemblyArrangements.length;
+}
+
+export function moveArrangement(arrangement, delta) {
+    if (!canMoveArrangement(arrangement, delta)) return false;
+    const i = assemblyArrangements.indexOf(arrangement);
+    const j = i + delta;
+    [assemblyArrangements[i], assemblyArrangements[j]] =
+        [assemblyArrangements[j], assemblyArrangements[i]];
+    return true;
 }
 
 export function deleteArrangement(arrangement) {
