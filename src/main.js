@@ -380,7 +380,8 @@ let assemblyAnimationFinalize = null;  // Snaps in-flight animation to its end s
 let cameraAnimation = null;            // GSAP tween handle for camera animation
 let cameraAnimationFinalize = null;    // Snaps in-flight camera animation to its end state
 let assemblyStepsListFolder = null; // Dynamicky přebudovávaný subfolder seznamu kroků
-let _assemblyFolderRef = null;      // Reference na hlavní Assembly Workflow folder (pro rebuild)
+let _assemblyFolderRef = null;      // Reference na hlavní Assembly panel (existence GUI)
+let _assemblyWorkflowGroupRef = null; // Obal "Workflow" (Workflows / Playback / Edit / Steps)
 let _assemblyWorkflowsFolderRef = null; // Subfolder se seznamem workflow (obsah se přebudovává)
 let _poseStatesFolderRef = null;    // Reference na "States" subfolder (pro rebuild)
 let _poseStatesListFolder = null;   // Dynamicky přebudovávaný subfolder seznamu stavů
@@ -12860,13 +12861,9 @@ function mergeChildMeshes(containerObject) {
 // ===== Assembly / Disassembly Functions =========================================================
 
 function addAssemblyGui() {
-    const assemblyFolder = new GUI({ container: guiContainer, title: 'Assembly Workflow' });
+    const assemblyFolder = new GUI({ container: guiContainer, title: 'Assembly' });
     guiAssembly = assemblyFolder;
     _assemblyFolderRef = assemblyFolder;
-
-    // --- Workflows ---
-    _assemblyWorkflowsFolderRef = assemblyFolder.addFolder('Workflows');
-    rebuildAssemblyWorkflowsFolder();
 
     // --- States ---
     _poseStatesFolderRef = assemblyFolder.addFolder('States');
@@ -12893,8 +12890,15 @@ function addAssemblyGui() {
     _poseStateMutateControls.forEach(c => c.disable());
     updatePoseStatesGuiInfo();
 
+    const workflowGroup = assemblyFolder.addFolder('Workflow');
+    _assemblyWorkflowGroupRef = workflowGroup;
+
+    // --- Workflows ---
+    _assemblyWorkflowsFolderRef = workflowGroup.addFolder('Workflows');
+    rebuildAssemblyWorkflowsFolder();
+
     // --- Playback ---
-    const playbackFolder = assemblyFolder.addFolder('Playback');
+    const playbackFolder = workflowGroup.addFolder('Playback');
     playbackFolder.add(assemblyGui, 'stepInfo').name('Status').disable().listen();
     playbackFolder.add(assemblyGui, 'showStepOverlay').name('Show step overlay').onChange(function(value) {
         assemblyStepOverlay.style.display = value ? '' : 'none';
@@ -12936,7 +12940,7 @@ function addAssemblyGui() {
     playbackFolder.close();
 
     // --- Edit ---
-    const editFolder = assemblyFolder.addFolder('Edit');
+    const editFolder = workflowGroup.addFolder('Edit');
     editFolder.add(assemblyGui, 'editMode').name('Edit mode').onChange(function(value) {
         setAssemblyEditMode(value);
         render();
@@ -12990,6 +12994,8 @@ function addAssemblyGui() {
 
     registerGuiPanel('Assembly', assemblyFolder);
     updateAssemblyGuiInfo();
+    _poseStatesFolderRef.close();
+    workflowGroup.close();
 }
 
 function addDocumentsGui() {
@@ -13506,12 +13512,12 @@ function rebuildAssemblyStepsList() {
         assemblyStepsListFolder.destroy();
         assemblyStepsListFolder = null;
     }
-    if (!_assemblyFolderRef) return;
+    if (!_assemblyWorkflowGroupRef) return;
 
     const n = assemblyData.steps.length;
     const wfPrefix = assemblyWorkflows.length > 1 ? `${getActiveAssemblyWorkflow()?.name ?? ''} — ` : '';
     const folderTitle = n === 0 ? `${wfPrefix}Steps (empty)` : `${wfPrefix}Steps (${n})`;
-    assemblyStepsListFolder = _assemblyFolderRef.addFolder(folderTitle);
+    assemblyStepsListFolder = _assemblyWorkflowGroupRef.addFolder(folderTitle);
 
     if (n === 0) {
         assemblyStepsListFolder.close();
