@@ -1662,6 +1662,9 @@ const part = {
 let bbHelper = null; // Dedicated PaddedBoxHelper for bounding box display toggle
 let bbAxesHelper = null; // AxesHelper shown together with bbHelper
 let cogHelper = null; // Small sphere marker for center of gravity display toggle
+/** Cached CoG in the transformed node's local space so the marker can follow TRS without a triangle pass. */
+const _cogFollow = { roots: [], frame: null, local: null, unreliable: false };
+const _cogWorldScratch = new THREE.Vector3();
 const normalsViewGui = {
     showVertexNormals: false,
     showVertexAllNormals: false,
@@ -2337,17 +2340,30 @@ function init() {
                 roundObjectTransformNearZero(lastSelectedObject);
                 // Zaznamenat transformaci v assembly edit modu + globální undo
                 // Pivot only: neukládat undo (objekt se nezměnil); group transform tím neovlivňovat
-                if (!(viewProp.movePivotOnly && !viewProp.isGroupTransformActive)) {
+                const pivotOnly = viewProp.movePivotOnly && !viewProp.isGroupTransformActive;
+                if (!pivotOnly) {
                     commitDragTransformUndo();
+                }
+                // Scale changes density-based mass (and CoG when massOffset is present).
+                // Translate/rotate keep the cached local CoG exact, so skip the triangle pass.
+                let needsRender = false;
+                if (!pivotOnly && transformControls.getMode() === 'scale') {
+                    if (viewProp.isGroupTransformActive && selectedObjects.length > 0) {
+                        updateAreaVolume(selectedObjects);
+                    } else if (lastSelectedObject) {
+                        updateAreaVolume(lastSelectedObject);
+                    }
+                    needsRender = true;
                 }
                 // Přepočítáme BoxHelpery po dokončení skupinové transformace
                 if (viewProp.isGroupTransformActive) {
                     multiSelectionHelpers.forEach((h, i) => {
                         if (selectedObjects[i]) h.setFromObject(selectedObjects[i]);
                     });
-                    render();
+                    needsRender = true;
                 }
                 _updateDeviationComparisonDisplayPosesFromDrag();
+                if (needsRender) render();
             }, 100);
         }
     } );	
@@ -3865,16 +3881,68 @@ function updateBBoxSize(obj) {
     part.bbSize = size.x.toFixed(2) + ' × ' + size.y.toFixed(2) + ' × ' + size.z.toFixed(2);
 }
 
+function clearCoGFollow() {
+    _cogFollow.roots = [];
+    _cogFollow.frame = null;
+    _cogFollow.local = null;
+    _cogFollow.unreliable = false;
+}
+
+function formatCoGText(centroid, unreliable) {
+    if (!centroid) return '–';
+    const txt = `${centroid.x.toFixed(3)},  ${centroid.y.toFixed(3)},  ${centroid.z.toFixed(3)}`;
+    return unreliable ? `${txt} (open?)` : txt;
+}
+
+/**
+ * Remember CoG in the local space of the node that actually moves during a transform
+ * (group pivot, otherwise the selected root). Affine TRS then maps this point in O(1).
+ */
+function cacheCoGFollow(roots, worldCentroid, unreliable) {
+    if (!worldCentroid || !roots || roots.length === 0) {
+        clearCoGFollow();
+        return;
+    }
+    const frame = (viewProp.isGroupTransformActive && pivotObject) ? pivotObject : roots[0];
+    if (!frame) {
+        clearCoGFollow();
+        return;
+    }
+    _cogFollow.roots = roots.slice();
+    _cogFollow.frame = frame;
+    _cogFollow.local = frame.worldToLocal(worldCentroid.clone());
+    _cogFollow.unreliable = !!unreliable;
+}
+
+function applyCoGDisplay(worldCentroid, options) {
+    part.centerOfGravity = formatCoGText(worldCentroid, _cogFollow.unreliable);
+    updateCoGHelper(_cogFollow.roots, worldCentroid, options);
+}
+
+/** Map cached local CoG through the current world matrix. No triangle / volume work. */
+function syncCoGToTransform() {
+    if (!_cogFollow.local || !_cogFollow.frame) return;
+    _cogWorldScratch.copy(_cogFollow.local);
+    _cogFollow.frame.localToWorld(_cogWorldScratch);
+    applyCoGDisplay(_cogWorldScratch, { resize: false });
+}
+
 /**
  * Show/hide/reposition the center-of-gravity marker sphere. Marker radius is derived from the
  * combined bounding box of the given roots (like the BBox axes helper) so it stays reasonably
  * visible regardless of part size. No-op (just hides) when the toggle is off or centroid is unknown.
  * @param {import('three').Object3D[]} roots
  * @param {import('three').Vector3|null} centroid
+ * @param {{ resize?: boolean }} [options] `resize: false` skips the bbox pass (live follow during TRS).
  */
-function updateCoGHelper(roots, centroid) {
+function updateCoGHelper(roots, centroid, options) {
     if (!part.showCoG || !centroid || !roots || roots.length === 0) {
         if (cogHelper) cogHelper.visible = false;
+        return;
+    }
+    if (cogHelper && options?.resize === false) {
+        cogHelper.position.copy(centroid);
+        cogHelper.visible = true;
         return;
     }
     const bMin = new THREE.Vector3(Infinity, Infinity, Infinity);
@@ -3923,6 +3991,7 @@ function updateAreaVolume(rootOrRoots) {
         part.volume = '–';
         part.mass = '–';
         part.centerOfGravity = '–';
+        clearCoGFollow();
         updateCoGHelper(roots, null);
         return;
     }
@@ -3960,12 +4029,12 @@ function updateAreaVolume(rootOrRoots) {
 
     if (!rolled.hasContribution || !rolled.centroid) {
         part.centerOfGravity = '–';
+        clearCoGFollow();
+        updateCoGHelper(roots, null);
     } else {
-        const c = rolled.centroid;
-        const txt = `${c.x.toFixed(3)},  ${c.y.toFixed(3)},  ${c.z.toFixed(3)}`;
-        part.centerOfGravity = rolled.unreliable ? `${txt} (open?)` : txt;
+        cacheCoGFollow(roots, rolled.centroid, rolled.unreliable);
+        applyCoGDisplay(rolled.centroid);
     }
-    updateCoGHelper(roots, rolled.centroid);
 }
 
 /** Read density from root(s) into part.density (g/cm³). */
@@ -4405,7 +4474,11 @@ function destroySelectedGui({ hideOverlay = true } = {}) {
         selectedFolder.destroy();
         selectedFolder = null;
     }
-    if (hideOverlay) _hideSelectedOverlay();
+    clearCoGFollow();
+    if (hideOverlay) {
+        _hideSelectedOverlay();
+        if (cogHelper) cogHelper.visible = false;
+    }
 }
 
 function _attachSelectedGui(title) {
@@ -4671,7 +4744,7 @@ function refreshSelectedObjGui(obj) {
         trackExtentSlider(folder2.add(obj.scale, 'x', extent.sn, extent.sp, viewProp.sStep)
             .name('Scale')
             .onChange(function(value){obj.scale.x=value; obj.scale.y=value; obj.scale.z=value; _onGuiLocationChange(); })
-            .onFinishChange(_onGuiLocationFinish)
+            .onFinishChange(function() { updateAreaVolume(obj); _onGuiLocationFinish(); })
             .listen(), 'sStep');
         folder2.add({ fn: bakeSelectedObjectLocation }, 'fn').name('Bake location');
         if (viewProp.locationKeepOpen) folder2.open();
@@ -4737,6 +4810,10 @@ function refreshGroupGui() {
     }).listen();
     selectedFolder.add(part, 'mass').name('Mass').disable().listen();
     selectedFolder.add(part, 'centerOfGravity').name('Center of gravity (X, Y, Z)').disable().listen();
+    selectedFolder.add(part, 'showCoG').name('Show CoG').onChange(function() {
+        updateAreaVolume(selectedObjects);
+        render();
+    });
 
     // Color picker – applies to ALL objects in the group
     const groupColor = { color: '#888888' };
@@ -4871,7 +4948,7 @@ function refreshGroupGui() {
             .name('Rz').onChange(_onGroupGuiLocationChange).onFinishChange(_onGroupGuiLocationFinish).listen(), 'rStep');
         trackExtentSlider(folder2.add(pivotObject.scale, 'x', extent.sn, extent.sp, viewProp.sStep)
             .name('Scale').onChange(function(value) { pivotObject.scale.set(value, value, value); _onGroupGuiLocationChange(); })
-            .onFinishChange(_onGroupGuiLocationFinish).listen(), 'sStep');
+            .onFinishChange(function() { updateAreaVolume(selectedObjects); _onGroupGuiLocationFinish(); }).listen(), 'sStep');
         if (viewProp.locationKeepOpen) folder2.open();
         else folder2.close();
     }
@@ -5657,6 +5734,12 @@ function bakeObjectLocation(obj, options) {
     // Geometry was rebaked above; rebuild edge overlays so they stay aligned with the new surface.
     refreshEdgeOverlaysAfterSceneChange();
     refreshOutlinerOverlaysAndTools();
+    // Local CoG cache is invalid after baking vertices; world CoG is unchanged but must be re-expressed.
+    if (lastSelectedObject === obj) {
+        updateAreaVolume(obj);
+    } else if (viewProp.isGroupTransformActive && selectedObjects.includes(obj)) {
+        updateAreaVolume(selectedObjects);
+    }
     render();
 }
 
@@ -9220,6 +9303,8 @@ function render() {
     
     // Pokud se objekty ve scéně hýbou, odkomentuj řádek níže pro plynulý rámeček:
     // if (selectionHelper && selectionHelper.visible) selectionHelper.update();
+
+    syncCoGToTransform();
 
     updateMarkerScales(currentCamera);
     updateAnnotationMarkerScales(currentCamera);
