@@ -39,6 +39,7 @@ const _vC = new THREE.Vector3();
 const _ab = new THREE.Vector3();
 const _ac = new THREE.Vector3();
 const _cross = new THREE.Vector3();
+const _centroidAccum = new THREE.Vector3();
 
 /**
  * Format a length² / length³ measure for the Selected panel.
@@ -60,6 +61,11 @@ export function formatGeometryMeasure(value) {
  * Volume is meaningful when the meshes together form a closed, consistently oriented shell
  * (typical CAD part split by material/color into multiple meshes or geometry groups).
  *
+ * `centroid` is the volumetric (uniform-density) center of gravity of the enclosed solid,
+ * computed via the divergence-theorem tetrahedron decomposition (same triangle pass as the
+ * volume itself). It is `null` whenever the volume is not reliable (open / inconsistently
+ * oriented shell) or degenerate (near-zero volume).
+ *
  * @param {THREE.Mesh[]} meshes
  * @returns {{
  *   area: number,
@@ -67,7 +73,8 @@ export function formatGeometryMeasure(value) {
  *   signedVolume: number,
  *   triangleCount: number,
  *   meshCount: number,
- *   volumeReliable: boolean
+ *   volumeReliable: boolean,
+ *   centroid: THREE.Vector3|null
  * }}
  */
 export function computeSurfaceAreaAndVolume(meshes) {
@@ -75,6 +82,7 @@ export function computeSurfaceAreaAndVolume(meshes) {
     let signedVolume = 0;
     let triangleCount = 0;
     let meshCount = 0;
+    _centroidAccum.set(0, 0, 0);
 
     for (const mesh of meshes) {
         const geometry = mesh?.geometry;
@@ -114,7 +122,12 @@ export function computeSurfaceAreaAndVolume(meshes) {
 
             area += 0.5 * twiceArea;
             // a · ((b-a)×(c-a)) / 6 == a · (b×c) / 6
-            signedVolume += _vA.dot(_cross) / 6;
+            const tetVolume = _vA.dot(_cross) / 6;
+            signedVolume += tetVolume;
+            // Tetrahedron (origin, a, b, c) centroid is (a+b+c)/4; accumulate weighted by its signed volume.
+            _centroidAccum.x += (_vA.x + _vB.x + _vC.x) * tetVolume;
+            _centroidAccum.y += (_vA.y + _vB.y + _vC.y) * tetVolume;
+            _centroidAccum.z += (_vA.z + _vB.z + _vC.z) * tetVolume;
             triangleCount++;
         }
     }
@@ -131,6 +144,10 @@ export function computeSurfaceAreaAndVolume(meshes) {
         }
     }
 
+    const centroid = (volumeReliable && Math.abs(signedVolume) > 1e-12)
+        ? _centroidAccum.clone().divideScalar(4 * signedVolume)
+        : null;
+
     return {
         area,
         volume,
@@ -138,6 +155,7 @@ export function computeSurfaceAreaAndVolume(meshes) {
         triangleCount,
         meshCount,
         volumeReliable,
+        centroid,
     };
 }
 
@@ -220,15 +238,24 @@ function _collectMeshesUnder(root) {
 }
 
 /**
- * Hierarchical mass:
+ * Hierarchical mass and mass-weighted center of gravity:
  * mass(node) = ρ(node)×V(all meshes under node) + Σ mass(children) + massOffsetKg(node)×1000.
  * Density 0 / missing → no density contribution. massOffset (kg in userData) may be +/‑/0.
  * Negative child mass subtracts from parent. Double-counting ρ on parent+child is intentional.
+ *
+ * `centroid` is the mass-weighted center of gravity (world space), combining this node's own
+ * volumetric centroid (density×volume and/or massOffset, both anchored at the same point) with
+ * the mass-weighted centroids of all structural children. A node's own massOffset has no
+ * inherent position: it is placed at the node's own volumetric centroid when own meshes exist,
+ * otherwise (e.g. a pure Group used only for a manual mass correction) it falls back to the
+ * node's world position. `centroid` is `null` when the node's total rolled-up mass is zero
+ * (no well-defined weighting point).
  *
  * @param {THREE.Object3D} node
  * @param {string} modelUnit
  * @returns {{
  *   massGrams: number,
+ *   centroid: THREE.Vector3|null,
  *   hasOwnContribution: boolean,
  *   hasChildContribution: boolean,
  *   ownUnreliable: boolean,
@@ -238,6 +265,7 @@ function _collectMeshesUnder(root) {
 export function computeRolledUpMass(node, modelUnit) {
     const empty = {
         massGrams: 0,
+        centroid: null,
         hasOwnContribution: false,
         hasChildContribution: false,
         ownUnreliable: false,
@@ -246,19 +274,25 @@ export function computeRolledUpMass(node, modelUnit) {
     if (!node) return empty;
 
     let childMassGrams = 0;
+    let childWeightedCentroid = null;
     let hasChildContribution = false;
     let childUnreliable = false;
 
     for (const child of node.children) {
         if (!_isMassStructuralChild(child)) continue;
         const sub = computeRolledUpMass(child, modelUnit);
-        childMassGrams += sub.massGrams;
         if (sub.hasOwnContribution || sub.hasChildContribution) hasChildContribution = true;
+        childMassGrams += sub.massGrams;
+        if (sub.centroid && sub.massGrams !== 0) {
+            if (!childWeightedCentroid) childWeightedCentroid = new THREE.Vector3();
+            childWeightedCentroid.addScaledVector(sub.centroid, sub.massGrams);
+        }
         if (sub.ownUnreliable || sub.childUnreliable) childUnreliable = true;
     }
 
     const density = Number(node.userData?.density);
     let ownMassGrams = 0;
+    let ownVolumeCentroid = null;
     let hasOwnContribution = false;
     let ownUnreliable = false;
 
@@ -269,6 +303,7 @@ export function computeRolledUpMass(node, modelUnit) {
         if (stats.triangleCount > 0) {
             if (!stats.volumeReliable) ownUnreliable = true;
             ownMassGrams = computeMassGrams(stats.volume, density, modelUnit);
+            ownVolumeCentroid = stats.centroid;
         }
     }
 
@@ -276,10 +311,32 @@ export function computeRolledUpMass(node, modelUnit) {
     if (Number.isFinite(massOffsetKg) && massOffsetKg !== 0) {
         hasOwnContribution = true;
         ownMassGrams += massOffsetKg * 1000;
+        // massOffset has no defined position: anchor it at the node's own volumetric centroid,
+        // computing it if not already available; fall back to world position if there is no own geometry.
+        if (!ownVolumeCentroid) {
+            const meshes = _collectMeshesUnder(node);
+            const stats = computeSurfaceAreaAndVolume(meshes);
+            if (stats.triangleCount > 0 && stats.centroid) {
+                ownVolumeCentroid = stats.centroid;
+            } else {
+                ownVolumeCentroid = node.getWorldPosition(new THREE.Vector3());
+            }
+        }
+    }
+
+    const totalMassGrams = ownMassGrams + childMassGrams;
+    let centroid = null;
+    if (totalMassGrams !== 0) {
+        const weightedSum = childWeightedCentroid ? childWeightedCentroid.clone() : new THREE.Vector3();
+        if (ownVolumeCentroid && ownMassGrams !== 0) {
+            weightedSum.addScaledVector(ownVolumeCentroid, ownMassGrams);
+        }
+        centroid = weightedSum.divideScalar(totalMassGrams);
     }
 
     return {
-        massGrams: ownMassGrams + childMassGrams,
+        massGrams: totalMassGrams,
+        centroid,
         hasOwnContribution,
         hasChildContribution,
         ownUnreliable,
@@ -288,11 +345,12 @@ export function computeRolledUpMass(node, modelUnit) {
 }
 
 /**
- * Sum rolled-up mass for one or more selected roots.
+ * Sum rolled-up mass and mass-weighted center of gravity for one or more selected roots.
  * @param {THREE.Object3D|THREE.Object3D[]} rootOrRoots
  * @param {string} modelUnit
  * @returns {{
  *   massGrams: number,
+ *   centroid: THREE.Vector3|null,
  *   hasContribution: boolean,
  *   unreliable: boolean
  * }}
@@ -303,6 +361,7 @@ export function computeRolledUpMassForRoots(rootOrRoots, modelUnit) {
         : (rootOrRoots ? [rootOrRoots] : []);
 
     let massGrams = 0;
+    let weightedCentroid = null;
     let hasContribution = false;
     let unreliable = false;
 
@@ -310,8 +369,14 @@ export function computeRolledUpMassForRoots(rootOrRoots, modelUnit) {
         const r = computeRolledUpMass(root, modelUnit);
         massGrams += r.massGrams;
         if (r.hasOwnContribution || r.hasChildContribution) hasContribution = true;
+        if (r.centroid && r.massGrams !== 0) {
+            if (!weightedCentroid) weightedCentroid = new THREE.Vector3();
+            weightedCentroid.addScaledVector(r.centroid, r.massGrams);
+        }
         if (r.ownUnreliable || r.childUnreliable) unreliable = true;
     }
 
-    return { massGrams, hasContribution, unreliable };
+    const centroid = (weightedCentroid && massGrams !== 0) ? weightedCentroid.divideScalar(massGrams) : null;
+
+    return { massGrams, centroid, hasContribution, unreliable };
 }

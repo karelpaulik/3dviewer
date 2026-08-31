@@ -1654,11 +1654,14 @@ const part = {
     density: 0, // g/cm³ – persisted on object userData.density
     massOffset: 0, // kg – persisted on object userData.massOffset (+/‑ correction or fixed mass)
     mass: "",
+    centerOfGravity: "",
     worldPos: "",
     showBBox: false,
+    showCoG: false,
 };
 let bbHelper = null; // Dedicated PaddedBoxHelper for bounding box display toggle
 let bbAxesHelper = null; // AxesHelper shown together with bbHelper
+let cogHelper = null; // Small sphere marker for center of gravity display toggle
 const normalsViewGui = {
     showVertexNormals: false,
     showVertexAllNormals: false,
@@ -3863,9 +3866,52 @@ function updateBBoxSize(obj) {
 }
 
 /**
+ * Show/hide/reposition the center-of-gravity marker sphere. Marker radius is derived from the
+ * combined bounding box of the given roots (like the BBox axes helper) so it stays reasonably
+ * visible regardless of part size. No-op (just hides) when the toggle is off or centroid is unknown.
+ * @param {import('three').Object3D[]} roots
+ * @param {import('three').Vector3|null} centroid
+ */
+function updateCoGHelper(roots, centroid) {
+    if (!part.showCoG || !centroid || !roots || roots.length === 0) {
+        if (cogHelper) cogHelper.visible = false;
+        return;
+    }
+    const bMin = new THREE.Vector3(Infinity, Infinity, Infinity);
+    const bMax = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
+    const tMin = new THREE.Vector3();
+    const tMax = new THREE.Vector3();
+    let found = false;
+    for (const root of roots) {
+        if (computeSelectionBBox(root, false, tMin, tMax)) {
+            bMin.min(tMin);
+            bMax.max(tMax);
+            found = true;
+        }
+    }
+    let radius = 1;
+    if (found) {
+        const bSize = new THREE.Vector3().subVectors(bMax, bMin);
+        const maxDim = Math.max(bSize.x, bSize.y, bSize.z);
+        if (maxDim > 0) radius = maxDim * 0.03;
+    }
+    if (!cogHelper) {
+        const geo = new THREE.SphereGeometry(1, 16, 12);
+        const mat = new THREE.MeshBasicMaterial({ color: 0xff8800, depthTest: false, transparent: true, opacity: 0.9 });
+        cogHelper = new THREE.Mesh(geo, mat);
+        cogHelper.renderOrder = 999;
+        scene.add(cogHelper);
+    }
+    cogHelper.scale.setScalar(radius);
+    cogHelper.position.copy(centroid);
+    cogHelper.visible = true;
+}
+
+/**
  * Surface area + volume of meshes under selection; mass uses hierarchical roll-up:
  * mass(node) = ρ(node)×V(all under node) + Σ mass(children) + massOffset(node).
  * massOffset is stored in kg on userData and converted to grams in the roll-up.
+ * Center of gravity is the mass-weighted combination of the same roll-up (see computeRolledUpMass).
  * @param {import('three').Object3D|import('three').Object3D[]|null|undefined} rootOrRoots
  */
 function updateAreaVolume(rootOrRoots) {
@@ -3876,6 +3922,8 @@ function updateAreaVolume(rootOrRoots) {
         part.surfaceArea = '–';
         part.volume = '–';
         part.mass = '–';
+        part.centerOfGravity = '–';
+        updateCoGHelper(roots, null);
         return;
     }
     for (const root of roots) {
@@ -3909,6 +3957,15 @@ function updateAreaVolume(rootOrRoots) {
     } else {
         part.mass = formatMass(rolled.massGrams);
     }
+
+    if (!rolled.hasContribution || !rolled.centroid) {
+        part.centerOfGravity = '–';
+    } else {
+        const c = rolled.centroid;
+        const txt = `${c.x.toFixed(3)},  ${c.y.toFixed(3)},  ${c.z.toFixed(3)}`;
+        part.centerOfGravity = rolled.unreliable ? `${txt} (open?)` : txt;
+    }
+    updateCoGHelper(roots, rolled.centroid);
 }
 
 /** Read density from root(s) into part.density (g/cm³). */
@@ -4472,6 +4529,7 @@ function refreshSelectedObjGui(obj) {
         updateAreaVolume(obj);
     }).listen();
     selectedFolder.add(part, 'mass').name('Mass').disable().listen();
+    selectedFolder.add(part, 'centerOfGravity').name('Center of gravity (X, Y, Z)').disable().listen();
 
     // World-space position of TransformControl gizmo (from absolute zero / axis helper origin)
     updateWorldPos();
@@ -4519,6 +4577,13 @@ function refreshSelectedObjGui(obj) {
             if (bbHelper) bbHelper.visible = false;
             if (bbAxesHelper) { bbAxesHelper.visible = false; }
         }
+        render();
+    });
+
+    // Toggle to show/hide the center of gravity marker
+    part.showCoG = false;
+    selectedFolder.add(part, 'showCoG').name('Show CoG').onChange(function() {
+        updateAreaVolume(obj);
         render();
     });
 
@@ -4671,6 +4736,7 @@ function refreshGroupGui() {
         updateAreaVolume(selectedObjects);
     }).listen();
     selectedFolder.add(part, 'mass').name('Mass').disable().listen();
+    selectedFolder.add(part, 'centerOfGravity').name('Center of gravity (X, Y, Z)').disable().listen();
 
     // Color picker – applies to ALL objects in the group
     const groupColor = { color: '#888888' };
@@ -8781,6 +8847,12 @@ function deselectObject() {
     }
     if (bbAxesHelper) {
         bbAxesHelper.visible = false;
+    }
+
+    // Hide center of gravity marker on deselect
+    part.showCoG = false;
+    if (cogHelper) {
+        cogHelper.visible = false;
     }
 
     lastSelectedObject = null;
