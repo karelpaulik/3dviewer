@@ -246,10 +246,12 @@ function _collectMeshesUnder(root) {
  * `centroid` is the mass-weighted center of gravity (world space), combining this node's own
  * volumetric centroid (density×volume and/or massOffset, both anchored at the same point) with
  * the mass-weighted centroids of all structural children. A node's own massOffset has no
- * inherent position: it is placed at the node's own volumetric centroid when own meshes exist,
- * otherwise (e.g. a pure Group used only for a manual mass correction) it falls back to the
- * node's world position. `centroid` is `null` when the node's total rolled-up mass is zero
- * (no well-defined weighting point).
+ * inherent position, so when the node has no own density-based centroid it is anchored, in order
+ * of preference: (1) at the mass-weighted center of gravity of this node's children, when they
+ * carry any mass; (2) at the plain volumetric centroid of all mesh geometry in the node's subtree,
+ * when children carry no mass but geometry exists; (3) at the node's world position as a last
+ * resort (e.g. a pure Group used only for a manual mass correction, with no meshed descendants).
+ * `centroid` is `null` when the node's total rolled-up mass is zero (no well-defined weighting point).
  *
  * @param {THREE.Object3D} node
  * @param {string} modelUnit
@@ -311,15 +313,23 @@ export function computeRolledUpMass(node, modelUnit) {
     if (Number.isFinite(massOffsetKg) && massOffsetKg !== 0) {
         hasOwnContribution = true;
         ownMassGrams += massOffsetKg * 1000;
-        // massOffset has no defined position: anchor it at the node's own volumetric centroid,
-        // computing it if not already available; fall back to world position if there is no own geometry.
+        // massOffset has no defined position. Anchor it, in order of preference, at:
+        // (1) the node's own density-based volumetric centroid (already computed above),
+        // (2) the mass-weighted center of gravity of this node's children (correct even when
+        //     children have different densities, unlike a plain volume-weighted centroid),
+        // (3) the plain volumetric centroid of all mesh geometry in the node's subtree,
+        // (4) the node's world position, when there is no mass or geometry information at all.
         if (!ownVolumeCentroid) {
-            const meshes = _collectMeshesUnder(node);
-            const stats = computeSurfaceAreaAndVolume(meshes);
-            if (stats.triangleCount > 0 && stats.centroid) {
-                ownVolumeCentroid = stats.centroid;
+            if (childWeightedCentroid && childMassGrams !== 0) {
+                ownVolumeCentroid = childWeightedCentroid.clone().divideScalar(childMassGrams);
             } else {
-                ownVolumeCentroid = node.getWorldPosition(new THREE.Vector3());
+                const meshes = _collectMeshesUnder(node);
+                const stats = computeSurfaceAreaAndVolume(meshes);
+                if (stats.triangleCount > 0 && stats.centroid) {
+                    ownVolumeCentroid = stats.centroid;
+                } else {
+                    ownVolumeCentroid = node.getWorldPosition(new THREE.Vector3());
+                }
             }
         }
     }
