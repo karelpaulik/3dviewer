@@ -4795,26 +4795,6 @@ function refreshGroupGui() {
     const namesStr = selectedObjects.map(o => o.name || 'Unnamed').join(', ');
     selectedFolder.add({ names: namesStr }, 'names').name('Objects').disable();
 
-    syncPartDensityFromRoots(selectedObjects);
-    syncPartMassOffsetFromRoots(selectedObjects);
-    updateAreaVolume(selectedObjects);
-    selectedFolder.add(part, 'surfaceArea').name('Surface area').disable().listen();
-    selectedFolder.add(part, 'volume').name('Volume').disable().listen();
-    selectedFolder.add(part, 'density').name('Density (g/cm³)').onChange(function() {
-        writePartDensityToRoots(selectedObjects);
-        updateAreaVolume(selectedObjects);
-    }).listen();
-    selectedFolder.add(part, 'massOffset').name('Mass offset (kg)').onChange(function() {
-        writePartMassOffsetToRoots(selectedObjects);
-        updateAreaVolume(selectedObjects);
-    }).listen();
-    selectedFolder.add(part, 'mass').name('Mass').disable().listen();
-    selectedFolder.add(part, 'centerOfGravity').name('Center of gravity (X, Y, Z)').disable().listen();
-    selectedFolder.add(part, 'showCoG').name('Show CoG').onChange(function() {
-        updateAreaVolume(selectedObjects);
-        render();
-    });
-
     // Color picker – applies to ALL objects in the group
     const groupColor = { color: '#888888' };
     // Read actual color from first mesh material found
@@ -4873,8 +4853,30 @@ function refreshGroupGui() {
         render();
     });
 
+    syncPartDensityFromRoots(selectedObjects);
+    syncPartMassOffsetFromRoots(selectedObjects);
+    updateAreaVolume(selectedObjects);
+    selectedFolder.add(part, 'surfaceArea').name('Surface area').disable().listen();
+    selectedFolder.add(part, 'volume').name('Volume').disable().listen();
+    selectedFolder.add(part, 'density').name('Density (g/cm³)').onChange(function() {
+        writePartDensityToRoots(selectedObjects);
+        updateAreaVolume(selectedObjects);
+    }).listen();
+    selectedFolder.add(part, 'massOffset').name('Mass offset (kg)').onChange(function() {
+        writePartMassOffsetToRoots(selectedObjects);
+        updateAreaVolume(selectedObjects);
+    }).listen();
+    selectedFolder.add(part, 'mass').name('Mass').disable().listen();
+    selectedFolder.add(part, 'centerOfGravity').name('Center of gravity (X, Y, Z)').disable().listen();
+    selectedFolder.add(part, 'showCoG').name('Show CoG').onChange(function() {
+        updateAreaVolume(selectedObjects);
+        render();
+    });
+
     // --- Operations (all objects) ---
     selectedFolder.add({ fn() { selectedObjects.forEach(obj => changeColor(obj)); } }, 'fn').name('Random color (all)');
+
+    selectedFolder.add({ fn() { removeSelectedGroup(); } }, 'fn').name('Remove all');
 
     // Hide all – inline to avoid deselectObject() firing per-object
     selectedFolder.add({ fn() {
@@ -4885,8 +4887,6 @@ function refreshGroupGui() {
         });
         render();
     } }, 'fn').name('Hide all');
-
-    selectedFolder.add({ fn() { removeSelectedGroup(); } }, 'fn').name('Remove all');
 
     selectedFolder.add({ fn() {
         selectedObjects.forEach(obj => {
