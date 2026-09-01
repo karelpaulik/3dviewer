@@ -796,8 +796,16 @@ const _RADIUS_HINT_STEPS = [
     'Click 3rd point on the circle',
 ];
 
+function _cogSnapHintSuffix() {
+    return (part.showCoG && cogHelper && cogHelper.visible) ? ' &nbsp;·&nbsp; CoG snap on' : '';
+}
+
 function _circleSnapHintSuffix() {
     return viewProp.detectCircleCenter ? ' &nbsp;·&nbsp; circle-center snap on' : '';
+}
+
+function _toolSnapHintSuffix() {
+    return _cogSnapHintSuffix() + _circleSnapHintSuffix();
 }
 
 function _updateToolHintUI(overrideAxis) {
@@ -835,13 +843,13 @@ function _updateToolHintUI(overrideAxis) {
         const step = getMeasurePendingCount();
         html = (step === 0
             ? 'Dist. measure &nbsp;·&nbsp; Click first point'
-            : 'Dist. measure &nbsp;·&nbsp; Click second point') + _circleSnapHintSuffix() + _ESC_HINT;
+            : 'Dist. measure &nbsp;·&nbsp; Click second point') + _toolSnapHintSuffix() + _ESC_HINT;
     } else if (viewProp.angleMode && isAngleActive()) {
         const step = getAngleStep();
-        html = 'Angle measure &nbsp;·&nbsp; ' + (_ANGLE_HINT_STEPS[step] || _ANGLE_HINT_STEPS[0]) + _circleSnapHintSuffix() + _ESC_HINT;
+        html = 'Angle measure &nbsp;·&nbsp; ' + (_ANGLE_HINT_STEPS[step] || _ANGLE_HINT_STEPS[0]) + _toolSnapHintSuffix() + _ESC_HINT;
     } else if (viewProp.radiusMode && isRadiusActive()) {
         const step = getRadiusStep();
-        html = 'Radius measure &nbsp;·&nbsp; ' + (_RADIUS_HINT_STEPS[step] || _RADIUS_HINT_STEPS[0]) + _circleSnapHintSuffix() + _ESC_HINT;
+        html = 'Radius measure &nbsp;·&nbsp; ' + (_RADIUS_HINT_STEPS[step] || _RADIUS_HINT_STEPS[0]) + _toolSnapHintSuffix() + _ESC_HINT;
     } else if (viewProp.cadDimMode && isCadDimActive()) {
         const step = getCadDimStep();
         if (step === 2) {
@@ -850,7 +858,7 @@ function _updateToolHintUI(overrideAxis) {
         } else {
             html = (step === 0
                 ? 'CAD dim &nbsp;·&nbsp; Click first point'
-                : 'CAD dim &nbsp;·&nbsp; Click second point') + _circleSnapHintSuffix() + _ESC_HINT;
+                : 'CAD dim &nbsp;·&nbsp; Click second point') + _toolSnapHintSuffix() + _ESC_HINT;
         }
     } else if (viewProp.cadDim3dMode && isCadDim3dActive()) {
         const step = getCadDim3dStep();
@@ -860,7 +868,7 @@ function _updateToolHintUI(overrideAxis) {
         } else {
             html = (step === 0
                 ? 'CAD dim 3D &nbsp;·&nbsp; Click first point'
-                : 'CAD dim 3D &nbsp;·&nbsp; Click second point') + _circleSnapHintSuffix() + _ESC_HINT;
+                : 'CAD dim 3D &nbsp;·&nbsp; Click second point') + _toolSnapHintSuffix() + _ESC_HINT;
         }
     } else if (isAddLeaderLineActive() || isAddLeaderLine3dActive()) {
         html = 'Annotation &nbsp;·&nbsp; Click new leader-line anchor' + _ESC_HINT;
@@ -1661,10 +1669,13 @@ const part = {
 };
 let bbHelper = null; // Dedicated PaddedBoxHelper for bounding box display toggle
 let bbAxesHelper = null; // AxesHelper shown together with bbHelper
-let cogHelper = null; // Small sphere marker for center of gravity display toggle
+let cogHelper = null; // World-aligned CoG cross (LineSegments + center marker)
 /** Cached CoG in the transformed node's local space so the marker can follow TRS without a triangle pass. */
 const _cogFollow = { roots: [], frame: null, local: null, unreliable: false };
 const _cogWorldScratch = new THREE.Vector3();
+const _cogSnapNdcScratch = new THREE.Vector3();
+const _cogSnapPointScratch = new THREE.Vector3();
+const COG_SNAP_PX = 14;
 const normalsViewGui = {
     showVertexNormals: false,
     showVertexAllNormals: false,
@@ -3927,10 +3938,63 @@ function syncCoGToTransform() {
     applyCoGDisplay(_cogWorldScratch, { resize: false });
 }
 
+function _disableCoGRaycast(obj) {
+    obj.raycast = () => {};
+    obj.userData._isCoG = true;
+}
+
+function ensureCoGHelper() {
+    if (cogHelper && !cogHelper.isGroup) {
+        scene.remove(cogHelper);
+        cogHelper.geometry?.dispose();
+        cogHelper.material?.dispose();
+        cogHelper = null;
+    }
+    if (cogHelper) return cogHelper;
+
+    const group = new THREE.Group();
+    group.name = 'CoGHelper';
+    group.renderOrder = 999;
+    _disableCoGRaycast(group);
+
+    const positions = new Float32Array([
+        -1, 0, 0,  1, 0, 0,
+        0, -1, 0,  0, 1, 0,
+        0, 0, -1,  0, 0, 1,
+    ]);
+    const colors = new Float32Array([
+        1, 0, 0,  1, 0, 0,
+        0, 1, 0,  0, 1, 0,
+        0, 0, 1,  0, 0, 1,
+    ]);
+    const lineGeo = new THREE.BufferGeometry();
+    lineGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    lineGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    const lineMat = new THREE.LineBasicMaterial({ vertexColors: true, depthTest: false, toneMapped: false });
+    const lines = new THREE.LineSegments(lineGeo, lineMat);
+    lines.renderOrder = 999;
+    _disableCoGRaycast(lines);
+    group.add(lines);
+    group.userData.lines = lines;
+
+    const marker = new THREE.Mesh(
+        new THREE.SphereGeometry(1, 12, 8),
+        new THREE.MeshBasicMaterial({ color: 0xff8800, depthTest: false, transparent: true, opacity: 0.9, toneMapped: false })
+    );
+    marker.renderOrder = 999;
+    _disableCoGRaycast(marker);
+    group.add(marker);
+    group.userData.marker = marker;
+
+    scene.add(group);
+    cogHelper = group;
+    return cogHelper;
+}
+
 /**
- * Show/hide/reposition the center-of-gravity marker sphere. Marker radius is derived from the
- * combined bounding box of the given roots (like the BBox axes helper) so it stays reasonably
- * visible regardless of part size. No-op (just hides) when the toggle is off or centroid is unknown.
+ * Show/hide/reposition the center-of-gravity cross. Arm length is half the combined
+ * bounding-box max dimension so the axes poke out of the part; the center marker is
+ * ~0.8 % of that size. No-op (just hides) when the toggle is off or centroid is unknown.
  * @param {import('three').Object3D[]} roots
  * @param {import('three').Vector3|null} centroid
  * @param {{ resize?: boolean }} [options] `resize: false` skips the bbox pass (live follow during TRS).
@@ -3940,11 +4004,11 @@ function updateCoGHelper(roots, centroid, options) {
         if (cogHelper) cogHelper.visible = false;
         return;
     }
-    if (cogHelper && options?.resize === false) {
-        cogHelper.position.copy(centroid);
-        cogHelper.visible = true;
-        return;
-    }
+    ensureCoGHelper();
+    cogHelper.position.copy(centroid);
+    cogHelper.visible = true;
+    if (options?.resize === false) return;
+
     const bMin = new THREE.Vector3(Infinity, Infinity, Infinity);
     const bMax = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
     const tMin = new THREE.Vector3();
@@ -3957,22 +4021,53 @@ function updateCoGHelper(roots, centroid, options) {
             found = true;
         }
     }
-    let radius = 1;
+    let halfLen = 1;
+    let markerR = 1;
     if (found) {
         const bSize = new THREE.Vector3().subVectors(bMax, bMin);
         const maxDim = Math.max(bSize.x, bSize.y, bSize.z);
-        if (maxDim > 0) radius = maxDim * 0.03;
+        if (maxDim > 0) {
+            halfLen = maxDim * 0.5;
+            markerR = maxDim * 0.008;
+        }
     }
-    if (!cogHelper) {
-        const geo = new THREE.SphereGeometry(1, 16, 12);
-        const mat = new THREE.MeshBasicMaterial({ color: 0xff8800, depthTest: false, transparent: true, opacity: 0.9 });
-        cogHelper = new THREE.Mesh(geo, mat);
-        cogHelper.renderOrder = 999;
-        scene.add(cogHelper);
+    cogHelper.userData.lines.scale.setScalar(halfLen);
+    cogHelper.userData.marker.scale.setScalar(markerR);
+}
+
+/**
+ * Screen-space snap to the visible CoG centroid. Returns the world point and measurement
+ * owner when the cursor is within COG_SNAP_PX of the projected centroid; otherwise null.
+ * Does not raycast the helper — CoG inside a solid still snaps.
+ * @returns {{ point: import('three').Vector3, owner: import('three').Object3D }|null}
+ */
+function trySnapCoG() {
+    if (!part.showCoG || !cogHelper?.visible || !_cogFollow.local || !_cogFollow.frame) return null;
+    _cogSnapNdcScratch.copy(cogHelper.position).project(currentCamera);
+    if (_cogSnapNdcScratch.z < -1 || _cogSnapNdcScratch.z > 1) return null;
+    const { width, height } = getViewportSize();
+    const dx = (_cogSnapNdcScratch.x - mouse.x) * 0.5 * width;
+    const dy = (_cogSnapNdcScratch.y - mouse.y) * 0.5 * height;
+    if (dx * dx + dy * dy > COG_SNAP_PX * COG_SNAP_PX) return null;
+    _cogSnapPointScratch.copy(cogHelper.position);
+    return { point: _cogSnapPointScratch, owner: _cogFollow.frame };
+}
+
+/**
+ * Resolve a measurement pick: CoG snap first, then optional circle-center, else surface hit.
+ * @param {import('three').Intersection[]} visibleHits
+ * @returns {{ point: import('three').Vector3, owner: import('three').Object3D }|null}
+ */
+function resolveMeasurePickPoint(visibleHits) {
+    const cog = trySnapCoG();
+    if (cog) return cog;
+    if (!visibleHits || visibleHits.length === 0) return null;
+    let point = visibleHits[0].point;
+    if (viewProp.detectCircleCenter) {
+        const center = detectCircleCenterFromHit(visibleHits[0]);
+        if (center) point = center;
     }
-    cogHelper.scale.setScalar(radius);
-    cogHelper.position.copy(centroid);
-    cogHelper.visible = true;
+    return { point, owner: resolveCADSelection(visibleHits[0].object) };
 }
 
 /**
@@ -9108,16 +9203,8 @@ function render() {
         const mVisible = (renderer.localClippingEnabled && clipPlanes.length > 0)
             ? mIntersects.filter(hit => mIsFullyVisible(hit.object) && clipPlanes.some(plane => plane.distanceToPoint(hit.point) >= 0))
             : mIntersects.filter(hit => mIsFullyVisible(hit.object));
-        if (mVisible.length > 0) {
-            let previewPoint = mVisible[0].point;
-            if (viewProp.detectCircleCenter) {
-                const center = detectCircleCenterFromHit(mVisible[0]);
-                if (center) previewPoint = center;
-            }
-            updateMeasurePreview(previewPoint);
-        } else {
-            updateMeasurePreview(null);
-        }
+        const mPick = resolveMeasurePickPoint(mVisible);
+        updateMeasurePreview(mPick ? mPick.point : null);
     } else {
         updateMeasurePreview(null);
     }
@@ -9138,16 +9225,8 @@ function render() {
         const aVisible = (renderer.localClippingEnabled && clipPlanes.length > 0)
             ? aIntersects.filter(hit => aIsFullyVisible(hit.object) && clipPlanes.some(plane => plane.distanceToPoint(hit.point) >= 0))
             : aIntersects.filter(hit => aIsFullyVisible(hit.object));
-        if (aVisible.length > 0) {
-            let previewPoint = aVisible[0].point;
-            if (viewProp.detectCircleCenter) {
-                const center = detectCircleCenterFromHit(aVisible[0]);
-                if (center) previewPoint = center;
-            }
-            updateAnglePreview(previewPoint);
-        } else {
-            updateAnglePreview(null);
-        }
+        const aPick = resolveMeasurePickPoint(aVisible);
+        updateAnglePreview(aPick ? aPick.point : null);
     } else {
         updateAnglePreview(null);
     }
@@ -9160,16 +9239,8 @@ function render() {
         const rVisible = (renderer.localClippingEnabled && clipPlanes.length > 0)
             ? rIntersects.filter(hit => rIsFullyVisible(hit.object) && clipPlanes.some(plane => plane.distanceToPoint(hit.point) >= 0))
             : rIntersects.filter(hit => rIsFullyVisible(hit.object));
-        if (rVisible.length > 0) {
-            let previewPoint = rVisible[0].point;
-            if (viewProp.detectCircleCenter) {
-                const center = detectCircleCenterFromHit(rVisible[0]);
-                if (center) previewPoint = center;
-            }
-            updateRadiusPreview(previewPoint);
-        } else {
-            updateRadiusPreview(null);
-        }
+        const rPick = resolveMeasurePickPoint(rVisible);
+        updateRadiusPreview(rPick ? rPick.point : null);
     } else {
         updateRadiusPreview(null);
     }
@@ -9186,16 +9257,8 @@ function render() {
                 const cdVisible = (renderer.localClippingEnabled && clipPlanes.length > 0)
                     ? cdIntersects.filter(hit => cdIsFullyVisible(hit.object) && clipPlanes.some(plane => plane.distanceToPoint(hit.point) >= 0))
                     : cdIntersects.filter(hit => cdIsFullyVisible(hit.object));
-                if (cdVisible.length > 0) {
-                    let pt = cdVisible[0].point;
-                    if (viewProp.detectCircleCenter) {
-                        const center = detectCircleCenterFromHit(cdVisible[0]);
-                        if (center) pt = center;
-                    }
-                    updateCadDimHoverPreview(pt);
-                } else {
-                    updateCadDimHoverPreview(null);
-                }
+                const cdPick = resolveMeasurePickPoint(cdVisible);
+                updateCadDimHoverPreview(cdPick ? cdPick.point : null);
             }
         } else {
             // Phase 2: placement preview driven by mouse position
@@ -9217,16 +9280,8 @@ function render() {
                 const cd3dVisible = (renderer.localClippingEnabled && clipPlanes.length > 0)
                     ? cd3dIntersects.filter(hit => cd3dIsFullyVisible(hit.object) && clipPlanes.some(plane => plane.distanceToPoint(hit.point) >= 0))
                     : cd3dIntersects.filter(hit => cd3dIsFullyVisible(hit.object));
-                if (cd3dVisible.length > 0) {
-                    let pt3d = cd3dVisible[0].point;
-                    if (viewProp.detectCircleCenter) {
-                        const center = detectCircleCenterFromHit(cd3dVisible[0]);
-                        if (center) pt3d = center;
-                    }
-                    updateCadDim3dHoverPreview(pt3d);
-                } else {
-                    updateCadDim3dHoverPreview(null);
-                }
+                const cd3dPick = resolveMeasurePickPoint(cd3dVisible);
+                updateCadDim3dHoverPreview(cd3dPick ? cd3dPick.point : null);
             }
         } else {
             updateCadDim3dPreview(mouse, currentCamera);
@@ -10203,14 +10258,9 @@ function onClick( event ) {
         const visibleIntersects = (renderer.localClippingEnabled && clipPlanes.length > 0)
             ? intersects.filter(hit => isFullyVisible(hit.object) && clipPlanes.some(plane => plane.distanceToPoint(hit.point) >= 0))
             : intersects.filter(hit => isFullyVisible(hit.object));
-        if (visibleIntersects.length > 0) {
-            let point = visibleIntersects[0].point;
-            if (viewProp.detectCircleCenter) {
-                const center = detectCircleCenterFromHit(visibleIntersects[0]);
-                if (center) point = center;
-            }
-            const hitOwner = resolveCADSelection(visibleIntersects[0].object);
-            addMeasurePoint(point, hitOwner, render);
+        const mPick = resolveMeasurePickPoint(visibleIntersects);
+        if (mPick) {
+            addMeasurePoint(mPick.point, mPick.owner, render);
             _updateToolHintUI();
         }
         return;
@@ -10229,14 +10279,9 @@ function onClick( event ) {
         const visibleIntersects = (renderer.localClippingEnabled && clipPlanes.length > 0)
             ? intersects.filter(hit => isFullyVisible(hit.object) && clipPlanes.some(plane => plane.distanceToPoint(hit.point) >= 0))
             : intersects.filter(hit => isFullyVisible(hit.object));
-        if (visibleIntersects.length > 0) {
-            let point = visibleIntersects[0].point;
-            if (viewProp.detectCircleCenter) {
-                const center = detectCircleCenterFromHit(visibleIntersects[0]);
-                if (center) point = center;
-            }
-            const hitOwner = resolveCADSelection(visibleIntersects[0].object);
-            addAnglePoint(point, hitOwner, render);
+        const aPick = resolveMeasurePickPoint(visibleIntersects);
+        if (aPick) {
+            addAnglePoint(aPick.point, aPick.owner, render);
             _updateToolHintUI();
         }
         return;
@@ -10255,14 +10300,9 @@ function onClick( event ) {
         const visibleIntersects = (renderer.localClippingEnabled && clipPlanes.length > 0)
             ? intersects.filter(hit => isFullyVisible(hit.object) && clipPlanes.some(plane => plane.distanceToPoint(hit.point) >= 0))
             : intersects.filter(hit => isFullyVisible(hit.object));
-        if (visibleIntersects.length > 0) {
-            let point = visibleIntersects[0].point;
-            if (viewProp.detectCircleCenter) {
-                const center = detectCircleCenterFromHit(visibleIntersects[0]);
-                if (center) point = center;
-            }
-            const hitOwner = resolveCADSelection(visibleIntersects[0].object);
-            addRadiusPoint(point, hitOwner, render);
+        const rPick = resolveMeasurePickPoint(visibleIntersects);
+        if (rPick) {
+            addRadiusPoint(rPick.point, rPick.owner, render);
             _updateToolHintUI();
         }
         return;
@@ -10284,14 +10324,9 @@ function onClick( event ) {
             const visibleIntersects = (renderer.localClippingEnabled && clipPlanes.length > 0)
                 ? intersects.filter(hit => isFullyVisible(hit.object) && clipPlanes.some(plane => plane.distanceToPoint(hit.point) >= 0))
                 : intersects.filter(hit => isFullyVisible(hit.object));
-            if (visibleIntersects.length > 0) {
-                let point = visibleIntersects[0].point;
-                if (viewProp.detectCircleCenter) {
-                    const center = detectCircleCenterFromHit(visibleIntersects[0]);
-                    if (center) point = center;
-                }
-                const hitOwner = resolveCADSelection(visibleIntersects[0].object);
-                addCadDimPoint(point, hitOwner, render);
+            const cdPick = resolveMeasurePickPoint(visibleIntersects);
+            if (cdPick) {
+                addCadDimPoint(cdPick.point, cdPick.owner, render);
                 // If we just entered phase 2, show hint (orbit stays enabled)
                 if (getCadDimStep() === 2) {
                     _updateToolHintUI();
@@ -10321,14 +10356,9 @@ function onClick( event ) {
             const cd3dVisible = (renderer.localClippingEnabled && clipPlanes.length > 0)
                 ? cd3dIntersects.filter(hit => cd3dIsFullyVisible(hit.object) && clipPlanes.some(plane => plane.distanceToPoint(hit.point) >= 0))
                 : cd3dIntersects.filter(hit => cd3dIsFullyVisible(hit.object));
-            if (cd3dVisible.length > 0) {
-                let point3d = cd3dVisible[0].point;
-                if (viewProp.detectCircleCenter) {
-                    const center = detectCircleCenterFromHit(cd3dVisible[0]);
-                    if (center) point3d = center;
-                }
-                const hitOwner3d = resolveCADSelection(cd3dVisible[0].object);
-                addCadDim3dPoint(point3d, hitOwner3d, render);
+            const cd3dPick = resolveMeasurePickPoint(cd3dVisible);
+            if (cd3dPick) {
+                addCadDim3dPoint(cd3dPick.point, cd3dPick.owner, render);
                 if (getCadDim3dStep() === 2) {
                     _updateToolHintUI();
                 }

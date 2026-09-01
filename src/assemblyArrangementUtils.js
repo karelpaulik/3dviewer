@@ -97,6 +97,7 @@ export function isArrangementOverlayObject(obj) {
         || ud._isDeviationGhostOverlay
         || ud._isTransformSpaceGizmo
         || ud._isSectionSketch
+        || ud._isCoG
     );
 }
 
