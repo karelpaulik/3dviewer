@@ -233,7 +233,8 @@ export function collectDescendantMeshes(container) {
     container.traverse(obj => {
         if (obj === container) return;
         if (obj.userData._isMeasurement || obj.userData._isAnnotation ||
-            obj.userData._isAnnotation3d || obj.userData._isCadDim3d) return;
+            obj.userData._isAnnotation3d || obj.userData._isCadDim3d ||
+            obj.userData._isCoG) return;
         if (obj.isMesh && obj.geometry && !obj.isSectionMesh) {
             meshes.push(obj);
         }

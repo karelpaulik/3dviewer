@@ -207,7 +207,7 @@ export function formatMass(grams) {
 
 function _isAuxiliaryObject(obj) {
     const ud = obj?.userData;
-    return !!(ud && (ud._isMeasurement || ud._isAnnotation || ud._isAnnotation3d || ud._isCadDim3d));
+    return !!(ud && (ud._isMeasurement || ud._isAnnotation || ud._isAnnotation3d || ud._isCadDim3d || ud._isCoG));
 }
 
 function _isMassStructuralChild(obj) {

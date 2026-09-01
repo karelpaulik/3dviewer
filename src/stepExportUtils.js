@@ -27,7 +27,7 @@ export function isStepExportableMesh(obj) {
     if (typeof obj.name === 'string' && obj.name.endsWith('__section')) return false;
     const ud = obj.userData || {};
     if (ud._isEdgeOverlay || ud._isMeasurement || ud._isAnnotation
-        || ud._isAnnotation3d || ud._isCadDim3d || ud._isSectionSketch) {
+        || ud._isAnnotation3d || ud._isCadDim3d || ud._isSectionSketch || ud._isCoG) {
         return false;
     }
     return !!obj.geometry.getAttribute('position');

@@ -273,6 +273,7 @@ import {
     collectAllMeshesForNormalsDisplay,
     applyFlatVertexNormalsToMeshes,
     applySmoothVertexNormalsToMeshes,
+    isObjectVisibleInScene,
 } from './geometryOperationsUtils.js';
 import {
     SIMPLIFY_SLOW_VERTEX_THRESHOLD,
@@ -797,7 +798,10 @@ const _RADIUS_HINT_STEPS = [
 ];
 
 function _cogSnapHintSuffix() {
-    return (part.showCoG && cogHelper && cogHelper.visible) ? ' &nbsp;·&nbsp; CoG snap on' : '';
+    const live = part.showCoG && cogHelper && cogHelper.visible;
+    const saved = cogRoot && cogRoot.visible
+        && cogRoot.children.some(c => isCoGLocator(c) && isObjectVisibleInScene(c));
+    return (live || saved) ? ' &nbsp;·&nbsp; CoG snap on' : '';
 }
 
 function _circleSnapHintSuffix() {
@@ -1670,11 +1674,13 @@ const part = {
 let bbHelper = null; // Dedicated PaddedBoxHelper for bounding box display toggle
 let bbAxesHelper = null; // AxesHelper shown together with bbHelper
 let cogHelper = null; // World-aligned CoG cross (LineSegments + center marker)
+let cogRoot = null; // Scene folder for saved CoG locators (loadedModels root)
 /** Cached CoG in the transformed node's local space so the marker can follow TRS without a triangle pass. */
 const _cogFollow = { roots: [], frame: null, local: null, unreliable: false };
 const _cogWorldScratch = new THREE.Vector3();
 const _cogSnapNdcScratch = new THREE.Vector3();
 const _cogSnapPointScratch = new THREE.Vector3();
+const _cogLocatorWorldScratch = new THREE.Vector3();
 const COG_SNAP_PX = 14;
 const normalsViewGui = {
     showVertexNormals: false,
@@ -1753,7 +1759,7 @@ if (import.meta.env.DEV) {
 
 function isSelectionBBoxOverlay(child) {
     const ud = child.userData || {};
-    return !!(ud._isMeasurement || ud._isAnnotation || ud._isAnnotation3d || ud._isCadDim3d);
+    return !!(ud._isMeasurement || ud._isAnnotation || ud._isAnnotation3d || ud._isCadDim3d || ud._isCoG);
 }
 
 /** True if child is visible under root. traverse does not skip subtrees, so a hidden
@@ -2027,7 +2033,7 @@ outlinerPanelEl = initOutliner({
                     child.material.needsUpdate = true;
                 }
                 child.renderOrder = 0;
-                meshObjects.push(child);
+                if (!child.userData?._isCoG) meshObjects.push(child);
                 if (isParametricMesh(child)) prepareParametricClone(child);
             }
         });
@@ -2037,6 +2043,8 @@ outlinerPanelEl = initOutliner({
         stripMeasurementVisuals(clone);
         stripCadDim3dVisuals(clone);
         stripEdgeOverlays(clone);
+        stripCoGVisuals(clone);
+        rebuildCoGVisualsUnder(clone);
         reconstructAnnotations(clone, render);
         reconstructAnnotations3d(clone, render);
         reconstructMeasurements(clone, render);
@@ -3943,20 +3951,7 @@ function _disableCoGRaycast(obj) {
     obj.userData._isCoG = true;
 }
 
-function ensureCoGHelper() {
-    if (cogHelper && !cogHelper.isGroup) {
-        scene.remove(cogHelper);
-        cogHelper.geometry?.dispose();
-        cogHelper.material?.dispose();
-        cogHelper = null;
-    }
-    if (cogHelper) return cogHelper;
-
-    const group = new THREE.Group();
-    group.name = 'CoGHelper';
-    group.renderOrder = 999;
-    _disableCoGRaycast(group);
-
+function _addCoGCrossTo(parent, halfLen, markerR, storeRefs) {
     const positions = new Float32Array([
         -1, 0, 0,  1, 0, 0,
         0, -1, 0,  0, 1, 0,
@@ -3973,19 +3968,199 @@ function ensureCoGHelper() {
     const lineMat = new THREE.LineBasicMaterial({ vertexColors: true, depthTest: false, toneMapped: false });
     const lines = new THREE.LineSegments(lineGeo, lineMat);
     lines.renderOrder = 999;
+    lines.scale.setScalar(halfLen > 0 ? halfLen : 1);
     _disableCoGRaycast(lines);
-    group.add(lines);
-    group.userData.lines = lines;
+    parent.add(lines);
 
     const marker = new THREE.Mesh(
         new THREE.SphereGeometry(1, 12, 8),
         new THREE.MeshBasicMaterial({ color: 0xff8800, depthTest: false, transparent: true, opacity: 0.9, toneMapped: false })
     );
     marker.renderOrder = 999;
+    marker.scale.setScalar(markerR > 0 ? markerR : 1);
     _disableCoGRaycast(marker);
-    group.add(marker);
-    group.userData.marker = marker;
+    parent.add(marker);
 
+    if (storeRefs) {
+        parent.userData.lines = lines;
+        parent.userData.marker = marker;
+    }
+    return { lines, marker };
+}
+
+function _computeCoGCrossSize(roots) {
+    const bMin = new THREE.Vector3(Infinity, Infinity, Infinity);
+    const bMax = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
+    const tMin = new THREE.Vector3();
+    const tMax = new THREE.Vector3();
+    let found = false;
+    for (const root of roots) {
+        if (computeSelectionBBox(root, false, tMin, tMax)) {
+            bMin.min(tMin);
+            bMax.max(tMax);
+            found = true;
+        }
+    }
+    let halfLen = 1;
+    let markerR = 1;
+    if (found) {
+        const bSize = new THREE.Vector3().subVectors(bMax, bMin);
+        const maxDim = Math.max(bSize.x, bSize.y, bSize.z);
+        if (maxDim > 0) {
+            halfLen = maxDim * 0.5;
+            markerR = maxDim * 0.008;
+        }
+    }
+    return { halfLen, markerR };
+}
+
+function isCoGRoot(obj) {
+    return !!(obj && obj.userData && obj.userData._isCoGRoot);
+}
+
+function isCoGLocator(obj) {
+    return !!(obj && obj.userData && obj.userData._isCoGLocator);
+}
+
+function stripCoGVisuals(root) {
+    if (!root) return;
+    const toRemove = [];
+    root.traverse(child => {
+        if (child !== root && child.userData && child.userData._isCoG) toRemove.push(child);
+    });
+    for (const obj of toRemove) {
+        if (obj.parent) obj.parent.remove(obj);
+        obj.traverse(n => {
+            n.geometry?.dispose();
+            if (n.material) {
+                if (Array.isArray(n.material)) n.material.forEach(m => m.dispose());
+                else n.material.dispose();
+            }
+        });
+    }
+}
+
+function rebuildCoGLocatorVisuals(locator) {
+    if (!isCoGLocator(locator)) return;
+    stripCoGVisuals(locator);
+    const halfLen = Number(locator.userData.cogHalfLen);
+    const markerR = Number(locator.userData.cogMarkerR);
+    _addCoGCrossTo(locator, Number.isFinite(halfLen) && halfLen > 0 ? halfLen : 1,
+        Number.isFinite(markerR) && markerR > 0 ? markerR : 1);
+}
+
+function rebuildCoGVisualsUnder(root) {
+    if (!root) return;
+    if (isCoGLocator(root)) rebuildCoGLocatorVisuals(root);
+    root.traverse(child => {
+        if (child !== root && isCoGLocator(child)) rebuildCoGLocatorVisuals(child);
+    });
+}
+
+function ensureCoGRoot() {
+    if (cogRoot && !cogRoot.parent) {
+        const orphanIdx = loadedModels.indexOf(cogRoot);
+        if (orphanIdx !== -1) loadedModels.splice(orphanIdx, 1);
+        cogRoot = null;
+    }
+    if (cogRoot && cogRoot.parent) return cogRoot;
+    cogRoot = new THREE.Group();
+    cogRoot.name = 'CoG';
+    cogRoot.userData._isCoGRoot = true;
+    scene.add(cogRoot);
+    if (!loadedModels.includes(cogRoot)) loadedModels.push(cogRoot);
+    return cogRoot;
+}
+
+function nextCoGLocatorName() {
+    const used = new Set();
+    if (cogRoot) {
+        for (const child of cogRoot.children) {
+            if (isCoGLocator(child) && child.name) used.add(child.name);
+        }
+    }
+    if (!used.has('CoG')) return 'CoG';
+    let n = 2;
+    while (used.has('CoG ' + n)) n++;
+    return 'CoG ' + n;
+}
+
+function pruneCoGRootIfEmpty() {
+    if (!cogRoot) return;
+    const hasLocator = cogRoot.children.some(c => isCoGLocator(c));
+    if (hasLocator) return;
+    const lmIdx = loadedModels.indexOf(cogRoot);
+    if (lmIdx !== -1) loadedModels.splice(lmIdx, 1);
+    if (cogRoot.parent) cogRoot.parent.remove(cogRoot);
+    else scene.remove(cogRoot);
+    cogRoot = null;
+}
+
+/**
+ * Bind a loaded CoG folder (or merge into the existing one). Rebuilds locator visuals.
+ * @returns {boolean} true if `node` was consumed (merged into an existing root and must not stay in loadedModels)
+ */
+function adoptLoadedCoGRoot(node) {
+    if (!isCoGRoot(node)) {
+        rebuildCoGVisualsUnder(node);
+        return false;
+    }
+    rebuildCoGVisualsUnder(node);
+    if (!cogRoot || cogRoot === node) {
+        cogRoot = node;
+        return false;
+    }
+    const moving = node.children.slice();
+    for (const child of moving) cogRoot.attach(child);
+    if (node.parent) node.parent.remove(node);
+    else scene.remove(node);
+    return true;
+}
+
+function saveCurrentCoG() {
+    const roots = (selectedObjects.length > 1)
+        ? selectedObjects.slice()
+        : (lastSelectedObject ? [lastSelectedObject] : []);
+    if (roots.length === 0) return;
+    if (roots.some(r => isCoGRoot(r) || isCoGLocator(r))) return;
+
+    updateAreaVolume(roots);
+    if (!_cogFollow.local || !_cogFollow.frame) return;
+
+    _cogWorldScratch.copy(_cogFollow.local);
+    _cogFollow.frame.localToWorld(_cogWorldScratch);
+    const size = _computeCoGCrossSize(roots);
+
+    const locator = new THREE.Group();
+    locator.name = nextCoGLocatorName();
+    locator.userData._isCoGLocator = true;
+    locator.userData.cogHalfLen = size.halfLen;
+    locator.userData.cogMarkerR = size.markerR;
+    locator.position.copy(_cogWorldScratch);
+    locator.userData.initPosition = locator.position.clone();
+    locator.userData.initRotation = locator.rotation.clone();
+    locator.userData.initScale = locator.scale.clone();
+
+    ensureCoGRoot().add(locator);
+    _addCoGCrossTo(locator, size.halfLen, size.markerR);
+    rebuildTree(loadedModels, true);
+    render();
+}
+
+function ensureCoGHelper() {
+    if (cogHelper && !cogHelper.isGroup) {
+        scene.remove(cogHelper);
+        cogHelper.geometry?.dispose();
+        cogHelper.material?.dispose();
+        cogHelper = null;
+    }
+    if (cogHelper) return cogHelper;
+
+    const group = new THREE.Group();
+    group.name = 'CoGHelper';
+    group.renderOrder = 999;
+    _disableCoGRaycast(group);
+    _addCoGCrossTo(group, 1, 1, true);
     scene.add(group);
     cogHelper = group;
     return cogHelper;
@@ -4009,48 +4184,58 @@ function updateCoGHelper(roots, centroid, options) {
     cogHelper.visible = true;
     if (options?.resize === false) return;
 
-    const bMin = new THREE.Vector3(Infinity, Infinity, Infinity);
-    const bMax = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
-    const tMin = new THREE.Vector3();
-    const tMax = new THREE.Vector3();
-    let found = false;
-    for (const root of roots) {
-        if (computeSelectionBBox(root, false, tMin, tMax)) {
-            bMin.min(tMin);
-            bMax.max(tMax);
-            found = true;
-        }
-    }
-    let halfLen = 1;
-    let markerR = 1;
-    if (found) {
-        const bSize = new THREE.Vector3().subVectors(bMax, bMin);
-        const maxDim = Math.max(bSize.x, bSize.y, bSize.z);
-        if (maxDim > 0) {
-            halfLen = maxDim * 0.5;
-            markerR = maxDim * 0.008;
-        }
-    }
+    const { halfLen, markerR } = _computeCoGCrossSize(roots);
     cogHelper.userData.lines.scale.setScalar(halfLen);
     cogHelper.userData.marker.scale.setScalar(markerR);
 }
 
+function _cogSnapCandidateDistSq(worldPos, width, height) {
+    _cogSnapNdcScratch.copy(worldPos).project(currentCamera);
+    if (_cogSnapNdcScratch.z < -1 || _cogSnapNdcScratch.z > 1) return Infinity;
+    const dx = (_cogSnapNdcScratch.x - mouse.x) * 0.5 * width;
+    const dy = (_cogSnapNdcScratch.y - mouse.y) * 0.5 * height;
+    return dx * dx + dy * dy;
+}
+
 /**
- * Screen-space snap to the visible CoG centroid. Returns the world point and measurement
- * owner when the cursor is within COG_SNAP_PX of the projected centroid; otherwise null.
- * Does not raycast the helper — CoG inside a solid still snaps.
+ * Screen-space snap to the live CoG or any saved CoG locator. Closest within COG_SNAP_PX wins.
+ * Owner is the locator (saved) or the live follow frame.
  * @returns {{ point: import('three').Vector3, owner: import('three').Object3D }|null}
  */
 function trySnapCoG() {
-    if (!part.showCoG || !cogHelper?.visible || !_cogFollow.local || !_cogFollow.frame) return null;
-    _cogSnapNdcScratch.copy(cogHelper.position).project(currentCamera);
-    if (_cogSnapNdcScratch.z < -1 || _cogSnapNdcScratch.z > 1) return null;
     const { width, height } = getViewportSize();
-    const dx = (_cogSnapNdcScratch.x - mouse.x) * 0.5 * width;
-    const dy = (_cogSnapNdcScratch.y - mouse.y) * 0.5 * height;
-    if (dx * dx + dy * dy > COG_SNAP_PX * COG_SNAP_PX) return null;
-    _cogSnapPointScratch.copy(cogHelper.position);
-    return { point: _cogSnapPointScratch, owner: _cogFollow.frame };
+    const thresh = COG_SNAP_PX * COG_SNAP_PX;
+    let bestDist = thresh;
+    let bestPoint = null;
+    let bestOwner = null;
+
+    if (part.showCoG && cogHelper?.visible && _cogFollow.local && _cogFollow.frame) {
+        const d = _cogSnapCandidateDistSq(cogHelper.position, width, height);
+        if (d <= bestDist) {
+            bestDist = d;
+            bestPoint = cogHelper.position;
+            bestOwner = _cogFollow.frame;
+        }
+    }
+    if (cogRoot && cogRoot.visible) {
+        for (const loc of cogRoot.children) {
+            if (!isCoGLocator(loc) || !isObjectVisibleInScene(loc)) continue;
+            loc.updateWorldMatrix(true, false);
+            const d = _cogSnapCandidateDistSq(loc.getWorldPosition(_cogLocatorWorldScratch), width, height);
+            if (d <= bestDist) {
+                bestDist = d;
+                bestPoint = loc;
+                bestOwner = loc;
+            }
+        }
+    }
+    if (!bestOwner) return null;
+    if (bestPoint === cogHelper?.position) {
+        _cogSnapPointScratch.copy(cogHelper.position);
+    } else {
+        bestOwner.getWorldPosition(_cogSnapPointScratch);
+    }
+    return { point: _cogSnapPointScratch, owner: bestOwner };
 }
 
 /**
@@ -4754,6 +4939,7 @@ function refreshSelectedObjGui(obj) {
         updateAreaVolume(obj);
         render();
     });
+    selectedFolder.add({ fn() { saveCurrentCoG(); } }, 'fn').name('Save CoG');
 
     selectedFolder.add({ fn() { if (lastSelectedObject) changeColor(lastSelectedObject); } }, 'fn').name('Random color');
     selectedFolder.add({ fn() { removeModel(lastSelectedObject); } }, 'fn').name('Remove Object');
@@ -4967,6 +5153,7 @@ function refreshGroupGui() {
         updateAreaVolume(selectedObjects);
         render();
     });
+    selectedFolder.add({ fn() { saveCurrentCoG(); } }, 'fn').name('Save CoG');
 
     // --- Operations (all objects) ---
     selectedFolder.add({ fn() { selectedObjects.forEach(obj => changeColor(obj)); } }, 'fn').name('Random color (all)');
@@ -5647,7 +5834,7 @@ function _shouldSkipBakeNode(node) {
     if (!node) return true;
     if (node.isSectionMesh) return true;
     const ud = node.userData || {};
-    return !!(ud._isMeasurement || ud._isAnnotation || ud._isAnnotation3d || ud._isCadDim3d);
+    return !!(ud._isMeasurement || ud._isAnnotation || ud._isAnnotation3d || ud._isCadDim3d || ud._isCoG);
 }
 
 function _isIdentityLocalTransform(obj) {
@@ -5662,6 +5849,8 @@ function _refreshLabelsAndOverlaysAfterBake(root) {
     stripAnnotation3dVisuals(root);   removeAnnotations3dForOwner(root);
     stripCadDim3dVisuals(root);       removeCadDim3dMeasurementsForOwner(root);
     stripEdgeOverlays(root);
+    stripCoGVisuals(root);
+    rebuildCoGVisualsUnder(root);
 
     reconstructMeasurements(root, render);
     reconstructAnnotations(root, render);
@@ -7936,15 +8125,22 @@ function loadGlbModel(model, name, scale, colored, options = {}) {
                     // Preserve the original model name; fall back to file name only when absent
                     if (!mdl.userData.fileName) mdl.userData.fileName = fallbackName;
 
+                    if (isCoGRoot(mdl) && cogRoot && cogRoot !== mdl) {
+                        adoptLoadedCoGRoot(mdl);
+                        continue;
+                    }
+
                     scene.add(mdl);
                     loadedModels.push(mdl);
+                    if (isCoGRoot(mdl)) cogRoot = mdl;
+                    rebuildCoGVisualsUnder(mdl);
 
                     mdl.traverse(function (child) {
                         child.userData.initPosition = child.position.clone();
                         child.userData.initRotation = child.rotation.clone();
                         child.userData.initScale = child.scale.clone();
 
-                        if (child.isMesh && child.material) {
+                        if (child.isMesh && child.material && !child.userData._isCoG) {
                             child.material = child.material.clone();
                             child.material.clippingPlanes = clipPlanes;
                             child.material.clipIntersection = true;
@@ -7970,29 +8166,37 @@ function loadGlbModel(model, name, scale, colored, options = {}) {
                 // ---- Standard loading path (external GLB or legacy file) ----
                 scene.add(gltf.scene);
                 gltf.scene.userData.fileName = name || fileNameWithoutExtension(model);
-                loadedModels.push(gltf.scene); // Uložení reference na načtený model
+                const mergedCog = isCoGRoot(gltf.scene) && cogRoot && cogRoot !== gltf.scene;
+                if (mergedCog) {
+                    adoptLoadedCoGRoot(gltf.scene);
+                } else {
+                    loadedModels.push(gltf.scene);
+                    if (isCoGRoot(gltf.scene)) cogRoot = gltf.scene;
+                }
                 console.log(gltf.scene);
 
                 const meshes = [];
-                gltf.scene.traverse(function (child) {
-                    // Uložení počátečních hodnot v userData pro všechny objekty (Group, Object3D, Mesh)
-                    child.userData.initPosition = child.position.clone();
-                    child.userData.initRotation = child.rotation.clone();
-                    child.userData.initScale = child.scale.clone();
+                if (!mergedCog) {
+                    gltf.scene.traverse(function (child) {
+                        // Uložení počátečních hodnot v userData pro všechny objekty (Group, Object3D, Mesh)
+                        child.userData.initPosition = child.position.clone();
+                        child.userData.initRotation = child.rotation.clone();
+                        child.userData.initScale = child.scale.clone();
                     
-                    if (child.isMesh) {
-                        if (child.material) {
-                            child.material = child.material.clone();// Naklonujeme materiál, aby byl unikátní. Jinak jeden typ materiálu pro více častí stejné barvy.
-                            child.material.clippingPlanes = clipPlanes;
-                            child.material.clipIntersection = true;
-                            child.material.side = THREE.DoubleSide;
-                            child.material.polygonOffset = true;
-                            child.material.polygonOffsetFactor = 1;    
-                        }                    
-                        meshes.push(child);
-                        meshObjects.push(child);
-                    }
-                });
+                        if (child.isMesh && !child.userData._isCoG) {
+                            if (child.material) {
+                                child.material = child.material.clone();// Naklonujeme materiál, aby byl unikátní. Jinak jeden typ materiálu pro více častí stejné barvy.
+                                child.material.clippingPlanes = clipPlanes;
+                                child.material.clipIntersection = true;
+                                child.material.side = THREE.DoubleSide;
+                                child.material.polygonOffset = true;
+                                child.material.polygonOffsetFactor = 1;    
+                            }                    
+                            meshes.push(child);
+                            meshObjects.push(child);
+                        }
+                    });
+                }
                 
                 // Import assembly workflow stored in userData (if any)
                 importAssemblyFromGltfScene(gltf.scene, name || fileNameWithoutExtension(model), {
@@ -8027,6 +8231,7 @@ function loadGlbModel(model, name, scale, colored, options = {}) {
                 reconstructAnnotations(gltf.scene, render);
                 reconstructAnnotations3d(gltf.scene, render);
                 reconstructCadDim3d(gltf.scene);
+                rebuildCoGVisualsUnder(mergedCog ? cogRoot : gltf.scene);
                 _afterLabelReconstruct();
                 restoreVisibilityFromImport(gltf.scene, hiddenObjects, updateVisibilityIcon);
                 
@@ -8264,6 +8469,7 @@ function clearSceneFully() {
         else scene.remove(part);
     });
     loadedModels.length = 0;
+    cogRoot = null;
 
     clearDocumentsStore();
     clearAttachmentsStore();
@@ -8312,6 +8518,7 @@ function clearSceneKeepDocs() {
             else scene.remove(part);
         });
         loadedModels.length = 0;
+        cogRoot = null;
 
         // Update dependent GUI / scene state
         if (_assemblyFolderRef) updateAssemblyGuiInfo();
@@ -8384,6 +8591,9 @@ function removeModel(part, skipConfirm = false, options = {}) {
         // Pokud šlo o kořenový model, odebereme i z loadedModels
         const lmIdx = loadedModels.indexOf(part);
         if (lmIdx !== -1) loadedModels.splice(lmIdx, 1);
+
+        if (part === cogRoot || isCoGRoot(part)) cogRoot = null;
+        else pruneCoGRootIfEmpty();
 
         // Vyčistíme z multi-výběru, aby deactivateMultiSelect nevrátil odstraněný objekt zpět do scény
         const selIdx = selectedObjects.indexOf(part);
@@ -12440,6 +12650,7 @@ function buildAllModelsExportGroup(finalName) {
     stripCadDim3dVisuals(group);
     stripEdgeOverlays(group);
     stripSectionMeshes(group);
+    stripCoGVisuals(group);
 
     return group;
 }
@@ -12600,6 +12811,7 @@ function exportSelectedObject() {
         stripCadDim3dVisuals(group);
         stripEdgeOverlays(group);
         stripSectionMeshes(group);
+        stripCoGVisuals(group);
 
         exporter.parse(group, function(result) {
             saveArrayBuffer(result, finalName);
@@ -12640,6 +12852,7 @@ function exportSelectedObject() {
     stripCadDim3dVisuals(clone);
     stripEdgeOverlays(clone);
     stripSectionMeshes(clone);
+    stripCoGVisuals(clone);
 
     // Apply world transform to the clone so it appears in the same position after re-import
     // Aplikujeme world transform na klon, aby se po importu zobrazil ve stejné pozici
@@ -12717,6 +12930,7 @@ async function exportSelectedObjectDraco() {
         stripCadDim3dVisuals(groupDraco);
         stripEdgeOverlays(groupDraco);
         stripSectionMeshes(groupDraco);
+        stripCoGVisuals(groupDraco);
 
         exporter.parse(groupDraco, function(result) {
             setTimeout(async () => {
@@ -12808,6 +13022,7 @@ async function exportSelectedObjectDraco() {
     stripCadDim3dVisuals(clone);
     stripEdgeOverlays(clone);
     stripSectionMeshes(clone);
+    stripCoGVisuals(clone);
 
     lastSelectedObject.updateWorldMatrix(true, false);
     const worldPos = new THREE.Vector3();
@@ -12985,6 +13200,8 @@ function mergeChildMeshes(containerObject) {
     stripAnnotation3dVisuals(containerObject);
     stripCadDim3dVisuals(containerObject);
     stripEdgeOverlays(containerObject);
+    stripCoGVisuals(containerObject);
+    rebuildCoGVisualsUnder(containerObject);
     removeMeasurementsForOwner(containerObject);
     removeAnnotationsForOwner(containerObject);
     removeAnnotations3dForOwner(containerObject);

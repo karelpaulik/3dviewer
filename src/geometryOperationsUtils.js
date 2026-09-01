@@ -24,7 +24,8 @@ export function isMeshEligibleForNormalsOps(mesh) {
         && !mesh.userData._isMeasurement
         && !mesh.userData._isAnnotation
         && !mesh.userData._isAnnotation3d
-        && !mesh.userData._isCadDim3d;
+        && !mesh.userData._isCadDim3d
+        && !mesh.userData._isCoG;
 }
 
 /**
