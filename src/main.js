@@ -3187,7 +3187,7 @@ function addMainGui() {
     registerGuiPanel('File', fileGui);
 
     initLocalFileAccess({
-        hasLoadedContent: () => loadedModels.length > 0,
+        hasLoadedContent: () => hasGlbExportContent(),
         clearScene: () => clearSceneFully(),
         loadGlbFile: async (file) => {
             const url = URL.createObjectURL(file);
@@ -12962,6 +12962,12 @@ function applyImportedAssemblyPlayback(playback, originalIdToWorkflow) {
 
 // ================================================================================================
 
+function hasGlbExportContent() {
+    return loadedModels.length > 0
+        || getDocumentsStore().length > 0
+        || getAttachmentsStore().length > 0;
+}
+
 function getDefaultGlbExportName() {
     const baseName = fileNameInput.value.trim()
         || (loadedModels[0]?.userData?.fileName?.replace(/\.[^.]+$/, '') ?? 'export_all');
@@ -13066,8 +13072,8 @@ async function compressGlbWithDraco(result) {
 }
 
 async function buildAllModelsGlbArrayBuffer({ draco = false, finalName = null, recordHistory = false } = {}) {
-    if (loadedModels.length === 0) {
-        console.warn('Žádné modely k exportu.');
+    if (!hasGlbExportContent()) {
+        console.warn('Žádný obsah k exportu.');
         return null;
     }
 
@@ -13102,8 +13108,8 @@ async function buildAllModelsGlbArrayBuffer({ draco = false, finalName = null, r
 }
 
 function exportAllModels() {
-    if (loadedModels.length === 0) {
-        console.warn('Žádné modely k exportu.');
+    if (!hasGlbExportContent()) {
+        console.warn('Žádný obsah k exportu.');
         return;
     }
     const baseName = fileNameInput.value.trim() || (loadedModels[0]?.userData?.fileName?.replace(/\.[^.]+$/, '') ?? 'export_all');
@@ -13121,8 +13127,8 @@ function exportAllModels() {
 }
 
 async function exportAllModelsDraco() {
-    if (loadedModels.length === 0) {
-        console.warn('Žádné modely k exportu.');
+    if (!hasGlbExportContent()) {
+        console.warn('Žádný obsah k exportu.');
         return;
     }
     const baseName = fileNameInput.value.trim() || (loadedModels[0]?.userData?.fileName?.replace(/\.[^.]+$/, '') ?? 'export_all_draco');
