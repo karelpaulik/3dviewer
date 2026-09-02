@@ -4019,18 +4019,69 @@ function isCoGLocator(obj) {
     return !!(obj && obj.userData && obj.userData._isCoGLocator);
 }
 
+function _getCoGLocatorLines(locator) {
+    return locator?.children?.find(c => c.isLineSegments) || null;
+}
+
+/** World position of the CoG cross origin (locator origin, or baked visual offset). */
+function getCoGLocatorWorldPoint(loc, target) {
+    const out = target || new THREE.Vector3();
+    loc.updateWorldMatrix(true, false);
+    const lines = _getCoGLocatorLines(loc);
+    if (lines) {
+        lines.updateWorldMatrix(true, false);
+        return lines.getWorldPosition(out);
+    }
+    return loc.getWorldPosition(out);
+}
+
+function _readUserDataVec3(src, target) {
+    if (!src) return false;
+    const x = Number(src.x), y = Number(src.y), z = Number(src.z);
+    if (![x, y, z].every(Number.isFinite)) return false;
+    target.set(x, y, z);
+    return true;
+}
+
+function _readUserDataQuat(src, target) {
+    if (!src) return false;
+    const x = Number(src.x), y = Number(src.y), z = Number(src.z), w = Number(src.w);
+    if (![x, y, z, w].every(Number.isFinite)) return false;
+    target.set(x, y, z, w);
+    return true;
+}
+
+function _storeCoGVisualBake(locator) {
+    const lines = _getCoGLocatorLines(locator);
+    if (!lines) {
+        delete locator.userData.cogVisualPos;
+        delete locator.userData.cogVisualQuat;
+        return;
+    }
+    locator.userData.cogVisualPos = lines.position.clone();
+    locator.userData.cogVisualQuat = lines.quaternion.clone();
+}
+
+function _applyStoredCoGVisualBake(locator) {
+    const lines = _getCoGLocatorLines(locator);
+    if (!lines) return;
+    const pos = new THREE.Vector3();
+    const quat = new THREE.Quaternion();
+    if (_readUserDataVec3(locator.userData.cogVisualPos, pos)) lines.position.copy(pos);
+    if (_readUserDataQuat(locator.userData.cogVisualQuat, quat)) lines.quaternion.copy(quat);
+}
+
 function _setCoGLocatorSize(locator, halfLen) {
     const size = Number(halfLen);
     const resolved = Number.isFinite(size) && size > 0 ? size : 1;
     locator.userData.cogHalfLen = resolved;
-    const lines = locator.children.find(c => c.isLineSegments);
+    const lines = _getCoGLocatorLines(locator);
     if (lines) lines.scale.setScalar(resolved);
 }
 
 function _syncCoGLocatorPivot(locator) {
     if (!singleSelectPivot || !locator) return;
-    locator.updateWorldMatrix(true, false);
-    locator.getWorldPosition(singleSelectPivot.position);
+    getCoGLocatorWorldPoint(locator, singleSelectPivot.position);
 }
 
 function stripCoGVisuals(root) {
@@ -4056,6 +4107,7 @@ function rebuildCoGLocatorVisuals(locator) {
     stripCoGVisuals(locator);
     const halfLen = Number(locator.userData.cogHalfLen);
     _addCoGCrossTo(locator, Number.isFinite(halfLen) && halfLen > 0 ? halfLen : 1);
+    _applyStoredCoGVisualBake(locator);
 }
 
 function rebuildCoGVisualsUnder(root) {
@@ -4229,8 +4281,7 @@ function trySnapCoG() {
     }
     _forEachSavedCoGLocator(loc => {
         if (!isObjectVisibleInScene(loc)) return;
-        loc.updateWorldMatrix(true, false);
-        const d = _cogSnapCandidateDistSq(loc.getWorldPosition(_cogLocatorWorldScratch), width, height);
+        const d = _cogSnapCandidateDistSq(getCoGLocatorWorldPoint(loc, _cogLocatorWorldScratch), width, height);
         if (d <= bestDist) {
             bestDist = d;
             bestPoint = loc;
@@ -4241,7 +4292,7 @@ function trySnapCoG() {
     if (bestPoint === cogHelper?.position) {
         _cogSnapPointScratch.copy(cogHelper.position);
     } else {
-        bestOwner.getWorldPosition(_cogSnapPointScratch);
+        getCoGLocatorWorldPoint(bestOwner, _cogSnapPointScratch);
     }
     return { point: _cogSnapPointScratch, owner: bestOwner };
 }
@@ -4261,8 +4312,7 @@ function tryPickSavedCoG() {
     let best = null;
     _forEachSavedCoGLocator(loc => {
         if (!isObjectVisibleInScene(loc) || !isObjectPickable(loc)) return;
-        loc.updateWorldMatrix(true, false);
-        const d = _cogSnapCandidateDistSq(loc.getWorldPosition(_cogLocatorWorldScratch), width, height);
+        const d = _cogSnapCandidateDistSq(getCoGLocatorWorldPoint(loc, _cogLocatorWorldScratch), width, height);
         if (d <= bestDist) {
             bestDist = d;
             best = loc;
@@ -4956,6 +5006,7 @@ function refreshCoGLocatorGui(obj) {
         .onChange(_onGuiLocationChange)
         .onFinishChange(_onGuiLocationFinish)
         .listen(), 'rStep');
+    folder2.add({ fn: bakeSelectedObjectLocation }, 'fn').name('Bake location');
     if (viewProp.locationKeepOpen) folder2.open();
     else folder2.close();
 
@@ -6009,7 +6060,8 @@ function _shouldSkipBakeNode(node) {
     if (!node) return true;
     if (node.isSectionMesh) return true;
     const ud = node.userData || {};
-    return !!(ud._isMeasurement || ud._isAnnotation || ud._isAnnotation3d || ud._isCadDim3d || ud._isCoG);
+    return !!(ud._isMeasurement || ud._isAnnotation || ud._isAnnotation3d || ud._isCadDim3d
+        || ud._isCoG || ud._isCoGLocator || ud._isCoGRoot);
 }
 
 function _isIdentityLocalTransform(obj) {
@@ -6093,8 +6145,59 @@ function _remapAssemblyAfterLocationBake(obj, invBake) {
     remapArrangementsAfterObjectBake(obj, invBake);
 }
 
+// CoG locators have no mesh. Bake current world pose into the cross (child TRS),
+// then reset the locator to identity — same visible result as baking a part.
+function bakeCoGLocatorLocation(obj, options) {
+    if (!isCoGLocator(obj)) return;
+    const refresh = !options || options.refresh !== false;
+
+    obj.updateMatrixWorld(true);
+    const lines = _getCoGLocatorLines(obj);
+    const oldLinesWorld = new THREE.Matrix4();
+    if (lines) {
+        lines.updateWorldMatrix(true, false);
+        oldLinesWorld.copy(lines.matrixWorld);
+    }
+
+    obj.position.set(0, 0, 0);
+    obj.rotation.set(0, 0, 0);
+    obj.scale.set(1, 1, 1);
+    obj.updateMatrix();
+    obj.updateMatrixWorld(true);
+
+    if (lines) {
+        const localM = new THREE.Matrix4().multiplyMatrices(
+            obj.matrixWorld.clone().invert(),
+            oldLinesWorld
+        );
+        localM.decompose(lines.position, lines.quaternion, lines.scale);
+        const halfLen = Number(obj.userData.cogHalfLen);
+        if (Number.isFinite(halfLen) && halfLen > 0) lines.scale.setScalar(halfLen);
+        _storeCoGVisualBake(obj);
+    }
+
+    obj.userData.initPosition = obj.position.clone();
+    obj.userData.initRotation = obj.rotation.clone();
+    obj.userData.initScale = obj.scale.clone();
+
+    if (!refresh) return;
+
+    refreshOutlinerOverlaysAndTools();
+    if (lastSelectedObject === obj) {
+        _syncCoGLocatorPivot(obj);
+        if (!viewProp.transformSpace) syncTransformPivotOrientation();
+        updateWorldPos();
+        highlightObject(obj);
+    }
+    render();
+}
+
 function bakeObjectLocation(obj, options) {
     if (!obj) return;
+    if (isCoGLocator(obj)) {
+        bakeCoGLocatorLocation(obj, options);
+        return;
+    }
     const refresh = !options || options.refresh !== false;
     const remapAssembly = !!(options && options.remapAssembly);
 
@@ -9403,7 +9506,7 @@ function selectObject(object, options = {}) {
             const cogLocator = isCoGLocator(object);
             const hasCustomPivot = !cogLocator && restoreSingleSelectPivotFromObject(object, pivotPos, pivotQuat);
             if (cogLocator) {
-                object.getWorldPosition(pivotPos);
+                getCoGLocatorWorldPoint(object, pivotPos);
             } else if (!hasCustomPivot) {
                 const bbox = new THREE.Box3().setFromObject(object);
                 bbox.getCenter(pivotPos);
