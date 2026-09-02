@@ -4890,7 +4890,7 @@ function refreshSelectedObjGui(obj) {
 
     // Toggle to show/hide bounding box wireframe
     part.showBBox = false;
-    selectedFolder.add(part, 'showBBox').name('Show BBox').onChange(function(value) {
+    selectedFolder.add(part, 'showBBox').name('Bounding Box').onChange(function(value) {
         if (value && lastSelectedObject) {
             if (!bbHelper) {
                 bbHelper = new PaddedBoxHelper(lastSelectedObject, 0x00ff00, 0);
@@ -4935,11 +4935,11 @@ function refreshSelectedObjGui(obj) {
 
     // Toggle to show/hide the center of gravity marker
     part.showCoG = false;
-    selectedFolder.add(part, 'showCoG').name('Show CoG').onChange(function() {
+    selectedFolder.add(part, 'showCoG').name('Center of Gravity').onChange(function() {
         updateAreaVolume(obj);
         render();
     });
-    selectedFolder.add({ fn() { saveCurrentCoG(); } }, 'fn').name('Save CoG');
+    selectedFolder.add({ fn() { saveCurrentCoG(); } }, 'fn').name('Save CoG (Center of Gravity)');
 
     selectedFolder.add({ fn() { if (lastSelectedObject) changeColor(lastSelectedObject); } }, 'fn').name('Random color');
     selectedFolder.add({ fn() { removeModel(lastSelectedObject); } }, 'fn').name('Remove Object');
@@ -5149,11 +5149,11 @@ function refreshGroupGui() {
     }).listen();
     selectedFolder.add(part, 'mass').name('Mass').disable().listen();
     selectedFolder.add(part, 'centerOfGravity').name('Center of gravity (X, Y, Z)').disable().listen();
-    selectedFolder.add(part, 'showCoG').name('Show CoG').onChange(function() {
+    selectedFolder.add(part, 'showCoG').name('Center of Gravity').onChange(function() {
         updateAreaVolume(selectedObjects);
         render();
     });
-    selectedFolder.add({ fn() { saveCurrentCoG(); } }, 'fn').name('Save CoG');
+    selectedFolder.add({ fn() { saveCurrentCoG(); } }, 'fn').name('Save CoG (Center of Gravity)');
 
     // --- Operations (all objects) ---
     selectedFolder.add({ fn() { selectedObjects.forEach(obj => changeColor(obj)); } }, 'fn').name('Random color (all)');
