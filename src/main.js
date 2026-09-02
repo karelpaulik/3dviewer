@@ -1675,7 +1675,7 @@ const part = {
 };
 let bbHelper = null; // Dedicated PaddedBoxHelper for bounding box display toggle
 let bbAxesHelper = null; // AxesHelper shown together with bbHelper
-let cogHelper = null; // World-aligned CoG cross (LineSegments + center marker)
+let cogHelper = null; // World-aligned CoG cross (LineSegments)
 let cogRoot = null; // Scene folder for saved CoG locators (loadedModels root)
 /** Cached CoG in the transformed node's local space so the marker can follow TRS without a triangle pass. */
 const _cogFollow = { roots: [], frame: null, local: null, unreliable: false };
@@ -3956,7 +3956,7 @@ function _disableCoGRaycast(obj) {
     obj.userData._isCoG = true;
 }
 
-function _addCoGCrossTo(parent, halfLen, markerR, storeRefs) {
+function _addCoGCrossTo(parent, halfLen, storeRefs) {
     const positions = new Float32Array([
         -1, 0, 0,  1, 0, 0,
         0, -1, 0,  0, 1, 0,
@@ -3977,20 +3977,8 @@ function _addCoGCrossTo(parent, halfLen, markerR, storeRefs) {
     _disableCoGRaycast(lines);
     parent.add(lines);
 
-    const marker = new THREE.Mesh(
-        new THREE.SphereGeometry(1, 12, 8),
-        new THREE.MeshBasicMaterial({ color: 0xff8800, depthTest: false, transparent: true, opacity: 0.9, toneMapped: false })
-    );
-    marker.renderOrder = 999;
-    marker.scale.setScalar(markerR > 0 ? markerR : 1);
-    _disableCoGRaycast(marker);
-    parent.add(marker);
-
-    if (storeRefs) {
-        parent.userData.lines = lines;
-        parent.userData.marker = marker;
-    }
-    return { lines, marker };
+    if (storeRefs) parent.userData.lines = lines;
+    return { lines };
 }
 
 function _computeCoGCrossSize(roots) {
@@ -4007,16 +3995,12 @@ function _computeCoGCrossSize(roots) {
         }
     }
     let halfLen = 1;
-    let markerR = 1;
     if (found) {
         const bSize = new THREE.Vector3().subVectors(bMax, bMin);
         const maxDim = Math.max(bSize.x, bSize.y, bSize.z);
-        if (maxDim > 0) {
-            halfLen = maxDim * 0.5;
-            markerR = maxDim * 0.008;
-        }
+        if (maxDim > 0) halfLen = maxDim * 0.5;
     }
-    return { halfLen, markerR };
+    return halfLen;
 }
 
 function isCoGRoot(obj) {
@@ -4049,9 +4033,7 @@ function rebuildCoGLocatorVisuals(locator) {
     if (!isCoGLocator(locator)) return;
     stripCoGVisuals(locator);
     const halfLen = Number(locator.userData.cogHalfLen);
-    const markerR = Number(locator.userData.cogMarkerR);
-    _addCoGCrossTo(locator, Number.isFinite(halfLen) && halfLen > 0 ? halfLen : 1,
-        Number.isFinite(markerR) && markerR > 0 ? markerR : 1);
+    _addCoGCrossTo(locator, Number.isFinite(halfLen) && halfLen > 0 ? halfLen : 1);
 }
 
 function rebuildCoGVisualsUnder(root) {
@@ -4134,20 +4116,19 @@ function saveCurrentCoG() {
 
     _cogWorldScratch.copy(_cogFollow.local);
     _cogFollow.frame.localToWorld(_cogWorldScratch);
-    const size = _computeCoGCrossSize(roots);
+    const halfLen = _computeCoGCrossSize(roots);
 
     const locator = new THREE.Group();
     locator.name = nextCoGLocatorName();
     locator.userData._isCoGLocator = true;
-    locator.userData.cogHalfLen = size.halfLen;
-    locator.userData.cogMarkerR = size.markerR;
+    locator.userData.cogHalfLen = halfLen;
     locator.position.copy(_cogWorldScratch);
     locator.userData.initPosition = locator.position.clone();
     locator.userData.initRotation = locator.rotation.clone();
     locator.userData.initScale = locator.scale.clone();
 
     ensureCoGRoot().add(locator);
-    _addCoGCrossTo(locator, size.halfLen, size.markerR);
+    _addCoGCrossTo(locator, halfLen);
     rebuildTree(loadedModels, true);
     render();
 }
@@ -4165,7 +4146,7 @@ function ensureCoGHelper() {
     group.name = 'CoGHelper';
     group.renderOrder = 999;
     _disableCoGRaycast(group);
-    _addCoGCrossTo(group, 1, 1, true);
+    _addCoGCrossTo(group, 1, true);
     scene.add(group);
     cogHelper = group;
     return cogHelper;
@@ -4173,8 +4154,8 @@ function ensureCoGHelper() {
 
 /**
  * Show/hide/reposition the center-of-gravity cross. Arm length is half the combined
- * bounding-box max dimension so the axes poke out of the part; the center marker is
- * ~0.8 % of that size. No-op (just hides) when the toggle is off or centroid is unknown.
+ * bounding-box max dimension so the axes poke out of the part. No-op (just hides)
+ * when the toggle is off or centroid is unknown.
  * @param {import('three').Object3D[]} roots
  * @param {import('three').Vector3|null} centroid
  * @param {{ resize?: boolean }} [options] `resize: false` skips the bbox pass (live follow during TRS).
@@ -4189,9 +4170,7 @@ function updateCoGHelper(roots, centroid, options) {
     cogHelper.visible = true;
     if (options?.resize === false) return;
 
-    const { halfLen, markerR } = _computeCoGCrossSize(roots);
-    cogHelper.userData.lines.scale.setScalar(halfLen);
-    cogHelper.userData.marker.scale.setScalar(markerR);
+    cogHelper.userData.lines.scale.setScalar(_computeCoGCrossSize(roots));
 }
 
 function _cogSnapCandidateDistSq(worldPos, width, height) {
