@@ -4118,8 +4118,12 @@ function saveCurrentCoG() {
     _cogFollow.frame.localToWorld(_cogWorldScratch);
     const halfLen = _computeCoGCrossSize(roots);
 
+    const defaultName = nextCoGLocatorName();
+    const input = prompt('CoG name:', defaultName);
+    if (input === null) return;
+
     const locator = new THREE.Group();
-    locator.name = nextCoGLocatorName();
+    locator.name = input.trim() || defaultName;
     locator.userData._isCoGLocator = true;
     locator.userData.cogHalfLen = halfLen;
     locator.position.copy(_cogWorldScratch);
