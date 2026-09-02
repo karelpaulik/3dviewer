@@ -1,4 +1,4 @@
-﻿//main.js
+//main.js
 //asdf
 import * as THREE from 'three';
 import gsap from 'gsap';
@@ -2527,7 +2527,7 @@ function init() {
 
             case 's':
             case 'S':
-                if (isTransformGizmoActive()) {
+                if (isTransformGizmoActive() && !isCoGLocator(lastSelectedObject)) {
                     transformControls.setMode( 'scale' );
                     viewProp.transformMode = 'scale';
                 }
@@ -4011,6 +4011,20 @@ function isCoGLocator(obj) {
     return !!(obj && obj.userData && obj.userData._isCoGLocator);
 }
 
+function _setCoGLocatorSize(locator, halfLen) {
+    const size = Number(halfLen);
+    const resolved = Number.isFinite(size) && size > 0 ? size : 1;
+    locator.userData.cogHalfLen = resolved;
+    const lines = locator.children.find(c => c.isLineSegments);
+    if (lines) lines.scale.setScalar(resolved);
+}
+
+function _syncCoGLocatorPivot(locator) {
+    if (!singleSelectPivot || !locator) return;
+    locator.updateWorldMatrix(true, false);
+    locator.getWorldPosition(singleSelectPivot.position);
+}
+
 function stripCoGVisuals(root) {
     if (!root) return;
     const toRemove = [];
@@ -4814,10 +4828,104 @@ function restoreSelectedGuiScrollForMaterialKeepOpen() {
     });
 }
 
+function refreshCoGLocatorGui(obj) {
+    const title = 'Center of gravity: ' + (obj.name || 'Unnamed');
+    _attachSelectedGui(title);
+
+    selectedFolder.add(obj, 'name').name('Name').onChange(() => {
+        updateObjectLabel(obj);
+        _setSelectedOverlayTitle('Center of gravity: ' + (obj.name || 'Unnamed'));
+    }).listen();
+
+    updateWorldPos();
+    selectedFolder.add(part, 'worldPos').name('Position (X, Y, Z)').disable().listen();
+
+    const sizeProxy = { size: Number(obj.userData.cogHalfLen) };
+    if (!Number.isFinite(sizeProxy.size) || sizeProxy.size <= 0) sizeProxy.size = 1;
+    trackExtentSlider(selectedFolder.add(sizeProxy, 'size', 0.001, extent.pp, viewProp.pStep)
+        .name('Size')
+        .onChange(function(value) {
+            _setCoGLocatorSize(obj, value);
+            highlightObject(obj);
+            render();
+        })
+        .listen(), 'pStep');
+
+    selectedFolder.add({ fn() { removeModel(lastSelectedObject); } }, 'fn').name('Remove Object');
+    selectedFolder.add({ fn() { if (lastSelectedObject) hideObject(lastSelectedObject); } }, 'fn').name('Hide Object');
+
+    const folder2 = selectedFolder.addFolder('Location');
+    folder2.add(viewProp, 'locationKeepOpen').name('Keep open');
+    folder2.add({ fn() {
+        if (!lastSelectedObject) return;
+        setDefPosRotScale(lastSelectedObject);
+        _syncCoGLocatorPivot(lastSelectedObject);
+        if (!viewProp.transformSpace) syncTransformPivotOrientation();
+        updateWorldPos();
+        highlightObject(lastSelectedObject);
+        render();
+    } }, 'fn').name('Reset init. location');
+
+    savePreviousTransformState();
+
+    function _onGuiLocationFinish() {
+        pushSingleTransformUndoIfChanged();
+        savePreviousTransformState();
+    }
+
+    function _onGuiLocationChange() {
+        _syncCoGLocatorPivot(obj);
+        if (!viewProp.transformSpace) syncTransformPivotOrientation();
+        updateWorldPos();
+        render();
+    }
+
+    trackExtentSlider(folder2.add(obj.position, 'x', extent.pn, extent.pp, viewProp.pStep)
+        .name('Px')
+        .onChange(function(value) { obj.position.x = value; _onGuiLocationChange(); })
+        .onFinishChange(_onGuiLocationFinish)
+        .listen(), 'pStep');
+    trackExtentSlider(folder2.add(obj.position, 'y', extent.pn, extent.pp, viewProp.pStep)
+        .name('Py')
+        .onChange(function(value) { obj.position.y = value; _onGuiLocationChange(); })
+        .onFinishChange(_onGuiLocationFinish)
+        .listen(), 'pStep');
+    trackExtentSlider(folder2.add(obj.position, 'z', extent.pn, extent.pp, viewProp.pStep)
+        .name('Pz')
+        .onChange(function(value) { obj.position.z = value; _onGuiLocationChange(); })
+        .onFinishChange(_onGuiLocationFinish)
+        .listen(), 'pStep');
+    const rotDeg = makeEulerDegProxy(obj.rotation);
+    trackExtentSlider(folder2.add(rotDeg, 'x', extent.rn, extent.rp, viewProp.rStep)
+        .name('Rx')
+        .onChange(_onGuiLocationChange)
+        .onFinishChange(_onGuiLocationFinish)
+        .listen(), 'rStep');
+    trackExtentSlider(folder2.add(rotDeg, 'y', extent.rn, extent.rp, viewProp.rStep)
+        .name('Ry')
+        .onChange(_onGuiLocationChange)
+        .onFinishChange(_onGuiLocationFinish)
+        .listen(), 'rStep');
+    trackExtentSlider(folder2.add(rotDeg, 'z', extent.rn, extent.rp, viewProp.rStep)
+        .name('Rz')
+        .onChange(_onGuiLocationChange)
+        .onFinishChange(_onGuiLocationFinish)
+        .listen(), 'rStep');
+    if (viewProp.locationKeepOpen) folder2.open();
+    else folder2.close();
+
+    selectedFolder.open();
+}
+
 function refreshSelectedObjGui(obj) {
     destroySelectedGui({ hideOverlay: false });
     _materialFolder = null;
     _materialFolderAll = null;
+
+    if (isCoGLocator(obj)) {
+        refreshCoGLocatorGui(obj);
+        return;
+    }
 
     // Write selected material color into GUI: Specif. color
     (function syncPartColor(o) {
@@ -9180,8 +9288,11 @@ function selectObject(object, options = {}) {
             object.updateWorldMatrix(true, true);
             const pivotPos = new THREE.Vector3();
             const pivotQuat = new THREE.Quaternion();
-            const hasCustomPivot = restoreSingleSelectPivotFromObject(object, pivotPos, pivotQuat);
-            if (!hasCustomPivot) {
+            const cogLocator = isCoGLocator(object);
+            const hasCustomPivot = !cogLocator && restoreSingleSelectPivotFromObject(object, pivotPos, pivotQuat);
+            if (cogLocator) {
+                object.getWorldPosition(pivotPos);
+            } else if (!hasCustomPivot) {
                 const bbox = new THREE.Box3().setFromObject(object);
                 bbox.getCenter(pivotPos);
                 // Zarovnáme výchozí pivot na snap grid – snap handler v change eventu snapuje
@@ -9203,6 +9314,10 @@ function selectObject(object, options = {}) {
             // Objekt NENÍ reparentován – zůstává u původního rodiče.
             // Pohyb pivotu se v change eventu aplikuje jako delta matice na objekt.
             transformControls.attach(singleSelectPivot);
+            if (cogLocator) {
+                transformControls.setMode('translate');
+                viewProp.transformMode = 'translate';
+            }
             // LCS: výchozí pivot zarovnat na objekt; custom orientaci z Pivot only nepřepisovat.
             if (!hasCustomPivot && !viewProp.transformSpace) syncTransformPivotOrientation();
         }
