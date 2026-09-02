@@ -775,6 +775,10 @@ let _selectedOverlayExpandedHeight = null;
 let _selectedOverlayHeightUserSet = false;
 const SELECTED_OVERLAY_POS_KEY = 'selectedOverlayPos';
 const SHOW_SELECTION_NAME_KEY = 'showSelectionNameInViewport';
+const GIZMO_LABEL_FONT_SIZE_KEY = 'gizmoLabelFontSize';
+const GIZMO_LABEL_FONT_SIZE_MIN = 8;
+const GIZMO_LABEL_FONT_SIZE_MAX = 24;
+const GIZMO_LABEL_FONT_SIZE_DEFAULT = 10;
 const SELECTED_OVERLAY_MIN_WIDTH = 200;
 const SELECTED_OVERLAY_MIN_HEIGHT = 120;
 const xrayBackup = new Map(); // mesh → { renderOrder, depthTests: boolean[] }
@@ -1463,6 +1467,7 @@ const viewProp = {
     capColor: '#00ffff', // Color of the solid section cap faces
     transformSpace: true,  // true = world, false = local
     showSelectionName: true, // Show selected part/CoG name under WCS/LCS in viewport
+    gizmoLabelFontSize: 10, // px – shared font size for WCS/LCS and selection name chips
     movePivotOnly: false,  // true = gizmo translate/rotate only moves pivot, not the object
     snapTranslation: 10,   // krok translace
     snapRotationDeg: 30,   // krok rotace ve stupních
@@ -4512,6 +4517,27 @@ function _saveShowSelectionName() {
     } catch (_) { /* ignore */ }
 }
 
+function _clampGizmoLabelFontSize(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return GIZMO_LABEL_FONT_SIZE_DEFAULT;
+    return Math.min(GIZMO_LABEL_FONT_SIZE_MAX, Math.max(GIZMO_LABEL_FONT_SIZE_MIN, Math.round(n)));
+}
+
+function _loadGizmoLabelFontSize() {
+    try {
+        const raw = localStorage.getItem(GIZMO_LABEL_FONT_SIZE_KEY);
+        if (raw == null || raw === '') return;
+        viewProp.gizmoLabelFontSize = _clampGizmoLabelFontSize(raw);
+    } catch (_) { /* ignore */ }
+}
+
+function _saveGizmoLabelFontSize() {
+    try {
+        viewProp.gizmoLabelFontSize = _clampGizmoLabelFontSize(viewProp.gizmoLabelFontSize);
+        localStorage.setItem(GIZMO_LABEL_FONT_SIZE_KEY, String(viewProp.gizmoLabelFontSize));
+    } catch (_) { /* ignore */ }
+}
+
 function _loadSelectedOverlayState() {
     try {
         const raw = localStorage.getItem(SELECTED_OVERLAY_POS_KEY);
@@ -6550,6 +6576,19 @@ function addShowSelectionNameToggle(folder) {
         updateSelectionNameGizmo();
         render();
     });
+    folder.add(viewProp, 'gizmoLabelFontSize', GIZMO_LABEL_FONT_SIZE_MIN, GIZMO_LABEL_FONT_SIZE_MAX, 1)
+        .name('Label font size')
+        .onChange(function() {
+            applyGizmoLabelFontSize();
+            _saveGizmoLabelFontSize();
+            render();
+        });
+}
+
+function applyGizmoLabelFontSize() {
+    const px = _clampGizmoLabelFontSize(viewProp.gizmoLabelFontSize) + 'px';
+    if (transformSpaceGizmoBtnEl) transformSpaceGizmoBtnEl.style.fontSize = px;
+    if (transformSpaceGizmoNameEl) transformSpaceGizmoNameEl.style.fontSize = px;
 }
 
 function updateSelectionNameGizmo() {
@@ -6571,6 +6610,7 @@ function updateSelectionNameGizmo() {
 
 function initTransformSpaceGizmo() {
     _loadShowSelectionName();
+    _loadGizmoLabelFontSize();
     transformSpaceGizmoAnchor = new THREE.Object3D();
     transformSpaceGizmoAnchor.name = '__transformSpaceGizmoAnchor__';
     transformSpaceGizmoAnchor.visible = false;
@@ -6609,6 +6649,7 @@ function initTransformSpaceGizmo() {
     transformSpaceGizmoLabel = label;
     transformSpaceGizmoAnchor.add(label);
     updateTransformSpaceGizmoLabel();
+    applyGizmoLabelFontSize();
 }
 
 function hideTransformSpaceGizmo() {
