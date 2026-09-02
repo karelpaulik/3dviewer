@@ -799,8 +799,10 @@ const _RADIUS_HINT_STEPS = [
 
 function _cogSnapHintSuffix() {
     const live = part.showCoG && cogHelper && cogHelper.visible;
-    const saved = cogRoot && cogRoot.visible
-        && cogRoot.children.some(c => isCoGLocator(c) && isObjectVisibleInScene(c));
+    let saved = false;
+    _forEachSavedCoGLocator(loc => {
+        if (!saved && isObjectVisibleInScene(loc)) saved = true;
+    });
     return (live || saved) ? ' &nbsp;·&nbsp; CoG snap on' : '';
 }
 
@@ -1792,7 +1794,7 @@ function computeSelectionBBox(object, local, outMin, outMax) {
         const invMatrix = new THREE.Matrix4().copy(object.matrixWorld).invert();
         object.traverse(child => {
             if (!isSelectionBBoxVisible(child, object)) return;
-            if (isSelectionBBoxOverlay(child)) return;
+            if (child !== object && isSelectionBBoxOverlay(child)) return;
             if (child.geometry && child.geometry.attributes.position) {
                 const pos = child.geometry.attributes.position;
                 const toLocal = new THREE.Matrix4().multiplyMatrices(invMatrix, child.matrixWorld);
@@ -1805,7 +1807,7 @@ function computeSelectionBBox(object, local, outMin, outMax) {
     } else {
         object.traverse(child => {
             if (!isSelectionBBoxVisible(child, object)) return;
-            if (isSelectionBBoxOverlay(child)) return;
+            if (child !== object && isSelectionBBoxOverlay(child)) return;
             if (child.geometry && child.geometry.attributes.position) {
                 const pos = child.geometry.attributes.position;
                 for (let i = 0; i < pos.count; i++) {
@@ -1853,7 +1855,10 @@ class PaddedBoxHelper extends THREE.LineSegments {
 
         const min = new THREE.Vector3();
         const max = new THREE.Vector3();
-        if (!computeSelectionBBox(this.object, viewProp.orientedSelectionBox === 'local', min, max)) return;
+        if (!computeSelectionBBox(this.object, viewProp.orientedSelectionBox === 'local', min, max)) {
+            this.visible = false;
+            return;
+        }
 
         if (this.padding !== 0) {
             min.addScalar(-this.padding);
@@ -4217,18 +4222,16 @@ function trySnapCoG() {
             bestOwner = _cogFollow.frame;
         }
     }
-    if (cogRoot && cogRoot.visible) {
-        for (const loc of cogRoot.children) {
-            if (!isCoGLocator(loc) || !isObjectVisibleInScene(loc)) continue;
-            loc.updateWorldMatrix(true, false);
-            const d = _cogSnapCandidateDistSq(loc.getWorldPosition(_cogLocatorWorldScratch), width, height);
-            if (d <= bestDist) {
-                bestDist = d;
-                bestPoint = loc;
-                bestOwner = loc;
-            }
+    _forEachSavedCoGLocator(loc => {
+        if (!isObjectVisibleInScene(loc)) return;
+        loc.updateWorldMatrix(true, false);
+        const d = _cogSnapCandidateDistSq(loc.getWorldPosition(_cogLocatorWorldScratch), width, height);
+        if (d <= bestDist) {
+            bestDist = d;
+            bestPoint = loc;
+            bestOwner = loc;
         }
-    }
+    });
     if (!bestOwner) return null;
     if (bestPoint === cogHelper?.position) {
         _cogSnapPointScratch.copy(cogHelper.position);
@@ -4236,6 +4239,40 @@ function trySnapCoG() {
         bestOwner.getWorldPosition(_cogSnapPointScratch);
     }
     return { point: _cogSnapPointScratch, owner: bestOwner };
+}
+
+function _forEachSavedCoGLocator(fn) {
+    if (!cogRoot) return;
+    cogRoot.traverse(obj => {
+        if (isCoGLocator(obj)) fn(obj);
+    });
+}
+
+/** Saved CoG locator under the cursor (14 px, same as measurement snap). Not the live helper. */
+function tryPickSavedCoG() {
+    const { width, height } = getViewportSize();
+    const thresh = COG_SNAP_PX * COG_SNAP_PX;
+    let bestDist = thresh;
+    let best = null;
+    _forEachSavedCoGLocator(loc => {
+        if (!isObjectVisibleInScene(loc) || !isObjectPickable(loc)) return;
+        loc.updateWorldMatrix(true, false);
+        const d = _cogSnapCandidateDistSq(loc.getWorldPosition(_cogLocatorWorldScratch), width, height);
+        if (d <= bestDist) {
+            bestDist = d;
+            best = loc;
+        }
+    });
+    return best;
+}
+
+function _collectBoxSelectCoGLocators(candidates) {
+    const seen = new Set(candidates.map(c => c.uuid));
+    _forEachSavedCoGLocator(loc => {
+        if (!isObjectVisibleInScene(loc) || !isObjectPickable(loc) || seen.has(loc.uuid)) return;
+        seen.add(loc.uuid);
+        candidates.push(loc);
+    });
 }
 
 /**
@@ -7834,6 +7871,7 @@ function applyBoxSelection(startX, startY, endX, endY, additive) {
         isObjectPickable,
         isVisible
     );
+    _collectBoxSelectCoGLocators(candidates);
     const picked = findObjectsInScreenRect(candidates, rect, currentCamera, viewport, viewProp.boxSelectMode);
 
     if (!additive) {
@@ -9041,9 +9079,18 @@ function highlightObject(object) {
     // applyEmissive(object, 0xff0000);
 
     // 2. Nastavení BoxHelperu (žlutý rámeček)
+    // CoG axes span the source bbox — hover the cross lines, not the small marker.
+    let target = object;
+    if (isCoGLocator(object)) {
+        const lines = object.children.find(c => c.isLineSegments);
+        if (lines) target = lines;
+    }
     if (selectionHelper) {
-        selectionHelper.setFromObject(object);
-        selectionHelper.visible = true;
+        selectionHelper.setFromObject(target);
+        const through = !!(target.userData && target.userData._isCoG);
+        selectionHelper.material.depthTest = !through;
+        selectionHelper.renderOrder = through ? 999 : 0;
+        selectionHelper.material.needsUpdate = true;
     }
 }
 
@@ -9105,6 +9152,9 @@ function clearHighlight() {
     // 2. Schování BoxHelperu
     if (selectionHelper) {
         selectionHelper.visible = false;
+        selectionHelper.material.depthTest = true;
+        selectionHelper.renderOrder = 0;
+        selectionHelper.material.needsUpdate = true;
     }
 }
 
@@ -9330,7 +9380,8 @@ function render() {
             ? intersects.filter(hit => isFullyVisible(hit.object) && clipPlanes.some(plane => plane.distanceToPoint(hit.point) >= 0))
             : intersects.filter(hit => isFullyVisible(hit.object));
 
-        const pickableHit = getFirstPickableHit(visibleIntersects);
+        const cogPick = (!booleanMode && !deviationMapMode) ? tryPickSavedCoG() : null;
+        const pickableHit = cogPick || getFirstPickableHit(visibleIntersects);
         if (pickableHit) { // Myš je nad pickovatelnou viditelnou částí objektu
             if (INTERSECTED != pickableHit) { 
                 // 1. Předchozímu objektu vypneme záři a helper
@@ -10890,7 +10941,7 @@ function onClick( event ) {
     }
 
     // Čerstvý raycast – INTERSECTED mohl být smazán během mousedown (isMouseDown=true blokuje render highlight)
-    const clickTarget = getFreshRaycastTarget();
+    const clickTarget = getFreshRaycastTarget({ includeSavedCoG: true });
 
     // Ctrl+click: přidat / odebrat objekt do/z skupiny
     if (event.ctrlKey && clickTarget) {
@@ -10989,7 +11040,13 @@ function isMouseOnGUI(event) { // return: true/false
 }
 
 // Provádí čerstvý raycast a vrací nejblíže ležící viditelný mesh pod kurzorem, nebo null.
-function getFreshRaycastTarget() {
+// includeSavedCoG: screen-space pick of saved CoG locators (not live helper). Off for
+// boolean / deviation map so a locator overlay does not steal the mesh behind it.
+function getFreshRaycastTarget(options = {}) {
+    if (options.includeSavedCoG) {
+        const cog = tryPickSavedCoG();
+        if (cog) return cog;
+    }
     raycaster.setFromCamera(mouse, currentCamera);
     const intersects = raycaster.intersectObjects(meshObjects);
     const isFullyVisible = (obj) => {
@@ -11058,7 +11115,7 @@ function onTouchEnd( event ) {
         }
 
         // Čerstvý raycast – stejný důvod jako u onClick (INTERSECTED mohl být smazán)
-        const touchTarget = getFreshRaycastTarget();
+        const touchTarget = getFreshRaycastTarget({ includeSavedCoG: true });
         if (touchTarget) {
             INTERSECTED = touchTarget;
             selectObject(resolveCADSelection(touchTarget));
