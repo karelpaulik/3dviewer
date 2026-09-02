@@ -1,4 +1,4 @@
-//main.js
+﻿//main.js
 //asdf
 import * as THREE from 'three';
 import gsap from 'gsap';
@@ -333,6 +333,7 @@ let transformControls, orbitControls;
 let transformSpaceGizmoAnchor = null;
 let transformSpaceGizmoLabel = null;
 let transformSpaceGizmoBtnEl = null;
+let transformSpaceGizmoNameEl = null;
 const _tsgCamRight = new THREE.Vector3();
 const _tsgCamUp = new THREE.Vector3();
 const _tsgCamPos = new THREE.Vector3();
@@ -773,6 +774,7 @@ let _selectedOverlayPositionReady = false;
 let _selectedOverlayExpandedHeight = null;
 let _selectedOverlayHeightUserSet = false;
 const SELECTED_OVERLAY_POS_KEY = 'selectedOverlayPos';
+const SHOW_SELECTION_NAME_KEY = 'showSelectionNameInViewport';
 const SELECTED_OVERLAY_MIN_WIDTH = 200;
 const SELECTED_OVERLAY_MIN_HEIGHT = 120;
 const xrayBackup = new Map(); // mesh → { renderOrder, depthTests: boolean[] }
@@ -1460,6 +1462,7 @@ const viewProp = {
     solidSection: false, // Solid (capped) section cut
     capColor: '#00ffff', // Color of the solid section cap faces
     transformSpace: true,  // true = world, false = local
+    showSelectionName: true, // Show selected part/CoG name under WCS/LCS in viewport
     movePivotOnly: false,  // true = gizmo translate/rotate only moves pivot, not the object
     snapTranslation: 10,   // krok translace
     snapRotationDeg: 30,   // krok rotace ve stupních
@@ -4495,6 +4498,20 @@ function _clampSelectedOverlaySizeToViewport() {
     }
 }
 
+function _loadShowSelectionName() {
+    try {
+        const raw = localStorage.getItem(SHOW_SELECTION_NAME_KEY);
+        if (raw === '0') viewProp.showSelectionName = false;
+        else if (raw === '1') viewProp.showSelectionName = true;
+    } catch (_) { /* ignore */ }
+}
+
+function _saveShowSelectionName() {
+    try {
+        localStorage.setItem(SHOW_SELECTION_NAME_KEY, viewProp.showSelectionName ? '1' : '0');
+    } catch (_) { /* ignore */ }
+}
+
 function _loadSelectedOverlayState() {
     try {
         const raw = localStorage.getItem(SELECTED_OVERLAY_POS_KEY);
@@ -4835,7 +4852,9 @@ function refreshCoGLocatorGui(obj) {
     selectedFolder.add(obj, 'name').name('Name').onChange(() => {
         updateObjectLabel(obj);
         _setSelectedOverlayTitle('Center of gravity: ' + (obj.name || 'Unnamed'));
+        updateSelectionNameGizmo();
     }).listen();
+    addShowSelectionNameToggle(selectedFolder);
 
     updateWorldPos();
     selectedFolder.add(part, 'worldPos').name('Position (X, Y, Z)').disable().listen();
@@ -4949,7 +4968,9 @@ function refreshSelectedObjGui(obj) {
     selectedFolder.add(obj, 'name').name('Name').onChange(() => {
         updateObjectLabel(obj);
         _setSelectedOverlayTitle('Selected part: ' + (obj.name || 'Unnamed'));
+        updateSelectionNameGizmo();
     }).listen();
+    addShowSelectionNameToggle(selectedFolder);
     selectedFolder.addColor(part, 'color').name('Specif. color').onChange(function(value){ changeColor(obj, value); });
 
     // Roughness / Metalness – read initial value from first material found, apply to all
@@ -6523,15 +6544,44 @@ function setMovePivotOnly(enabled, triggerRender = true) {
     if (triggerRender) render();
 }
 
+function addShowSelectionNameToggle(folder) {
+    folder.add(viewProp, 'showSelectionName').name('Show name in 3D').onChange(function() {
+        _saveShowSelectionName();
+        updateSelectionNameGizmo();
+        render();
+    });
+}
+
+function updateSelectionNameGizmo() {
+    if (!transformSpaceGizmoNameEl) return;
+    const showName = isTransformGizmoActive()
+        && viewProp.showSelectionName
+        && !viewProp.isGroupTransformActive
+        && !!lastSelectedObject;
+    if (showName) {
+        const name = lastSelectedObject.name || 'Unnamed';
+        transformSpaceGizmoNameEl.textContent = name;
+        transformSpaceGizmoNameEl.title = name;
+        transformSpaceGizmoNameEl.style.display = '';
+    } else {
+        transformSpaceGizmoNameEl.style.display = 'none';
+        transformSpaceGizmoNameEl.title = '';
+    }
+}
+
 function initTransformSpaceGizmo() {
+    _loadShowSelectionName();
     transformSpaceGizmoAnchor = new THREE.Object3D();
     transformSpaceGizmoAnchor.name = '__transformSpaceGizmoAnchor__';
     transformSpaceGizmoAnchor.visible = false;
     scene.add(transformSpaceGizmoAnchor);
 
+    const stack = document.createElement('div');
+    stack.className = 'transform-space-gizmo-stack';
+    stack.style.display = 'none';
+
     const div = document.createElement('div');
     div.className = 'transform-space-gizmo-btn';
-    div.style.display = 'none';
     transformSpaceGizmoBtnEl = div;
     div.addEventListener('mousedown', (e) => { e.stopPropagation(); });
     div.addEventListener('click', (e) => {
@@ -6540,7 +6590,20 @@ function initTransformSpaceGizmo() {
         toggleTransformSpace();
     });
 
-    const label = new CSS2DObject(div);
+    const nameEl = document.createElement('div');
+    nameEl.className = 'selection-name-gizmo-label';
+    nameEl.style.display = 'none';
+    nameEl.addEventListener('mousedown', (e) => { e.stopPropagation(); });
+    nameEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+    });
+    transformSpaceGizmoNameEl = nameEl;
+
+    stack.appendChild(nameEl);
+    stack.appendChild(div);
+
+    const label = new CSS2DObject(stack);
     label.visible = false;
     label.userData._isTransformSpaceGizmo = true;
     transformSpaceGizmoLabel = label;
@@ -6550,16 +6613,24 @@ function initTransformSpaceGizmo() {
 
 function hideTransformSpaceGizmo() {
     if (transformSpaceGizmoAnchor) transformSpaceGizmoAnchor.visible = false;
-    if (transformSpaceGizmoLabel) transformSpaceGizmoLabel.visible = false;
+    if (transformSpaceGizmoLabel) {
+        transformSpaceGizmoLabel.visible = false;
+        if (transformSpaceGizmoLabel.element) transformSpaceGizmoLabel.element.style.display = 'none';
+    }
     if (transformSpaceGizmoBtnEl) transformSpaceGizmoBtnEl.style.display = 'none';
+    if (transformSpaceGizmoNameEl) transformSpaceGizmoNameEl.style.display = 'none';
 }
 
 function updateTransformSpaceGizmo() {
     if (!transformSpaceGizmoAnchor || !transformControls) return;
     const show = isTransformGizmoActive();
     transformSpaceGizmoAnchor.visible = show;
-    if (transformSpaceGizmoLabel) transformSpaceGizmoLabel.visible = show;
+    if (transformSpaceGizmoLabel) {
+        transformSpaceGizmoLabel.visible = show;
+        if (transformSpaceGizmoLabel.element) transformSpaceGizmoLabel.element.style.display = show ? '' : 'none';
+    }
     if (transformSpaceGizmoBtnEl) transformSpaceGizmoBtnEl.style.display = show ? '' : 'none';
+    updateSelectionNameGizmo();
     if (!show) return;
 
     transformControls.getHelper().updateMatrixWorld(true);

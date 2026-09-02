@@ -872,6 +872,13 @@ canvas {
 }
 
 /* TransformControls gizmo – world/local space toggle (CSS2D, moves with gizmo) */
+.transform-space-gizmo-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    pointer-events: none;
+}
 .transform-space-gizmo-btn {
     display: inline-block;
     min-width: 32px;
@@ -902,6 +909,24 @@ canvas {
 .transform-space-gizmo-btn.is-local {
     border-color: rgba(255, 180, 80, 0.65);
     color: #ffc878;
+}
+.selection-name-gizmo-label {
+    display: inline-block;
+    max-width: min(50vw, 360px);
+    padding: 2px 5px;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    border-radius: 4px;
+    background: rgba(17, 17, 17, 0.82);
+    color: #ddd;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1.3;
+    text-align: center;
+    cursor: default;
+    pointer-events: auto;
+    user-select: none;
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 
 /* ViewHelper orientation gizmo – bottom-right, above status bar and GUI panels */
