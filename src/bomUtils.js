@@ -7,12 +7,14 @@ const _bomState = {
     includeMeshes: false,
     modelUnit: 'mm',
     exportCols: [
-        { key: 'no',    label: 'No.',   enabled: true },
-        { key: 'name',  label: 'Name',  enabled: true },
-        { key: 'type',  label: 'Type',  enabled: true },
-        { key: 'qty',   label: 'Qty',   enabled: true },
-        { key: 'mass',  label: 'Mass (unit)', enabled: true },
-        { key: 'depth', label: 'Depth', enabled: false },
+        { key: 'no',         label: 'No.',              enabled: true },
+        { key: 'name',       label: 'Name',             enabled: true },
+        { key: 'type',       label: 'Type',             enabled: true },
+        { key: 'qty',        label: 'Qty',              enabled: true },
+        { key: 'mass',       label: 'Mass (unit)',      enabled: true },
+        { key: 'density',    label: 'Density (g/cm³)',  enabled: true },
+        { key: 'massOffset', label: 'Mass offset (kg)', enabled: true },
+        { key: 'depth',      label: 'Depth',            enabled: false },
     ],
 };
 
@@ -92,22 +94,48 @@ function _formatObjectMass(obj) {
 }
 
 /**
- * Attach `mass` (unit mass string) to each row from its `_ref`.
+ * Density string from object userData, or '–' if unset / not positive.
+ * @param {import('three').Object3D|null|undefined} obj
+ * @returns {string}
+ */
+function _formatObjectDensity(obj) {
+    if (!obj) return '–';
+    const d = Number(obj.userData?.density);
+    if (!Number.isFinite(d) || d <= 0) return '–';
+    return String(d);
+}
+
+/**
+ * Mass offset string (kg) from object userData, or '–' if unset / zero.
+ * @param {import('three').Object3D|null|undefined} obj
+ * @returns {string}
+ */
+function _formatObjectMassOffset(obj) {
+    if (!obj) return '–';
+    const m = Number(obj.userData?.massOffset);
+    if (!Number.isFinite(m) || m === 0) return '–';
+    return String(m);
+}
+
+/**
+ * Attach mass / density / massOffset display strings to each row from its `_ref`.
  * @param {object[]} rows
  * @param {import('three').Object3D} root
  * @returns {object[]}
  */
-function _attachMassToRows(rows, root) {
+function _attachComputedFields(rows, root) {
     if (root) root.updateWorldMatrix(true, true);
     for (const r of rows) {
         r.mass = _formatObjectMass(r._ref);
+        r.density = _formatObjectDensity(r._ref);
+        r.massOffset = _formatObjectMassOffset(r._ref);
     }
     return rows;
 }
 
 function _buildBomRows(root) {
     const rows = _buildTreeRows(root, _bomState.includeGroups, _bomState.includeMeshes, _bomState.groupByName);
-    return _attachMassToRows(rows, root);
+    return _attachComputedFields(rows, root);
 }
 
 function _downloadBlob(blob, filename) {
@@ -130,6 +158,8 @@ function _makeRootRow(root) {
         depth: 0,
         isGroup: true,
         mass: _formatObjectMass(root),
+        density: _formatObjectDensity(root),
+        massOffset: _formatObjectMassOffset(root),
     };
 }
 
@@ -190,16 +220,11 @@ function _exportTxt(rows, root) {
     });
 
     // Prepend root assembly as row No=0 at depth 0
-    const rootMass = _formatObjectMass(root);
+    const rootSrc = _makeRootRow(root);
     const rootRow = {};
     active.forEach(c => {
-        if (c.key === 'no')        rootRow[c.key] = '0';
-        else if (c.key === 'name')  rootRow[c.key] = _stripNewlines(root?.name || '(unnamed)');
-        else if (c.key === 'type')  rootRow[c.key] = 'Group';
-        else if (c.key === 'qty')   rootRow[c.key] = '1';
-        else if (c.key === 'mass')  rootRow[c.key] = rootMass;
-        else if (c.key === 'depth') rootRow[c.key] = '0';
-        else                        rootRow[c.key] = '';
+        if (c.key === 'name') rootRow[c.key] = _stripNewlines(root?.name || '(unnamed)');
+        else rootRow[c.key] = String(rootSrc[c.key] ?? '');
     });
     const allRows = [rootRow, ...displayRows];
 
@@ -223,11 +248,13 @@ function _buildTable(rows) {
         const tr = document.createElement('tr');
         if (r.isGroup) tr.classList.add('bom-group-row');
 
-        const tdNo   = document.createElement('td');
-        const tdName = document.createElement('td');
-        const tdType = document.createElement('td');
-        const tdQty  = document.createElement('td');
-        const tdMass = document.createElement('td');
+        const tdNo         = document.createElement('td');
+        const tdName       = document.createElement('td');
+        const tdType       = document.createElement('td');
+        const tdQty        = document.createElement('td');
+        const tdMass       = document.createElement('td');
+        const tdDensity    = document.createElement('td');
+        const tdMassOffset = document.createElement('td');
 
         tdNo.textContent = r.no;
         tdName.style.paddingLeft = (10 + r.depth * INDENT_PX) + 'px';
@@ -235,12 +262,16 @@ function _buildTable(rows) {
         tdType.textContent = r.type;
         tdQty.textContent  = r.qty;
         tdMass.textContent = r.mass ?? '–';
+        tdDensity.textContent = r.density ?? '–';
+        tdMassOffset.textContent = r.massOffset ?? '–';
 
         tr.appendChild(tdNo);
         tr.appendChild(tdName);
         tr.appendChild(tdType);
         tr.appendChild(tdQty);
         tr.appendChild(tdMass);
+        tr.appendChild(tdDensity);
+        tr.appendChild(tdMassOffset);
         tbody.appendChild(tr);
     });
 
@@ -316,7 +347,7 @@ function _createDialog() {
         <div class="bom-table-wrap">
             <table id="bom-table">
                 <thead>
-                    <tr><th>No.</th><th>Name</th><th>Type</th><th>Qty</th><th>Mass (unit)</th></tr>
+                    <tr><th>No.</th><th>Name</th><th>Type</th><th>Qty</th><th>Mass (unit)</th><th>Density (g/cm³)</th><th>Mass offset (kg)</th></tr>
                 </thead>
                 <tbody></tbody>
             </table>
