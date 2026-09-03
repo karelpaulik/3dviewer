@@ -14802,16 +14802,20 @@ function rebuildArrangementsList() {
 // Snap scene to the state just before step at snapIndex (all steps 0..snapIndex applied),
 // then delegate to assemblyPrevStep() or assemblyNextStep() for the animated boundary move.
 function _snapAndAnimate(snapIndex, goingForward) {
-    // Reset all objects to assembled (init) positions
+    // Reset all objects to assembled (init) pose — position, rotation and scale.
     [...assemblyData.steps].reverse().forEach(step => {
         step.transformations.forEach(t => {
             t.objectRef.position.set(t.initPosition.x, t.initPosition.y, t.initPosition.z);
+            if (t.initQuaternion) t.objectRef.quaternion.set(t.initQuaternion.x, t.initQuaternion.y, t.initQuaternion.z, t.initQuaternion.w);
+            if (t.initScale)      t.objectRef.scale.set(t.initScale.x, t.initScale.y, t.initScale.z);
         });
     });
     // Apply steps 0..snapIndex instantly
     for (let i = 0; i <= snapIndex; i++) {
         assemblyData.steps[i].transformations.forEach(t => {
             t.objectRef.position.set(t.finalPosition.x, t.finalPosition.y, t.finalPosition.z);
+            if (t.finalQuaternion) t.objectRef.quaternion.set(t.finalQuaternion.x, t.finalQuaternion.y, t.finalQuaternion.z, t.finalQuaternion.w);
+            if (t.finalScale)      t.objectRef.scale.set(t.finalScale.x, t.finalScale.y, t.finalScale.z);
         });
     }
     assemblyState.currentStepIndex = snapIndex;
