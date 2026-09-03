@@ -45,6 +45,20 @@ let getActiveArrangementId = null;
 let isArrangementDirty = null;
 /** @type {((arrangement: object) => void)|null} */
 let onApplyArrangement = null;
+/** @type {(() => Array<{id: number, name?: string, steps?: Array<{name?: string, camera?: object|null}>}>)|null} */
+let getWorkflows = null;
+/** @type {(() => number|null)|null} */
+let getActiveWorkflowId = null;
+/** @type {(() => number)|null} */
+let getCurrentStepIndex = null;
+/** @type {(() => boolean)|null} */
+let isPlaybackDetached = null;
+/** @type {((index: number) => void)|null} */
+let onSelectWorkflow = null;
+/** @type {((index: number) => void)|null} */
+let onGoToAssembled = null;
+/** @type {((index: number, stepIndex: number) => void)|null} */
+let onGoToStep = null;
 
 // -------------------------------------------------------------------
 // Context menu
@@ -646,7 +660,7 @@ function getOutlinerChildren(obj) {
  * @param {{ onSelect: Function, onToggleVisibility: Function }} callbacks
  * @returns {HTMLDivElement} the panel element (for guiWrapper hit-testing)
  */
-export function initOutliner({ onSelect, onToggleVisibility: onVis, onToggleSelectable: onSel, onGroupAdd: onGroupAddCb, onGroupRemove: onGroupRemoveCb, onHideOthers: onHideOthersCb, onShowAll: onShowAllCb, onReparent: onReparentCb, onRemove: onRemoveCb, onRemoveGroup: onRemoveGroupCb, onGetGroupSelection: onGetGroupSelectionCb, onGetGroupOriginalParents: onGetGroupOriginalParentsCb, onSortChildren: onSortChildrenCb, onCloneObject: onCloneObjectCb, onAddObject3D: onAddObject3DCb, onAddPrimitive: onAddPrimitiveCb, onPromoteToRoot: onPromoteToRootCb, getDocuments: getDocumentsCb, getAttachments: getAttachmentsCb, onOpenDocument: onOpenDocumentCb, onOpenAttachment: onOpenAttachmentCb, canOpenAttachment: canOpenAttachmentCb, getArrangements: getArrangementsCb, getActiveArrangementId: getActiveArrangementIdCb, isArrangementDirty: isArrangementDirtyCb, onApplyArrangement: onApplyArrangementCb }) {
+export function initOutliner({ onSelect, onToggleVisibility: onVis, onToggleSelectable: onSel, onGroupAdd: onGroupAddCb, onGroupRemove: onGroupRemoveCb, onHideOthers: onHideOthersCb, onShowAll: onShowAllCb, onReparent: onReparentCb, onRemove: onRemoveCb, onRemoveGroup: onRemoveGroupCb, onGetGroupSelection: onGetGroupSelectionCb, onGetGroupOriginalParents: onGetGroupOriginalParentsCb, onSortChildren: onSortChildrenCb, onCloneObject: onCloneObjectCb, onAddObject3D: onAddObject3DCb, onAddPrimitive: onAddPrimitiveCb, onPromoteToRoot: onPromoteToRootCb, getDocuments: getDocumentsCb, getAttachments: getAttachmentsCb, onOpenDocument: onOpenDocumentCb, onOpenAttachment: onOpenAttachmentCb, canOpenAttachment: canOpenAttachmentCb, getArrangements: getArrangementsCb, getActiveArrangementId: getActiveArrangementIdCb, isArrangementDirty: isArrangementDirtyCb, onApplyArrangement: onApplyArrangementCb, getWorkflows: getWorkflowsCb, getActiveWorkflowId: getActiveWorkflowIdCb, getCurrentStepIndex: getCurrentStepIndexCb, isPlaybackDetached: isPlaybackDetachedCb, onSelectWorkflow: onSelectWorkflowCb, onGoToAssembled: onGoToAssembledCb, onGoToStep: onGoToStepCb }) {
     onSelectObject = onSelect;
     onToggleVisibility = onVis;
     onToggleSelectable = onSel || null;
@@ -673,6 +687,13 @@ export function initOutliner({ onSelect, onToggleVisibility: onVis, onToggleSele
     getActiveArrangementId = getActiveArrangementIdCb || null;
     isArrangementDirty = isArrangementDirtyCb || null;
     onApplyArrangement = onApplyArrangementCb || null;
+    getWorkflows = getWorkflowsCb || null;
+    getActiveWorkflowId = getActiveWorkflowIdCb || null;
+    getCurrentStepIndex = getCurrentStepIndexCb || null;
+    isPlaybackDetached = isPlaybackDetachedCb || null;
+    onSelectWorkflow = onSelectWorkflowCb || null;
+    onGoToAssembled = onGoToAssembledCb || null;
+    onGoToStep = onGoToStepCb || null;
 
     // --- Panel container ---
     panelEl = document.createElement('div');
@@ -831,6 +852,30 @@ export function refreshArrangementsFolder() {
         ? (childList ? existing.classList.contains('outliner-expanded') : true)
         : true;
     const node = createArrangementsFolderNode(expanded);
+    if (existing) {
+        existing.replaceWith(node);
+    } else {
+        const sep = treeEl.querySelector(':scope > .outliner-project-section');
+        if (sep) treeEl.insertBefore(node, sep);
+        else treeEl.appendChild(node);
+    }
+    const searchVal = searchInputEl?.value?.trim() || '';
+    if (searchVal) filterAssetSection(wildcardToRegex(searchVal));
+}
+
+/**
+ * Replace only the Workflows folder in place (catalog / active / current step changed).
+ * Avoids a full tree rebuild — updateAssemblyGuiInfo also runs on playback.
+ */
+export function refreshWorkflowsFolder() {
+    if (!treeEl) return;
+    const existing = treeEl.querySelector(':scope > [data-expand-id="project:workflows"]');
+    const childList = existing?.querySelector(':scope > .outliner-children');
+    const expanded = existing
+        ? (childList ? existing.classList.contains('outliner-expanded') : true)
+        : true;
+    const expandedIds = collectExpandedUUIDs();
+    const node = createWorkflowsFolderNode(expanded, expandedIds);
     if (existing) {
         existing.replaceWith(node);
     } else {
@@ -1132,6 +1177,9 @@ function appendProjectSection(expandedIds) {
     const arrExpanded = expandedIds ? expandedIds.has('project:arrangements') : true;
     treeEl.appendChild(createArrangementsFolderNode(arrExpanded));
 
+    const wfExpanded = expandedIds ? expandedIds.has('project:workflows') : true;
+    treeEl.appendChild(createWorkflowsFolderNode(wfExpanded, expandedIds));
+
     const sep = document.createElement('li');
     sep.className = 'outliner-project-section';
     sep.setAttribute('aria-hidden', 'true');
@@ -1170,14 +1218,73 @@ function createArrangementsFolderNode(expanded) {
     });
 }
 
-function createAssetFolderNode({ expandId, label, children, expanded }) {
+function createWorkflowsFolderNode(expanded, expandedIds) {
+    const workflows = getWorkflows ? getWorkflows() : [];
+    const activeId = getActiveWorkflowId ? getActiveWorkflowId() : null;
+    const currentStep = getCurrentStepIndex ? getCurrentStepIndex() : -1;
+    const detached = isPlaybackDetached ? isPlaybackDetached() : false;
+
+    const wfFolders = workflows.map((wf, index) => {
+        const isActive = wf.id === activeId;
+        const wfExpanded = expandedIds
+            ? expandedIds.has(`workflow:${wf.id}`)
+            : isActive;
+        const steps = wf.steps || [];
+
+        const assembledActive = isActive && !detached && currentStep === -1;
+        const items = [
+            createAssetItemNode({
+                expandId: `workflow:${wf.id}:assembled`,
+                label: '0: Assembled',
+                title: 'Assembled',
+                extraClass: assembledActive ? 'outliner-asset-active' : undefined,
+                depth: 2,
+                onClick: () => { if (onGoToAssembled) onGoToAssembled(index); },
+            }),
+            ...steps.map((step, i) => {
+                const isStepActive = isActive && !detached && currentStep === i;
+                const titleParts = [step.name || '(unnamed)'];
+                if (step.camera) titleParts.push('📷 camera saved');
+                return createAssetItemNode({
+                    expandId: `workflow:${wf.id}:step:${i}`,
+                    label: `${i + 1}: ${step.name || '(unnamed)'}`,
+                    title: titleParts.join(' — '),
+                    extraClass: isStepActive ? 'outliner-asset-active' : undefined,
+                    depth: 2,
+                    onClick: () => { if (onGoToStep) onGoToStep(index, i); },
+                });
+            }),
+        ];
+
+        return createAssetFolderNode({
+            expandId: `workflow:${wf.id}`,
+            label: wf.name || '(unnamed)',
+            title: wf.name || '(unnamed)',
+            children: items,
+            expanded: wfExpanded,
+            depth: 1,
+            extraClass: isActive ? 'outliner-asset-active' : undefined,
+            onClick: () => { if (onSelectWorkflow) onSelectWorkflow(index); },
+        });
+    });
+
+    return createAssetFolderNode({
+        expandId: 'project:workflows',
+        label: `Workflows (${workflows.length})`,
+        children: wfFolders,
+        expanded,
+    });
+}
+
+function createAssetFolderNode({ expandId, label, title, children, expanded, depth = 0, extraClass, onClick }) {
     const li = document.createElement('li');
-    li.className = 'outliner-node outliner-asset outliner-asset-folder';
+    li.className = 'outliner-node outliner-asset outliner-asset-folder'
+        + (extraClass ? ` ${extraClass}` : '');
     li.dataset.expandId = expandId;
 
     const row = document.createElement('div');
     row.className = 'outliner-row';
-    row.style.paddingLeft = '4px';
+    row.style.paddingLeft = (4 + depth * 16) + 'px';
 
     const hasChildren = children.length > 0;
     const arrow = document.createElement('span');
@@ -1197,9 +1304,11 @@ function createAssetFolderNode({ expandId, label, children, expanded }) {
     const labelEl = document.createElement('span');
     labelEl.className = 'outliner-label';
     labelEl.textContent = label;
+    if (title) labelEl.title = title;
     labelEl.addEventListener('click', (e) => {
         e.stopPropagation();
-        if (hasChildren) toggleAssetExpand(li);
+        if (onClick) onClick();
+        else if (hasChildren) toggleAssetExpand(li);
     });
     row.appendChild(labelEl);
     li.appendChild(row);
@@ -1215,7 +1324,7 @@ function createAssetFolderNode({ expandId, label, children, expanded }) {
     return li;
 }
 
-function createAssetItemNode({ expandId, label, title, muted, extraClass, onClick }) {
+function createAssetItemNode({ expandId, label, title, muted, extraClass, onClick, depth = 1 }) {
     const li = document.createElement('li');
     li.className = 'outliner-node outliner-asset'
         + (muted ? ' outliner-asset-muted' : '')
@@ -1224,7 +1333,7 @@ function createAssetItemNode({ expandId, label, title, muted, extraClass, onClic
 
     const row = document.createElement('div');
     row.className = 'outliner-row';
-    row.style.paddingLeft = '20px';
+    row.style.paddingLeft = (4 + depth * 16) + 'px';
 
     const arrow = document.createElement('span');
     arrow.className = 'outliner-arrow';
@@ -1694,33 +1803,38 @@ function filterAssetSection(regex) {
     const folders = treeEl.querySelectorAll(':scope > .outliner-asset-folder');
     let anyFolderVisible = false;
     for (const folder of folders) {
-        const folderLabel = folder.querySelector(':scope > .outliner-row > .outliner-label');
-        const folderMatch = !!(folderLabel && regex.test(folderLabel.textContent));
-        const childList = folder.querySelector(':scope > .outliner-children');
-        let anyChildMatch = false;
-        if (childList) {
-            for (const child of childList.children) {
-                if (!child.classList.contains('outliner-asset')) continue;
-                const lab = child.querySelector(':scope > .outliner-row > .outliner-label');
-                const match = !!(lab && regex.test(lab.textContent));
-                child.style.display = (folderMatch || match) ? '' : 'none';
-                if (match) anyChildMatch = true;
-            }
-        }
-        const visible = folderMatch || anyChildMatch;
-        folder.style.display = visible ? '' : 'none';
-        if (visible) {
-            anyFolderVisible = true;
-            if (childList && childList.children.length > 0) {
-                childList.style.display = '';
-                const arrow = folder.querySelector(':scope > .outliner-row > .outliner-arrow');
-                if (arrow) arrow.textContent = '▼';
-                folder.classList.add('outliner-expanded');
-            }
-        }
+        if (applyAssetFilter(folder, regex, false)) anyFolderVisible = true;
     }
     const sep = treeEl.querySelector(':scope > .outliner-project-section');
     if (sep) sep.style.display = anyFolderVisible ? '' : 'none';
+}
+
+/**
+ * Show an asset node when its label matches, an ancestor matched, or a descendant matches.
+ * Matching folders expand so nested hits stay visible.
+ * @returns {boolean} whether this node should be visible
+ */
+function applyAssetFilter(node, regex, ancestorMatch) {
+    const lab = node.querySelector(':scope > .outliner-row > .outliner-label');
+    const selfMatch = !!(lab && regex.test(lab.textContent));
+    const forceShow = ancestorMatch || selfMatch;
+    const childList = node.querySelector(':scope > .outliner-children');
+    let anyDescendantMatch = false;
+    if (childList) {
+        for (const child of childList.children) {
+            if (!child.classList.contains('outliner-asset')) continue;
+            if (applyAssetFilter(child, regex, forceShow)) anyDescendantMatch = true;
+        }
+    }
+    const visible = forceShow || anyDescendantMatch;
+    node.style.display = visible ? '' : 'none';
+    if (visible && childList && childList.children.length > 0) {
+        childList.style.display = '';
+        const arrow = node.querySelector(':scope > .outliner-row > .outliner-arrow');
+        if (arrow && arrow.style.visibility !== 'hidden') arrow.textContent = '▼';
+        node.classList.add('outliner-expanded');
+    }
+    return visible;
 }
 
 // -------------------------------------------------------------------

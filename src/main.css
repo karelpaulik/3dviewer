@@ -2399,6 +2399,11 @@ a, button, input, select {
     font-weight: 600;
 }
 
+.outliner-asset-folder.outliner-asset-active > .outliner-row .outliner-label {
+    color: #88ccff;
+    font-weight: 600;
+}
+
 .outliner-asset-dirty > .outliner-row .outliner-label {
     color: #f0c040;
 }

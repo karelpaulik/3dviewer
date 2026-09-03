@@ -30,7 +30,7 @@ import { GUI } from 'lil-gui';
 import ZipLoader from 'zip-loader';
 import { updateCrossSectionLines as updateCrossSectionLinesCore, updateSectionCrossLines as updateSectionCrossLinesCore } from './crossSectionUtils.js';
 import { exportToHTML, exportToHTMLDraco, exportToHTMLObfuscated, exportToHTMLObfuscatedDraco } from './htmlExport.js';
-import { initOutliner, toggleOutliner, rebuildTree, highlightObject as outlinerHighlight, updateVisibilityIcon, updateSelectableIcon, updateObjectLabel, isOutlinerOpen, navigateOutliner, highlightGroupObjects, clearGroupHighlights, setNavigationPosition, setOnTreeRebuild, setShowAuxiliaryObjects, isOutlinerAuxiliaryObject, notifyOutlinerAuxiliaryChildrenChanged, refreshArrangementsFolder } from './sceneOutliner.js';
+import { initOutliner, toggleOutliner, rebuildTree, highlightObject as outlinerHighlight, updateVisibilityIcon, updateSelectableIcon, updateObjectLabel, isOutlinerOpen, navigateOutliner, highlightGroupObjects, clearGroupHighlights, setNavigationPosition, setOnTreeRebuild, setShowAuxiliaryObjects, isOutlinerAuxiliaryObject, notifyOutlinerAuxiliaryChildrenChanged, refreshArrangementsFolder, refreshWorkflowsFolder } from './sceneOutliner.js';
 import { positionContextMenu } from './uiMenuUtils.js';
 import { computeModelStats, computeSurfaceAreaAndVolume, formatGeometryMeasure, MODEL_UNIT_OPTIONS, formatMass, computeRolledUpMassForRoots } from './modelInfoUtils.js';
 import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, updateMeasurement3dOrientations, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements, isRadiusActive, setRadiusActive, addRadiusPoint, updateRadiusPreview, clearRadiusMeasurements, isSelectDimActive, setSelectDimActive, refreshLabelEditListeners, hasSelectedDimension, deselectSelectedDimension, deleteSelectedDimension, resetSelectedMeasurementLabel, getSelectedMeasurementLabelStyle, getSelectedMeasurementLabelDim, setSelectedMeasurementLabelDim, setSelectedMeasurementOrientationMode, setSelectedMeasurementTextColor, setSelectedMeasurementBgColor, setSelectedMeasurementFontSize, initSelectDimension, updateSelectDimensionCamera, reconstructMeasurements, stripMeasurementVisuals, setMeasurementsVisible, setMeasurementDepthTest, removeMeasurementsForOwner, isCadDimActive, setCadDimActive, getCadDimStep, getCadDimAxis, getMeasurePendingCount, getAngleStep, getRadiusStep, addCadDimPoint, updateCadDimPreview, updateCadDimHoverPreview, cycleCadDimAxis, placeCadDim, clearCadDimMeasurements, removeCadDimMeasurementsForOwner, getSelectedCadDim, setCadDimLabelMode, setCadDimDragMode, selectDimTouchStart, selectDimTouchMove, selectDimTouchEnd, registerLabelForSelection, getSelectedCadDim3d, getSelectedAnnotation, getSelectedAnnotation3d, getSelectedDistance, getSelectedAngle, getSelectedRadius, getCadDimMeasurements, deleteCadDimByRef, convertCadDim3dTo2d, getFlatDimDefaults, applyDefaultsToAllFlatDim, getDistanceLabelDefaults, getAngleLabelDefaults, getRadiusLabelDefaults, getDistanceMarkerDefaults, getAngleMarkerDefaults, getRadiusMarkerDefaults, applyDefaultsToAllDistanceMeasurements, applyDefaultsToAllAngleMeasurements, applyDefaultsToAllRadiusMeasurements, setDistanceMarkerColor, setAngleMarkerColor, setRadiusMarkerColor, getMeasurementMarkerSettings, setMeasurementMarkerFixedSize, setMeasurementMarkerFixedScreenPx, setMeasurementMarkerWorldSize, getDefaultMeasurementLabelDim, setDefaultMeasurementLabelDim, getMeasurement3dDefaults, setDimMarkerFixedSize, setDimMarkerFixedScreenPx, setDimMarkerWorldSize, setDimMarkerColor, getDimMarkerSettings, setMeasureOnSessionComplete, setAngleOnSessionComplete, setRadiusOnSessionComplete, setCadDimOnSessionComplete } from './measurementUtils.js';
@@ -2137,6 +2137,22 @@ outlinerPanelEl = initOutliner({
     getActiveArrangementId,
     isArrangementDirty,
     onApplyArrangement: applyAssemblyArrangement,
+    getWorkflows: () => assemblyWorkflows,
+    getActiveWorkflowId: () => getActiveAssemblyWorkflow()?.id ?? null,
+    getCurrentStepIndex: () => assemblyState.currentStepIndex,
+    isPlaybackDetached: isAssemblyPlaybackDetached,
+    onSelectWorkflow: (index) => {
+        if (index === activeWorkflowIndex) assemblyGoToAssembled();
+        else setActiveAssemblyWorkflow(index);
+    },
+    onGoToAssembled: (index) => {
+        if (index !== activeWorkflowIndex) setActiveAssemblyWorkflow(index);
+        assemblyGoToAssembled();
+    },
+    onGoToStep: (index, stepIndex) => {
+        if (index !== activeWorkflowIndex) setActiveAssemblyWorkflow(index);
+        assemblyGoToStep(stepIndex);
+    },
 });
 rebuildTree(loadedModels);
 
@@ -14355,6 +14371,7 @@ function updateAssemblyGuiInfo() {
     updateAssemblyStepHelpers();
     rebuildAssemblyStepsList();
     if (_arrangementsFolderRef) updateArrangementsGuiInfo();
+    refreshWorkflowsFolder();
 }
 
 // Rebuild the "Steps" subfolder with one button per step.
