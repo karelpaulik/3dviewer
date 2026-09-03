@@ -565,6 +565,8 @@ const objectToDom = new WeakMap();
 
 // Currently highlighted node in the tree (matches viewport selection)
 let activeTreeNode = null;
+/** @type {string|null} expandId of a selected workflow Assembled/step row (survives DOM refresh) */
+let selectedExpandId = null;
 
 // Set of <li> nodes highlighted as group members
 const groupHighlightNodes = new Set();
@@ -885,6 +887,7 @@ export function refreshWorkflowsFolder() {
     }
     const searchVal = searchInputEl?.value?.trim() || '';
     if (searchVal) filterAssetSection(wildcardToRegex(searchVal));
+    restoreSelectedExpandId({ scroll: true });
 }
 
 function rebuildTreeDom(expandedUUIDs) {
@@ -906,6 +909,7 @@ function rebuildTreeDom(expandedUUIDs) {
     if (onGetGroupSelection) {
         highlightGroupObjects(onGetGroupSelection());
     }
+    restoreSelectedExpandId({ scroll: false });
 }
 
 /**
@@ -935,6 +939,7 @@ export function setShowAuxiliaryObjects(value) {
  */
 export function highlightObject(object, options = {}) {
     const scroll = options.scroll !== false;
+    selectedExpandId = null;
     if (activeTreeNode) {
         activeTreeNode.classList.remove('outliner-selected');
     }
@@ -980,6 +985,7 @@ export function highlightObject(object, options = {}) {
  * @param {import('three').Object3D} object
  */
 export function setNavigationPosition(object) {
+    selectedExpandId = null;
     if (activeTreeNode) activeTreeNode.classList.remove('outliner-selected');
     activeTreeNode = null;
     if (!object) return;
@@ -1031,13 +1037,21 @@ export function updateSelectableIcon(object) {
 }
 
 /**
- * Navigate the outliner selection up or down through the currently visible nodes.
- * Returns the Object3D that should become selected, or null if nothing to navigate to.
+ * Navigate the outliner selection up or down.
+ * Workflow Assembled/step rows stay within the same workflow and are activated.
+ * Scene-graph nodes return the Object3D to select.
  * @param {'up'|'down'} direction
- * @returns {import('three').Object3D|null}
+ * @returns {{ kind: 'workflow' } | { kind: 'object', object: import('three').Object3D } | null}
  */
 export function navigateOutliner(direction) {
     if (!treeEl) return null;
+
+    const currentId = selectedExpandId || activeTreeNode?.dataset?.expandId || null;
+    if (parseWorkflowItemExpandId(currentId)) {
+        navigateWorkflowStep(direction, currentId);
+        return { kind: 'workflow' };
+    }
+
     const allNodes = Array.from(treeEl.querySelectorAll('.outliner-node:not(.outliner-asset)'));
     const visibleNodes = allNodes.filter(li => isNodeVisible(li));
     if (visibleNodes.length === 0) return null;
@@ -1051,7 +1065,80 @@ export function navigateOutliner(direction) {
     if (idx === -1) idx = 0;
 
     const targetLi = visibleNodes[idx];
-    return domToObject.get(targetLi) || null;
+    const object = domToObject.get(targetLi) || null;
+    return object ? { kind: 'object', object } : null;
+}
+
+/** @returns {{ workflowId: number, kind: 'assembled'|'step', stepIndex: number } | null} */
+function parseWorkflowItemExpandId(id) {
+    if (!id) return null;
+    const m = String(id).match(/^workflow:(\d+):(assembled|step:(\d+))$/);
+    if (!m) return null;
+    return {
+        workflowId: Number(m[1]),
+        kind: m[2] === 'assembled' ? 'assembled' : 'step',
+        stepIndex: m[2] === 'assembled' ? -1 : Number(m[3]),
+    };
+}
+
+function workflowIndexById(workflowId) {
+    const workflows = getWorkflows ? getWorkflows() : [];
+    return workflows.findIndex(wf => wf.id === workflowId);
+}
+
+function selectOutlinerAssetByExpandId(id, { scroll = true } = {}) {
+    if (!treeEl || !id) return false;
+    if (activeTreeNode) activeTreeNode.classList.remove('outliner-selected');
+    selectedExpandId = id;
+    const li = treeEl.querySelector(`[data-expand-id="${id}"]`);
+    if (!li) {
+        activeTreeNode = null;
+        return false;
+    }
+    li.classList.add('outliner-selected');
+    activeTreeNode = li;
+    if (scroll) li.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    return true;
+}
+
+function restoreSelectedExpandId({ scroll = false } = {}) {
+    if (selectedExpandId) selectOutlinerAssetByExpandId(selectedExpandId, { scroll });
+}
+
+function navigateWorkflowStep(direction, currentId) {
+    const parsed = parseWorkflowItemExpandId(currentId);
+    if (!parsed) return;
+    const wfIndex = workflowIndexById(parsed.workflowId);
+    if (wfIndex < 0) return;
+
+    const folder = treeEl.querySelector(`[data-expand-id="workflow:${parsed.workflowId}"]`);
+    const childList = folder?.querySelector(':scope > .outliner-children');
+    if (!childList) return;
+
+    const siblings = Array.from(childList.children).filter(li =>
+        li.classList.contains('outliner-asset')
+        && parseWorkflowItemExpandId(li.dataset.expandId)
+        && isNodeVisible(li)
+    );
+    if (siblings.length === 0) return;
+
+    let idx = siblings.findIndex(li => li.dataset.expandId === currentId);
+    if (idx < 0) idx = 0;
+    if (direction === 'up') {
+        idx = idx <= 0 ? 0 : idx - 1;
+    } else {
+        idx = idx >= siblings.length - 1 ? siblings.length - 1 : idx + 1;
+    }
+
+    const targetId = siblings[idx].dataset.expandId;
+    const next = parseWorkflowItemExpandId(targetId);
+    if (!next) return;
+    selectedExpandId = targetId;
+    if (next.kind === 'assembled') {
+        if (onGoToAssembled) onGoToAssembled(wfIndex);
+    } else if (onGoToStep) {
+        onGoToStep(wfIndex, next.stepIndex);
+    }
 }
 
 /**
@@ -1239,7 +1326,10 @@ function createWorkflowsFolderNode(expanded, expandedIds) {
                 title: 'Assembled',
                 extraClass: assembledActive ? 'outliner-asset-active' : undefined,
                 depth: 2,
-                onClick: () => { if (onGoToAssembled) onGoToAssembled(index); },
+                onClick: () => {
+                    selectedExpandId = `workflow:${wf.id}:assembled`;
+                    if (onGoToAssembled) onGoToAssembled(index);
+                },
             }),
             ...steps.map((step, i) => {
                 const isStepActive = isActive && !detached && currentStep === i;
@@ -1251,7 +1341,10 @@ function createWorkflowsFolderNode(expanded, expandedIds) {
                     title: titleParts.join(' — '),
                     extraClass: isStepActive ? 'outliner-asset-active' : undefined,
                     depth: 2,
-                    onClick: () => { if (onGoToStep) onGoToStep(index, i); },
+                    onClick: () => {
+                        selectedExpandId = `workflow:${wf.id}:step:${i}`;
+                        if (onGoToStep) onGoToStep(index, i);
+                    },
                 });
             }),
         ];
@@ -1264,7 +1357,10 @@ function createWorkflowsFolderNode(expanded, expandedIds) {
             expanded: wfExpanded,
             depth: 1,
             extraClass: isActive ? 'outliner-asset-active' : undefined,
-            onClick: () => { if (onSelectWorkflow) onSelectWorkflow(index); },
+            onClick: () => {
+                selectedExpandId = `workflow:${wf.id}:assembled`;
+                if (onSelectWorkflow) onSelectWorkflow(index);
+            },
         });
     });
 
@@ -1421,7 +1517,8 @@ function createTreeNode(obj, depth) {
         e.stopPropagation();
         if (e.ctrlKey && onGroupAdd) {
             onGroupAdd(obj);
-            if (activeTreeNode) activeTreeNode.classList.remove('outliner-selected'); // vyčisti předchozí
+            if (activeTreeNode) activeTreeNode.classList.remove('outliner-selected');
+            selectedExpandId = null;
             activeTreeNode = li; // aktualizuj pozici pro navigaci šipkami (bez CSS zvýraznění)
         } else if (onSelectObject) {
             onSelectObject(obj);

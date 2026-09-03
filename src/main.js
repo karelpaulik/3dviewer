@@ -2639,10 +2639,10 @@ function init() {
             
             case 'ArrowUp': // move up in the outliner
                 if (isOutlinerOpen()) {
-                    const obj = navigateOutliner('up');
-                    if (obj) {
-                        if (event.ctrlKey) { toggleObjectInMultiSelect(obj); setNavigationPosition(obj); }
-                        else { selectObject(obj, { fromOutliner: true }); render(); }
+                    const result = navigateOutliner('up');
+                    if (result?.kind === 'object' && result.object) {
+                        if (event.ctrlKey) { toggleObjectInMultiSelect(result.object); setNavigationPosition(result.object); }
+                        else { selectObject(result.object, { fromOutliner: true }); render(); }
                     }
                     event.preventDefault();
                 }
@@ -2650,10 +2650,10 @@ function init() {
 
             case 'ArrowDown': // move down in the outliner
                 if (isOutlinerOpen()) {
-                    const obj = navigateOutliner('down');
-                    if (obj) {
-                        if (event.ctrlKey) { toggleObjectInMultiSelect(obj); setNavigationPosition(obj); }
-                        else { selectObject(obj, { fromOutliner: true }); render(); }
+                    const result = navigateOutliner('down');
+                    if (result?.kind === 'object' && result.object) {
+                        if (event.ctrlKey) { toggleObjectInMultiSelect(result.object); setNavigationPosition(result.object); }
+                        else { selectObject(result.object, { fromOutliner: true }); render(); }
                     }
                     event.preventDefault();
                 }
