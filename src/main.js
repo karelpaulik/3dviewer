@@ -4178,6 +4178,14 @@ function adoptLoadedCoGRoot(node) {
     return true;
 }
 
+/** Alert and return true when the selection subtree has no density and no mass offset. */
+function warnIfNoMassContribution(roots) {
+    const rolled = computeRolledUpMassForRoots(roots, viewProp.modelUnit);
+    if (rolled.hasContribution) return false;
+    alert('No density or mass offset is specified on this part or any of its descendants.');
+    return true;
+}
+
 function saveCurrentCoG() {
     const roots = (selectedObjects.length > 1)
         ? selectedObjects.slice()
@@ -4186,6 +4194,7 @@ function saveCurrentCoG() {
     if (roots.some(r => isCoGRoot(r) || isCoGLocator(r))) return;
 
     updateAreaVolume(roots);
+    if (warnIfNoMassContribution(roots)) return;
     if (!_cogFollow.local || !_cogFollow.frame) return;
 
     _cogWorldScratch.copy(_cogFollow.local);
@@ -5162,6 +5171,11 @@ function refreshSelectedObjGui(obj) {
     // Toggle to show/hide the center of gravity marker
     part.showCoG = false;
     selectedFolder.add(part, 'showCoG').name('Center of Gravity').onChange(function() {
+        if (part.showCoG && warnIfNoMassContribution([obj])) {
+            part.showCoG = false;
+            this.updateDisplay();
+            return;
+        }
         updateAreaVolume(obj);
         render();
     });
@@ -5376,6 +5390,11 @@ function refreshGroupGui() {
     selectedFolder.add(part, 'mass').name('Mass').disable().listen();
     selectedFolder.add(part, 'centerOfGravity').name('Center of gravity (X, Y, Z)').disable().listen();
     selectedFolder.add(part, 'showCoG').name('Center of Gravity').onChange(function() {
+        if (part.showCoG && warnIfNoMassContribution(selectedObjects)) {
+            part.showCoG = false;
+            this.updateDisplay();
+            return;
+        }
         updateAreaVolume(selectedObjects);
         render();
     });
