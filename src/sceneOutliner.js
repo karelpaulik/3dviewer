@@ -863,6 +863,7 @@ export function refreshArrangementsFolder() {
     }
     const searchVal = searchInputEl?.value?.trim() || '';
     if (searchVal) filterAssetSection(wildcardToRegex(searchVal));
+    restoreSelectedExpandId({ scroll: true });
 }
 
 /**
@@ -1039,9 +1040,10 @@ export function updateSelectableIcon(object) {
 /**
  * Navigate the outliner selection up or down.
  * Workflow Assembled/step rows stay within the same workflow and are activated.
+ * Arrangement rows stay within Arrangements and are applied.
  * Scene-graph nodes return the Object3D to select.
  * @param {'up'|'down'} direction
- * @returns {{ kind: 'workflow' } | { kind: 'object', object: import('three').Object3D } | null}
+ * @returns {{ kind: 'workflow' } | { kind: 'arrangement' } | { kind: 'object', object: import('three').Object3D } | null}
  */
 export function navigateOutliner(direction) {
     if (!treeEl) return null;
@@ -1050,6 +1052,10 @@ export function navigateOutliner(direction) {
     if (parseWorkflowItemExpandId(currentId)) {
         navigateWorkflowStep(direction, currentId);
         return { kind: 'workflow' };
+    }
+    if (parseArrangementExpandId(currentId) != null) {
+        navigateArrangement(direction, currentId);
+        return { kind: 'arrangement' };
     }
 
     const allNodes = Array.from(treeEl.querySelectorAll('.outliner-node:not(.outliner-asset)'));
@@ -1139,6 +1145,43 @@ function navigateWorkflowStep(direction, currentId) {
     } else if (onGoToStep) {
         onGoToStep(wfIndex, next.stepIndex);
     }
+}
+
+/** @returns {number|null} arrangement id, or null if not an arrangement row */
+function parseArrangementExpandId(id) {
+    if (!id) return null;
+    const m = String(id).match(/^arrangement:(\d+)$/);
+    return m ? Number(m[1]) : null;
+}
+
+function navigateArrangement(direction, currentId) {
+    const folder = treeEl.querySelector(':scope > [data-expand-id="project:arrangements"]');
+    const childList = folder?.querySelector(':scope > .outliner-children');
+    if (!childList) return;
+
+    const siblings = Array.from(childList.children).filter(li =>
+        li.classList.contains('outliner-asset')
+        && parseArrangementExpandId(li.dataset.expandId) != null
+        && isNodeVisible(li)
+    );
+    if (siblings.length === 0) return;
+
+    let idx = siblings.findIndex(li => li.dataset.expandId === currentId);
+    if (idx < 0) idx = 0;
+    if (direction === 'up') {
+        idx = idx <= 0 ? 0 : idx - 1;
+    } else {
+        idx = idx >= siblings.length - 1 ? siblings.length - 1 : idx + 1;
+    }
+
+    const targetId = siblings[idx].dataset.expandId;
+    const arrangementId = parseArrangementExpandId(targetId);
+    if (arrangementId == null) return;
+    const arrangements = getArrangements ? getArrangements() : [];
+    const arrangement = arrangements.find(a => a.id === arrangementId);
+    if (!arrangement) return;
+    selectedExpandId = targetId;
+    if (onApplyArrangement) onApplyArrangement(arrangement);
 }
 
 /**
@@ -1293,7 +1336,10 @@ function createArrangementsFolderNode(expanded) {
             label: arrangement.name || '(unnamed)',
             title: titleParts.join(' — '),
             extraClass: extraClass || undefined,
-            onClick: () => { if (onApplyArrangement) onApplyArrangement(arrangement); },
+            onClick: () => {
+                selectedExpandId = `arrangement:${arrangement.id}`;
+                if (onApplyArrangement) onApplyArrangement(arrangement);
+            },
         });
     });
 
