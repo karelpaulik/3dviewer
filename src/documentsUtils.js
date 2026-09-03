@@ -182,20 +182,33 @@ const _PDF_CONTENT_H_PT = _PDF_A4_H_PT - 2 * _PDF_MARGIN_PT;
 const _PDF_RENDER_SCALE = 2;
 const DOC_OPEN_MODE_KEY = 'docOpenMode';
 const DOC_PANEL_WIDTH_KEY = 'docPanelWidthPct';
-const _DOC_OPEN_MODE_OPTS = { 'Side-by-side': 'side', 'Fullscreen': 'full' };
+const DOC_WINDOW_BOUNDS_KEY = 'docWindowBounds';
+const _DOC_OPEN_MODE_OPTS = { 'Side-by-side': 'side', 'Window': 'window' };
 const _DOC_MOBILE_BREAKPOINT = 768;
 const _DOC_PANEL_WIDTH_DEFAULT = 45;
 const _DOC_PANEL_WIDTH_MIN_PX = 280;
 const _DOC_PANEL_WIDTH_MAX_VW = 0.9;
+const _DOC_WIN_MIN_W = 320;
+const _DOC_WIN_MIN_H = 220;
+const _DOC_WIN_DEFAULT_W = 900;
+const _DOC_WIN_DEFAULT_H = 640;
+const _DOC_WIN_MIN_VISIBLE = 40;
+
+function _readOpenMode() {
+    const stored = localStorage.getItem(DOC_OPEN_MODE_KEY);
+    if (stored === 'window' || stored === 'full') return 'window';
+    return 'side';
+}
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
 const _docOpenPrefs = {
-    mode: (() => {
-        const stored = localStorage.getItem(DOC_OPEN_MODE_KEY);
-        return stored === 'full' ? 'full' : 'side';
-    })(),
+    mode: _readOpenMode(),
 };
+
+if (localStorage.getItem(DOC_OPEN_MODE_KEY) === 'full') {
+    localStorage.setItem(DOC_OPEN_MODE_KEY, 'window');
+}
 
 let _sidePanelWidthPct = (() => {
     const stored = parseFloat(localStorage.getItem(DOC_PANEL_WIDTH_KEY));
@@ -216,6 +229,13 @@ let _showImportDate = false;    // show (imp. ...) in document button label
 let _pdfExporting = false;
 let _btnExportPdf = null;
 let _resizeLayoutTimer = null;
+let _docWinBounds = null;
+let _docWinMaximized = false;
+let _docWinMaximizeReason = null; // 'user' | 'mobile'
+let _docWinSavedBounds = null;
+let _ignoreWinBoundsObserve = false;
+let _winBoundsSaveTimer = null;
+let _closeConfirmDlg = null;
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
@@ -234,12 +254,10 @@ export function clearDocumentsStore() {
     refreshDocumentsGui();
 }
 
-/** Returns true when the doc overlay is open and 3D model interaction should be suppressed.
- *  Side-by-side never blocks; fullscreen blocks while editing or in view unless 3D nav is on. */
+/** Returns true when the doc overlay should suppress 3D model interaction.
+ *  Side-by-side and floating window never block; clicks outside the overlay reach the scene. */
 export function isDocOverlayBlockingInput() {
-    if (!_overlayEl || _overlayEl.style.display === 'none') return false;
-    if (_getEffectiveOpenMode() === 'side') return false;
-    return _isEditMode || !_nav3d;
+    return false;
 }
 
 /** True when a document is open in edit mode (TipTap active). */
@@ -475,34 +493,265 @@ function _applySidePanelWidth() {
 }
 
 function _getEffectiveOpenMode() {
-    if (window.innerWidth <= _DOC_MOBILE_BREAKPOINT) return 'full';
-    return _docOpenPrefs.mode === 'full' ? 'full' : 'side';
+    return (_docOpenPrefs.mode === 'window' || _docOpenPrefs.mode === 'full') ? 'window' : 'side';
+}
+
+function _defaultWindowBounds() {
+    const panel = document.getElementById('outliner-panel');
+    const left = panel ? Math.max(60, Math.round(panel.getBoundingClientRect().right) + 12) : 60;
+    const top = 60;
+    const width = Math.min(_DOC_WIN_DEFAULT_W, Math.max(_DOC_WIN_MIN_W, window.innerWidth - left - 20));
+    const height = Math.min(_DOC_WIN_DEFAULT_H, Math.max(_DOC_WIN_MIN_H, window.innerHeight - top - 20));
+    return { left, top, width, height };
+}
+
+function _clampWindowBounds(b) {
+    const maxW = window.innerWidth;
+    const maxH = window.innerHeight;
+    const width = Math.max(_DOC_WIN_MIN_W, Math.min(maxW, b.width));
+    const height = Math.max(_DOC_WIN_MIN_H, Math.min(maxH, b.height));
+    let left = b.left;
+    let top = b.top;
+    left = Math.min(left, window.innerWidth - _DOC_WIN_MIN_VISIBLE);
+    top = Math.min(top, window.innerHeight - _DOC_WIN_MIN_VISIBLE);
+    left = Math.max(left, _DOC_WIN_MIN_VISIBLE - width);
+    top = Math.max(top, 0);
+    return { left, top, width, height };
+}
+
+function _getWindowBounds() {
+    if (_docWinBounds) return _clampWindowBounds(_docWinBounds);
+    try {
+        const raw = localStorage.getItem(DOC_WINDOW_BOUNDS_KEY);
+        if (raw) {
+            const parsed = JSON.parse(raw);
+            if ([parsed.left, parsed.top, parsed.width, parsed.height].every(n => Number.isFinite(n))) {
+                _docWinBounds = _clampWindowBounds(parsed);
+                return _docWinBounds;
+            }
+        }
+    } catch { /* use defaults */ }
+    _docWinBounds = _defaultWindowBounds();
+    return _docWinBounds;
+}
+
+function _applyWindowBounds(bounds) {
+    if (!_overlayEl) return;
+    _ignoreWinBoundsObserve = true;
+    const b = _clampWindowBounds(bounds);
+    _overlayEl.style.left = `${b.left}px`;
+    _overlayEl.style.top = `${b.top}px`;
+    _overlayEl.style.width = `${b.width}px`;
+    _overlayEl.style.height = `${b.height}px`;
+    _overlayEl.style.right = '';
+    _docWinBounds = b;
+    requestAnimationFrame(() => { _ignoreWinBoundsObserve = false; });
+}
+
+function _persistWindowBounds() {
+    if (!_overlayEl || _docWinMaximized) return;
+    if (_overlayEl.style.display === 'none') return;
+    if (!_overlayEl.classList.contains('layout-window')) return;
+    const r = _overlayEl.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) return;
+    const b = _clampWindowBounds({
+        left: r.left, top: r.top, width: r.width, height: r.height,
+    });
+    _docWinBounds = b;
+    const needsClamp = Math.abs(r.left - b.left) > 0.5
+        || Math.abs(r.top - b.top) > 0.5
+        || Math.abs(r.width - b.width) > 0.5
+        || Math.abs(r.height - b.height) > 0.5;
+    if (needsClamp) _applyWindowBounds(b);
+    localStorage.setItem(DOC_WINDOW_BOUNDS_KEY, JSON.stringify(_docWinBounds));
+}
+
+function _schedulePersistWindowBounds() {
+    if (_winBoundsSaveTimer) clearTimeout(_winBoundsSaveTimer);
+    _winBoundsSaveTimer = setTimeout(() => {
+        _winBoundsSaveTimer = null;
+        _persistWindowBounds();
+    }, 150);
+}
+
+function _syncMaximizeBtn() {
+    const btn = _overlayEl && _overlayEl.querySelector('.doc-btn-maximize');
+    if (!btn) return;
+    if (_docWinMaximized) {
+        btn.textContent = '⤡';
+        btn.title = 'Restore window';
+    } else {
+        btn.textContent = '⤢';
+        btn.title = 'Maximize window';
+    }
+}
+
+function _setDocWinMaximized(on, reason) {
+    if (!_overlayEl) return;
+    if (on) {
+        if (!_docWinMaximized) {
+            const r = _overlayEl.getBoundingClientRect();
+            const looksFloating = r.width > 0 && r.height > 0
+                && r.width < window.innerWidth - 8
+                && r.height < window.innerHeight - 8;
+            if (looksFloating) {
+                _docWinSavedBounds = { left: r.left, top: r.top, width: r.width, height: r.height };
+                _docWinBounds = _clampWindowBounds(_docWinSavedBounds);
+            } else {
+                _docWinSavedBounds = { ..._getWindowBounds() };
+            }
+        }
+        _ignoreWinBoundsObserve = true;
+        _overlayEl.style.left = '0px';
+        _overlayEl.style.top = '0px';
+        _overlayEl.style.width = `${window.innerWidth}px`;
+        _overlayEl.style.height = `${window.innerHeight}px`;
+        _overlayEl.style.right = '';
+        _overlayEl.classList.add('docs-window--maximized');
+        _docWinMaximized = true;
+        _docWinMaximizeReason = reason || 'user';
+        _syncMaximizeBtn();
+        requestAnimationFrame(() => { _ignoreWinBoundsObserve = false; });
+    } else {
+        _docWinMaximized = false;
+        _docWinMaximizeReason = null;
+        _overlayEl.classList.remove('docs-window--maximized');
+        const b = _docWinSavedBounds || _getWindowBounds();
+        _docWinSavedBounds = null;
+        _applyWindowBounds(b);
+        _persistWindowBounds();
+        _syncMaximizeBtn();
+    }
+}
+
+function _toggleMaximizeDocWindow() {
+    if (_getEffectiveOpenMode() !== 'window') return;
+    _setDocWinMaximized(!_docWinMaximized, 'user');
+}
+
+function _resetNav3d() {
+    _nav3d = false;
+    if (!_overlayEl) return;
+    _overlayEl.style.pointerEvents = '';
+    const btnNav3d = _overlayEl.querySelector('.doc-btn-nav3d');
+    const headerWrap = _overlayEl.querySelector('.doc-header-wrap');
+    if (btnNav3d) {
+        btnNav3d.classList.remove('active');
+        btnNav3d.style.pointerEvents = 'auto';
+        btnNav3d.style.display = 'none';
+    }
+    if (headerWrap) headerWrap.style.pointerEvents = '';
+}
+
+function _isDocDragIgnoreTarget(el) {
+    return !!(el && el.closest && el.closest('button, input, select, textarea, a, .doc-side-splitter'));
+}
+
+function _makeDocWindowDraggable(handle) {
+    handle.addEventListener('mousedown', ev => {
+        if (ev.button !== 0) return;
+        if (_getEffectiveOpenMode() !== 'window' || _docWinMaximized) return;
+        if (_isDocDragIgnoreTarget(ev.target)) return;
+        ev.preventDefault();
+        const win = _overlayEl;
+        const r = win.getBoundingClientRect();
+        const dragOff = { x: ev.clientX - r.left, y: ev.clientY - r.top };
+        document.body.style.userSelect = 'none';
+        const onMove = mv => {
+            win.style.left = `${mv.clientX - dragOff.x}px`;
+            win.style.top = `${mv.clientY - dragOff.y}px`;
+        };
+        const onUp = () => {
+            document.body.style.userSelect = '';
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+            _persistWindowBounds();
+        };
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+    });
+
+    handle.addEventListener('touchstart', ev => {
+        if (ev.touches.length !== 1) return;
+        if (_getEffectiveOpenMode() !== 'window' || _docWinMaximized) return;
+        if (_isDocDragIgnoreTarget(ev.target)) return;
+        ev.preventDefault();
+        const win = _overlayEl;
+        const touch = ev.touches[0];
+        const r = win.getBoundingClientRect();
+        const dragOff = { x: touch.clientX - r.left, y: touch.clientY - r.top };
+        const onMove = mv => {
+            if (mv.touches.length !== 1) return;
+            const t = mv.touches[0];
+            win.style.left = `${t.clientX - dragOff.x}px`;
+            win.style.top = `${t.clientY - dragOff.y}px`;
+        };
+        const onEnd = () => {
+            document.removeEventListener('touchmove', onMove);
+            document.removeEventListener('touchend', onEnd);
+            document.removeEventListener('touchcancel', onEnd);
+            _persistWindowBounds();
+        };
+        document.addEventListener('touchmove', onMove, { passive: false });
+        document.addEventListener('touchend', onEnd);
+        document.addEventListener('touchcancel', onEnd);
+    }, { passive: false });
 }
 
 function _applyDocLayoutMode() {
     if (!_overlayEl || _overlayEl.style.display === 'none') return;
 
+    const wasWindow = _overlayEl.classList.contains('layout-window');
+    if (wasWindow && !_docWinMaximized) _persistWindowBounds();
+    if (wasWindow && _docWinMaximized && _docWinSavedBounds) {
+        _docWinBounds = _clampWindowBounds(_docWinSavedBounds);
+        localStorage.setItem(DOC_WINDOW_BOUNDS_KEY, JSON.stringify(_docWinBounds));
+    }
+
     const mode = _getEffectiveOpenMode();
-    _overlayEl.classList.remove('layout-side', 'layout-full');
-    _overlayEl.classList.add(mode === 'side' ? 'layout-side' : 'layout-full');
+    _overlayEl.classList.remove('layout-side', 'layout-full', 'layout-window');
+    _overlayEl.classList.add(mode === 'side' ? 'layout-side' : 'layout-window');
 
     const bgWrap = _overlayEl.querySelector('.doc-bg-wrap');
     const btnNav3d = _overlayEl.querySelector('.doc-btn-nav3d');
     const headerWrap = _overlayEl.querySelector('.doc-header-wrap');
+    const btnMax = _overlayEl.querySelector('.doc-btn-maximize');
+
+    _resetNav3d();
+    if (bgWrap) bgWrap.style.display = 'none';
+    if (btnNav3d) btnNav3d.style.display = 'none';
+    _overlayEl.style.pointerEvents = '';
+    if (headerWrap) headerWrap.style.pointerEvents = '';
 
     if (mode === 'side') {
-        if (bgWrap) bgWrap.style.display = 'none';
-        if (btnNav3d) btnNav3d.style.display = 'none';
-        _overlayEl.style.pointerEvents = '';
-        if (headerWrap) headerWrap.style.pointerEvents = '';
+        if (btnMax) btnMax.style.display = 'none';
+        _overlayEl.classList.remove('docs-window--maximized');
+        _docWinMaximized = false;
+        _docWinMaximizeReason = null;
+        _docWinSavedBounds = null;
+        _overlayEl.style.left = '';
+        _overlayEl.style.top = '';
+        _overlayEl.style.right = '';
+        _overlayEl.style.height = '';
         _applySidePanelWidth();
     } else {
-        if (bgWrap) bgWrap.style.display = '';
-        if (btnNav3d) btnNav3d.style.display = '';
-        _overlayEl.style.width = '';
-        _overlayEl.style.pointerEvents = _nav3d ? 'none' : '';
-        if (headerWrap) headerWrap.style.pointerEvents = _nav3d ? 'auto' : '';
-        if (btnNav3d) btnNav3d.style.pointerEvents = 'auto';
+        if (btnMax) btnMax.style.display = '';
+        const isMobile = window.innerWidth <= _DOC_MOBILE_BREAKPOINT;
+        if (isMobile) {
+            _setDocWinMaximized(true, _docWinMaximizeReason === 'user' ? 'user' : 'mobile');
+        } else if (_docWinMaximized && _docWinMaximizeReason === 'mobile') {
+            _setDocWinMaximized(false);
+        } else if (_docWinMaximized) {
+            _setDocWinMaximized(true, 'user');
+        } else {
+            const r = _overlayEl.getBoundingClientRect();
+            if (wasWindow && r.width > 0) {
+                _applyWindowBounds({ left: r.left, top: r.top, width: r.width, height: r.height });
+            } else {
+                _applyWindowBounds(_getWindowBounds());
+            }
+        }
+        _syncMaximizeBtn();
     }
 }
 
@@ -749,9 +998,9 @@ function _saveCurrentDocument(updateLastEdit = false) {
 }
 
 function _closeOverlay() {
-    // Auto-save if closing while in edit mode
-    if (_isEditMode && _editor && _currentDocId) {
-        _saveCurrentDocument();
+    if (_closeConfirmDlg?.open) _closeConfirmDlg.close();
+    if (_overlayEl && _overlayEl.classList.contains('layout-window') && !_docWinMaximized) {
+        _persistWindowBounds();
     }
     if (_overlayEl) _overlayEl.style.display = 'none';
     unregisterOverlaySurface('docs');
@@ -766,6 +1015,47 @@ function _closeOverlay() {
     }
     _currentDocId = null;
     _isEditMode = false;
+}
+
+function _requestCloseOverlay() {
+    if (_isEditMode && _editor && _currentDocId) {
+        _showCloseConfirmDialog();
+        return;
+    }
+    _closeOverlay();
+}
+
+function _showCloseConfirmDialog() {
+    if (!_closeConfirmDlg) {
+        const dlg = document.createElement('dialog');
+        dlg.id = 'doc-close-dialog';
+        dlg.innerHTML = `
+            <h2>Save changes?</h2>
+            <p>This document has unsaved edits.</p>
+            <div class="doc-close-dialog-btns">
+                <button type="button" class="doc-close-dialog-save">Save</button>
+                <button type="button" class="doc-close-dialog-discard">Discard</button>
+                <button type="button" class="doc-close-dialog-cancel">Cancel</button>
+            </div>`;
+        dlg.addEventListener('click', e => {
+            if (e.target === dlg) dlg.close();
+        });
+        dlg.querySelector('.doc-close-dialog-save').addEventListener('click', () => {
+            _saveCurrentDocument(true);
+            dlg.close();
+            _closeOverlay();
+        });
+        dlg.querySelector('.doc-close-dialog-discard').addEventListener('click', () => {
+            dlg.close();
+            _closeOverlay();
+        });
+        dlg.querySelector('.doc-close-dialog-cancel').addEventListener('click', () => {
+            dlg.close();
+        });
+        document.body.appendChild(dlg);
+        _closeConfirmDlg = dlg;
+    }
+    if (!_closeConfirmDlg.open) _closeConfirmDlg.showModal();
 }
 
 function _buildToc(htmlContent) {
@@ -1506,10 +1796,23 @@ function _buildEditorOverlay() {
     btnDelete.textContent = '🗑 Delete';
     btnDelete.addEventListener('click', _deleteCurrentDocument);
 
+    const btnMaximize = document.createElement('button');
+    btnMaximize.className = 'doc-btn doc-btn-maximize';
+    btnMaximize.textContent = '⤢';
+    btnMaximize.title = 'Maximize window';
+    btnMaximize.addEventListener('click', () => _toggleMaximizeDocWindow());
+
     const btnClose = document.createElement('button');
     btnClose.className = 'doc-btn doc-btn-close';
-    btnClose.textContent = '✕ Close';
-    btnClose.addEventListener('click', _closeOverlay);
+    btnClose.textContent = '✕';
+    btnClose.title = 'Close';
+    btnClose.addEventListener('click', _requestCloseOverlay);
+
+    const winChrome = document.createElement('div');
+    winChrome.className = 'doc-win-chrome';
+    btnMaximize.style.display = 'none';
+    winChrome.appendChild(btnMaximize);
+    winChrome.appendChild(btnClose);
 
     const fileNameWrap = document.createElement('span');
     fileNameWrap.className = 'doc-filename-wrap';
@@ -1587,7 +1890,6 @@ function _buildEditorOverlay() {
     headerActions.appendChild(btnExportJson);
     headerActions.appendChild(btnExportHtml);
     headerActions.appendChild(btnDelete);
-    headerActions.appendChild(btnClose);
     headerActions.appendChild(fileNameWrap);
 
     headerMeta.appendChild(titleWrap);
@@ -1730,7 +2032,11 @@ function _buildEditorOverlay() {
     tableBorderWrap.appendChild(tableBorderSelect);
     headerMeta.appendChild(tableBorderWrap);
 
-    headerWrap.appendChild(headerActions);
+    const headerTop = document.createElement('div');
+    headerTop.className = 'doc-header-top';
+    headerTop.appendChild(headerActions);
+    headerTop.appendChild(winChrome);
+    headerWrap.appendChild(headerTop);
     headerWrap.appendChild(headerMeta);
 
     // Toolbar
@@ -1945,6 +2251,23 @@ function _buildEditorOverlay() {
     overlay.appendChild(docBody);
 
     overlay.style.setProperty('--doc-bg-opacity', _bgOpacity);
+    bgWrap.style.display = 'none';
+    btnNav3d.style.display = 'none';
+
+    _makeDocWindowDraggable(headerWrap);
+    headerWrap.addEventListener('dblclick', ev => {
+        if (_isDocDragIgnoreTarget(ev.target)) return;
+        _toggleMaximizeDocWindow();
+    });
+
+    const winRo = new ResizeObserver(() => {
+        if (_ignoreWinBoundsObserve) return;
+        if (!_overlayEl || _overlayEl.style.display === 'none') return;
+        if (_getEffectiveOpenMode() !== 'window' || _docWinMaximized) return;
+        _schedulePersistWindowBounds();
+    });
+    winRo.observe(overlay);
+
     document.body.appendChild(overlay);
     _overlayEl = overlay;
 }
