@@ -407,6 +407,7 @@ export function createHideOthersCommand(ctx, snaps) {
 export function captureArrangementSceneSnap(ctx, objects) {
     const cam = ctx.currentCamera;
     const orbit = ctx.orbitControls;
+    const as = ctx.assemblyState;
     return {
         objects: (objects || []).map(obj => ({
             object: obj,
@@ -424,6 +425,9 @@ export function captureArrangementSceneSnap(ctx, objects) {
         activeId: ctx.getActiveArrangementId ? ctx.getActiveArrangementId() : null,
         dirty: ctx.isArrangementDirty ? ctx.isArrangementDirty() : false,
         overlaySource: ctx.viewportOverlaySource ?? null,
+        playbackDetached: !!as?.playbackDetached,
+        currentStepIndex: as?.currentStepIndex ?? -1,
+        disassembledMode: !!as?.disassembledMode,
     };
 }
 
@@ -467,6 +471,11 @@ export function restoreArrangementSceneSnap(ctx, snap) {
     ctx.setActiveArrangementId?.(snap.activeId ?? null);
     ctx.setArrangementDirty?.(!!snap.dirty);
     ctx.viewportOverlaySource = snap.overlaySource ?? null;
+    if (ctx.assemblyState) {
+        if (snap.currentStepIndex !== undefined) ctx.assemblyState.currentStepIndex = snap.currentStepIndex;
+        if (snap.disassembledMode !== undefined) ctx.assemblyState.disassembledMode = !!snap.disassembledMode;
+        ctx.assemblyState.playbackDetached = !!snap.playbackDetached;
+    }
     _afterArrangementSceneRestore(ctx);
 }
 
