@@ -2597,8 +2597,8 @@ a, button, input, select {
     cursor: default;
 }
 
-.doc-overlay .doc-bg-wrap,
-.doc-overlay .doc-btn-nav3d {
+.doc-overlay.layout-side .doc-bg-wrap,
+.doc-overlay.layout-side .doc-btn-nav3d {
     display: none;
 }
 

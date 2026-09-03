@@ -629,18 +629,22 @@ function _toggleMaximizeDocWindow() {
     _setDocWinMaximized(!_docWinMaximized, 'user');
 }
 
-function _resetNav3d() {
-    _nav3d = false;
+function _applyNav3dPointerEvents() {
     if (!_overlayEl) return;
-    _overlayEl.style.pointerEvents = '';
     const btnNav3d = _overlayEl.querySelector('.doc-btn-nav3d');
     const headerWrap = _overlayEl.querySelector('.doc-header-wrap');
+    const nav = _getEffectiveOpenMode() === 'window' && _nav3d;
+    _overlayEl.style.pointerEvents = nav ? 'none' : '';
+    if (headerWrap) headerWrap.style.pointerEvents = nav ? 'auto' : '';
     if (btnNav3d) {
-        btnNav3d.classList.remove('active');
+        btnNav3d.classList.toggle('active', nav);
         btnNav3d.style.pointerEvents = 'auto';
-        btnNav3d.style.display = 'none';
     }
-    if (headerWrap) headerWrap.style.pointerEvents = '';
+}
+
+function _resetNav3d() {
+    _nav3d = false;
+    _applyNav3dPointerEvents();
 }
 
 function _isDocDragIgnoreTarget(el) {
@@ -714,16 +718,12 @@ function _applyDocLayoutMode() {
 
     const bgWrap = _overlayEl.querySelector('.doc-bg-wrap');
     const btnNav3d = _overlayEl.querySelector('.doc-btn-nav3d');
-    const headerWrap = _overlayEl.querySelector('.doc-header-wrap');
     const btnMax = _overlayEl.querySelector('.doc-btn-maximize');
 
-    _resetNav3d();
-    if (bgWrap) bgWrap.style.display = 'none';
-    if (btnNav3d) btnNav3d.style.display = 'none';
-    _overlayEl.style.pointerEvents = '';
-    if (headerWrap) headerWrap.style.pointerEvents = '';
-
     if (mode === 'side') {
+        _resetNav3d();
+        if (bgWrap) bgWrap.style.display = 'none';
+        if (btnNav3d) btnNav3d.style.display = 'none';
         if (btnMax) btnMax.style.display = 'none';
         _overlayEl.classList.remove('docs-window--maximized');
         _docWinMaximized = false;
@@ -735,7 +735,10 @@ function _applyDocLayoutMode() {
         _overlayEl.style.height = '';
         _applySidePanelWidth();
     } else {
+        if (bgWrap) bgWrap.style.display = '';
+        if (btnNav3d) btnNav3d.style.display = '';
         if (btnMax) btnMax.style.display = '';
+        _applyNav3dPointerEvents();
         const isMobile = window.innerWidth <= _DOC_MOBILE_BREAKPOINT;
         if (isMobile) {
             _setDocWinMaximized(true, _docWinMaximizeReason === 'user' ? 'user' : 'mobile');
@@ -1853,20 +1856,12 @@ function _buildEditorOverlay() {
     btnNav3d.title = 'Toggle 3D navigation (disables editor interaction)';
     btnNav3d.addEventListener('click', () => {
         _nav3d = !_nav3d;
-        overlay.style.pointerEvents = _nav3d ? 'none' : '';
-        btnNav3d.classList.toggle('active', _nav3d);
-        // Restore pointer events on the header itself so the button stays clickable
-        headerWrap.style.pointerEvents = _nav3d ? 'auto' : '';
-        btnNav3d.style.pointerEvents = 'auto';
+        _applyNav3dPointerEvents();
     });
 
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && _nav3d && _overlayEl && _overlayEl.style.display !== 'none') {
-            _nav3d = false;
-            overlay.style.pointerEvents = '';
-            btnNav3d.classList.remove('active');
-            headerWrap.style.pointerEvents = '';
-            btnNav3d.style.pointerEvents = 'auto';
+            _resetNav3d();
         }
     });
 
@@ -2251,8 +2246,6 @@ function _buildEditorOverlay() {
     overlay.appendChild(docBody);
 
     overlay.style.setProperty('--doc-bg-opacity', _bgOpacity);
-    bgWrap.style.display = 'none';
-    btnNav3d.style.display = 'none';
 
     _makeDocWindowDraggable(headerWrap);
     headerWrap.addEventListener('dblclick', ev => {
