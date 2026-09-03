@@ -2394,6 +2394,15 @@ a, button, input, select {
     cursor: default;
 }
 
+.outliner-asset-active > .outliner-row .outliner-label {
+    color: #88ccff;
+    font-weight: 600;
+}
+
+.outliner-asset-dirty > .outliner-row .outliner-label {
+    color: #f0c040;
+}
+
 .outliner-row {
     display: flex;
     align-items: center;

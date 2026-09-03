@@ -37,6 +37,14 @@ let onOpenDocument = null;
 let onOpenAttachment = null;
 /** @type {((mimeType: string) => boolean)|null} */
 let canOpenAttachment = null;
+/** @type {(() => Array<{id: number, name?: string, camera?: object|null}>)|null} */
+let getArrangements = null;
+/** @type {(() => number|null)|null} */
+let getActiveArrangementId = null;
+/** @type {(() => boolean)|null} */
+let isArrangementDirty = null;
+/** @type {((arrangement: object) => void)|null} */
+let onApplyArrangement = null;
 
 // -------------------------------------------------------------------
 // Context menu
@@ -638,7 +646,7 @@ function getOutlinerChildren(obj) {
  * @param {{ onSelect: Function, onToggleVisibility: Function }} callbacks
  * @returns {HTMLDivElement} the panel element (for guiWrapper hit-testing)
  */
-export function initOutliner({ onSelect, onToggleVisibility: onVis, onToggleSelectable: onSel, onGroupAdd: onGroupAddCb, onGroupRemove: onGroupRemoveCb, onHideOthers: onHideOthersCb, onShowAll: onShowAllCb, onReparent: onReparentCb, onRemove: onRemoveCb, onRemoveGroup: onRemoveGroupCb, onGetGroupSelection: onGetGroupSelectionCb, onGetGroupOriginalParents: onGetGroupOriginalParentsCb, onSortChildren: onSortChildrenCb, onCloneObject: onCloneObjectCb, onAddObject3D: onAddObject3DCb, onAddPrimitive: onAddPrimitiveCb, onPromoteToRoot: onPromoteToRootCb, getDocuments: getDocumentsCb, getAttachments: getAttachmentsCb, onOpenDocument: onOpenDocumentCb, onOpenAttachment: onOpenAttachmentCb, canOpenAttachment: canOpenAttachmentCb }) {
+export function initOutliner({ onSelect, onToggleVisibility: onVis, onToggleSelectable: onSel, onGroupAdd: onGroupAddCb, onGroupRemove: onGroupRemoveCb, onHideOthers: onHideOthersCb, onShowAll: onShowAllCb, onReparent: onReparentCb, onRemove: onRemoveCb, onRemoveGroup: onRemoveGroupCb, onGetGroupSelection: onGetGroupSelectionCb, onGetGroupOriginalParents: onGetGroupOriginalParentsCb, onSortChildren: onSortChildrenCb, onCloneObject: onCloneObjectCb, onAddObject3D: onAddObject3DCb, onAddPrimitive: onAddPrimitiveCb, onPromoteToRoot: onPromoteToRootCb, getDocuments: getDocumentsCb, getAttachments: getAttachmentsCb, onOpenDocument: onOpenDocumentCb, onOpenAttachment: onOpenAttachmentCb, canOpenAttachment: canOpenAttachmentCb, getArrangements: getArrangementsCb, getActiveArrangementId: getActiveArrangementIdCb, isArrangementDirty: isArrangementDirtyCb, onApplyArrangement: onApplyArrangementCb }) {
     onSelectObject = onSelect;
     onToggleVisibility = onVis;
     onToggleSelectable = onSel || null;
@@ -661,6 +669,10 @@ export function initOutliner({ onSelect, onToggleVisibility: onVis, onToggleSele
     onOpenDocument = onOpenDocumentCb || null;
     onOpenAttachment = onOpenAttachmentCb || null;
     canOpenAttachment = canOpenAttachmentCb || null;
+    getArrangements = getArrangementsCb || null;
+    getActiveArrangementId = getActiveArrangementIdCb || null;
+    isArrangementDirty = isArrangementDirtyCb || null;
+    onApplyArrangement = onApplyArrangementCb || null;
 
     // --- Panel container ---
     panelEl = document.createElement('div');
@@ -805,6 +817,29 @@ export function notifyOutlinerProjectContentsChanged() {
     const searchVal = searchInputEl?.value?.trim() || '';
     rebuildTree(lastLoadedModels, true);
     if (searchVal) filterTree(searchVal);
+}
+
+/**
+ * Replace only the Arrangements folder in place (catalog / active / dirty changed).
+ * Avoids a full tree rebuild — updateArrangementsGuiInfo also runs on transform dirty.
+ */
+export function refreshArrangementsFolder() {
+    if (!treeEl) return;
+    const existing = treeEl.querySelector(':scope > [data-expand-id="project:arrangements"]');
+    const childList = existing?.querySelector(':scope > .outliner-children');
+    const expanded = existing
+        ? (childList ? existing.classList.contains('outliner-expanded') : true)
+        : true;
+    const node = createArrangementsFolderNode(expanded);
+    if (existing) {
+        existing.replaceWith(node);
+    } else {
+        const sep = treeEl.querySelector(':scope > .outliner-project-section');
+        if (sep) treeEl.insertBefore(node, sep);
+        else treeEl.appendChild(node);
+    }
+    const searchVal = searchInputEl?.value?.trim() || '';
+    if (searchVal) filterAssetSection(wildcardToRegex(searchVal));
 }
 
 function rebuildTreeDom(expandedUUIDs) {
@@ -1094,10 +1129,45 @@ function appendProjectSection(expandedIds) {
         expanded: filesExpanded,
     }));
 
+    const arrExpanded = expandedIds ? expandedIds.has('project:arrangements') : true;
+    treeEl.appendChild(createArrangementsFolderNode(arrExpanded));
+
     const sep = document.createElement('li');
     sep.className = 'outliner-project-section';
     sep.setAttribute('aria-hidden', 'true');
     treeEl.appendChild(sep);
+}
+
+function createArrangementsFolderNode(expanded) {
+    const arrangements = getArrangements ? getArrangements() : [];
+    const activeId = getActiveArrangementId ? getActiveArrangementId() : null;
+    const dirty = isArrangementDirty ? isArrangementDirty() : false;
+
+    const items = arrangements.map(arrangement => {
+        const isActive = arrangement.id === activeId;
+        const isDirty = isActive && dirty;
+        const extraClass = [
+            isActive ? 'outliner-asset-active' : '',
+            isDirty ? 'outliner-asset-dirty' : '',
+        ].filter(Boolean).join(' ');
+        const titleParts = [arrangement.name || '(unnamed)'];
+        if (arrangement.camera) titleParts.push('📷 camera saved');
+        if (isDirty) titleParts.push('(modified)');
+        return createAssetItemNode({
+            expandId: `arrangement:${arrangement.id}`,
+            label: arrangement.name || '(unnamed)',
+            title: titleParts.join(' — '),
+            extraClass: extraClass || undefined,
+            onClick: () => { if (onApplyArrangement) onApplyArrangement(arrangement); },
+        });
+    });
+
+    return createAssetFolderNode({
+        expandId: 'project:arrangements',
+        label: `Arrangements (${arrangements.length})`,
+        children: items,
+        expanded,
+    });
 }
 
 function createAssetFolderNode({ expandId, label, children, expanded }) {
@@ -1145,9 +1215,11 @@ function createAssetFolderNode({ expandId, label, children, expanded }) {
     return li;
 }
 
-function createAssetItemNode({ expandId, label, title, muted, onClick }) {
+function createAssetItemNode({ expandId, label, title, muted, extraClass, onClick }) {
     const li = document.createElement('li');
-    li.className = 'outliner-node outliner-asset' + (muted ? ' outliner-asset-muted' : '');
+    li.className = 'outliner-node outliner-asset'
+        + (muted ? ' outliner-asset-muted' : '')
+        + (extraClass ? ` ${extraClass}` : '');
     li.dataset.expandId = expandId;
 
     const row = document.createElement('div');
