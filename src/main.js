@@ -6917,7 +6917,11 @@ function initTransformSpaceGizmo() {
     });
     transformSpaceGizmoNameEl = nameEl;
 
-    stack.appendChild(nameEl);
+    const nameSlot = document.createElement('div');
+    nameSlot.className = 'selection-name-gizmo-slot';
+    nameSlot.appendChild(nameEl);
+
+    stack.appendChild(nameSlot);
     stack.appendChild(div);
 
     const label = new CSS2DObject(stack);

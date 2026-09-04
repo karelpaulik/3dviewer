@@ -922,7 +922,14 @@ canvas {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 3px;
+    gap: 0;
+    pointer-events: none;
+}
+.selection-name-gizmo-slot {
+    align-self: flex-start;
+    width: 0;
+    min-width: 0;
+    overflow: visible;
     pointer-events: none;
 }
 .transform-space-gizmo-btn {
@@ -936,7 +943,7 @@ canvas {
     font-size: 10px;
     font-weight: 600;
     line-height: 1.3;
-    text-align: center;
+    text-align: left;
     cursor: pointer;
     pointer-events: auto;
     user-select: none;
@@ -957,8 +964,10 @@ canvas {
     color: #ffc878;
 }
 .selection-name-gizmo-label {
-    display: inline-block;
+    display: block;
+    width: max-content;
     max-width: min(50vw, 360px);
+    margin-bottom: 3px;
     padding: 2px 5px;
     border: 1px solid rgba(255, 255, 255, 0.35);
     border-radius: 4px;
@@ -967,7 +976,7 @@ canvas {
     font-size: 10px;
     font-weight: 600;
     line-height: 1.3;
-    text-align: center;
+    text-align: left;
     cursor: default;
     pointer-events: auto;
     user-select: none;
