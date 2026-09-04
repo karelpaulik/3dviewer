@@ -311,18 +311,23 @@ function _addInertiaTensors(...tensors) {
 
 /**
  * Parallel-axis (Steiner) contribution to an inertia tensor for a point mass `massGrams` located
- * at `offset` relative to the reference point the tensor is/will-be expressed about. Note that
- * only `|offset|²` and pairwise *products* of its components are used, both invariant to negating
- * `offset` — so the very same term both (a) adds the shift when going from "about center of mass"
- * to "about an offset point", and (b) subtracts it when going the other way (see
- * `shiftInertiaTensorToCentroid`).
+ * at `offset` relative to the reference point the tensor is/will-be expressed about. `offset` is
+ * in scene units and is converted to cm via `modelUnit` so the result is in g·cm² (matching
+ * `computeInertiaTensorGrams`). Note that only `|offset|²` and pairwise *products* of its
+ * components are used, both invariant to negating `offset` — so the very same term both
+ * (a) adds the shift when going from "about center of mass" to "about an offset point", and
+ * (b) subtracts it when going the other way (see `shiftInertiaTensorToCentroid`).
  * @param {number} massGrams
- * @param {{x:number,y:number,z:number}} offset
- * @returns {{Ixx:number,Iyy:number,Izz:number,Ixy:number,Ixz:number,Iyz:number}}
+ * @param {{x:number,y:number,z:number}} offset – world/scene-unit offset from the reference point
+ * @param {string} modelUnit
+ * @returns {{Ixx:number,Iyy:number,Izz:number,Ixy:number,Ixz:number,Iyz:number}} tensor in g·cm²
  */
-export function computeSteinerTerm(massGrams, offset) {
+export function computeSteinerTerm(massGrams, offset, modelUnit) {
     if (!(massGrams !== 0) || !offset) return _zeroInertiaTensor();
-    const { x, y, z } = offset;
+    const l = unitLengthToCm(modelUnit);
+    const x = offset.x * l;
+    const y = offset.y * l;
+    const z = offset.z * l;
     const r2 = x * x + y * y + z * z;
     return {
         Ixx: massGrams * (r2 - x * x),
@@ -338,13 +343,16 @@ export function computeSteinerTerm(massGrams, offset) {
  * Convert an inertia tensor expressed about the world origin `(0,0,0)` into one expressed about
  * the body's own center of mass, given its total mass and world-space centroid — a single
  * parallel-axis (Steiner) correction: `I_com = I_origin − steinerTerm(mass, centroid)`.
+ * `centroidWorld` stays in scene units (same frame as the CoG display); conversion to cm for
+ * the g·cm² result happens inside `computeSteinerTerm`.
  * @param {{Ixx:number,Iyy:number,Izz:number,Ixy:number,Ixz:number,Iyz:number}} tensorAtOrigin
  * @param {number} massGrams
- * @param {{x:number,y:number,z:number}} centroidWorld
- * @returns {{Ixx:number,Iyy:number,Izz:number,Ixy:number,Ixz:number,Iyz:number}}
+ * @param {{x:number,y:number,z:number}} centroidWorld – world/scene-unit centroid
+ * @param {string} modelUnit
+ * @returns {{Ixx:number,Iyy:number,Izz:number,Ixy:number,Ixz:number,Iyz:number}} tensor in g·cm²
  */
-export function shiftInertiaTensorToCentroid(tensorAtOrigin, massGrams, centroidWorld) {
-    const steiner = computeSteinerTerm(massGrams, centroidWorld);
+export function shiftInertiaTensorToCentroid(tensorAtOrigin, massGrams, centroidWorld, modelUnit) {
+    const steiner = computeSteinerTerm(massGrams, centroidWorld, modelUnit);
     return {
         Ixx: tensorAtOrigin.Ixx - steiner.Ixx,
         Iyy: tensorAtOrigin.Iyy - steiner.Iyy,
@@ -632,7 +640,7 @@ export function computeRolledUpMass(node, modelUnit) {
         // massOffset is a point mass: zero self-inertia, its only contribution to the
         // about-origin tensor is the parallel-axis (Steiner) term anchored at the same point
         // used above for the mass-weighted centroid.
-        ownInertiaOriginGrams = _addInertiaTensors(ownInertiaOriginGrams, computeSteinerTerm(massOffsetGrams, ownVolumeCentroid));
+        ownInertiaOriginGrams = _addInertiaTensors(ownInertiaOriginGrams, computeSteinerTerm(massOffsetGrams, ownVolumeCentroid, modelUnit));
     }
 
     const totalMassGrams = ownMassGrams + childMassGrams;
@@ -647,7 +655,7 @@ export function computeRolledUpMass(node, modelUnit) {
 
     const inertiaOriginGrams = _addInertiaTensors(ownInertiaOriginGrams, childInertiaOriginGrams);
     const inertiaCentroidGrams = centroid
-        ? shiftInertiaTensorToCentroid(inertiaOriginGrams, totalMassGrams, centroid)
+        ? shiftInertiaTensorToCentroid(inertiaOriginGrams, totalMassGrams, centroid, modelUnit)
         : null;
 
     return {
@@ -702,7 +710,7 @@ export function computeRolledUpMassForRoots(rootOrRoots, modelUnit) {
 
     const centroid = (weightedCentroid && massGrams !== 0) ? weightedCentroid.divideScalar(massGrams) : null;
     const inertiaCentroidGrams = centroid
-        ? shiftInertiaTensorToCentroid(inertiaOriginGrams, massGrams, centroid)
+        ? shiftInertiaTensorToCentroid(inertiaOriginGrams, massGrams, centroid, modelUnit)
         : null;
 
     return { massGrams, centroid, hasContribution, unreliable, inertiaOriginGrams, inertiaCentroidGrams };
