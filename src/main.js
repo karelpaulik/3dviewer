@@ -1687,6 +1687,8 @@ const part = {
     principalAxis1: "",
     principalAxis2: "",
     principalAxis3: "",
+    radiusOfGyrationOrigin: "",
+    radiusOfGyrationCentroid: "",
     radiusOfGyration: "",
     worldPos: "",
     showBBox: false,
@@ -3978,7 +3980,7 @@ function formatAxisText(vector) {
     return `${vector.x.toFixed(4)},  ${vector.y.toFixed(4)},  ${vector.z.toFixed(4)}`;
 }
 
-/** Radii of gyration (principal, in cm) converted back to the current scene modelUnit for display. */
+/** Radii of gyration (in cm) converted back to the current scene modelUnit for display. */
 function formatRadiusOfGyrationText(radiiCm, unreliable) {
     if (!radiiCm) return '–';
     const l = unitLengthToCm(viewProp.modelUnit);
@@ -3989,10 +3991,12 @@ function formatRadiusOfGyrationText(radiiCm, unreliable) {
 /** Add the (collapsed) read-only "Moment of inertia" sub-folder to a Selected-panel folder. */
 function addInertiaFolder(parentFolder) {
     const inertiaFolder = parentFolder.addFolder('Moment of inertia');
-    inertiaFolder.add(part, 'inertiaCentroidDiag').name('Ixx, Iyy, Izz (at CoG)').disable().listen();
-    inertiaFolder.add(part, 'inertiaCentroidOffDiag').name('Ixy, Ixz, Iyz (at CoG)').disable().listen();
     inertiaFolder.add(part, 'inertiaOriginDiag').name('Ixx, Iyy, Izz (at origin)').disable().listen();
     inertiaFolder.add(part, 'inertiaOriginOffDiag').name('Ixy, Ixz, Iyz (at origin)').disable().listen();
+    inertiaFolder.add(part, 'radiusOfGyrationOrigin').name('Radius of gyration (Rx, Ry, Rz at origin)').disable().listen();
+    inertiaFolder.add(part, 'inertiaCentroidDiag').name('Ixx, Iyy, Izz (at CoG)').disable().listen();
+    inertiaFolder.add(part, 'inertiaCentroidOffDiag').name('Ixy, Ixz, Iyz (at CoG)').disable().listen();
+    inertiaFolder.add(part, 'radiusOfGyrationCentroid').name('Radius of gyration (Rx, Ry, Rz at CoG)').disable().listen();
     inertiaFolder.add(part, 'principalMoments').name('Principal moments (I1, I2, I3)').disable().listen();
     inertiaFolder.add(part, 'principalAxis1').name('Principal axis 1').disable().listen();
     inertiaFolder.add(part, 'principalAxis2').name('Principal axis 2').disable().listen();
@@ -4019,16 +4023,31 @@ function applyInertiaDisplay(rolled) {
         part.principalAxis1 = '–';
         part.principalAxis2 = '–';
         part.principalAxis3 = '–';
+        part.radiusOfGyrationOrigin = '–';
+        part.radiusOfGyrationCentroid = '–';
         part.radiusOfGyration = '–';
         return;
     }
     const unreliable = rolled.unreliable;
-    part.inertiaOriginDiag = formatInertiaRowText(rolled.inertiaOriginGrams, ['Ixx', 'Iyy', 'Izz'], unreliable);
-    part.inertiaOriginOffDiag = formatInertiaRowText(rolled.inertiaOriginGrams, ['Ixy', 'Ixz', 'Iyz'], unreliable);
+    const originTensor = rolled.inertiaOriginGrams;
+    part.inertiaOriginDiag = formatInertiaRowText(originTensor, ['Ixx', 'Iyy', 'Izz'], unreliable);
+    part.inertiaOriginOffDiag = formatInertiaRowText(originTensor, ['Ixy', 'Ixz', 'Iyz'], unreliable);
+    part.radiusOfGyrationOrigin = originTensor
+        ? formatRadiusOfGyrationText(
+            computeRadiusOfGyrationCm([originTensor.Ixx, originTensor.Iyy, originTensor.Izz], rolled.massGrams),
+            unreliable,
+        )
+        : '–';
 
     const centroidTensor = rolled.inertiaCentroidGrams;
     part.inertiaCentroidDiag = formatInertiaRowText(centroidTensor, ['Ixx', 'Iyy', 'Izz'], unreliable);
     part.inertiaCentroidOffDiag = formatInertiaRowText(centroidTensor, ['Ixy', 'Ixz', 'Iyz'], unreliable);
+    part.radiusOfGyrationCentroid = centroidTensor
+        ? formatRadiusOfGyrationText(
+            computeRadiusOfGyrationCm([centroidTensor.Ixx, centroidTensor.Iyy, centroidTensor.Izz], rolled.massGrams),
+            unreliable,
+        )
+        : '–';
 
     if (centroidTensor) {
         const { values, vectors } = computePrincipalInertia(centroidTensor);
@@ -4036,8 +4055,10 @@ function applyInertiaDisplay(rolled) {
         part.principalAxis1 = formatAxisText(vectors[0]);
         part.principalAxis2 = formatAxisText(vectors[1]);
         part.principalAxis3 = formatAxisText(vectors[2]);
-        const radiiCm = computeRadiusOfGyrationCm(values, rolled.massGrams);
-        part.radiusOfGyration = formatRadiusOfGyrationText(radiiCm, unreliable);
+        part.radiusOfGyration = formatRadiusOfGyrationText(
+            computeRadiusOfGyrationCm(values, rolled.massGrams),
+            unreliable,
+        );
     } else {
         part.principalMoments = '–';
         part.principalAxis1 = '–';
@@ -4482,8 +4503,8 @@ function resolveMeasurePickPoint(visibleHits) {
  * mass(node) = ρ(node)×V(all under node) + Σ mass(children) + massOffset(node).
  * massOffset is stored in kg on userData and converted to grams in the roll-up.
  * Center of gravity is the mass-weighted combination of the same roll-up (see computeRolledUpMass).
- * Moment of inertia (tensor about the model origin and about the center of gravity, principal
- * moments/axes, radius of gyration) is derived from the same roll-up result (see
+ * Moment of inertia (tensor about the model origin and about the center of gravity, world-axis
+ * and principal radii of gyration, principal moments/axes) is derived from the same roll-up result (see
  * `applyInertiaDisplay`). Like mass/volume, it is only recomputed here — never live per-frame
  * during drag/rotate.
  * @param {import('three').Object3D|import('three').Object3D[]|null|undefined} rootOrRoots

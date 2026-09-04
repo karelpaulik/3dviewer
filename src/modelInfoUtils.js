@@ -443,15 +443,16 @@ export function computePrincipalInertia(tensor) {
 }
 
 /**
- * Radius of gyration for each principal axis: r_i = sqrt(I_i / m). Returns `null` entries where
- * the principal moment is negative (numerical noise near zero) or mass is not positive.
- * @param {number[]} principalValuesGCm2 – principal moments, in g·cm²
+ * Radius of gyration for each given moment: r_i = sqrt(I_i / m). `momentsGCm2` may be the
+ * world-axis diagonals (Ixx, Iyy, Izz) or the principal moments (I1, I2, I3). Returns `null`
+ * entries where the moment is negative (numerical noise near zero) or mass is not positive.
+ * @param {number[]} momentsGCm2 – moments in g·cm²
  * @param {number} massGrams
  * @returns {(number|null)[]} radii in cm
  */
-export function computeRadiusOfGyrationCm(principalValuesGCm2, massGrams) {
-    if (!(massGrams > 0)) return principalValuesGCm2.map(() => null);
-    return principalValuesGCm2.map(iVal => (iVal >= 0 ? Math.sqrt(iVal / massGrams) : null));
+export function computeRadiusOfGyrationCm(momentsGCm2, massGrams) {
+    if (!(massGrams > 0)) return momentsGCm2.map(() => null);
+    return momentsGCm2.map(iVal => (iVal >= 0 ? Math.sqrt(iVal / massGrams) : null));
 }
 
 /**
