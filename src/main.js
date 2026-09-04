@@ -32,7 +32,7 @@ import { updateCrossSectionLines as updateCrossSectionLinesCore, updateSectionCr
 import { exportToHTML, exportToHTMLDraco, exportToHTMLObfuscated, exportToHTMLObfuscatedDraco } from './htmlExport.js';
 import { initOutliner, toggleOutliner, rebuildTree, highlightObject as outlinerHighlight, updateVisibilityIcon, updateSelectableIcon, updateObjectLabel, isOutlinerOpen, navigateOutliner, highlightGroupObjects, clearGroupHighlights, setNavigationPosition, setOnTreeRebuild, setShowAuxiliaryObjects, isOutlinerAuxiliaryObject, notifyOutlinerAuxiliaryChildrenChanged, refreshArrangementsFolder, refreshWorkflowsFolder } from './sceneOutliner.js';
 import { positionContextMenu } from './uiMenuUtils.js';
-import { computeModelStats, computeSurfaceAreaAndVolume, formatGeometryMeasure, MODEL_UNIT_OPTIONS, formatMass, computeRolledUpMassForRoots } from './modelInfoUtils.js';
+import { computeModelStats, computeSurfaceAreaAndVolume, formatGeometryMeasure, MODEL_UNIT_OPTIONS, formatMass, computeRolledUpMassForRoots, formatInertia, unitLengthToCm, computePrincipalInertia, computeRadiusOfGyrationCm } from './modelInfoUtils.js';
 import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, updateMeasurement3dOrientations, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements, isRadiusActive, setRadiusActive, addRadiusPoint, updateRadiusPreview, clearRadiusMeasurements, isSelectDimActive, setSelectDimActive, refreshLabelEditListeners, hasSelectedDimension, deselectSelectedDimension, deleteSelectedDimension, resetSelectedMeasurementLabel, getSelectedMeasurementLabelStyle, getSelectedMeasurementLabelDim, setSelectedMeasurementLabelDim, setSelectedMeasurementOrientationMode, setSelectedMeasurementTextColor, setSelectedMeasurementBgColor, setSelectedMeasurementFontSize, initSelectDimension, updateSelectDimensionCamera, reconstructMeasurements, stripMeasurementVisuals, setMeasurementsVisible, setMeasurementDepthTest, removeMeasurementsForOwner, isCadDimActive, setCadDimActive, getCadDimStep, getCadDimAxis, getMeasurePendingCount, getAngleStep, getRadiusStep, addCadDimPoint, updateCadDimPreview, updateCadDimHoverPreview, cycleCadDimAxis, placeCadDim, clearCadDimMeasurements, removeCadDimMeasurementsForOwner, getSelectedCadDim, setCadDimLabelMode, setCadDimDragMode, selectDimTouchStart, selectDimTouchMove, selectDimTouchEnd, registerLabelForSelection, getSelectedCadDim3d, getSelectedAnnotation, getSelectedAnnotation3d, getSelectedDistance, getSelectedAngle, getSelectedRadius, getCadDimMeasurements, deleteCadDimByRef, convertCadDim3dTo2d, getFlatDimDefaults, applyDefaultsToAllFlatDim, getDistanceLabelDefaults, getAngleLabelDefaults, getRadiusLabelDefaults, getDistanceMarkerDefaults, getAngleMarkerDefaults, getRadiusMarkerDefaults, applyDefaultsToAllDistanceMeasurements, applyDefaultsToAllAngleMeasurements, applyDefaultsToAllRadiusMeasurements, setDistanceMarkerColor, setAngleMarkerColor, setRadiusMarkerColor, getMeasurementMarkerSettings, setMeasurementMarkerFixedSize, setMeasurementMarkerFixedScreenPx, setMeasurementMarkerWorldSize, getDefaultMeasurementLabelDim, setDefaultMeasurementLabelDim, getMeasurement3dDefaults, setDimMarkerFixedSize, setDimMarkerFixedScreenPx, setDimMarkerWorldSize, setDimMarkerColor, getDimMarkerSettings, setMeasureOnSessionComplete, setAngleOnSessionComplete, setRadiusOnSessionComplete, setCadDimOnSessionComplete } from './measurementUtils.js';
 import { detectCircleCenterFromHit, clearCircleDetectionCache } from './circleDetectionUtils.js';
 import { removeEdgeOverlays, updateMeshEdgeOverlays, stripEdgeOverlays, syncEdgeOverlayClipping } from './edgeDisplayUtils.js';
@@ -1678,6 +1678,16 @@ const part = {
     massOffset: 0, // kg – persisted on object userData.massOffset (+/‑ correction or fixed mass)
     mass: "",
     centerOfGravity: "",
+    // Moment of inertia (read-only, derived in updateAreaVolume alongside mass/CoG)
+    inertiaCentroidDiag: "",
+    inertiaCentroidOffDiag: "",
+    inertiaOriginDiag: "",
+    inertiaOriginOffDiag: "",
+    principalMoments: "",
+    principalAxis1: "",
+    principalAxis2: "",
+    principalAxis3: "",
+    radiusOfGyration: "",
     worldPos: "",
     showBBox: false,
     showCoG: false,
@@ -3950,6 +3960,93 @@ function formatCoGText(centroid, unreliable) {
     return unreliable ? `${txt} (open?)` : txt;
 }
 
+/** Diagonal (Ixx, Iyy, Izz) or off-diagonal (Ixy, Ixz, Iyz) row of an inertia tensor for display. */
+function formatInertiaRowText(tensor, keys, unreliable) {
+    if (!tensor) return '–';
+    const txt = keys.map(k => formatInertia(tensor[k])).join(',  ');
+    return unreliable ? `${txt} (open?)` : txt;
+}
+
+function formatPrincipalMomentsText(values, unreliable) {
+    if (!values) return '–';
+    const txt = values.map(v => formatInertia(v)).join(',  ');
+    return unreliable ? `${txt} (open?)` : txt;
+}
+
+function formatAxisText(vector) {
+    if (!vector) return '–';
+    return `${vector.x.toFixed(4)},  ${vector.y.toFixed(4)},  ${vector.z.toFixed(4)}`;
+}
+
+/** Radii of gyration (principal, in cm) converted back to the current scene modelUnit for display. */
+function formatRadiusOfGyrationText(radiiCm, unreliable) {
+    if (!radiiCm) return '–';
+    const l = unitLengthToCm(viewProp.modelUnit);
+    const txt = radiiCm.map(r => (r == null ? '–' : formatGeometryMeasure(r / l))).join(',  ');
+    return unreliable ? `${txt} (open?)` : txt;
+}
+
+/** Add the (collapsed) read-only "Moment of inertia" sub-folder to a Selected-panel folder. */
+function addInertiaFolder(parentFolder) {
+    const inertiaFolder = parentFolder.addFolder('Moment of inertia');
+    inertiaFolder.add(part, 'inertiaCentroidDiag').name('Ixx, Iyy, Izz (at CoG)').disable().listen();
+    inertiaFolder.add(part, 'inertiaCentroidOffDiag').name('Ixy, Ixz, Iyz (at CoG)').disable().listen();
+    inertiaFolder.add(part, 'inertiaOriginDiag').name('Ixx, Iyy, Izz (at origin)').disable().listen();
+    inertiaFolder.add(part, 'inertiaOriginOffDiag').name('Ixy, Ixz, Iyz (at origin)').disable().listen();
+    inertiaFolder.add(part, 'principalMoments').name('Principal moments (I1, I2, I3)').disable().listen();
+    inertiaFolder.add(part, 'principalAxis1').name('Principal axis 1').disable().listen();
+    inertiaFolder.add(part, 'principalAxis2').name('Principal axis 2').disable().listen();
+    inertiaFolder.add(part, 'principalAxis3').name('Principal axis 3').disable().listen();
+    inertiaFolder.add(part, 'radiusOfGyration').name('Radius of gyration (r1, r2, r3)').disable().listen();
+    inertiaFolder.close();
+    return inertiaFolder;
+}
+
+/**
+ * Populate the "Moment of inertia" fields of `part` from a rolled-up mass-property result
+ * (as returned by `computeRolledUpMassForRoots`). Mirrors `applyCoGDisplay`, but there is no
+ * live per-frame follow during drag/rotate — the tensor is only ever recomputed by
+ * `updateAreaVolume()`, at the same discrete events as mass/volume (selection change,
+ * density/massOffset edits, end of a scale transform, model unit change, geometry bake).
+ */
+function applyInertiaDisplay(rolled) {
+    if (!rolled || !rolled.hasContribution || !rolled.centroid || !(rolled.massGrams > 0)) {
+        part.inertiaCentroidDiag = '–';
+        part.inertiaCentroidOffDiag = '–';
+        part.inertiaOriginDiag = '–';
+        part.inertiaOriginOffDiag = '–';
+        part.principalMoments = '–';
+        part.principalAxis1 = '–';
+        part.principalAxis2 = '–';
+        part.principalAxis3 = '–';
+        part.radiusOfGyration = '–';
+        return;
+    }
+    const unreliable = rolled.unreliable;
+    part.inertiaOriginDiag = formatInertiaRowText(rolled.inertiaOriginGrams, ['Ixx', 'Iyy', 'Izz'], unreliable);
+    part.inertiaOriginOffDiag = formatInertiaRowText(rolled.inertiaOriginGrams, ['Ixy', 'Ixz', 'Iyz'], unreliable);
+
+    const centroidTensor = rolled.inertiaCentroidGrams;
+    part.inertiaCentroidDiag = formatInertiaRowText(centroidTensor, ['Ixx', 'Iyy', 'Izz'], unreliable);
+    part.inertiaCentroidOffDiag = formatInertiaRowText(centroidTensor, ['Ixy', 'Ixz', 'Iyz'], unreliable);
+
+    if (centroidTensor) {
+        const { values, vectors } = computePrincipalInertia(centroidTensor);
+        part.principalMoments = formatPrincipalMomentsText(values, unreliable);
+        part.principalAxis1 = formatAxisText(vectors[0]);
+        part.principalAxis2 = formatAxisText(vectors[1]);
+        part.principalAxis3 = formatAxisText(vectors[2]);
+        const radiiCm = computeRadiusOfGyrationCm(values, rolled.massGrams);
+        part.radiusOfGyration = formatRadiusOfGyrationText(radiiCm, unreliable);
+    } else {
+        part.principalMoments = '–';
+        part.principalAxis1 = '–';
+        part.principalAxis2 = '–';
+        part.principalAxis3 = '–';
+        part.radiusOfGyration = '–';
+    }
+}
+
 /**
  * Remember CoG in the local space of the node that actually moves during a transform
  * (group pivot, otherwise the selected root). Affine TRS then maps this point in O(1).
@@ -4385,6 +4482,10 @@ function resolveMeasurePickPoint(visibleHits) {
  * mass(node) = ρ(node)×V(all under node) + Σ mass(children) + massOffset(node).
  * massOffset is stored in kg on userData and converted to grams in the roll-up.
  * Center of gravity is the mass-weighted combination of the same roll-up (see computeRolledUpMass).
+ * Moment of inertia (tensor about the model origin and about the center of gravity, principal
+ * moments/axes, radius of gyration) is derived from the same roll-up result (see
+ * `applyInertiaDisplay`). Like mass/volume, it is only recomputed here — never live per-frame
+ * during drag/rotate.
  * @param {import('three').Object3D|import('three').Object3D[]|null|undefined} rootOrRoots
  */
 function updateAreaVolume(rootOrRoots) {
@@ -4398,6 +4499,7 @@ function updateAreaVolume(rootOrRoots) {
         part.centerOfGravity = '–';
         clearCoGFollow();
         updateCoGHelper(roots, null);
+        applyInertiaDisplay(null);
         return;
     }
     for (const root of roots) {
@@ -4440,6 +4542,8 @@ function updateAreaVolume(rootOrRoots) {
         cacheCoGFollow(roots, rolled.centroid, rolled.unreliable);
         applyCoGDisplay(rolled.centroid);
     }
+
+    applyInertiaDisplay(rolled);
 }
 
 /** Read density from root(s) into part.density (g/cm³). */
@@ -5142,6 +5246,7 @@ function refreshSelectedObjGui(obj) {
     }).listen();
     selectedFolder.add(part, 'mass').name('Mass').disable().listen();
     selectedFolder.add(part, 'centerOfGravity').name('Center of gravity (X, Y, Z)').disable().listen();
+    addInertiaFolder(selectedFolder);
 
     // World-space position of TransformControl gizmo (from absolute zero / axis helper origin)
     updateWorldPos();
@@ -5413,6 +5518,7 @@ function refreshGroupGui() {
     }).listen();
     selectedFolder.add(part, 'mass').name('Mass').disable().listen();
     selectedFolder.add(part, 'centerOfGravity').name('Center of gravity (X, Y, Z)').disable().listen();
+    addInertiaFolder(selectedFolder);
     selectedFolder.add(part, 'showCoG').name('Center of Gravity').onChange(function() {
         if (part.showCoG && warnIfNoMassContribution(selectedObjects)) {
             part.showCoG = false;
