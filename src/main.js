@@ -3958,7 +3958,10 @@ function clearCoGFollow() {
 
 function formatCoGText(centroid, unreliable) {
     if (!centroid) return '–';
-    const txt = `${centroid.x.toFixed(3)},  ${centroid.y.toFixed(3)},  ${centroid.z.toFixed(3)}`;
+    const unit = viewProp.modelUnit;
+    const txt = [centroid.x, centroid.y, centroid.z]
+        .map(v => `${v.toFixed(3)} ${unit}`)
+        .join(',  ');
     return unreliable ? `${txt} (open?)` : txt;
 }
 
@@ -4540,10 +4543,10 @@ function updateAreaVolume(rootOrRoots) {
             part.surfaceArea = '–';
             part.volume = '–';
         } else {
-            part.surfaceArea = formatGeometryMeasure(stats.area);
-            part.volume = stats.volumeReliable
-                ? formatGeometryMeasure(stats.volume)
-                : `${formatGeometryMeasure(stats.volume)} (open?)`;
+            const unit = viewProp.modelUnit;
+            part.surfaceArea = `${formatGeometryMeasure(stats.area)} ${unit}²`;
+            const volumeTxt = `${formatGeometryMeasure(stats.volume)} ${unit}³`;
+            part.volume = stats.volumeReliable ? volumeTxt : `${volumeTxt} (open?)`;
         }
     }
 
