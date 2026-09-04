@@ -4111,10 +4111,11 @@ function _disableCoGRaycast(obj) {
 }
 
 function _addCoGCrossTo(parent, halfLen, storeRefs) {
+    // RGB axes from the CoG origin in the +X/+Y/+Z directions only.
     const positions = new Float32Array([
-        -1, 0, 0,  1, 0, 0,
-        0, -1, 0,  0, 1, 0,
-        0, 0, -1,  0, 0, 1,
+        0, 0, 0,  1, 0, 0,
+        0, 0, 0,  0, 1, 0,
+        0, 0, 0,  0, 0, 1,
     ]);
     const colors = new Float32Array([
         1, 0, 0,  1, 0, 0,
@@ -4386,9 +4387,9 @@ function ensureCoGHelper() {
 }
 
 /**
- * Show/hide/reposition the center-of-gravity cross. Arm length is half the combined
- * bounding-box max dimension so the axes poke out of the part. No-op (just hides)
- * when the toggle is off or centroid is unknown.
+ * Show/hide/reposition the center-of-gravity axes (+X/+Y/+Z from the origin).
+ * Arm length is half the combined bounding-box max dimension so the axes poke
+ * out of the part. No-op (just hides) when the toggle is off or centroid is unknown.
  * @param {import('three').Object3D[]} roots
  * @param {import('three').Vector3|null} centroid
  * @param {{ resize?: boolean }} [options] `resize: false` skips the bbox pass (live follow during TRS).
