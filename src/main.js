@@ -3983,8 +3983,9 @@ function formatAxisText(vector) {
 /** Radii of gyration (in cm) converted back to the current scene modelUnit for display. */
 function formatRadiusOfGyrationText(radiiCm, unreliable) {
     if (!radiiCm) return '–';
-    const l = unitLengthToCm(viewProp.modelUnit);
-    const txt = radiiCm.map(r => (r == null ? '–' : formatGeometryMeasure(r / l))).join(',  ');
+    const unit = viewProp.modelUnit;
+    const l = unitLengthToCm(unit);
+    const txt = radiiCm.map(r => (r == null ? '–' : `${formatGeometryMeasure(r / l)} ${unit}`)).join(',  ');
     return unreliable ? `${txt} (open?)` : txt;
 }
 
