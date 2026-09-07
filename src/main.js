@@ -3248,27 +3248,27 @@ function addMainGui() {
     const demoFolder = fileGui.addFolder('Import demo');
     demoFolder.close();
     demoFolder.add({ fn() {
-        loadGlbModel('/models/drilling_machine.glb', 'drilling_machine.glb', 0.001, true).then(() => {
+        loadGlbModel('/models/drilling_machine.glb', 'drilling_machine.glb', 0.001, true, { skipDuplicateNameWarning: true }).then(() => {
             fitView();
         });
     } }, 'fn').name('Drilling machine (MAIN DEMO)');
     demoFolder.add({ fn() {
-        loadGlbModel('/models/motor.glb', 'motor.glb', 0.001, true).then(() => {
+        loadGlbModel('/models/motor.glb', 'motor.glb', 0.001, true, { skipDuplicateNameWarning: true }).then(() => {
             fitView();
         });
     } }, 'fn').name('Motor');
     demoFolder.add({ fn() {
-        loadGlbModel('/models/forklift.glb', 'forklift.glb', 0.001, true).then(() => {
+        loadGlbModel('/models/forklift.glb', 'forklift.glb', 0.001, true, { skipDuplicateNameWarning: true }).then(() => {
             fitView();
         });
     } }, 'fn').name('Forklift');
     demoFolder.add({ fn() {
-        loadGlbModel('/models/cnc.glb', 'cnc.glb', 0.001, true).then(() => {
+        loadGlbModel('/models/cnc.glb', 'cnc.glb', 0.001, true, { skipDuplicateNameWarning: true }).then(() => {
             fitView();
         });
     } }, 'fn').name('CNC');
     demoFolder.add({ fn() {
-        loadGlbModel('/models/DJI_drone.glb', 'DJI_drone.glb', 0.001, true).then(() => {
+        loadGlbModel('/models/DJI_drone.glb', 'DJI_drone.glb', 0.001, true, { skipDuplicateNameWarning: true }).then(() => {
             fitView();
         });
     } }, 'fn').name('DJI_drone');
@@ -3309,6 +3309,11 @@ function addMainGui() {
                     restoreAssemblyPlayback: true,
                 });
                 fitView();
+            } catch (err) {
+                if (err?.name === 'AbortError') {
+                    clearCurrentLocalFileHandle();
+                }
+                throw err;
             } finally {
                 URL.revokeObjectURL(url);
             }
@@ -6152,6 +6157,7 @@ function initLoad() {
                     fitView();
                     console.log(`Model ${fileName} loaded successfully.`);   
                 }).catch((error) => {
+                    if (error?.name === 'AbortError') return;
                     console.error(`Chyba při načítání modelu ${fileName}:`, error);
                 });
                 break;
@@ -6165,7 +6171,7 @@ function initLoad() {
         //loadStlModel('/models/1011364_c.zip','1011364_c.zip', 0.001, true).then( (result)=>{} );	
         
         //loadGlbModel('/models/1012053_l.glb','1012053_l.glb', 0.001, true).then( (result)=>{meshObjects.push( result )} );
-        loadGlbModel('/models/1012053_l.glb','1012053_l.glb', 0.001, true).then( (result)=>{
+        loadGlbModel('/models/1012053_l.glb','1012053_l.glb', 0.001, true, { skipDuplicateNameWarning: true }).then( (result)=>{
             fitView();
         });
     }
@@ -8736,10 +8742,30 @@ function preserveOriginalGltfNames(loader) {
     });
 }
 
+function confirmGlbDuplicateNameRename() {
+    if (glbImportDefaults.keepDuplicateNames) return true;
+    return confirm(
+        'Keep duplicate names is off (View → Preferences → GLB import).\n\n'
+        + 'Duplicate object names in this file will be renamed with a numeric suffix (_1, _2, …).\n\n'
+        + 'Do you really want to continue?'
+    );
+}
+
 function loadGlbModel(model, name, scale, colored, options = {}) {
-    const { loadFileHistory = false, importSettings = true, restoreAssemblyPlayback = false } = options;
+    const {
+        loadFileHistory = false,
+        importSettings = true,
+        restoreAssemblyPlayback = false,
+        skipDuplicateNameWarning = false,
+    } = options;
     if (loadFileHistory) syncFileHistoryToggleUi();
     return new Promise((resolve, reject) => {
+        if (!skipDuplicateNameWarning && !confirmGlbDuplicateNameRename()) {
+            const err = new Error('GLB load cancelled.');
+            err.name = 'AbortError';
+            reject(err);
+            return;
+        }
         const loader = new GLTFLoader();
         if (glbImportDefaults.keepDuplicateNames) preserveOriginalGltfNames(loader);
         const dracoLoader = new DRACOLoader();
@@ -12209,6 +12235,7 @@ function importGlbFile(options = {}) {
             console.log(`[Import] GLB "${file.name}" loaded successfully.`);
         }).catch(err => {
             URL.revokeObjectURL(url);
+            if (err?.name === 'AbortError') return;
             console.error(`[Import] Failed to load "${file.name}":`, err);
         });
     });
@@ -12276,6 +12303,7 @@ function importGltfFile() {
             console.log(`[Import] GLTF "${gltfFile.name}" loaded successfully.`);
         }).catch(err => {
             createdUrls.forEach(u => URL.revokeObjectURL(u));
+            if (err?.name === 'AbortError') return;
             console.error(`[Import] Failed to load "${gltfFile.name}":`, err);
         });
     });

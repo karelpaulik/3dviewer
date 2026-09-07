@@ -201,6 +201,7 @@ async function processPendingLaunchHandles() {
         try {
             await openModelFromHandle(handle, { replaceScene: false });
         } catch (err) {
+            if (err?.name === 'AbortError') continue;
             console.error('[FileHandling] Failed to open file:', err);
             alert('Could not open file: ' + (err.message || err));
         }
@@ -226,6 +227,10 @@ export async function consumeSharedGlbIfPresent() {
     try {
         await openGlbFromSharedFile(file);
     } catch (err) {
+        if (err?.name === 'AbortError') {
+            clearShareTargetQuery();
+            return;
+        }
         console.error('[ShareTarget] Failed to open shared GLB:', err);
         alert('Could not open the shared file: ' + (err.message || err));
         clearShareTargetQuery();
