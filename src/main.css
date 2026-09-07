@@ -984,12 +984,12 @@ canvas {
     overflow-wrap: anywhere;
 }
 
-/* ViewHelper orientation gizmo – bottom-right, above status bar and GUI panels */
+/* ViewHelper orientation gizmo – bottom-right, below GUI panels so long lil-gui lists stay clickable */
 #view-gizmo {
     position: fixed;
     bottom: 36px;
     right: 8px;
-    z-index: 1015;
+    z-index: 1000;
     width: 128px;
     display: flex;
     flex-direction: column;
