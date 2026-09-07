@@ -5230,7 +5230,7 @@ function refreshCoGLocatorGui(obj) {
     addShowSelectionNameToggle(selectedFolder);
 
     updateWorldPos();
-    selectedFolder.add(part, 'worldPos').name('Position (X, Y, Z)').disable().listen();
+    selectedFolder.add(part, 'worldPos').name('Pivot (X, Y, Z)').disable().listen();
 
     const sizeProxy = { size: Number(obj.userData.cogHalfLen) };
     if (!Number.isFinite(sizeProxy.size) || sizeProxy.size <= 0) sizeProxy.size = 1;
@@ -5408,10 +5408,6 @@ function refreshSelectedObjGui(obj) {
     selectedFolder.add(part, 'centerOfGravity').name('Center of gravity (X, Y, Z)').disable().listen();
     addInertiaFolder(selectedFolder);
 
-    // World-space position of TransformControl gizmo (from absolute zero / axis helper origin)
-    updateWorldPos();
-    selectedFolder.add(part, 'worldPos').name('Position (X, Y, Z)').disable().listen();
-
     // Toggle to show/hide bounding box wireframe
     part.showBBox = false;
     selectedFolder.add(part, 'showBBox').name('Bounding Box').onChange(function(value) {
@@ -5505,6 +5501,10 @@ function refreshSelectedObjGui(obj) {
             setMovePivotOnly(value);
         }).listen();
         folder2.add({ fn() { resetSingleSelectPivotToBBoxCenter(); } }, 'fn').name('Reset pivot');
+
+        // World-space position of TransformControl gizmo (from absolute zero / axis helper origin)
+        updateWorldPos();
+        folder2.add(part, 'worldPos').name('Pivot (X, Y, Z)').disable().listen();
 
         // Capture "before" state when the object is selected (TransformControl is already attached).
         savePreviousTransformState();
