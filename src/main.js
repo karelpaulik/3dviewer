@@ -1731,14 +1731,18 @@ const part = {
 };
 let bbHelper = null; // Dedicated PaddedBoxHelper for bounding box display toggle
 let bbAxesHelper = null; // AxesHelper shown together with bbHelper
-let cogHelper = null; // World-aligned CoG cross (LineSegments)
+let cogHelper = null; // CoG cross aligned to principal axes (LineSegments)
 let cogRoot = null; // Scene folder for saved CoG locators (loadedModels root)
 /** Cached CoG in the transformed node's local space so the marker can follow TRS without a triangle pass. */
-const _cogFollow = { roots: [], frame: null, local: null, unreliable: false };
+const _cogFollow = { roots: [], frame: null, local: null, localQuat: null, unreliable: false };
 const _cogWorldScratch = new THREE.Vector3();
 const _cogSnapNdcScratch = new THREE.Vector3();
 const _cogSnapPointScratch = new THREE.Vector3();
 const _cogLocatorWorldScratch = new THREE.Vector3();
+const _cogPrincipalQuatScratch = new THREE.Quaternion();
+const _cogWorldQuatScratch = new THREE.Quaternion();
+const _cogBasisScratch = new THREE.Matrix4();
+const _cogHandednessScratch = new THREE.Vector3();
 const _worldOriginScratch = new THREE.Vector3();
 const COG_SNAP_PX = 14;
 const normalsViewGui = {
@@ -3992,6 +3996,7 @@ function clearCoGFollow() {
     _cogFollow.roots = [];
     _cogFollow.frame = null;
     _cogFollow.local = null;
+    _cogFollow.localQuat = null;
     _cogFollow.unreliable = false;
 }
 
@@ -4041,12 +4046,30 @@ function addInertiaFolder(parentFolder) {
     inertiaFolder.add(part, 'inertiaCentroidOffDiag').name('Ixy, Ixz, Iyz (at CoG)').disable().listen();
     inertiaFolder.add(part, 'radiusOfGyrationCentroid').name('Radius of gyration (Rx, Ry, Rz at CoG)').disable().listen();
     inertiaFolder.add(part, 'principalMoments').name('Principal moments (I1, I2, I3)').disable().listen();
-    inertiaFolder.add(part, 'principalAxis1').name('Principal axis 1').disable().listen();
-    inertiaFolder.add(part, 'principalAxis2').name('Principal axis 2').disable().listen();
-    inertiaFolder.add(part, 'principalAxis3').name('Principal axis 3').disable().listen();
+    inertiaFolder.add(part, 'principalAxis1').name('Principal axis 1 (red)').disable().listen();
+    inertiaFolder.add(part, 'principalAxis2').name('Principal axis 2 (green)').disable().listen();
+    inertiaFolder.add(part, 'principalAxis3').name('Principal axis 3 (blue)').disable().listen();
     inertiaFolder.add(part, 'radiusOfGyration').name('Radius of gyration (r1, r2, r3)').disable().listen();
     inertiaFolder.close();
     return inertiaFolder;
+}
+
+/**
+ * Right-handed world quaternion whose local +X/+Y/+Z map to principal axes 1/2/3
+ * (red/green/blue on the CoG cross). If e1 × e2 · e3 < 0, negates vectors[2] in place
+ * so the panel text matches the blue axis.
+ * @param {import('three').Vector3[]} vectors
+ * @param {import('three').Quaternion} target
+ * @returns {import('three').Quaternion}
+ */
+function principalVectorsToWorldQuaternion(vectors, target) {
+    const e1 = vectors[0];
+    const e2 = vectors[1];
+    const e3 = vectors[2];
+    _cogHandednessScratch.crossVectors(e1, e2);
+    if (_cogHandednessScratch.dot(e3) < 0) e3.negate();
+    _cogBasisScratch.makeBasis(e1, e2, e3);
+    return target.setFromRotationMatrix(_cogBasisScratch);
 }
 
 /**
@@ -4055,6 +4078,7 @@ function addInertiaFolder(parentFolder) {
  * live per-frame follow during drag/rotate — the tensor is only ever recomputed by
  * `updateAreaVolume()`, at the same discrete events as mass/volume (selection change,
  * density/massOffset edits, end of a scale transform, model unit change, geometry bake).
+ * @returns {import('three').Quaternion|null} world quaternion of the principal triad, or null
  */
 function applyInertiaDisplay(rolled) {
     if (!rolled || !rolled.hasContribution || !rolled.centroid || !(rolled.massGrams > 0)) {
@@ -4069,7 +4093,7 @@ function applyInertiaDisplay(rolled) {
         part.radiusOfGyrationOrigin = '–';
         part.radiusOfGyrationCentroid = '–';
         part.radiusOfGyration = '–';
-        return;
+        return null;
     }
     const unreliable = rolled.unreliable;
     const originTensor = rolled.inertiaOriginGrams;
@@ -4094,6 +4118,7 @@ function applyInertiaDisplay(rolled) {
 
     if (centroidTensor) {
         const { values, vectors } = computePrincipalInertia(centroidTensor);
+        const worldQuat = principalVectorsToWorldQuaternion(vectors, _cogPrincipalQuatScratch);
         part.principalMoments = formatPrincipalMomentsText(values, unreliable);
         part.principalAxis1 = formatAxisText(vectors[0]);
         part.principalAxis2 = formatAxisText(vectors[1]);
@@ -4102,20 +4127,23 @@ function applyInertiaDisplay(rolled) {
             computeRadiusOfGyrationCm(values, rolled.massGrams),
             unreliable,
         );
-    } else {
-        part.principalMoments = '–';
-        part.principalAxis1 = '–';
-        part.principalAxis2 = '–';
-        part.principalAxis3 = '–';
-        part.radiusOfGyration = '–';
+        return worldQuat;
     }
+    part.principalMoments = '–';
+    part.principalAxis1 = '–';
+    part.principalAxis2 = '–';
+    part.principalAxis3 = '–';
+    part.radiusOfGyration = '–';
+    return null;
 }
 
 /**
  * Remember CoG in the local space of the node that actually moves during a transform
- * (group pivot, otherwise the selected root). Affine TRS then maps this point in O(1).
+ * (group pivot, otherwise the selected root). Affine TRS then maps this point and
+ * principal orientation in O(1). `worldQuat` is the principal triad in world space;
+ * identity (world-aligned) when omitted.
  */
-function cacheCoGFollow(roots, worldCentroid, unreliable) {
+function cacheCoGFollow(roots, worldCentroid, unreliable, worldQuat) {
     if (!worldCentroid || !roots || roots.length === 0) {
         clearCoGFollow();
         return;
@@ -4129,6 +4157,17 @@ function cacheCoGFollow(roots, worldCentroid, unreliable) {
     _cogFollow.frame = frame;
     _cogFollow.local = frame.worldToLocal(worldCentroid.clone());
     _cogFollow.unreliable = !!unreliable;
+    if (!_cogFollow.localQuat) _cogFollow.localQuat = new THREE.Quaternion();
+    frame.getWorldQuaternion(_cogFollow.localQuat).invert();
+    if (worldQuat) _cogFollow.localQuat.multiply(worldQuat);
+}
+
+function _cogFollowWorldQuaternion(target) {
+    if (_cogFollow.localQuat && _cogFollow.frame) {
+        _cogFollow.frame.getWorldQuaternion(target);
+        return target.multiply(_cogFollow.localQuat);
+    }
+    return target.identity();
 }
 
 function applyCoGDisplay(worldCentroid, options) {
@@ -4396,6 +4435,7 @@ function saveCurrentCoG() {
     locator.userData._isCoGLocator = true;
     locator.userData.cogHalfLen = halfLen;
     locator.position.copy(_cogWorldScratch);
+    locator.quaternion.copy(_cogFollowWorldQuaternion(_cogWorldQuatScratch));
     locator.userData.initPosition = locator.position.clone();
     locator.userData.initRotation = locator.rotation.clone();
     locator.userData.initScale = locator.scale.clone();
@@ -4426,7 +4466,7 @@ function ensureCoGHelper() {
 }
 
 /**
- * Show/hide/reposition the center-of-gravity axes (+X/+Y/+Z from the origin).
+ * Show/hide/reposition the center-of-gravity axes (principal 1/2/3 = red/green/blue).
  * Arm length is half the combined bounding-box max dimension so the axes poke
  * out of the part. No-op (just hides) when the toggle is off or centroid is unknown.
  * @param {import('three').Object3D[]} roots
@@ -4440,6 +4480,8 @@ function updateCoGHelper(roots, centroid, options) {
     }
     ensureCoGHelper();
     cogHelper.position.copy(centroid);
+    _cogFollowWorldQuaternion(_cogWorldQuatScratch);
+    cogHelper.quaternion.copy(_cogWorldQuatScratch);
     cogHelper.visible = true;
     if (options?.resize === false) return;
 
@@ -4614,16 +4656,16 @@ function updateAreaVolume(rootOrRoots) {
         part.mass = formatMass(rolled.massGrams);
     }
 
+    const principalQuat = applyInertiaDisplay(rolled);
+
     if (!rolled.hasContribution || !rolled.centroid) {
         part.centerOfGravity = '–';
         clearCoGFollow();
         updateCoGHelper(roots, null);
     } else {
-        cacheCoGFollow(roots, rolled.centroid, rolled.unreliable);
+        cacheCoGFollow(roots, rolled.centroid, rolled.unreliable, principalQuat);
         applyCoGDisplay(rolled.centroid);
     }
-
-    applyInertiaDisplay(rolled);
 }
 
 /** Read density from root(s) into part.density (g/cm³). */
