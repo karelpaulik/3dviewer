@@ -791,6 +791,12 @@ function base64ToArrayBuffer(b64) {
 }
 
 const loader = new GLTFLoader();
+loader.register(function (parser) {
+    parser.createUniqueName = function (originalName) {
+        return originalName || '';
+    };
+    return { name: 'PreserveOriginalGltfNames' };
+});
 
 // Draco decoder embedded as base64 for offline use
 const DRACO_DECODER_BASE64 = '${dracoDecoderBase64}';

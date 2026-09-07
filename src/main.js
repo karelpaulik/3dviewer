@@ -8691,11 +8691,24 @@ function loadStlModel(model, name, scale, colored) {
     });
 }
 
+// glTF allows duplicate node names. Three.js GLTFLoader uniquifies them (Bolt → Bolt_1)
+// because its animation PropertyBinding requires unique names. This app identifies parts
+// by the CAD name, so keep the original names including duplicates.
+function preserveOriginalGltfNames(loader) {
+    loader.register(function (parser) {
+        parser.createUniqueName = function (originalName) {
+            return originalName || '';
+        };
+        return { name: 'PreserveOriginalGltfNames' };
+    });
+}
+
 function loadGlbModel(model, name, scale, colored, options = {}) {
     const { loadFileHistory = false, importSettings = true, restoreAssemblyPlayback = false } = options;
     if (loadFileHistory) syncFileHistoryToggleUi();
     return new Promise((resolve, reject) => {
         const loader = new GLTFLoader();
+        preserveOriginalGltfNames(loader);
         const dracoLoader = new DRACOLoader();
         dracoLoader.setDecoderPath('/draco/');
         loader.setDRACOLoader(dracoLoader);
