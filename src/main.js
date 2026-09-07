@@ -722,24 +722,6 @@ worldAxesBtn.addEventListener('click', () => {
     updateAxesHelper();
 });
 
-const worldAxesSizeWrap = document.createElement('div');
-worldAxesSizeWrap.id = 'world-axes-size';
-worldAxesSizeWrap.style.display = 'none';
-const worldAxesSizeInput = document.createElement('input');
-worldAxesSizeInput.type = 'range';
-worldAxesSizeInput.min = String(WORLD_AXES_SIZE_MIN);
-worldAxesSizeInput.max = String(WORLD_AXES_SIZE_MAX);
-worldAxesSizeInput.step = '1';
-worldAxesSizeInput.value = String(WORLD_AXES_SIZE_DEFAULT);
-worldAxesSizeInput.title = 'World axes size';
-worldAxesSizeInput.addEventListener('pointerdown', (e) => e.stopPropagation());
-worldAxesSizeInput.addEventListener('input', () => {
-    viewProp.axesHelperSize = Number(worldAxesSizeInput.value);
-    worldAxesSizeInput.title = `World axes size (${viewProp.axesHelperSize} px)`;
-    render();
-});
-worldAxesSizeWrap.appendChild(worldAxesSizeInput);
-
 // Wrapper reference for hit-testing (toolbar + panels + outliner)
 let outlinerPanelEl = null;
 const guiWrapper = { contains(el) { return guiToolbar.contains(el) || Object.values(guiPanels).some(p => p.gui && p.gui.domElement.style.display !== 'none' && p.gui.domElement.contains(el)) || (outlinerPanelEl && outlinerPanelEl.contains(el)) || statusBar.contains(el) || circleDetectToggleEl.contains(el) || viewportBottomLeftToolbar.contains(el) || viewHelperContainer.contains(el) || (_deviationLegendEl && _deviationLegendEl.contains(el)) || (_selectedOverlayEl && _selectedOverlayEl.contains(el)) || document.getElementById('tool-hint-overlay')?.contains(el); } };
@@ -1236,6 +1218,7 @@ let isTouchScreen;
 
 let selectionHelper;
 let axesHelperObject = null; // World-origin CAD triad
+const _worldAxesViewSize = new THREE.Vector2();
 let cameraProspHelperObject = null; // Reference na camera helper objekt ve scéně (persp)
 let cameraOrthoHelperObject = null; // Reference na camera helper objekt ve scéně (ortho)
 let raycastArrowHelper = null;
@@ -1532,7 +1515,7 @@ const viewProp = {
     wireframe: false,       // Wireframe přepínač
     showSharpEdges: false,
     edgeAngleThreshold: 12,
-    showAxesHelper: false, // World-origin coordinate triad
+    showAxesHelper: true, // World-origin coordinate triad
     axesHelperSize: WORLD_AXES_SIZE_DEFAULT, // Screen size of the triad in pixels
     showCameraHelper: false, // Zobrazit / skrýt camera helper (frustum perspektivní kamery)
     showCameraOrthoHelper: false, // Zobrazit / skrýt camera helper (frustum ortografické kamery)
@@ -2347,7 +2330,6 @@ function init() {
     viewHelperRenderer.setSize(VIEW_HELPER_SIZE, VIEW_HELPER_SIZE);
     viewHelperRenderer.setClearColor(0x000000, 0);
     viewHelperContainer.appendChild(viewHelperRenderer.domElement);
-    viewHelperContainer.appendChild(worldAxesSizeWrap);
     viewHelperContainer.appendChild(worldAxesBtn);
     viewHelperContainer.appendChild(orbitLockBar);
     createViewHelper();
@@ -2894,6 +2876,7 @@ function init() {
     _initDeviationLegendDrag();
 
     _initSelectedOverlay();
+    updateAxesHelper();
 } //End init 
 
 // Přepočítá frustum ortografické kamery podle aktuálního obsahu meshObjects.
@@ -3085,6 +3068,9 @@ function addMainGui() {
             if (!value && lastSelectedObject && isOutlinerAuxiliaryObject(lastSelectedObject)) {
                 deselectObject();
             }
+        }).listen();
+        folderProp.add(viewProp, 'axesHelperSize', WORLD_AXES_SIZE_MIN, WORLD_AXES_SIZE_MAX, 1).name('World axes size').onChange(function() {
+            render();
         }).listen();
         const sectionFolder = folderProp.addFolder("Section view");   
             sectionCtrl = sectionFolder.add(viewProp, 'section').name('Section').onChange(function(value){ setSectionEnabled(value); }).listen();
@@ -7781,14 +7767,7 @@ function addAxesHelper(axesSize) {
 
 function syncWorldAxesButton() {
     worldAxesBtn.classList.toggle('active', !!viewProp.showAxesHelper);
-    worldAxesSizeWrap.style.display = viewProp.showAxesHelper ? '' : 'none';
-    if (worldAxesSizeInput.value !== String(viewProp.axesHelperSize)) {
-        worldAxesSizeInput.value = String(viewProp.axesHelperSize);
-    }
-    worldAxesSizeInput.title = `World axes size (${viewProp.axesHelperSize} px)`;
 }
-
-const _worldAxesViewSize = new THREE.Vector2();
 
 function syncWorldAxesScreenScale() {
     if (!axesHelperObject || !axesHelperObject.visible || !currentCamera || !renderer) return;
