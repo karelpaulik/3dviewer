@@ -1616,6 +1616,29 @@ const attachmentCompressionDefaults = {
 };
 const attachmentCompressionInitDefaults = { ...attachmentCompressionDefaults };
 
+const GLB_KEEP_DUPLICATE_NAMES_KEY = 'glbImportKeepDuplicateNames';
+const glbImportDefaults = {
+    keepDuplicateNames: true,
+};
+const glbImportInitDefaults = { ...glbImportDefaults };
+
+function _loadGlbImportDefaults() {
+    try {
+        const raw = localStorage.getItem(GLB_KEEP_DUPLICATE_NAMES_KEY);
+        if (raw === '0') glbImportDefaults.keepDuplicateNames = false;
+        else if (raw === '1') glbImportDefaults.keepDuplicateNames = true;
+    } catch (_) { /* ignore */ }
+}
+
+function _saveGlbImportDefaults() {
+    try {
+        localStorage.setItem(
+            GLB_KEEP_DUPLICATE_NAMES_KEY,
+            glbImportDefaults.keepDuplicateNames ? '1' : '0'
+        );
+    } catch (_) { /* ignore */ }
+}
+
 const extent = {
     pn: -1000,
     pp: +1000,
@@ -3032,6 +3055,7 @@ function scheduleEdgeThresholdUpdate() {
 
 //GUI----------------------------------------------------------------------------------------------------------------
 function addMainGui() {
+    _loadGlbImportDefaults();
     //View
     const folderProp = new GUI({ container: guiContainer, title: 'View' });
     guiView = folderProp;
@@ -3167,6 +3191,15 @@ function addMainGui() {
                 docNameFolder.add(_docLabelOpts, 'showLastEditDate').name('Show last edit date').onChange(v => setDocLabelOptions({ showLastEditDate: v }));
                 docNameFolder.add(_docLabelOpts, 'showImportDate').name('Show import date').onChange(v => setDocLabelOptions({ showImportDate: v }));
                 docNameFolder.close();
+            const glbImportFolder = preferencesFolder.addFolder('GLB import');
+                glbImportFolder.add(glbImportDefaults, 'keepDuplicateNames').name('Keep duplicate names')
+                    .onChange(_saveGlbImportDefaults)
+                    .listen();
+                glbImportFolder.add({ fn() {
+                    Object.assign(glbImportDefaults, glbImportInitDefaults);
+                    _saveGlbImportDefaults();
+                } }, 'fn').name('Set to default');
+                glbImportFolder.close();
             const dracoCompFolder = preferencesFolder.addFolder('GLB Draco Compression');
                 const _dracoMethodOpts = { 'Edgebreaker': 'edgebreaker', 'Sequential': 'sequential' };
                 dracoCompFolder.add(dracoDefaults, 'useCustomSettings').name('Use custom settings').listen();
@@ -8708,7 +8741,7 @@ function loadGlbModel(model, name, scale, colored, options = {}) {
     if (loadFileHistory) syncFileHistoryToggleUi();
     return new Promise((resolve, reject) => {
         const loader = new GLTFLoader();
-        preserveOriginalGltfNames(loader);
+        if (glbImportDefaults.keepDuplicateNames) preserveOriginalGltfNames(loader);
         const dracoLoader = new DRACOLoader();
         dracoLoader.setDecoderPath('/draco/');
         loader.setDRACOLoader(dracoLoader);
