@@ -24,6 +24,16 @@ import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer
 import { CSS3DRenderer } from 'three/addons/renderers/CSS3DRenderer.js';
 import { ViewHelper } from './ViewHelper.js';
 import { VertexNormalsHelper } from 'three/addons/helpers/VertexNormalsHelper.js';
+import {
+    createWorldAxesTriad,
+    computeWorldAxesScreenScale,
+    WORLD_AXES_COLOR_X,
+    WORLD_AXES_COLOR_Y,
+    WORLD_AXES_COLOR_Z,
+    WORLD_AXES_SIZE_MIN,
+    WORLD_AXES_SIZE_MAX,
+    WORLD_AXES_SIZE_DEFAULT,
+} from './worldAxesUtils.js';
 
 //import { GUI } from 'dat.gui';
 import { GUI } from 'lil-gui';
@@ -692,6 +702,44 @@ const orbitLockRotateBtn = createOrbitLockBtn('↻', 'Lock rotate', 'orbitLockRo
 const orbitLockZoomBtn = createOrbitLockBtn('⊕', 'Lock zoom', 'orbitLockZoom');
 orbitLockBar.append(orbitLockPanBtn, orbitLockRotateBtn, orbitLockZoomBtn);
 
+const worldAxesBtn = document.createElement('button');
+worldAxesBtn.id = 'world-axes-btn';
+worldAxesBtn.type = 'button';
+worldAxesBtn.title = 'World coordinate system';
+for (const [cls, letter, color] of [
+    ['axis-x', 'X', WORLD_AXES_COLOR_X],
+    ['axis-y', 'Y', WORLD_AXES_COLOR_Y],
+    ['axis-z', 'Z', WORLD_AXES_COLOR_Z],
+]) {
+    const span = document.createElement('span');
+    span.className = cls;
+    span.textContent = letter;
+    span.style.color = color;
+    worldAxesBtn.appendChild(span);
+}
+worldAxesBtn.addEventListener('click', () => {
+    viewProp.showAxesHelper = !viewProp.showAxesHelper;
+    updateAxesHelper();
+});
+
+const worldAxesSizeWrap = document.createElement('div');
+worldAxesSizeWrap.id = 'world-axes-size';
+worldAxesSizeWrap.style.display = 'none';
+const worldAxesSizeInput = document.createElement('input');
+worldAxesSizeInput.type = 'range';
+worldAxesSizeInput.min = String(WORLD_AXES_SIZE_MIN);
+worldAxesSizeInput.max = String(WORLD_AXES_SIZE_MAX);
+worldAxesSizeInput.step = '1';
+worldAxesSizeInput.value = String(WORLD_AXES_SIZE_DEFAULT);
+worldAxesSizeInput.title = 'World axes size';
+worldAxesSizeInput.addEventListener('pointerdown', (e) => e.stopPropagation());
+worldAxesSizeInput.addEventListener('input', () => {
+    viewProp.axesHelperSize = Number(worldAxesSizeInput.value);
+    worldAxesSizeInput.title = `World axes size (${viewProp.axesHelperSize} px)`;
+    render();
+});
+worldAxesSizeWrap.appendChild(worldAxesSizeInput);
+
 // Wrapper reference for hit-testing (toolbar + panels + outliner)
 let outlinerPanelEl = null;
 const guiWrapper = { contains(el) { return guiToolbar.contains(el) || Object.values(guiPanels).some(p => p.gui && p.gui.domElement.style.display !== 'none' && p.gui.domElement.contains(el)) || (outlinerPanelEl && outlinerPanelEl.contains(el)) || statusBar.contains(el) || circleDetectToggleEl.contains(el) || viewportBottomLeftToolbar.contains(el) || viewHelperContainer.contains(el) || (_deviationLegendEl && _deviationLegendEl.contains(el)) || (_selectedOverlayEl && _selectedOverlayEl.contains(el)) || document.getElementById('tool-hint-overlay')?.contains(el); } };
@@ -810,7 +858,11 @@ function _cogSnapHintSuffix() {
     _forEachSavedCoGLocator(loc => {
         if (!saved && isObjectVisibleInScene(loc)) saved = true;
     });
-    return (live || saved) ? ' &nbsp;·&nbsp; CoG snap on' : '';
+    const wcs = isWorldAxesSnapActive();
+    let s = '';
+    if (live || saved) s += ' &nbsp;·&nbsp; CoG snap on';
+    if (wcs) s += ' &nbsp;·&nbsp; origin snap on';
+    return s;
 }
 
 function _circleSnapHintSuffix() {
@@ -1183,7 +1235,7 @@ let boxSelectOverlay = null;
 let isTouchScreen;
 
 let selectionHelper;
-let axesHelperObject = null; // Reference na axes helper objekt ve scéně
+let axesHelperObject = null; // World-origin CAD triad
 let cameraProspHelperObject = null; // Reference na camera helper objekt ve scéně (persp)
 let cameraOrthoHelperObject = null; // Reference na camera helper objekt ve scéně (ortho)
 let raycastArrowHelper = null;
@@ -1480,8 +1532,8 @@ const viewProp = {
     wireframe: false,       // Wireframe přepínač
     showSharpEdges: false,
     edgeAngleThreshold: 12,
-    showAxesHelper: false, // Zobrazit / skrýt axes helper
-    axesHelperSize: 100,   // Velikost axes helperu
+    showAxesHelper: false, // World-origin coordinate triad
+    axesHelperSize: WORLD_AXES_SIZE_DEFAULT, // Screen size of the triad in pixels
     showCameraHelper: false, // Zobrazit / skrýt camera helper (frustum perspektivní kamery)
     showCameraOrthoHelper: false, // Zobrazit / skrýt camera helper (frustum ortografické kamery)
     showLightHelper: false, // Zobrazit / skrýt light helpery (hemisféra + directional světla)
@@ -1704,6 +1756,7 @@ const _cogWorldScratch = new THREE.Vector3();
 const _cogSnapNdcScratch = new THREE.Vector3();
 const _cogSnapPointScratch = new THREE.Vector3();
 const _cogLocatorWorldScratch = new THREE.Vector3();
+const _worldOriginScratch = new THREE.Vector3();
 const COG_SNAP_PX = 14;
 const normalsViewGui = {
     showVertexNormals: false,
@@ -2294,6 +2347,8 @@ function init() {
     viewHelperRenderer.setSize(VIEW_HELPER_SIZE, VIEW_HELPER_SIZE);
     viewHelperRenderer.setClearColor(0x000000, 0);
     viewHelperContainer.appendChild(viewHelperRenderer.domElement);
+    viewHelperContainer.appendChild(worldAxesBtn);
+    viewHelperContainer.appendChild(worldAxesSizeWrap);
     viewHelperContainer.appendChild(orbitLockBar);
     createViewHelper();
 
@@ -3077,8 +3132,6 @@ function addMainGui() {
             
             sectionFolder.close();
         const helpersFolder = folderProp.addFolder("Helpers");
-            helpersFolder.add(viewProp, 'showAxesHelper').name('axes').onChange(function() { updateAxesHelper(); }).listen();
-            helpersFolder.add(viewProp, 'axesHelperSize', 1, 2000, 1).name('axes size').onChange(function() { updateAxesHelper(); }).listen();
             helpersFolder.add(viewProp, 'showCameraHelper').name('camera persp').onChange(function() { updateCameraHelper(); }).listen();
             helpersFolder.add(viewProp, 'showCameraOrthoHelper').name('camera ortho').onChange(function() { updateCameraHelper(); }).listen();
             helpersFolder.add(viewProp, 'showLightHelper').name('lights').onChange(function() { updateLightHelper(); }).listen();
@@ -4415,23 +4468,36 @@ function _cogSnapCandidateDistSq(worldPos, width, height) {
     return dx * dx + dy * dy;
 }
 
+function isWorldAxesSnapActive() {
+    return !!(viewProp.showAxesHelper && axesHelperObject?.visible);
+}
+
 /**
- * Screen-space snap to the live CoG or any saved CoG locator. Closest within COG_SNAP_PX wins.
- * Owner is the locator (saved) or the live follow frame.
+ * Screen-space snap to the world origin, live CoG, or a saved CoG locator.
+ * Closest within COG_SNAP_PX wins. Owner is scene (WCS), the live follow frame, or a locator.
  * @returns {{ point: import('three').Vector3, owner: import('three').Object3D }|null}
  */
 function trySnapCoG() {
     const { width, height } = getViewportSize();
     const thresh = COG_SNAP_PX * COG_SNAP_PX;
     let bestDist = thresh;
-    let bestPoint = null;
+    let bestKind = null;
     let bestOwner = null;
+
+    if (isWorldAxesSnapActive()) {
+        const d = _cogSnapCandidateDistSq(_worldOriginScratch.set(0, 0, 0), width, height);
+        if (d <= bestDist) {
+            bestDist = d;
+            bestKind = 'wcs';
+            bestOwner = scene;
+        }
+    }
 
     if (part.showCoG && cogHelper?.visible && _cogFollow.local && _cogFollow.frame) {
         const d = _cogSnapCandidateDistSq(cogHelper.position, width, height);
         if (d <= bestDist) {
             bestDist = d;
-            bestPoint = cogHelper.position;
+            bestKind = 'cog-live';
             bestOwner = _cogFollow.frame;
         }
     }
@@ -4440,12 +4506,14 @@ function trySnapCoG() {
         const d = _cogSnapCandidateDistSq(getCoGLocatorWorldPoint(loc, _cogLocatorWorldScratch), width, height);
         if (d <= bestDist) {
             bestDist = d;
-            bestPoint = loc;
+            bestKind = 'cog-saved';
             bestOwner = loc;
         }
     });
     if (!bestOwner) return null;
-    if (bestPoint === cogHelper?.position) {
+    if (bestKind === 'wcs') {
+        _cogSnapPointScratch.set(0, 0, 0);
+    } else if (bestKind === 'cog-live') {
         _cogSnapPointScratch.copy(cogHelper.position);
     } else {
         getCoGLocatorWorldPoint(bestOwner, _cogSnapPointScratch);
@@ -7706,41 +7774,59 @@ function addShadowedLight( x, y, z, color, intensity ) {
 }
 
 function addAxesHelper(axesSize) {
-    // Zpětná kompatibilita - nastaví velikost a zobrazí helper
     if (axesSize !== undefined) viewProp.axesHelperSize = axesSize;
     viewProp.showAxesHelper = true;
     updateAxesHelper();
 }
 
-function updateAxesHelper() {
-    // Odebereme stávající objekt ze scény
-    if (axesHelperObject) {
-        scene.remove(axesHelperObject);
-        axesHelperObject.dispose?.();
-        axesHelperObject = null;
+function syncWorldAxesButton() {
+    worldAxesBtn.classList.toggle('active', !!viewProp.showAxesHelper);
+    worldAxesSizeWrap.style.display = viewProp.showAxesHelper ? '' : 'none';
+    if (worldAxesSizeInput.value !== String(viewProp.axesHelperSize)) {
+        worldAxesSizeInput.value = String(viewProp.axesHelperSize);
     }
-    
+    worldAxesSizeInput.title = `World axes size (${viewProp.axesHelperSize} px)`;
+}
+
+const _worldAxesViewSize = new THREE.Vector2();
+
+function syncWorldAxesScreenScale() {
+    if (!axesHelperObject || !axesHelperObject.visible || !currentCamera || !renderer) return;
+    renderer.getSize(_worldAxesViewSize);
+    const height = _worldAxesViewSize.y || 1;
+    axesHelperObject.scale.setScalar(
+        computeWorldAxesScreenScale(currentCamera, height, viewProp.axesHelperSize)
+    );
+}
+
+function setWorldAxesLabelVisible(visible) {
+    const labels = axesHelperObject?.userData?.axisLabels;
+    if (!labels) return;
+    for (const label of labels) {
+        label.visible = visible;
+        if (label.element) label.element.style.display = visible ? '' : 'none';
+    }
+}
+
+function updateAxesHelper() {
+    syncWorldAxesButton();
+    if (!scene) return;
+
     if (!viewProp.showAxesHelper) {
+        if (axesHelperObject) {
+            axesHelperObject.visible = false;
+            setWorldAxesLabelVisible(false);
+        }
         render();
         return;
     }
-    
-    // Pokud je velikost 0 nebo nebyla nastavena, dopočítáme ji z modelu
-    let size = viewProp.axesHelperSize;
-    if (!size || size <= 0) {
-        const box = new THREE.Box3();
-        meshObjects.forEach(obj => box.expandByObject(obj));
-        if (!box.isEmpty()) {
-            const boxSize = box.getSize(new THREE.Vector3());
-            size = Math.max(boxSize.x, boxSize.y, boxSize.z) * 0.5;
-            viewProp.axesHelperSize = Math.round(size);
-        } else {
-            return;
-        }
+
+    if (!axesHelperObject) {
+        axesHelperObject = createWorldAxesTriad();
+        scene.add(axesHelperObject);
     }
-    
-    axesHelperObject = new THREE.AxesHelper(size);
-    scene.add(axesHelperObject);
+    axesHelperObject.visible = true;
+    setWorldAxesLabelVisible(true);
     render();
 }
 
@@ -10130,6 +10216,9 @@ function render() {
     // Dynamicky rozšíří far aktivní kamery, pokud helper druhé kamery přesahuje frustum
     if (cameraProspHelperObject || cameraOrthoHelperObject) ensureCameraFarCoversHelpers();
 
+    if (axesHelperObject && axesHelperObject.visible) {
+        syncWorldAxesScreenScale();
+    }
     renderer.render(scene, currentCamera);
     if (viewHelper) {
         viewHelper.render(viewHelperRenderer);
