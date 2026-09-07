@@ -4231,7 +4231,7 @@ function _computeCoGCrossSize(roots) {
     if (found) {
         const bSize = new THREE.Vector3().subVectors(bMax, bMin);
         const maxDim = Math.max(bSize.x, bSize.y, bSize.z);
-        if (maxDim > 0) halfLen = maxDim * 0.5;
+        if (maxDim > 0) halfLen = maxDim * 0.25;
     }
     return halfLen;
 }
@@ -4467,8 +4467,8 @@ function ensureCoGHelper() {
 
 /**
  * Show/hide/reposition the center-of-gravity axes (principal 1/2/3 = red/green/blue).
- * Arm length is half the combined bounding-box max dimension so the axes poke
- * out of the part. No-op (just hides) when the toggle is off or centroid is unknown.
+ * Arm length is a quarter of the combined bounding-box max dimension so the axes
+ * remain visible without spanning the whole part. No-op (just hides) when the toggle is off or centroid is unknown.
  * @param {import('three').Object3D[]} roots
  * @param {import('three').Vector3|null} centroid
  * @param {{ resize?: boolean }} [options] `resize: false` skips the bbox pass (live follow during TRS).
