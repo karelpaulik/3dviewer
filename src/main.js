@@ -2347,8 +2347,8 @@ function init() {
     viewHelperRenderer.setSize(VIEW_HELPER_SIZE, VIEW_HELPER_SIZE);
     viewHelperRenderer.setClearColor(0x000000, 0);
     viewHelperContainer.appendChild(viewHelperRenderer.domElement);
-    viewHelperContainer.appendChild(worldAxesBtn);
     viewHelperContainer.appendChild(worldAxesSizeWrap);
+    viewHelperContainer.appendChild(worldAxesBtn);
     viewHelperContainer.appendChild(orbitLockBar);
     createViewHelper();
 
