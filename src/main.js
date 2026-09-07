@@ -5387,27 +5387,6 @@ function refreshSelectedObjGui(obj) {
         render();
     });
 
-    // Bounding box dimensions text
-    updateBBoxSize(obj);
-    selectedFolder.add(part, 'bbSize').name('Bounding box').disable().listen();
-
-    syncPartDensityFromRoots(obj);
-    syncPartMassOffsetFromRoots(obj);
-    updateAreaVolume(obj);
-    selectedFolder.add(part, 'surfaceArea').name('Surface area').disable().listen();
-    selectedFolder.add(part, 'volume').name('Volume').disable().listen();
-    selectedFolder.add(part, 'density').name('Density (g/cm³)').onChange(function() {
-        writePartDensityToRoots(obj);
-        updateAreaVolume(obj);
-    }).listen();
-    selectedFolder.add(part, 'massOffset').name('Mass offset (kg)').onChange(function() {
-        writePartMassOffsetToRoots(obj);
-        updateAreaVolume(obj);
-    }).listen();
-    selectedFolder.add(part, 'mass').name('Mass').disable().listen();
-    selectedFolder.add(part, 'centerOfGravity').name('Center of gravity (X, Y, Z)').disable().listen();
-    addInertiaFolder(selectedFolder);
-
     // Toggle to show/hide bounding box wireframe
     part.showBBox = false;
     selectedFolder.add(part, 'showBBox').name('Bounding Box').onChange(function(value) {
@@ -5452,6 +5431,27 @@ function refreshSelectedObjGui(obj) {
         }
         render();
     });
+
+    // Bounding box dimensions text
+    updateBBoxSize(obj);
+    selectedFolder.add(part, 'bbSize').name('Bounding box').disable().listen();
+
+    syncPartDensityFromRoots(obj);
+    syncPartMassOffsetFromRoots(obj);
+    updateAreaVolume(obj);
+    selectedFolder.add(part, 'surfaceArea').name('Surface area').disable().listen();
+    selectedFolder.add(part, 'volume').name('Volume').disable().listen();
+    selectedFolder.add(part, 'density').name('Density (g/cm³)').onChange(function() {
+        writePartDensityToRoots(obj);
+        updateAreaVolume(obj);
+    }).listen();
+    selectedFolder.add(part, 'massOffset').name('Mass offset (kg)').onChange(function() {
+        writePartMassOffsetToRoots(obj);
+        updateAreaVolume(obj);
+    }).listen();
+    selectedFolder.add(part, 'mass').name('Mass').disable().listen();
+    selectedFolder.add(part, 'centerOfGravity').name('Center of gravity (X, Y, Z)').disable().listen();
+    addInertiaFolder(selectedFolder);
 
     // Toggle to show/hide the center of gravity marker
     part.showCoG = false;
