@@ -1556,6 +1556,7 @@ const viewProp = {
     splitLoosePartsToleranceManual: 1e-4, // Manual: absolute weld tolerance in model units
     locationKeepOpen: false, // Keep Location folder open when selecting another object
     analysisKeepOpen: false, // Keep Analysis folder open when selecting another object
+    inertiaKeepOpen: false, // Keep Moment of inertia folder open when selecting another object
     navigationKeepOpen: false, // Keep Navigation folder open when selecting another object
     materialKeepOpen: false, // Keep Material folder open when selecting another object
     materialAllKeepOpen: false, // Keep ALL Material folder open when selecting another object
@@ -4163,7 +4164,7 @@ function addAnalysisFolder(parentFolder) {
     analysisFolder.add({ fn() { saveCurrentCoG(); } }, 'fn').name('Save CoG (Center of Gravity)');
     addInertiaFolder(analysisFolder);
 
-    if (viewProp.analysisKeepOpen) analysisFolder.open();
+    if (viewProp.analysisKeepOpen || viewProp.inertiaKeepOpen) analysisFolder.open();
     else analysisFolder.close();
 
     if (typeof analysisFolder.onOpenClose === 'function') {
@@ -4186,6 +4187,7 @@ function addAnalysisFolder(parentFolder) {
 /** Add the (collapsed) read-only "Moment of inertia" sub-folder to a Selected-panel folder. */
 function addInertiaFolder(parentFolder) {
     const inertiaFolder = parentFolder.addFolder('Moment of inertia');
+    inertiaFolder.add(viewProp, 'inertiaKeepOpen').name('Keep open');
     inertiaFolder.add(part, 'inertiaOriginDiag').name('Ixx, Iyy, Izz (at origin)').disable().listen();
     inertiaFolder.add(part, 'inertiaOriginOffDiag').name('Ixy, Ixz, Iyz (at origin)').disable().listen();
     inertiaFolder.add(part, 'radiusOfGyrationOrigin').name('Radius of gyration (Rx, Ry, Rz at origin)').disable().listen();
@@ -4197,7 +4199,8 @@ function addInertiaFolder(parentFolder) {
     inertiaFolder.add(part, 'principalAxis2').name('Principal axis 2 (green)').disable().listen();
     inertiaFolder.add(part, 'principalAxis3').name('Principal axis 3 (blue)').disable().listen();
     inertiaFolder.add(part, 'radiusOfGyration').name('Radius of gyration (r1, r2, r3)').disable().listen();
-    inertiaFolder.close();
+    if (viewProp.inertiaKeepOpen) inertiaFolder.open();
+    else inertiaFolder.close();
     return inertiaFolder;
 }
 
