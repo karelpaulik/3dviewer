@@ -2607,7 +2607,7 @@ a, button, input, select {
 }
 
 .doc-overlay.layout-side {
-    top: 0;
+    top: auto;
     bottom: 0;
     left: auto;
     right: 0;
@@ -2615,7 +2615,9 @@ a, button, input, select {
     width: var(--doc-panel-width, 45%);
     min-width: 280px;
     max-width: 90vw;
-    box-shadow: -4px 0 16px rgba(0, 0, 0, 0.35);
+    min-height: 220px;
+    max-height: 100vh;
+    box-shadow: -4px -4px 16px rgba(0, 0, 0, 0.35);
 }
 
 .doc-overlay.layout-window {
@@ -2664,11 +2666,6 @@ a, button, input, select {
 .doc-side-splitter {
     display: none;
     position: absolute;
-    left: 0;
-    top: 0;
-    bottom: 0;
-    width: 8px;
-    cursor: col-resize;
     z-index: 30;
     touch-action: none;
 }
@@ -2677,7 +2674,32 @@ a, button, input, select {
     display: block;
 }
 
-.doc-side-splitter::before {
+.doc-side-splitter-w {
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 8px;
+    cursor: col-resize;
+}
+
+.doc-side-splitter-n {
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 8px;
+    cursor: row-resize;
+}
+
+.doc-side-splitter-nw {
+    left: 0;
+    top: 0;
+    width: 14px;
+    height: 14px;
+    cursor: nwse-resize;
+    z-index: 31;
+}
+
+.doc-side-splitter-w::before {
     content: '';
     position: absolute;
     left: 3px;
@@ -2689,9 +2711,41 @@ a, button, input, select {
     pointer-events: none;
 }
 
-.doc-side-splitter:hover::before,
-.doc-side-splitter.dragging::before {
+.doc-side-splitter-n::before {
+    content: '';
+    position: absolute;
+    top: 3px;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: rgba(255, 255, 255, 0.25);
+    border-radius: 1px;
+    pointer-events: none;
+}
+
+.doc-side-splitter-nw::before {
+    content: '';
+    position: absolute;
+    left: 3px;
+    top: 3px;
+    width: 8px;
+    height: 8px;
+    border-top: 2px solid rgba(255, 255, 255, 0.25);
+    border-left: 2px solid rgba(255, 255, 255, 0.25);
+    border-radius: 1px 0 0 0;
+    pointer-events: none;
+}
+
+.doc-side-splitter-w:hover::before,
+.doc-side-splitter-w.dragging::before,
+.doc-side-splitter-n:hover::before,
+.doc-side-splitter-n.dragging::before {
     background: rgba(85, 170, 255, 0.85);
+}
+
+.doc-side-splitter-nw:hover::before,
+.doc-side-splitter-nw.dragging::before {
+    border-color: rgba(85, 170, 255, 0.85);
 }
 
 @media (max-width: 768px) {
@@ -2701,6 +2755,8 @@ a, button, input, select {
         height: auto;
         min-width: unset;
         max-width: none;
+        min-height: unset;
+        max-height: none;
         box-shadow: none;
     }
 

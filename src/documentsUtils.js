@@ -1,4 +1,4 @@
-﻿// documentsUtils.js
+// documentsUtils.js
 import { Editor, Extension, Mark } from '@tiptap/core';
 import { pickImageFromDisk, pickImageFromFiles, showImageInsertDialog } from './imageInsertUtils.js';
 import { addPdfAttachmentFromBytes } from './attachmentsUtils.js';
@@ -182,12 +182,16 @@ const _PDF_CONTENT_H_PT = _PDF_A4_H_PT - 2 * _PDF_MARGIN_PT;
 const _PDF_RENDER_SCALE = 2;
 const DOC_OPEN_MODE_KEY = 'docOpenMode';
 const DOC_PANEL_WIDTH_KEY = 'docPanelWidthPct';
+const DOC_PANEL_HEIGHT_KEY = 'docPanelHeightPct';
 const DOC_WINDOW_BOUNDS_KEY = 'docWindowBounds';
 const _DOC_OPEN_MODE_OPTS = { 'Side-by-side': 'side', 'Window': 'window' };
 const _DOC_MOBILE_BREAKPOINT = 768;
 const _DOC_PANEL_WIDTH_DEFAULT = 45;
 const _DOC_PANEL_WIDTH_MIN_PX = 280;
 const _DOC_PANEL_WIDTH_MAX_VW = 0.9;
+const _DOC_PANEL_HEIGHT_DEFAULT = 100;
+const _DOC_PANEL_HEIGHT_MIN_PX = 220;
+const _DOC_PANEL_HEIGHT_MAX_VH = 1;
 const _DOC_WIN_MIN_W = 320;
 const _DOC_WIN_MIN_H = 220;
 const _DOC_WIN_DEFAULT_W = 900;
@@ -213,6 +217,11 @@ if (localStorage.getItem(DOC_OPEN_MODE_KEY) === 'full') {
 let _sidePanelWidthPct = (() => {
     const stored = parseFloat(localStorage.getItem(DOC_PANEL_WIDTH_KEY));
     return Number.isFinite(stored) && stored > 0 ? stored : _DOC_PANEL_WIDTH_DEFAULT;
+})();
+
+let _sidePanelHeightPct = (() => {
+    const stored = parseFloat(localStorage.getItem(DOC_PANEL_HEIGHT_KEY));
+    return Number.isFinite(stored) && stored > 0 ? stored : _DOC_PANEL_HEIGHT_DEFAULT;
 })();
 
 let documentsStore = [];   // [{ id, title, fileName?, content, createdAt, font }]
@@ -486,10 +495,23 @@ function _clampSidePanelWidthPx(widthPx) {
     return Math.max(minW, Math.min(maxW, widthPx));
 }
 
-function _applySidePanelWidth() {
+function _clampSidePanelHeightPx(heightPx) {
+    const maxH = window.innerHeight * _DOC_PANEL_HEIGHT_MAX_VH;
+    const minH = Math.min(_DOC_PANEL_HEIGHT_MIN_PX, maxH);
+    return Math.max(minH, Math.min(maxH, heightPx));
+}
+
+function _applySidePanelSize() {
     if (!_overlayEl) return;
+    if (window.innerWidth <= _DOC_MOBILE_BREAKPOINT) {
+        _overlayEl.style.width = '';
+        _overlayEl.style.height = '';
+        return;
+    }
     const widthPx = _clampSidePanelWidthPx((window.innerWidth * _sidePanelWidthPct) / 100);
+    const heightPx = _clampSidePanelHeightPx((window.innerHeight * _sidePanelHeightPct) / 100);
     _overlayEl.style.width = `${widthPx}px`;
+    _overlayEl.style.height = `${heightPx}px`;
 }
 
 function _getEffectiveOpenMode() {
@@ -732,8 +754,8 @@ function _applyDocLayoutMode() {
         _overlayEl.style.left = '';
         _overlayEl.style.top = '';
         _overlayEl.style.right = '';
-        _overlayEl.style.height = '';
-        _applySidePanelWidth();
+        _overlayEl.style.bottom = '';
+        _applySidePanelSize();
     } else {
         if (bgWrap) bgWrap.style.display = '';
         if (btnNav3d) btnNav3d.style.display = '';
@@ -760,27 +782,40 @@ function _applyDocLayoutMode() {
 
 function _onSideSplitterPointerDown(e) {
     if (_getEffectiveOpenMode() !== 'side' || !_overlayEl) return;
+    if (window.innerWidth <= _DOC_MOBILE_BREAKPOINT) return;
     if (e.button !== undefined && e.button !== 0) return;
     e.preventDefault();
 
-    const splitter = _overlayEl.querySelector('.doc-side-splitter');
-    if (splitter) splitter.classList.add('dragging');
-    document.body.style.cursor = 'col-resize';
+    const splitter = e.currentTarget;
+    const axis = splitter.dataset.resize || 'w';
+    const resizeW = axis.includes('w');
+    const resizeN = axis.includes('n');
+    splitter.classList.add('dragging');
+    document.body.style.cursor = resizeW && resizeN ? 'nwse-resize'
+        : resizeN ? 'row-resize' : 'col-resize';
     document.body.style.userSelect = 'none';
 
     const onMove = (ev) => {
         if (ev.cancelable) ev.preventDefault();
-        const clientX = ev.touches ? ev.touches[0].clientX : ev.clientX;
-        const widthPx = _clampSidePanelWidthPx(window.innerWidth - clientX);
-        _sidePanelWidthPct = (widthPx / window.innerWidth) * 100;
-        _overlayEl.style.width = `${widthPx}px`;
+        const pt = ev.touches ? ev.touches[0] : ev;
+        if (resizeW) {
+            const widthPx = _clampSidePanelWidthPx(window.innerWidth - pt.clientX);
+            _sidePanelWidthPct = (widthPx / window.innerWidth) * 100;
+            _overlayEl.style.width = `${widthPx}px`;
+        }
+        if (resizeN) {
+            const heightPx = _clampSidePanelHeightPx(window.innerHeight - pt.clientY);
+            _sidePanelHeightPct = (heightPx / window.innerHeight) * 100;
+            _overlayEl.style.height = `${heightPx}px`;
+        }
     };
 
     const onUp = () => {
-        if (splitter) splitter.classList.remove('dragging');
+        splitter.classList.remove('dragging');
         document.body.style.cursor = '';
         document.body.style.userSelect = '';
-        localStorage.setItem(DOC_PANEL_WIDTH_KEY, String(_sidePanelWidthPct));
+        if (resizeW) localStorage.setItem(DOC_PANEL_WIDTH_KEY, String(_sidePanelWidthPct));
+        if (resizeN) localStorage.setItem(DOC_PANEL_HEIGHT_KEY, String(_sidePanelHeightPct));
         document.removeEventListener('mousemove', onMove);
         document.removeEventListener('mouseup', onUp);
         document.removeEventListener('touchmove', onMove);
@@ -2232,15 +2267,20 @@ function _buildEditorOverlay() {
     });
     window.addEventListener('resize', _applyDocTocState);
 
-    const splitter = document.createElement('div');
-    splitter.className = 'doc-side-splitter';
-    splitter.title = 'Resize document panel';
-    splitter.setAttribute('role', 'separator');
-    splitter.setAttribute('aria-orientation', 'vertical');
-    splitter.addEventListener('mousedown', _onSideSplitterPointerDown);
-    splitter.addEventListener('touchstart', _onSideSplitterPointerDown, { passive: false });
-
-    overlay.appendChild(splitter);
+    const addSideSplitter = (className, title, orientation, resize) => {
+        const el = document.createElement('div');
+        el.className = className;
+        el.title = title;
+        el.setAttribute('role', 'separator');
+        el.setAttribute('aria-orientation', orientation);
+        el.dataset.resize = resize;
+        el.addEventListener('mousedown', _onSideSplitterPointerDown);
+        el.addEventListener('touchstart', _onSideSplitterPointerDown, { passive: false });
+        overlay.appendChild(el);
+    };
+    addSideSplitter('doc-side-splitter doc-side-splitter-w', 'Resize document panel width', 'vertical', 'w');
+    addSideSplitter('doc-side-splitter doc-side-splitter-n', 'Resize document panel height', 'horizontal', 'n');
+    addSideSplitter('doc-side-splitter doc-side-splitter-nw', 'Resize document panel', 'horizontal', 'nw');
     overlay.appendChild(headerWrap);
     overlay.appendChild(toolbar);
     overlay.appendChild(docBody);
