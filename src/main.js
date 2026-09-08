@@ -1761,7 +1761,7 @@ let cogRoot = null; // Scene folder for saved CoG locators (loadedModels root)
 /** Cached CoG in the transformed node's local space so the marker can follow TRS without a triangle pass. */
 const _cogFollow = { roots: [], frame: null, local: null, localQuat: null, unreliable: false };
 /** Lazy mass-property analysis: skip the triangle pass until the Analysis folder is opened or CoG is shown. */
-const _analysisState = { computed: false, dirty: true, rolled: null, folder: null };
+const _analysisState = { computed: false, dirty: true, rolled: null, geometry: null, folder: null };
 const _cogWorldScratch = new THREE.Vector3();
 const _cogSnapNdcScratch = new THREE.Vector3();
 const _cogSnapPointScratch = new THREE.Vector3();
@@ -4099,6 +4099,7 @@ function resetAnalysisDisplay() {
     _analysisState.computed = false;
     _analysisState.dirty = true;
     _analysisState.rolled = null;
+    _analysisState.geometry = null;
 }
 
 function ensureAnalysisComputed() {
@@ -4162,6 +4163,7 @@ function addAnalysisFolder(parentFolder) {
         render();
     });
     analysisFolder.add({ fn() { saveCurrentCoG(); } }, 'fn').name('Save CoG (Center of Gravity)');
+    analysisFolder.add({ fn() { exportAnalysisTxt(); } }, 'fn').name('Export analysis (TXT)');
     addInertiaFolder(analysisFolder);
 
     if (viewProp.analysisKeepOpen || viewProp.inertiaKeepOpen) analysisFolder.open();
@@ -4202,6 +4204,161 @@ function addInertiaFolder(parentFolder) {
     if (viewProp.inertiaKeepOpen) inertiaFolder.open();
     else inertiaFolder.close();
     return inertiaFolder;
+}
+
+function _downloadAnalysisBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+function _analysisExportSafeName(roots) {
+    const raw = roots.length === 1
+        ? (roots[0].name || 'Unnamed')
+        : `Group_${roots.length}`;
+    return String(raw).replace(/[\\/:*?"<>|]/g, '_').trim() || 'Unnamed';
+}
+
+function _fmtExportNum(value) {
+    if (value == null || !Number.isFinite(value)) return '–';
+    return formatGeometryMeasure(value);
+}
+
+function _fmtExportTriplet(a, b, c) {
+    if (![a, b, c].every(Number.isFinite)) return '–';
+    return `${_fmtExportNum(a)}, ${_fmtExportNum(b)}, ${_fmtExportNum(c)}`;
+}
+
+function _fmtExportTensorDiag(tensor) {
+    if (!tensor) return '–';
+    return _fmtExportTriplet(
+        tensor.Ixx / 1e7, tensor.Iyy / 1e7, tensor.Izz / 1e7,
+    );
+}
+
+function _fmtExportTensorOffDiag(tensor) {
+    if (!tensor) return '–';
+    return _fmtExportTriplet(
+        tensor.Ixy / 1e7, tensor.Ixz / 1e7, tensor.Iyz / 1e7,
+    );
+}
+
+function _fmtExportRadii(radiiCm, unit) {
+    if (!radiiCm) return '–';
+    const l = unitLengthToCm(unit);
+    const parts = radiiCm.map(r => (r == null || !Number.isFinite(r) ? '–' : _fmtExportNum(r / l)));
+    if (parts.every(p => p === '–')) return '–';
+    return `${parts.join(', ')} ${unit}`;
+}
+
+function _fmtExportVec3(vector) {
+    if (!vector) return '–';
+    return _fmtExportTriplet(vector.x, vector.y, vector.z);
+}
+
+function buildAnalysisExportText(roots) {
+    const unit = viewProp.modelUnit;
+    const rolled = _analysisState.rolled;
+    const geom = _analysisState.geometry;
+    const name = roots.map(r => r.name || 'Unnamed').join(', ');
+    const unreliable = !!(rolled?.unreliable || (geom && geom.volumeReliable === false));
+
+    const density = Number(part.density);
+    const massOffset = Number(part.massOffset);
+    const hasMass = !!(rolled?.hasContribution);
+    const massKg = hasMass && Number.isFinite(rolled.massGrams) ? rolled.massGrams / 1000 : null;
+    const centroid = rolled?.centroid || null;
+
+    let areaLine = '–';
+    let volumeLine = '–';
+    if (geom && Number.isFinite(geom.area)) areaLine = `${_fmtExportNum(geom.area)} ${unit}²`;
+    if (geom && Number.isFinite(geom.volume)) volumeLine = `${_fmtExportNum(geom.volume)} ${unit}³`;
+
+    const originTensor = hasMass ? rolled.inertiaOriginGrams : null;
+    const centroidTensor = hasMass ? rolled.inertiaCentroidGrams : null;
+    const massGrams = hasMass ? rolled.massGrams : 0;
+
+    let principalMoments = '–';
+    let axis1 = '–';
+    let axis2 = '–';
+    let axis3 = '–';
+    let gyrationPrincipal = '–';
+    if (centroidTensor && massGrams > 0) {
+        const { values, vectors } = computePrincipalInertia(centroidTensor);
+        principalVectorsToWorldQuaternion(vectors, _cogPrincipalQuatScratch);
+        principalMoments = _fmtExportTriplet(values[0] / 1e7, values[1] / 1e7, values[2] / 1e7);
+        axis1 = _fmtExportVec3(vectors[0]);
+        axis2 = _fmtExportVec3(vectors[1]);
+        axis3 = _fmtExportVec3(vectors[2]);
+        gyrationPrincipal = _fmtExportRadii(computeRadiusOfGyrationCm(values, massGrams), unit);
+    }
+
+    const gyrationOrigin = originTensor && massGrams > 0
+        ? _fmtExportRadii(computeRadiusOfGyrationCm([originTensor.Ixx, originTensor.Iyy, originTensor.Izz], massGrams), unit)
+        : '–';
+    const gyrationCentroid = centroidTensor && massGrams > 0
+        ? _fmtExportRadii(computeRadiusOfGyrationCm([centroidTensor.Ixx, centroidTensor.Iyy, centroidTensor.Izz], massGrams), unit)
+        : '–';
+
+    const originDiag = originTensor ? _fmtExportTensorDiag(originTensor) : '–';
+    const originOff = originTensor ? _fmtExportTensorOffDiag(originTensor) : '–';
+    const cogDiag = centroidTensor ? _fmtExportTensorDiag(centroidTensor) : '–';
+    const cogOff = centroidTensor ? _fmtExportTensorOffDiag(centroidTensor) : '–';
+
+    const cogLine = centroid
+        ? `${_fmtExportTriplet(centroid.x, centroid.y, centroid.z)} ${unit}`
+        : '–';
+
+    const lines = [
+        `Name: ${name}`,
+        'Frame: world',
+        `Model unit: ${unit}`,
+    ];
+    if (unreliable) {
+        lines.push('Note: shell may be open or inconsistently oriented');
+    }
+    lines.push(
+        '',
+        `Density: ${_fmtExportNum(density)} g/cm³`,
+        `Mass offset: ${_fmtExportNum(Number.isFinite(massOffset) ? massOffset : 0)} kg`,
+        `Surface area: ${areaLine}`,
+        `Volume: ${volumeLine}`,
+        `Mass: ${massKg == null ? '–' : `${_fmtExportNum(massKg)} kg`}`,
+        '',
+        `CoG (X, Y, Z): ${cogLine}`,
+        '',
+        'Inertia at origin (kg·m²)',
+        `Ixx, Iyy, Izz: ${originDiag}`,
+        `Ixy, Ixz, Iyz: ${originOff}`,
+        `Radius of gyration (Rx, Ry, Rz): ${gyrationOrigin}`,
+        '',
+        'Inertia at CoG (kg·m²)',
+        `Ixx, Iyy, Izz: ${cogDiag}`,
+        `Ixy, Ixz, Iyz: ${cogOff}`,
+        `Radius of gyration (Rx, Ry, Rz): ${gyrationCentroid}`,
+        '',
+        `Principal moments (kg·m²): ${principalMoments}`,
+        `Principal axis 1 (red): ${axis1}`,
+        `Principal axis 2 (green): ${axis2}`,
+        `Principal axis 3 (blue): ${axis3}`,
+        `Radius of gyration (r1, r2, r3): ${gyrationPrincipal}`,
+        '',
+    );
+    return lines.join('\r\n');
+}
+
+function exportAnalysisTxt() {
+    const roots = getAnalysisRoots();
+    if (roots.length === 0) return;
+    ensureAnalysisComputed();
+    const text = buildAnalysisExportText(roots);
+    const filename = 'Analysis_' + _analysisExportSafeName(roots) + '.txt';
+    _downloadAnalysisBlob(new Blob([text], { type: 'text/plain;charset=utf-8;' }), filename);
 }
 
 /**
@@ -4774,6 +4931,7 @@ function updateAreaVolume(rootOrRoots) {
         _analysisState.computed = false;
         _analysisState.dirty = false;
         _analysisState.rolled = { hasContribution: false };
+        _analysisState.geometry = null;
         return;
     }
     for (const root of roots) {
@@ -4786,16 +4944,23 @@ function updateAreaVolume(rootOrRoots) {
     if (meshes.length === 0) {
         part.surfaceArea = '–';
         part.volume = '–';
+        _analysisState.geometry = null;
     } else {
         const stats = computeSurfaceAreaAndVolume(meshes);
         if (stats.triangleCount === 0) {
             part.surfaceArea = '–';
             part.volume = '–';
+            _analysisState.geometry = null;
         } else {
             const unit = viewProp.modelUnit;
             part.surfaceArea = `${formatGeometryMeasure(stats.area)} ${unit}²`;
             const volumeTxt = `${formatGeometryMeasure(stats.volume)} ${unit}³`;
             part.volume = stats.volumeReliable ? volumeTxt : `${volumeTxt} (open?)`;
+            _analysisState.geometry = {
+                area: stats.area,
+                volume: stats.volume,
+                volumeReliable: stats.volumeReliable,
+            };
         }
     }
 
