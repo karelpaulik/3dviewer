@@ -1555,6 +1555,7 @@ const viewProp = {
     splitLoosePartsToleranceMultiplier: 1, // Auto: multiplier on default bbox factor
     splitLoosePartsToleranceManual: 1e-4, // Manual: absolute weld tolerance in model units
     locationKeepOpen: false, // Keep Location folder open when selecting another object
+    analysisKeepOpen: false, // Keep Analysis folder open when selecting another object
     navigationKeepOpen: false, // Keep Navigation folder open when selecting another object
     materialKeepOpen: false, // Keep Material folder open when selecting another object
     materialAllKeepOpen: false, // Keep ALL Material folder open when selecting another object
@@ -1758,6 +1759,8 @@ let cogHelper = null; // CoG cross aligned to principal axes (LineSegments)
 let cogRoot = null; // Scene folder for saved CoG locators (loadedModels root)
 /** Cached CoG in the transformed node's local space so the marker can follow TRS without a triangle pass. */
 const _cogFollow = { roots: [], frame: null, local: null, localQuat: null, unreliable: false };
+/** Lazy mass-property analysis: skip the triangle pass until the Analysis folder is opened or CoG is shown. */
+const _analysisState = { computed: false, dirty: true, rolled: null, folder: null };
 const _cogWorldScratch = new THREE.Vector3();
 const _cogSnapNdcScratch = new THREE.Vector3();
 const _cogSnapPointScratch = new THREE.Vector3();
@@ -2476,16 +2479,15 @@ function init() {
                 if (!pivotOnly) {
                     commitDragTransformUndo();
                 }
-                // Scale changes density-based mass (and CoG when massOffset is present).
-                // Translate/rotate keep the cached local CoG exact, so skip the triangle pass.
+                // Scale changes mass/volume; translate/rotate leave those invariant but
+                // stale inertia-at-origin. Recompute only if Analysis is open or CoG is shown.
                 let needsRender = false;
-                if (!pivotOnly && transformControls.getMode() === 'scale') {
-                    if (viewProp.isGroupTransformActive && selectedObjects.length > 0) {
-                        updateAreaVolume(selectedObjects);
-                    } else if (lastSelectedObject) {
-                        updateAreaVolume(lastSelectedObject);
-                    }
-                    needsRender = true;
+                if (!pivotOnly && (
+                    (viewProp.isGroupTransformActive && selectedObjects.length > 0)
+                    || (lastSelectedObject && !isCoGLocator(lastSelectedObject) && !isCoGRoot(lastSelectedObject))
+                )) {
+                    markAnalysisDirty();
+                    if (isAnalysisWanted()) needsRender = true;
                 }
                 // Přepočítáme BoxHelpery po dokončení skupinové transformace
                 if (viewProp.isGroupTransformActive) {
@@ -3076,11 +3078,7 @@ function addMainGui() {
         }).listen();
         folderProp.add(viewProp, 'orientedSelectionBox', ['local', 'world']).name('Selection box').onChange(function(){ render(); }).listen();
         folderProp.add(viewProp, 'modelUnit', MODEL_UNIT_OPTIONS).name('Model unit').onChange(function() {
-            if (viewProp.isGroupTransformActive && selectedObjects.length > 0) {
-                updateAreaVolume(selectedObjects);
-            } else if (lastSelectedObject) {
-                updateAreaVolume(lastSelectedObject);
-            }
+            markAnalysisDirty();
         }).listen();
         folderProp.addColor(viewProp, 'backgroundColor').name('Background').onChange(function(value){ scene.background = new THREE.Color(value); render(); });
         folderProp.add(viewProp, 'perspCam').name('Persp. camera').onChange(function(value){setCamera(); render(); });
@@ -3609,6 +3607,7 @@ function addMainGui() {
                 else if (normalsViewGui.showVertexAllNormals || normalsViewGui.showVertexNormals) updateVertexNormalsHelpers();
                 else render();
                 updateMeshDensityInfo();
+                markAnalysisDirty();
                 alert(`${opLabel} done: ${result.trianglesBefore} → ${result.trianglesAfter} triangles.`);
             } finally {
                 overlay.style.display = 'none';
@@ -4074,6 +4073,116 @@ function formatRadiusOfGyrationText(radiiCm, unreliable) {
     return unreliable ? `${txt} (open?)` : txt;
 }
 
+function getAnalysisRoots() {
+    if (viewProp.isGroupTransformActive && selectedObjects.length > 0) return selectedObjects.slice();
+    if (selectedObjects.length > 1) return selectedObjects.slice();
+    if (lastSelectedObject) return [lastSelectedObject];
+    return [];
+}
+
+function isAnalysisFolderOpen() {
+    return !!(_analysisState.folder && !_analysisState.folder._closed);
+}
+
+/** True when the user is looking at analysis results or the live CoG marker. */
+function isAnalysisWanted() {
+    return !!(part.showCoG || isAnalysisFolderOpen());
+}
+
+function resetAnalysisDisplay() {
+    part.surfaceArea = '–';
+    part.volume = '–';
+    part.mass = '–';
+    part.centerOfGravity = '–';
+    applyInertiaDisplay(null);
+    _analysisState.computed = false;
+    _analysisState.dirty = true;
+    _analysisState.rolled = null;
+}
+
+function ensureAnalysisComputed() {
+    if (_analysisState.computed && !_analysisState.dirty) return;
+    const roots = getAnalysisRoots();
+    updateAreaVolume(roots.length ? roots : null);
+}
+
+function markAnalysisDirty() {
+    _analysisState.dirty = true;
+    if (isAnalysisWanted()) ensureAnalysisComputed();
+}
+
+function addDensityMassOffsetControllers(folder) {
+    folder.add(part, 'density').name('Density (g/cm³)')
+        .onChange(function() { writePartDensityToRoots(getAnalysisRoots()); })
+        .onFinishChange(function() {
+            writePartDensityToRoots(getAnalysisRoots());
+            markAnalysisDirty();
+        })
+        .listen();
+    folder.add(part, 'massOffset').name('Mass offset (kg)')
+        .onChange(function() { writePartMassOffsetToRoots(getAnalysisRoots()); })
+        .onFinishChange(function() {
+            writePartMassOffsetToRoots(getAnalysisRoots());
+            markAnalysisDirty();
+        })
+        .listen();
+}
+
+function addAnalysisFolder(parentFolder) {
+    resetAnalysisDisplay();
+    part.showCoG = false;
+    if (cogHelper) cogHelper.visible = false;
+
+    const analysisFolder = parentFolder.addFolder('Analysis');
+    _analysisState.folder = analysisFolder;
+    analysisFolder.add(viewProp, 'analysisKeepOpen').name('Keep open');
+    analysisFolder.add(part, 'surfaceArea').name('Surface area').disable().listen();
+    analysisFolder.add(part, 'volume').name('Volume').disable().listen();
+    analysisFolder.add(part, 'mass').name('Mass').disable().listen();
+    analysisFolder.add(part, 'centerOfGravity').name('Center of gravity (X, Y, Z)').disable().listen();
+    analysisFolder.add(part, 'showCoG').name('Show Center of Gravity').onChange(function() {
+        if (part.showCoG) {
+            ensureAnalysisComputed();
+            if (warnIfNoMassContribution()) {
+                part.showCoG = false;
+                this.updateDisplay();
+                if (cogHelper) cogHelper.visible = false;
+                render();
+                return;
+            }
+            if (_cogFollow.local && _cogFollow.frame) {
+                _cogWorldScratch.copy(_cogFollow.local);
+                _cogFollow.frame.localToWorld(_cogWorldScratch);
+                applyCoGDisplay(_cogWorldScratch);
+            }
+        } else if (cogHelper) {
+            cogHelper.visible = false;
+        }
+        render();
+    });
+    analysisFolder.add({ fn() { saveCurrentCoG(); } }, 'fn').name('Save CoG (Center of Gravity)');
+    addInertiaFolder(analysisFolder);
+
+    if (viewProp.analysisKeepOpen) analysisFolder.open();
+    else analysisFolder.close();
+
+    if (typeof analysisFolder.onOpenClose === 'function') {
+        analysisFolder.onOpenClose(function(changed) {
+            if (changed !== analysisFolder) return;
+            if (!analysisFolder._closed) ensureAnalysisComputed();
+        });
+    } else if (analysisFolder.$title) {
+        analysisFolder.$title.addEventListener('click', () => {
+            requestAnimationFrame(() => {
+                if (!analysisFolder._closed) ensureAnalysisComputed();
+            });
+        });
+    }
+
+    if (!analysisFolder._closed) ensureAnalysisComputed();
+    return analysisFolder;
+}
+
 /** Add the (collapsed) read-only "Moment of inertia" sub-folder to a Selected-panel folder. */
 function addInertiaFolder(parentFolder) {
     const inertiaFolder = parentFolder.addFolder('Moment of inertia');
@@ -4114,8 +4223,8 @@ function principalVectorsToWorldQuaternion(vectors, target) {
  * Populate the "Moment of inertia" fields of `part` from a rolled-up mass-property result
  * (as returned by `computeRolledUpMassForRoots`). Mirrors `applyCoGDisplay`, but there is no
  * live per-frame follow during drag/rotate — the tensor is only ever recomputed by
- * `updateAreaVolume()`, at the same discrete events as mass/volume (selection change,
- * density/massOffset edits, end of a scale transform, model unit change, geometry bake).
+ * `updateAreaVolume()`, when Analysis is open (or CoG is shown) after density/massOffset
+ * edits, end of a transform, model unit change, or geometry bake.
  * @returns {import('three').Quaternion|null} world quaternion of the principal triad, or null
  */
 function applyInertiaDisplay(rolled) {
@@ -4442,22 +4551,20 @@ function adoptLoadedCoGRoot(node) {
 }
 
 /** Alert and return true when the selection subtree has no density and no mass offset. */
-function warnIfNoMassContribution(roots) {
-    const rolled = computeRolledUpMassForRoots(roots, viewProp.modelUnit);
-    if (rolled.hasContribution) return false;
+function warnIfNoMassContribution() {
+    ensureAnalysisComputed();
+    if (_analysisState.rolled?.hasContribution) return false;
     alert('No density or mass offset is specified on this part or any of its descendants.');
     return true;
 }
 
 function saveCurrentCoG() {
-    const roots = (selectedObjects.length > 1)
-        ? selectedObjects.slice()
-        : (lastSelectedObject ? [lastSelectedObject] : []);
+    const roots = getAnalysisRoots();
     if (roots.length === 0) return;
     if (roots.some(r => isCoGRoot(r) || isCoGLocator(r))) return;
 
-    updateAreaVolume(roots);
-    if (warnIfNoMassContribution(roots)) return;
+    ensureAnalysisComputed();
+    if (warnIfNoMassContribution()) return;
     if (!_cogFollow.local || !_cogFollow.frame) return;
 
     _cogWorldScratch.copy(_cogFollow.local);
@@ -4645,7 +4752,8 @@ function resolveMeasurePickPoint(visibleHits) {
  * Moment of inertia (tensor about the model origin and about the center of gravity, world-axis
  * and principal radii of gyration, principal moments/axes) is derived from the same roll-up result (see
  * `applyInertiaDisplay`). Like mass/volume, it is only recomputed here — never live per-frame
- * during drag/rotate.
+ * during drag/rotate. Callers should use `ensureAnalysisComputed` / `markAnalysisDirty`
+ * so the triangle pass is skipped until the Analysis folder is open or CoG is shown.
  * @param {import('three').Object3D|import('three').Object3D[]|null|undefined} rootOrRoots
  */
 function updateAreaVolume(rootOrRoots) {
@@ -4660,6 +4768,9 @@ function updateAreaVolume(rootOrRoots) {
         clearCoGFollow();
         updateCoGHelper(roots, null);
         applyInertiaDisplay(null);
+        _analysisState.computed = false;
+        _analysisState.dirty = false;
+        _analysisState.rolled = { hasContribution: false };
         return;
     }
     for (const root of roots) {
@@ -4704,6 +4815,9 @@ function updateAreaVolume(rootOrRoots) {
         cacheCoGFollow(roots, rolled.centroid, rolled.unreliable, principalQuat);
         applyCoGDisplay(rolled.centroid);
     }
+    _analysisState.computed = true;
+    _analysisState.dirty = false;
+    _analysisState.rolled = rolled;
 }
 
 /** Read density from root(s) into part.density (g/cm³). */
@@ -5172,6 +5286,7 @@ function _initSelectedOverlay() {
 }
 
 function destroySelectedGui({ hideOverlay = true } = {}) {
+    _analysisState.folder = null;
     if (selectedFolder) {
         saveSelectedGuiScrollForMaterialKeepOpen();
         untrackExtentSlidersFromGui(selectedFolder);
@@ -5438,33 +5553,8 @@ function refreshSelectedObjGui(obj) {
 
     syncPartDensityFromRoots(obj);
     syncPartMassOffsetFromRoots(obj);
-    updateAreaVolume(obj);
-    selectedFolder.add(part, 'surfaceArea').name('Surface area').disable().listen();
-    selectedFolder.add(part, 'volume').name('Volume').disable().listen();
-    selectedFolder.add(part, 'density').name('Density (g/cm³)').onChange(function() {
-        writePartDensityToRoots(obj);
-        updateAreaVolume(obj);
-    }).listen();
-    selectedFolder.add(part, 'massOffset').name('Mass offset (kg)').onChange(function() {
-        writePartMassOffsetToRoots(obj);
-        updateAreaVolume(obj);
-    }).listen();
-    selectedFolder.add(part, 'mass').name('Mass').disable().listen();
-    selectedFolder.add(part, 'centerOfGravity').name('Center of gravity (X, Y, Z)').disable().listen();
-    addInertiaFolder(selectedFolder);
-
-    // Toggle to show/hide the center of gravity marker
-    part.showCoG = false;
-    selectedFolder.add(part, 'showCoG').name('Center of Gravity').onChange(function() {
-        if (part.showCoG && warnIfNoMassContribution([obj])) {
-            part.showCoG = false;
-            this.updateDisplay();
-            return;
-        }
-        updateAreaVolume(obj);
-        render();
-    });
-    selectedFolder.add({ fn() { saveCurrentCoG(); } }, 'fn').name('Save CoG (Center of Gravity)');
+    addDensityMassOffsetControllers(selectedFolder);
+    addAnalysisFolder(selectedFolder);
 
     selectedFolder.add({ fn() { if (lastSelectedObject) changeColor(lastSelectedObject); } }, 'fn').name('Random color');
     selectedFolder.add({ fn() { removeModel(lastSelectedObject); } }, 'fn').name('Remove Object');
@@ -5486,7 +5576,7 @@ function refreshSelectedObjGui(obj) {
         const paramFolder = selectedFolder.addFolder('Parametric');
         buildParametricGui(paramFolder, obj, () => {
             updateBBoxSize(obj);
-            updateAreaVolume(obj);
+            markAnalysisDirty();
             if (bbHelper && part.showBBox) {
                 bbHelper.setFromObject(lastSelectedObject);
             }
@@ -5511,6 +5601,7 @@ function refreshSelectedObjGui(obj) {
 
         // Called by every Location slider after the user releases.
         function _onGuiLocationFinish() {
+            markAnalysisDirty();
             pushSingleTransformUndoIfChanged();
             savePreviousTransformState();
         }
@@ -5554,7 +5645,7 @@ function refreshSelectedObjGui(obj) {
         trackExtentSlider(folder2.add(obj.scale, 'x', extent.sn, extent.sp, viewProp.sStep)
             .name('Scale')
             .onChange(function(value){obj.scale.x=value; obj.scale.y=value; obj.scale.z=value; _onGuiLocationChange(); })
-            .onFinishChange(function() { updateAreaVolume(obj); _onGuiLocationFinish(); })
+            .onFinishChange(_onGuiLocationFinish)
             .listen(), 'sStep');
         folder2.add({ fn: bakeSelectedObjectLocation }, 'fn').name('Bake location');
         if (viewProp.locationKeepOpen) folder2.open();
@@ -5665,30 +5756,8 @@ function refreshGroupGui() {
 
     syncPartDensityFromRoots(selectedObjects);
     syncPartMassOffsetFromRoots(selectedObjects);
-    updateAreaVolume(selectedObjects);
-    selectedFolder.add(part, 'surfaceArea').name('Surface area').disable().listen();
-    selectedFolder.add(part, 'volume').name('Volume').disable().listen();
-    selectedFolder.add(part, 'density').name('Density (g/cm³)').onChange(function() {
-        writePartDensityToRoots(selectedObjects);
-        updateAreaVolume(selectedObjects);
-    }).listen();
-    selectedFolder.add(part, 'massOffset').name('Mass offset (kg)').onChange(function() {
-        writePartMassOffsetToRoots(selectedObjects);
-        updateAreaVolume(selectedObjects);
-    }).listen();
-    selectedFolder.add(part, 'mass').name('Mass').disable().listen();
-    selectedFolder.add(part, 'centerOfGravity').name('Center of gravity (X, Y, Z)').disable().listen();
-    addInertiaFolder(selectedFolder);
-    selectedFolder.add(part, 'showCoG').name('Center of Gravity').onChange(function() {
-        if (part.showCoG && warnIfNoMassContribution(selectedObjects)) {
-            part.showCoG = false;
-            this.updateDisplay();
-            return;
-        }
-        updateAreaVolume(selectedObjects);
-        render();
-    });
-    selectedFolder.add({ fn() { saveCurrentCoG(); } }, 'fn').name('Save CoG (Center of Gravity)');
+    addDensityMassOffsetControllers(selectedFolder);
+    addAnalysisFolder(selectedFolder);
 
     // --- Operations (all objects) ---
     selectedFolder.add({ fn() { selectedObjects.forEach(obj => changeColor(obj)); } }, 'fn').name('Random color (all)');
@@ -5741,6 +5810,7 @@ function refreshGroupGui() {
         savePreviousGroupTransformStates();
 
         function _onGroupGuiLocationFinish() {
+            markAnalysisDirty();
             commitGroupTransformUndo();
             savePreviousTransformState();
         }
@@ -5765,7 +5835,7 @@ function refreshGroupGui() {
             .name('Rz').onChange(_onGroupGuiLocationChange).onFinishChange(_onGroupGuiLocationFinish).listen(), 'rStep');
         trackExtentSlider(folder2.add(pivotObject.scale, 'x', extent.sn, extent.sp, viewProp.sStep)
             .name('Scale').onChange(function(value) { pivotObject.scale.set(value, value, value); _onGroupGuiLocationChange(); })
-            .onFinishChange(function() { updateAreaVolume(selectedObjects); _onGroupGuiLocationFinish(); }).listen(), 'sStep');
+            .onFinishChange(_onGroupGuiLocationFinish).listen(), 'sStep');
         if (viewProp.locationKeepOpen) folder2.open();
         else folder2.close();
     }
@@ -6607,10 +6677,8 @@ function bakeObjectLocation(obj, options) {
     refreshEdgeOverlaysAfterSceneChange();
     refreshOutlinerOverlaysAndTools();
     // Local CoG cache is invalid after baking vertices; world CoG is unchanged but must be re-expressed.
-    if (lastSelectedObject === obj) {
-        updateAreaVolume(obj);
-    } else if (viewProp.isGroupTransformActive && selectedObjects.includes(obj)) {
-        updateAreaVolume(selectedObjects);
+    if (lastSelectedObject === obj || (viewProp.isGroupTransformActive && selectedObjects.includes(obj))) {
+        markAnalysisDirty();
     }
     render();
 }
