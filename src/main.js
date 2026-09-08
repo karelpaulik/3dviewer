@@ -4261,6 +4261,11 @@ function _fmtExportVec3(vector) {
     return _fmtExportTriplet(vector.x, vector.y, vector.z);
 }
 
+function _fmtExportDateTime(date = new Date()) {
+    const p = (n) => String(n).padStart(2, '0');
+    return `${date.getFullYear()}-${p(date.getMonth() + 1)}-${p(date.getDate())} ${p(date.getHours())}:${p(date.getMinutes())}:${p(date.getSeconds())}`;
+}
+
 function buildAnalysisExportText(roots) {
     const unit = viewProp.modelUnit;
     const rolled = _analysisState.rolled;
@@ -4314,11 +4319,16 @@ function buildAnalysisExportText(roots) {
         ? `${_fmtExportTriplet(centroid.x, centroid.y, centroid.z)} ${unit}`
         : '–';
 
+    const userName = getUserName();
     const lines = [
         `Name: ${name}`,
+        `Exported: ${_fmtExportDateTime()}`,
+    ];
+    if (userName) lines.push(`User: ${userName}`);
+    lines.push(
         'Frame: world',
         `Model unit: ${unit}`,
-    ];
+    );
     if (unreliable) {
         lines.push('Note: shell may be open or inconsistently oriented');
     }
