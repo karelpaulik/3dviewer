@@ -260,19 +260,6 @@ p {
 	max-width: 42rem;
 }
 
-.origin-head p {
-	margin: 0 0 1.25rem;
-}
-
-.origin-head p:last-child {
-	margin-bottom: 0;
-}
-
-.origin-head h3 {
-	font-size: 1.05rem;
-	margin: 0 0 0.45em;
-}
-
 /* Features */
 
 .features {
