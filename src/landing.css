@@ -256,8 +256,26 @@ p {
 	margin: 0;
 }
 
-.origin-head {
-	max-width: 42rem;
+.origin-split {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+	gap: 1.5rem;
+}
+
+.origin-split > div {
+	background: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: 12px;
+	padding: 1.5rem 1.75rem;
+}
+
+.origin-split h2 {
+	font-size: clamp(1.25rem, 2.5vw, 1.5rem);
+	margin-bottom: 0.6em;
+}
+
+.origin-split p {
+	margin: 0;
 }
 
 /* Features */
