@@ -257,6 +257,14 @@ p {
 	margin: 0;
 }
 
+.origin-head {
+	max-width: 42rem;
+}
+
+.origin-head p + p {
+	margin-top: 0.9em;
+}
+
 /* Features */
 
 .features {
