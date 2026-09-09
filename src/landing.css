@@ -224,7 +224,6 @@ p {
 	color: var(--text);
 	font-size: 0.9rem;
 	font-weight: 600;
-	white-space: nowrap;
 }
 
 .promise-bar li:not(:last-child)::after {
@@ -261,8 +260,17 @@ p {
 	max-width: 42rem;
 }
 
-.origin-head p + p {
-	margin-top: 0.9em;
+.origin-head p {
+	margin: 0 0 1.25rem;
+}
+
+.origin-head p:last-child {
+	margin-bottom: 0;
+}
+
+.origin-head h3 {
+	font-size: 1.05rem;
+	margin: 0 0 0.45em;
 }
 
 /* Features */
@@ -494,6 +502,18 @@ p {
 	border-top: 1px solid var(--border);
 	padding-top: 0.9rem;
 	font-size: 0.95rem;
+}
+
+.faq-item ul {
+	margin: -0.3rem 0 1.1rem;
+	padding: 0 0 0.2rem 1.35em;
+	color: var(--text-dim);
+	font-size: 0.95rem;
+	line-height: 1.5;
+}
+
+.faq-item li + li {
+	margin-top: 0.2em;
 }
 
 .faq-item a {
