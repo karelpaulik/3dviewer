@@ -3532,7 +3532,7 @@ function addMainGui() {
         .name('Merge normals before Smooth').listen();
     geometryOpsFolder.add(normalsViewGui, 'mergeUvBeforeSmooth')
         .name('Merge UV before Smooth').listen();
-    geometryOpsFolder.add(normalsViewGui, 'creaseAngleDeg', 0, 90, 1)
+    geometryOpsFolder.add(normalsViewGui, 'creaseAngleDeg', 0, 180, 1)
         .name('Crease angle (°)').listen();
     geometryOpsFolder.add({ fn() {
         runGeometryNormalsOp(
@@ -3665,7 +3665,7 @@ function addMainGui() {
         startBooleanMode(operation);
     }
     const booleanFolder = editGui.addFolder('Boolean Operations');
-    booleanFolder.add(booleanGui, 'creaseAngleDeg', 0, 90, 1).name('Crease angle (°)');
+    booleanFolder.add(booleanGui, 'creaseAngleDeg', 0, 180, 1).name('Crease angle (°)');
     booleanFolder.add({ fn() { tryStartBoolean(ADDITION); } }, 'fn').name('Union (A ∪ B)');
     booleanFolder.add({ fn() { tryStartBoolean(SUBTRACTION); } }, 'fn').name('Subtract (A − B)');
     booleanFolder.add({ fn() { tryStartBoolean(REVERSE_SUBTRACTION); } }, 'fn').name('Subtract (B − A)');
