@@ -369,25 +369,9 @@ p {
 
 /* Formats */
 
-.formats-groups {
-	display: grid;
-	grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-	gap: 2rem 1.5rem;
-	margin-bottom: 1.25rem;
-}
-
-.formats-group h3 {
-	text-align: center;
-	font-size: 0.95rem;
-	letter-spacing: 0.06em;
-	text-transform: uppercase;
-	color: var(--accent);
-	margin-bottom: 0.85rem;
-}
-
 .formats-list {
 	list-style: none;
-	margin: 0;
+	margin: 0 0 1.25rem;
 	padding: 0;
 	display: flex;
 	flex-wrap: wrap;
@@ -402,13 +386,6 @@ p {
 	padding: 0.4em 1em;
 	font-size: 0.9rem;
 	font-weight: 600;
-}
-
-.formats-note {
-	text-align: center;
-	max-width: 52rem;
-	margin: 0 auto 1rem;
-	font-size: 0.9rem;
 }
 
 .formats-link {
