@@ -39,3 +39,11 @@ This favicon was generated using the following font:
 - Font Author: undefined
 - Font Source: https://fonts.gstatic.com/s/akshar/v16/Yq6I-LyHWTfz9rGoqDaUbHvhkAUsSXYFy9CY94XsnPc.ttf
 - Font License: undefined)
+
+# SEO
+```
+10.9.2026
+Bing requirement:
+<meta name="description" content="xxxx">
+xxxx length must be: 25-160 characters
+```
