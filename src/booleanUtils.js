@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { Brush, Evaluator, ADDITION, SUBTRACTION, REVERSE_SUBTRACTION, INTERSECTION } from 'three-bvh-csg';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
+import { applyCreasedVertexNormals, DEFAULT_CREASE_ANGLE_DEG } from './geometryOperationsUtils.js';
 
 export { ADDITION, SUBTRACTION, REVERSE_SUBTRACTION, INTERSECTION };
 
@@ -102,24 +103,45 @@ export function prepareGeometryForCSG(geom) {
 }
 
 /**
+ * Trim CSG drawRange into a real index buffer so toNonIndexed() does not
+ * expand unused trailing indices.
  * @param {THREE.BufferGeometry} geom
+ */
+function bakeCSGDrawRange(geom) {
+    const { start, count } = geom.drawRange;
+    const index = geom.getIndex();
+    if (index && Number.isFinite(count)) {
+        const end = Math.min(start + count, index.count);
+        if (start !== 0 || end !== index.count) {
+            geom.setIndex(new THREE.BufferAttribute(index.array.slice(start, end), 1));
+        }
+    }
+    geom.setDrawRange(0, Infinity);
+}
+
+/**
+ * Drop CSG-interpolated normals and rebuild creased (auto-smooth) normals.
+ * CSG barycentric interpolation plus pre-merge welding produces shading that
+ * matches neither CAD hard edges nor smooth curved faces.
+ * @param {THREE.BufferGeometry} geom
+ * @param {number} [creaseAngleDeg]
  * @returns {THREE.BufferGeometry}
  */
-export function normalizeCSGResult(geom) {
-    const normalized = geom.clone();
+export function normalizeCSGResult(geom, creaseAngleDeg = DEFAULT_CREASE_ANGLE_DEG) {
+    let normalized = geom.clone();
     normalized.clearGroups();
-    normalized.drawRange = { start: 0, count: Infinity };
+    bakeCSGDrawRange(normalized);
 
-    const posAttr = normalized.getAttribute('position');
-    if (posAttr && Number.isFinite(normalized.drawRange.count)) {
-        normalized.setDrawRange(0, posAttr.count);
-    }
-
-    if (!normalized.getAttribute('normal')) {
-        normalized.computeVertexNormals();
+    const creased = applyCreasedVertexNormals(normalized, creaseAngleDeg);
+    if (creased !== normalized) {
+        normalized.dispose();
+        normalized = creased;
     }
 
     stripNonCSGAttributes(normalized);
+    normalized.clearGroups();
+    normalized.computeBoundingBox();
+    normalized.computeBoundingSphere();
 
     return normalized;
 }
@@ -176,9 +198,10 @@ export function objectToWorldGeometry(object3d) {
  * @param {THREE.Object3D} objectA
  * @param {THREE.Object3D} objectB
  * @param {number} operation - ADDITION | SUBTRACTION | REVERSE_SUBTRACTION | INTERSECTION
+ * @param {{ creaseAngleDeg?: number }} [options]
  * @returns {{ geometry: THREE.BufferGeometry|null, error: string|null }}
  */
-export function performBooleanOperation(objectA, objectB, operation) {
+export function performBooleanOperation(objectA, objectB, operation, options = {}) {
     try {
         objectA.updateWorldMatrix(true, true);
         objectB.updateWorldMatrix(true, true);
@@ -202,7 +225,10 @@ export function performBooleanOperation(objectA, objectB, operation) {
             return { geometry: null, error: 'Boolean operation produced no result. Meshes may not be watertight.' };
         }
 
-        const normalized = normalizeCSGResult(result.geometry);
+        const creaseAngleDeg = Number.isFinite(options.creaseAngleDeg)
+            ? options.creaseAngleDeg
+            : DEFAULT_CREASE_ANGLE_DEG;
+        const normalized = normalizeCSGResult(result.geometry, creaseAngleDeg);
         geomA.dispose();
         geomB.dispose();
         result.geometry.dispose();

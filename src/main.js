@@ -284,6 +284,7 @@ import {
     applyFlatVertexNormalsToMeshes,
     applySmoothVertexNormalsToMeshes,
     isObjectVisibleInScene,
+    DEFAULT_CREASE_ANGLE_DEG,
 } from './geometryOperationsUtils.js';
 import {
     SIMPLIFY_SLOW_VERTEX_THRESHOLD,
@@ -1247,6 +1248,9 @@ let booleanOperation = null;
 let booleanObjectA = null;
 let booleanObjectB = null;
 let booleanHighlightHelper = null;
+const booleanGui = {
+    creaseAngleDeg: DEFAULT_CREASE_ANGLE_DEG,
+};
 // --- Deviation map state ---
 let deviationMapMode = false;
 let deviationStep = 0;
@@ -1778,6 +1782,7 @@ const normalsViewGui = {
     vertexNormalsHelperSize: 0, // 0 = auto from bbox
     mergeNormalsBeforeSmooth: true,
     mergeUvBeforeSmooth: true,
+    creaseAngleDeg: DEFAULT_CREASE_ANGLE_DEG,
 };
 let vertexNormalsHelpers = [];
 
@@ -3527,11 +3532,14 @@ function addMainGui() {
         .name('Merge normals before Smooth').listen();
     geometryOpsFolder.add(normalsViewGui, 'mergeUvBeforeSmooth')
         .name('Merge UV before Smooth').listen();
+    geometryOpsFolder.add(normalsViewGui, 'creaseAngleDeg', 0, 90, 1)
+        .name('Crease angle (°)').listen();
     geometryOpsFolder.add({ fn() {
         runGeometryNormalsOp(
             (meshes) => applySmoothVertexNormalsToMeshes(meshes, {
                 mergeNormalsBeforeSmooth: normalsViewGui.mergeNormalsBeforeSmooth,
                 mergeUvBeforeSmooth: normalsViewGui.mergeUvBeforeSmooth,
+                creaseAngleDeg: normalsViewGui.creaseAngleDeg,
             }),
             'Apply smooth normals (merge vertices)',
         );
@@ -3657,6 +3665,7 @@ function addMainGui() {
         startBooleanMode(operation);
     }
     const booleanFolder = editGui.addFolder('Boolean Operations');
+    booleanFolder.add(booleanGui, 'creaseAngleDeg', 0, 90, 1).name('Crease angle (°)');
     booleanFolder.add({ fn() { tryStartBoolean(ADDITION); } }, 'fn').name('Union (A ∪ B)');
     booleanFolder.add({ fn() { tryStartBoolean(SUBTRACTION); } }, 'fn').name('Subtract (A − B)');
     booleanFolder.add({ fn() { tryStartBoolean(REVERSE_SUBTRACTION); } }, 'fn').name('Subtract (B − A)');
@@ -11293,7 +11302,9 @@ function runBooleanAndRegister() {
 
     setTimeout(() => {
         try {
-            const { geometry, error } = performBooleanOperation(objectA, objectB, operation);
+            const { geometry, error } = performBooleanOperation(objectA, objectB, operation, {
+                creaseAngleDeg: booleanGui.creaseAngleDeg,
+            });
             if (error || !geometry) {
                 alert(error || 'Boolean operation failed.');
                 cancelBooleanMode();
