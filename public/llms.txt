@@ -2,7 +2,7 @@
 
 Meshbex is a fast CAD Explorer in the browser. The full app is available to everyone — no login, no paid plan. Top security: Your data is processed on your PC, not on a Meshbex server. It runs on a regular PC (it is a mesh workspace, not a heavy parametric CAD system). Open models locally, share one compact GLB file with engineering, purchasing, process/technology, and management, and optionally install as a PWA without admin rights.
 
-Meshbex was first created for the automotive industry in response to unsustainable CAD prices. Today, it is used worldwide — far beyond automotive — wherever teams need to work with 3D and related data in a single, unrestricted environment. The brief was simple:
+Meshbex was originally created at the request of the automotive industry, in response to unsustainable CAD prices, especially when collaborating with suppliers. Today, it is used worldwide — far beyond automotive — wherever teams need to work with 3D and related data in a single, unrestricted environment. The brief was simple:
 - No login
 - Top data security, processed on your PC
 - Free full app
