@@ -13453,19 +13453,15 @@ function clearGlbAssemblyUserData() {
 // Read userData.assemblyTransformations from an imported GLTF scene and add every sequence it
 // contains as a new sequence. The imported objects come along with the file, so its procedures
 // always reference their own parts — nothing has to be merged into an existing sequence.
-// Legacy GLB extras (assemblyWorkflows / workflow_id / workflow_name / activeWorkflowId) are
-// still accepted so files saved before the sequence rename keep loading.
 function importAssemblyFromGltfScene(gltfScene, sourceName = '', { restorePlayback = false } = {}) {
     const imported = new Map(); // sequence_id → { id, name, steps: Map(step_id → step) }
     let sequenceIndex = null;   // root-level metadata, absent in files saved before multi-sequence support
     let playback = null;        // { activeSequenceId, currentStepIndex, disassembledMode }
 
     gltfScene.traverse(function(child) {
-        const catalog = child.userData.assemblySequences ?? child.userData.assemblyWorkflows;
-        if (Array.isArray(catalog)) {
-            sequenceIndex = catalog;
+        if (Array.isArray(child.userData.assemblySequences)) {
+            sequenceIndex = child.userData.assemblySequences;
             delete child.userData.assemblySequences;
-            delete child.userData.assemblyWorkflows;
         }
 
         if (child.userData.assemblyPlayback && typeof child.userData.assemblyPlayback === 'object') {
@@ -13477,8 +13473,8 @@ function importAssemblyFromGltfScene(gltfScene, sourceName = '', { restorePlayba
         if (!Array.isArray(arr) || arr.length === 0) return;
 
         arr.forEach(entry => {
-            const wfId = entry.sequence_id ?? entry.workflow_id ?? 1;
-            const wfName = entry.sequence_name || entry.workflow_name || '';
+            const wfId = entry.sequence_id ?? 1;
+            const wfName = entry.sequence_name || '';
             if (!imported.has(wfId)) {
                 imported.set(wfId, { id: wfId, name: wfName, steps: new Map() });
             }
@@ -13560,8 +13556,7 @@ function applyImportedAssemblyPlayback(playback, originalIdToSequence) {
     if (!playback || assemblySequences.length === 0) return;
 
     let index = 0;
-    const savedIdRaw = playback.activeSequenceId ?? playback.activeWorkflowId;
-    const savedId = savedIdRaw != null ? Number(savedIdRaw) : NaN;
+    const savedId = playback.activeSequenceId != null ? Number(playback.activeSequenceId) : NaN;
     if (Number.isFinite(savedId) && originalIdToSequence?.has(savedId)) {
         const found = assemblySequences.indexOf(originalIdToSequence.get(savedId));
         if (found >= 0) index = found;
