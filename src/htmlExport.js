@@ -33,7 +33,7 @@ export function exportToHTML(loadedModels, assemblyGui, viewProp, assemblyWriteT
     if (filename === null) return;
     const finalName = filename.trim() || defaultName;
 
-    // Write assembly workflow into userData before cloning
+    // Write assembly sequence into userData before cloning
     assemblyWriteToUserData();
 
     const exporter = new GLTFExporter();
@@ -95,7 +95,7 @@ export function exportToHTMLDraco(loadedModels, assemblyGui, viewProp, assemblyW
     if (filename === null) return;
     const finalName = filename.trim() || defaultName;
 
-    // Write assembly workflow into userData before cloning
+    // Write assembly sequence into userData before cloning
     assemblyWriteToUserData();
 
     const exporter = new GLTFExporter();

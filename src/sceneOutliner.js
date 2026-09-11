@@ -46,15 +46,15 @@ let isArrangementDirty = null;
 /** @type {((arrangement: object) => void)|null} */
 let onApplyArrangement = null;
 /** @type {(() => Array<{id: number, name?: string, steps?: Array<{name?: string, camera?: object|null}>}>)|null} */
-let getWorkflows = null;
+let getSequences = null;
 /** @type {(() => number|null)|null} */
-let getActiveWorkflowId = null;
+let getActiveSequenceId = null;
 /** @type {(() => number)|null} */
 let getCurrentStepIndex = null;
 /** @type {(() => boolean)|null} */
 let isPlaybackDetached = null;
 /** @type {((index: number) => void)|null} */
-let onSelectWorkflow = null;
+let onSelectSequence = null;
 /** @type {((index: number) => void)|null} */
 let onGoToAssembled = null;
 /** @type {((index: number, stepIndex: number) => void)|null} */
@@ -565,7 +565,7 @@ const objectToDom = new WeakMap();
 
 // Currently highlighted node in the tree (matches viewport selection)
 let activeTreeNode = null;
-/** @type {string|null} expandId of a selected workflow Assembled/step row (survives DOM refresh) */
+/** @type {string|null} expandId of a selected sequence Assembled/step row (survives DOM refresh) */
 let selectedExpandId = null;
 
 // Set of <li> nodes highlighted as group members
@@ -662,7 +662,7 @@ function getOutlinerChildren(obj) {
  * @param {{ onSelect: Function, onToggleVisibility: Function }} callbacks
  * @returns {HTMLDivElement} the panel element (for guiWrapper hit-testing)
  */
-export function initOutliner({ onSelect, onToggleVisibility: onVis, onToggleSelectable: onSel, onGroupAdd: onGroupAddCb, onGroupRemove: onGroupRemoveCb, onHideOthers: onHideOthersCb, onShowAll: onShowAllCb, onReparent: onReparentCb, onRemove: onRemoveCb, onRemoveGroup: onRemoveGroupCb, onGetGroupSelection: onGetGroupSelectionCb, onGetGroupOriginalParents: onGetGroupOriginalParentsCb, onSortChildren: onSortChildrenCb, onCloneObject: onCloneObjectCb, onAddObject3D: onAddObject3DCb, onAddPrimitive: onAddPrimitiveCb, onPromoteToRoot: onPromoteToRootCb, getDocuments: getDocumentsCb, getAttachments: getAttachmentsCb, onOpenDocument: onOpenDocumentCb, onOpenAttachment: onOpenAttachmentCb, canOpenAttachment: canOpenAttachmentCb, getArrangements: getArrangementsCb, getActiveArrangementId: getActiveArrangementIdCb, isArrangementDirty: isArrangementDirtyCb, onApplyArrangement: onApplyArrangementCb, getWorkflows: getWorkflowsCb, getActiveWorkflowId: getActiveWorkflowIdCb, getCurrentStepIndex: getCurrentStepIndexCb, isPlaybackDetached: isPlaybackDetachedCb, onSelectWorkflow: onSelectWorkflowCb, onGoToAssembled: onGoToAssembledCb, onGoToStep: onGoToStepCb }) {
+export function initOutliner({ onSelect, onToggleVisibility: onVis, onToggleSelectable: onSel, onGroupAdd: onGroupAddCb, onGroupRemove: onGroupRemoveCb, onHideOthers: onHideOthersCb, onShowAll: onShowAllCb, onReparent: onReparentCb, onRemove: onRemoveCb, onRemoveGroup: onRemoveGroupCb, onGetGroupSelection: onGetGroupSelectionCb, onGetGroupOriginalParents: onGetGroupOriginalParentsCb, onSortChildren: onSortChildrenCb, onCloneObject: onCloneObjectCb, onAddObject3D: onAddObject3DCb, onAddPrimitive: onAddPrimitiveCb, onPromoteToRoot: onPromoteToRootCb, getDocuments: getDocumentsCb, getAttachments: getAttachmentsCb, onOpenDocument: onOpenDocumentCb, onOpenAttachment: onOpenAttachmentCb, canOpenAttachment: canOpenAttachmentCb, getArrangements: getArrangementsCb, getActiveArrangementId: getActiveArrangementIdCb, isArrangementDirty: isArrangementDirtyCb, onApplyArrangement: onApplyArrangementCb, getSequences: getSequencesCb, getActiveSequenceId: getActiveSequenceIdCb, getCurrentStepIndex: getCurrentStepIndexCb, isPlaybackDetached: isPlaybackDetachedCb, onSelectSequence: onSelectSequenceCb, onGoToAssembled: onGoToAssembledCb, onGoToStep: onGoToStepCb }) {
     onSelectObject = onSelect;
     onToggleVisibility = onVis;
     onToggleSelectable = onSel || null;
@@ -689,11 +689,11 @@ export function initOutliner({ onSelect, onToggleVisibility: onVis, onToggleSele
     getActiveArrangementId = getActiveArrangementIdCb || null;
     isArrangementDirty = isArrangementDirtyCb || null;
     onApplyArrangement = onApplyArrangementCb || null;
-    getWorkflows = getWorkflowsCb || null;
-    getActiveWorkflowId = getActiveWorkflowIdCb || null;
+    getSequences = getSequencesCb || null;
+    getActiveSequenceId = getActiveSequenceIdCb || null;
     getCurrentStepIndex = getCurrentStepIndexCb || null;
     isPlaybackDetached = isPlaybackDetachedCb || null;
-    onSelectWorkflow = onSelectWorkflowCb || null;
+    onSelectSequence = onSelectSequenceCb || null;
     onGoToAssembled = onGoToAssembledCb || null;
     onGoToStep = onGoToStepCb || null;
 
@@ -867,18 +867,18 @@ export function refreshArrangementsFolder() {
 }
 
 /**
- * Replace only the Workflows folder in place (catalog / active / current step changed).
+ * Replace only the Sequences folder in place (catalog / active / current step changed).
  * Avoids a full tree rebuild — updateAssemblyGuiInfo also runs on playback.
  */
-export function refreshWorkflowsFolder() {
+export function refreshSequencesFolder() {
     if (!treeEl) return;
-    const existing = treeEl.querySelector(':scope > [data-expand-id="project:workflows"]');
+    const existing = treeEl.querySelector(':scope > [data-expand-id="project:sequences"]');
     const childList = existing?.querySelector(':scope > .outliner-children');
     const expanded = existing
         ? (childList ? existing.classList.contains('outliner-expanded') : true)
         : true;
     const expandedIds = collectExpandedUUIDs();
-    const node = createWorkflowsFolderNode(expanded, expandedIds);
+    const node = createSequencesFolderNode(expanded, expandedIds);
     if (existing) {
         existing.replaceWith(node);
     } else {
@@ -1039,19 +1039,19 @@ export function updateSelectableIcon(object) {
 
 /**
  * Navigate the outliner selection up or down.
- * Workflow Assembled/step rows stay within the same workflow and are activated.
+ * Sequence Assembled/step rows stay within the same sequence and are activated.
  * Arrangement rows stay within Arrangements and are applied.
  * Scene-graph nodes return the Object3D to select.
  * @param {'up'|'down'} direction
- * @returns {{ kind: 'workflow' } | { kind: 'arrangement' } | { kind: 'object', object: import('three').Object3D } | null}
+ * @returns {{ kind: 'sequence' } | { kind: 'arrangement' } | { kind: 'object', object: import('three').Object3D } | null}
  */
 export function navigateOutliner(direction) {
     if (!treeEl) return null;
 
     const currentId = selectedExpandId || activeTreeNode?.dataset?.expandId || null;
-    if (parseWorkflowItemExpandId(currentId)) {
-        navigateWorkflowStep(direction, currentId);
-        return { kind: 'workflow' };
+    if (parseSequenceItemExpandId(currentId)) {
+        navigateSequenceStep(direction, currentId);
+        return { kind: 'sequence' };
     }
     if (parseArrangementExpandId(currentId) != null) {
         navigateArrangement(direction, currentId);
@@ -1075,21 +1075,21 @@ export function navigateOutliner(direction) {
     return object ? { kind: 'object', object } : null;
 }
 
-/** @returns {{ workflowId: number, kind: 'assembled'|'step', stepIndex: number } | null} */
-function parseWorkflowItemExpandId(id) {
+/** @returns {{ sequenceId: number, kind: 'assembled'|'step', stepIndex: number } | null} */
+function parseSequenceItemExpandId(id) {
     if (!id) return null;
-    const m = String(id).match(/^workflow:(\d+):(assembled|step:(\d+))$/);
+    const m = String(id).match(/^sequence:(\d+):(assembled|step:(\d+))$/);
     if (!m) return null;
     return {
-        workflowId: Number(m[1]),
+        sequenceId: Number(m[1]),
         kind: m[2] === 'assembled' ? 'assembled' : 'step',
         stepIndex: m[2] === 'assembled' ? -1 : Number(m[3]),
     };
 }
 
-function workflowIndexById(workflowId) {
-    const workflows = getWorkflows ? getWorkflows() : [];
-    return workflows.findIndex(wf => wf.id === workflowId);
+function sequenceIndexById(sequenceId) {
+    const sequences = getSequences ? getSequences() : [];
+    return sequences.findIndex(wf => wf.id === sequenceId);
 }
 
 function selectOutlinerAssetByExpandId(id, { scroll = true } = {}) {
@@ -1111,19 +1111,19 @@ function restoreSelectedExpandId({ scroll = false } = {}) {
     if (selectedExpandId) selectOutlinerAssetByExpandId(selectedExpandId, { scroll });
 }
 
-function navigateWorkflowStep(direction, currentId) {
-    const parsed = parseWorkflowItemExpandId(currentId);
+function navigateSequenceStep(direction, currentId) {
+    const parsed = parseSequenceItemExpandId(currentId);
     if (!parsed) return;
-    const wfIndex = workflowIndexById(parsed.workflowId);
+    const wfIndex = sequenceIndexById(parsed.sequenceId);
     if (wfIndex < 0) return;
 
-    const folder = treeEl.querySelector(`[data-expand-id="workflow:${parsed.workflowId}"]`);
+    const folder = treeEl.querySelector(`[data-expand-id="sequence:${parsed.sequenceId}"]`);
     const childList = folder?.querySelector(':scope > .outliner-children');
     if (!childList) return;
 
     const siblings = Array.from(childList.children).filter(li =>
         li.classList.contains('outliner-asset')
-        && parseWorkflowItemExpandId(li.dataset.expandId)
+        && parseSequenceItemExpandId(li.dataset.expandId)
         && isNodeVisible(li)
     );
     if (siblings.length === 0) return;
@@ -1137,7 +1137,7 @@ function navigateWorkflowStep(direction, currentId) {
     }
 
     const targetId = siblings[idx].dataset.expandId;
-    const next = parseWorkflowItemExpandId(targetId);
+    const next = parseSequenceItemExpandId(targetId);
     if (!next) return;
     selectedExpandId = targetId;
     if (next.kind === 'assembled') {
@@ -1307,8 +1307,8 @@ function appendProjectSection(expandedIds) {
     const arrExpanded = expandedIds ? expandedIds.has('project:arrangements') : true;
     treeEl.appendChild(createArrangementsFolderNode(arrExpanded));
 
-    const wfExpanded = expandedIds ? expandedIds.has('project:workflows') : true;
-    treeEl.appendChild(createWorkflowsFolderNode(wfExpanded, expandedIds));
+    const wfExpanded = expandedIds ? expandedIds.has('project:sequences') : true;
+    treeEl.appendChild(createSequencesFolderNode(wfExpanded, expandedIds));
 
     const sep = document.createElement('li');
     sep.className = 'outliner-project-section';
@@ -1351,29 +1351,29 @@ function createArrangementsFolderNode(expanded) {
     });
 }
 
-function createWorkflowsFolderNode(expanded, expandedIds) {
-    const workflows = getWorkflows ? getWorkflows() : [];
-    const activeId = getActiveWorkflowId ? getActiveWorkflowId() : null;
+function createSequencesFolderNode(expanded, expandedIds) {
+    const sequences = getSequences ? getSequences() : [];
+    const activeId = getActiveSequenceId ? getActiveSequenceId() : null;
     const currentStep = getCurrentStepIndex ? getCurrentStepIndex() : -1;
     const detached = isPlaybackDetached ? isPlaybackDetached() : false;
 
-    const wfFolders = workflows.map((wf, index) => {
+    const wfFolders = sequences.map((wf, index) => {
         const isActive = wf.id === activeId;
         const wfExpanded = expandedIds
-            ? expandedIds.has(`workflow:${wf.id}`)
+            ? expandedIds.has(`sequence:${wf.id}`)
             : isActive;
         const steps = wf.steps || [];
 
         const assembledActive = isActive && !detached && currentStep === -1;
         const items = [
             createAssetItemNode({
-                expandId: `workflow:${wf.id}:assembled`,
+                expandId: `sequence:${wf.id}:assembled`,
                 label: '0: Assembled',
                 title: 'Assembled',
                 extraClass: assembledActive ? 'outliner-asset-active' : undefined,
                 depth: 2,
                 onClick: () => {
-                    selectedExpandId = `workflow:${wf.id}:assembled`;
+                    selectedExpandId = `sequence:${wf.id}:assembled`;
                     if (onGoToAssembled) onGoToAssembled(index);
                 },
             }),
@@ -1382,13 +1382,13 @@ function createWorkflowsFolderNode(expanded, expandedIds) {
                 const titleParts = [step.name || '(unnamed)'];
                 if (step.camera) titleParts.push('📷 camera saved');
                 return createAssetItemNode({
-                    expandId: `workflow:${wf.id}:step:${i}`,
+                    expandId: `sequence:${wf.id}:step:${i}`,
                     label: `${i + 1}: ${step.name || '(unnamed)'}`,
                     title: titleParts.join(' — '),
                     extraClass: isStepActive ? 'outliner-asset-active' : undefined,
                     depth: 2,
                     onClick: () => {
-                        selectedExpandId = `workflow:${wf.id}:step:${i}`;
+                        selectedExpandId = `sequence:${wf.id}:step:${i}`;
                         if (onGoToStep) onGoToStep(index, i);
                     },
                 });
@@ -1396,7 +1396,7 @@ function createWorkflowsFolderNode(expanded, expandedIds) {
         ];
 
         return createAssetFolderNode({
-            expandId: `workflow:${wf.id}`,
+            expandId: `sequence:${wf.id}`,
             label: wf.name || '(unnamed)',
             title: wf.name || '(unnamed)',
             children: items,
@@ -1404,15 +1404,15 @@ function createWorkflowsFolderNode(expanded, expandedIds) {
             depth: 1,
             extraClass: isActive ? 'outliner-asset-active' : undefined,
             onClick: () => {
-                selectedExpandId = `workflow:${wf.id}:assembled`;
-                if (onSelectWorkflow) onSelectWorkflow(index);
+                selectedExpandId = `sequence:${wf.id}:assembled`;
+                if (onSelectSequence) onSelectSequence(index);
             },
         });
     });
 
     return createAssetFolderNode({
-        expandId: 'project:workflows',
-        label: `Workflows (${workflows.length})`,
+        expandId: 'project:sequences',
+        label: `Sequences (${sequences.length})`,
         children: wfFolders,
         expanded,
     });

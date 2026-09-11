@@ -1,7 +1,7 @@
 // assemblyArrangementUtils.js — named assembly arrangements: snapshots of object poses
 // (position, rotation, scale, visibility) and optionally the camera view. Independent of
-// assembly workflow steps — an arrangement captures *where things are*, not *how you get
-// there*. Global across all workflows.
+// assembly sequence steps — an arrangement captures *where things are*, not *how you get
+// there*. Global across all sequences.
 
 import * as THREE from 'three';
 import { readInitComponent } from './createObjectUtils.js';
@@ -12,7 +12,7 @@ export const INITIAL_ARRANGEMENT_NAME = 'Initial';
 const assemblyArrangements = [];
 let activeArrangementId = null;
 // True once the scene has diverged from the selected/active arrangement's stored poses (e.g.
-// after a manual drag or workflow navigation). The selection itself (activeArrangementId) is
+// after a manual drag or sequence navigation). The selection itself (activeArrangementId) is
 // kept — only the "does it still match" bit changes — so Update/Rename/Delete/Save camera stay
 // usable for saving the divergence back into the same arrangement.
 let arrangementDirty = false;
@@ -457,7 +457,7 @@ export function writeArrangementsToUserData() {
 }
 
 // Arrangement-level metadata (name, order, description, camera) travels in the export root's
-// userData, next to the workflow index — it cannot be reconstructed from the per-object records
+// userData, next to the sequence index — it cannot be reconstructed from the per-object records
 // alone.
 export function embedArrangementIndex(userData) {
     const index = assemblyArrangements

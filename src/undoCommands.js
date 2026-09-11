@@ -38,14 +38,14 @@ function _cloneAnchorEntries(anchors) {
     return [...anchors.entries()].map(([obj, anchor]) => [obj, JSON.parse(JSON.stringify(anchor))]);
 }
 
-// Every workflow is snapshotted with its own anchors, not just the active one — a single edit can
+// Every sequence is snapshotted with its own anchors, not just the active one — a single edit can
 // renumber steps or drop anchors across procedures (e.g. removing an object).
 export function snapshotAssemblyState(ctx) {
-    const { assemblyWorkflows, assemblyState } = ctx;
+    const { assemblySequences, assemblyState } = ctx;
     return {
         currentStepIndex: assemblyState.currentStepIndex,
-        activeWorkflowIndex: ctx.activeWorkflowIndex,
-        workflows: assemblyWorkflows.map(wf => ({
+        activeSequenceIndex: ctx.activeSequenceIndex,
+        sequences: assemblySequences.map(wf => ({
             id: wf.id,
             name: wf.name,
             description: wf.description,
@@ -57,15 +57,15 @@ export function snapshotAssemblyState(ctx) {
 
 export function restoreAssemblyState(ctx, snap) {
     if (!snap) return;
-    const { assemblyData, assemblyWorkflows, assemblyState } = ctx;
+    const { assemblyData, assemblySequences, assemblyState } = ctx;
 
-    assemblyWorkflows.length = 0;
-    snap.workflows.forEach(wf => {
+    assemblySequences.length = 0;
+    snap.sequences.forEach(wf => {
         const anchors = new Map();
         wf.anchors.forEach(([obj, anchor]) => {
             if (obj) anchors.set(obj, JSON.parse(JSON.stringify(anchor)));
         });
-        assemblyWorkflows.push({
+        assemblySequences.push({
             id: wf.id,
             name: wf.name,
             description: wf.description,
@@ -75,14 +75,14 @@ export function restoreAssemblyState(ctx, snap) {
     });
 
     // Repoint both live references. Object poses are restored by the transform command itself,
-    // so the workflow's anchors are deliberately not applied to the scene here.
-    const activeIndex = Math.min(Math.max(snap.activeWorkflowIndex ?? 0, 0), assemblyWorkflows.length - 1);
-    ctx.activeWorkflowIndex = activeIndex;
-    assemblyData.steps = assemblyWorkflows[activeIndex].steps;
-    ctx.assemblyAnchors = assemblyWorkflows[activeIndex].anchors;
+    // so the sequence's anchors are deliberately not applied to the scene here.
+    const activeIndex = Math.min(Math.max(snap.activeSequenceIndex ?? 0, 0), assemblySequences.length - 1);
+    ctx.activeSequenceIndex = activeIndex;
+    assemblyData.steps = assemblySequences[activeIndex].steps;
+    ctx.assemblyAnchors = assemblySequences[activeIndex].anchors;
 
     assemblyState.currentStepIndex = snap.currentStepIndex;
-    ctx.rebuildAssemblyWorkflowsFolder?.();
+    ctx.rebuildAssemblySequencesFolder?.();
     ctx.updateAssemblyGuiInfo?.();
 }
 
