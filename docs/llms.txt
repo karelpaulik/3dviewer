@@ -25,6 +25,8 @@ Meshbex was originally created at the request of the automotive industry, in res
 - Assembly: Animated sequences (how it goes together) and named arrangements (where things are)
 - Advanced analysis: Volume, mass from density, centre of gravity, and moments of inertia — fast, on a regular PC
 - Offline: After PWA install, Meshbex works without a network, including opening GLB, STEP, and IGES files.
+- Help: Public guides on the site, or write to info@meshbex.com.
+- Community: Three memberships. Standard — e-mail updates on news and events. Enterprise — a company representative; requests for fixes and improvements have higher priority. Developers — source access; only a few people worldwide, often engineers at large automotive companies. To join, contact info@meshbex.com.
 
 ## Important links
 

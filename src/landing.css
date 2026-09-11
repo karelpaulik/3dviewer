@@ -481,9 +481,12 @@ p {
 
 .faq-item p {
 	margin: 0 0 1.1rem;
+	font-size: 0.95rem;
+}
+
+.faq-item p:first-of-type {
 	border-top: 1px solid var(--border);
 	padding-top: 0.9rem;
-	font-size: 0.95rem;
 }
 
 .faq-item ul {
