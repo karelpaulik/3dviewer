@@ -369,6 +369,27 @@ p {
 
 /* Formats */
 
+.glb-reasons {
+	max-width: 62ch;
+	margin: 0 auto 2.5rem;
+	padding: 0 0 0 1.25em;
+	color: var(--text-dim);
+	font-size: 0.95rem;
+}
+
+.glb-reasons li {
+	margin: 0 0 0.85em;
+}
+
+.glb-reasons li:last-child {
+	margin-bottom: 0;
+}
+
+.glb-reasons strong {
+	color: var(--text);
+	font-weight: 600;
+}
+
 .formats-list {
 	list-style: none;
 	margin: 0 0 1.25rem;
