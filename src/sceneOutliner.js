@@ -1974,7 +1974,7 @@ function buildFileTreeChildren(atts, folders, parentId, depth, expandedIds) {
     for (const att of childAtts) {
         const viewable = canOpenAttachment ? canOpenAttachment(att.mimeType) : false;
         const name = att.name || '(unnamed)';
-        const sizeStr = formatOutlinerFileSize(att.size);
+        const sizeStr = getShowOutlinerFileSize() ? formatOutlinerFileSize(att.size) : '';
         const label = `${att.comment ? '💬 ' : ''}${name}${sizeStr ? `  (${sizeStr})` : ''}`;
         const item = createAssetItemNode({
             expandId: `file:${att.id}`,
@@ -2114,6 +2114,23 @@ function formatOutlinerFileSize(bytes) {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+const SHOW_OUTLINER_FILE_SIZE_KEY = 'outlinerShowFileSize';
+
+function getShowOutlinerFileSize() {
+    try {
+        return localStorage.getItem(SHOW_OUTLINER_FILE_SIZE_KEY) === '1';
+    } catch (_) {
+        return false;
+    }
+}
+
+function setShowOutlinerFileSize(show) {
+    try {
+        localStorage.setItem(SHOW_OUTLINER_FILE_SIZE_KEY, show ? '1' : '0');
+    } catch (_) { /* ignore */ }
+    notifyOutlinerProjectContentsChanged();
+}
+
 function applyFileMultiSelectClasses() {
     if (!treeEl) return;
     const liveIds = new Set(
@@ -2251,6 +2268,14 @@ function showFileAssetCtxMenu(x, y, asset, li) {
         menu.appendChild(createDocCtxItem('Edit all images…', () => {
             if (fileOps.editAllImages) fileOps.editAllImages(parentId);
         }));
+        if (asset.kind === 'root') {
+            addSep();
+            const showSize = getShowOutlinerFileSize();
+            menu.appendChild(createDocCtxItem(
+                `${showSize ? '✓ ' : ''}Show file size`,
+                () => setShowOutlinerFileSize(!showSize)
+            ));
+        }
     }
 
     if (asset.kind === 'folder') {
