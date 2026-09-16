@@ -613,7 +613,6 @@ function _newDocument(folderId) {
     };
     documentsStore.push(doc);
     refreshDocumentsGui();
-    openDocumentEditor(doc.id);
     return doc;
 }
 
