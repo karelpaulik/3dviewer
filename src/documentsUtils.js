@@ -393,13 +393,41 @@ export function deleteDocumentFolder(id) {
 }
 
 export function moveDocument(id, folderId, { beforeId, afterId } = {}) {
-    const doc = documentsStore.find(d => d.id === id);
-    if (!doc) return false;
+    return moveDocuments([id], folderId, { beforeId, afterId });
+}
+
+export function moveDocuments(ids, folderId, { beforeId, afterId } = {}) {
+    const unique = [];
+    const seen = new Set();
+    for (const id of ids || []) {
+        if (!id || seen.has(id)) continue;
+        const doc = documentsStore.find(d => d.id === id);
+        if (!doc) continue;
+        seen.add(id);
+        unique.push(doc);
+    }
+    if (unique.length === 0) return false;
     const target = _normalizeFolderId(folderId);
-    const sameParent = (doc.folderId || null) === target;
-    if (sameParent && !beforeId && !afterId) return true;
-    doc.folderId = target;
-    _repositionStoreItem(documentsStore, doc, beforeId, afterId);
+    const movingIds = new Set(unique.map(d => d.id));
+    const placeBefore = beforeId && !movingIds.has(beforeId) ? beforeId : null;
+    const placeAfter = afterId && !movingIds.has(afterId) ? afterId : null;
+    const allSame = unique.every(d => (d.folderId || null) === target);
+    if (allSame && !placeBefore && !placeAfter) return true;
+
+    unique.forEach(doc => { doc.folderId = target; });
+    unique.forEach(doc => {
+        const i = documentsStore.indexOf(doc);
+        if (i >= 0) documentsStore.splice(i, 1);
+    });
+    let insertAt = documentsStore.length;
+    if (placeBefore) {
+        const i = documentsStore.findIndex(d => d.id === placeBefore);
+        if (i >= 0) insertAt = i;
+    } else if (placeAfter) {
+        const i = documentsStore.findIndex(d => d.id === placeAfter);
+        if (i >= 0) insertAt = i + 1;
+    }
+    documentsStore.splice(insertAt, 0, ...unique);
     refreshDocumentsGui();
     return true;
 }
@@ -436,12 +464,22 @@ export function renameDocument(id, name) {
 }
 
 export function deleteDocument(id) {
-    const doc = documentsStore.find(d => d.id === id);
-    if (!doc) return false;
-    const title = _docListLabel(doc) || 'this document';
-    if (!confirm(`Delete "${title}"?`)) return false;
-    documentsStore = documentsStore.filter(d => d.id !== id);
-    if (_currentDocId === id) _closeOverlay();
+    return deleteDocuments([id]);
+}
+
+export function deleteDocuments(ids) {
+    const unique = [...new Set(ids || [])].filter(id => documentsStore.some(d => d.id === id));
+    if (unique.length === 0) return false;
+    if (unique.length === 1) {
+        const doc = documentsStore.find(d => d.id === unique[0]);
+        const title = _docListLabel(doc) || 'this document';
+        if (!confirm(`Delete "${title}"?`)) return false;
+    } else if (!confirm(`Delete ${unique.length} documents?`)) {
+        return false;
+    }
+    const idSet = new Set(unique);
+    documentsStore = documentsStore.filter(d => !idSet.has(d.id));
+    if (idSet.has(_currentDocId)) _closeOverlay();
     refreshDocumentsGui();
     return true;
 }

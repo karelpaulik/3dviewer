@@ -103,7 +103,7 @@ import {
     getSelectedEntityLength,
     setSelectedEntityLength,
 } from './sectionSketchUtils.js';
-import { initDocumentsGui, importDocumentsFromGltfScene, getDocumentsStore, getDocumentFoldersStore, flushDocumentEdits, isDocOverlayBlockingInput, isDocumentEditorOpen, setDocLabelOptions, clearDocumentsStore, openDocumentViewer, createDocument, createDocumentFolder, renameDocument, renameDocumentFolder, deleteDocument, deleteDocumentFolder, moveDocument, moveDocumentFolder, importDocumentJson } from './documentsUtils.js';
+import { initDocumentsGui, importDocumentsFromGltfScene, getDocumentsStore, getDocumentFoldersStore, flushDocumentEdits, isDocOverlayBlockingInput, isDocumentEditorOpen, setDocLabelOptions, clearDocumentsStore, openDocumentViewer, createDocument, createDocumentFolder, renameDocument, renameDocumentFolder, deleteDocument, deleteDocuments, deleteDocumentFolder, moveDocument, moveDocuments, moveDocumentFolder, importDocumentJson } from './documentsUtils.js';
 import { isImageEditorOpen } from './imageEditorUtils.js';
 import {
     initUndoManager,
@@ -2219,9 +2219,11 @@ outlinerPanelEl = initOutliner({
     onImportDocumentJson: (folderId) => importDocumentJson(folderId),
     onRenameDocument: renameDocument,
     onDeleteDocument: deleteDocument,
+    onDeleteDocuments: deleteDocuments,
     onRenameDocumentFolder: renameDocumentFolder,
     onDeleteDocumentFolder: deleteDocumentFolder,
     onMoveDocument: moveDocument,
+    onMoveDocuments: moveDocuments,
     onMoveDocumentFolder: moveDocumentFolder,
     onOpenAttachment: openAttachment,
     canOpenAttachment: canOpenAttachmentInBrowser,

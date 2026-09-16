@@ -39,6 +39,8 @@ let onOpenDocument = null;
 let onRenameDocument = null;
 /** @type {((id: string) => boolean)|null} */
 let onDeleteDocument = null;
+/** @type {((ids: string[]) => boolean)|null} */
+let onDeleteDocuments = null;
 /** @type {((folderId?: string|null) => object|null)|null} */
 let onNewDocument = null;
 /** @type {((parentId?: string|null) => object|null)|null} */
@@ -51,6 +53,8 @@ let onRenameDocumentFolder = null;
 let onDeleteDocumentFolder = null;
 /** @type {((id: string, folderId: string|null, opts?: object) => boolean)|null} */
 let onMoveDocument = null;
+/** @type {((ids: string[], folderId: string|null, opts?: object) => boolean)|null} */
+let onMoveDocuments = null;
 /** @type {((id: string, parentId: string|null, opts?: object) => boolean)|null} */
 let onMoveDocumentFolder = null;
 /** @type {((att: object) => void)|null} */
@@ -608,6 +612,8 @@ let _draggedObj = null;
 let _draggedObjs = null; // all group-selected objects when dragging with multi-select
 /** @type {{ kind: 'doc'|'folder', id: string }|null} */
 let _draggedDocAsset = null;
+/** @type {Array<{ kind: 'doc'|'folder', id: string }>} */
+let _draggedDocAssets = [];
 let _dragOverLi = null;
 let _dragOverPos = null; // 'before' | 'into' | 'after'
 let _lastDragEndTime = 0; // Timestamp of last dragend – blocks spurious post-drag clicks
@@ -621,6 +627,10 @@ const objectToDom = new WeakMap();
 let activeTreeNode = null;
 /** @type {string|null} expandId of a selected sequence Assembled/step row (survives DOM refresh) */
 let selectedExpandId = null;
+/** @type {Set<string>} multi-selected document ids */
+const selectedDocIds = new Set();
+/** @type {string|null} shift-click range anchor (document id) */
+let docSelectAnchorId = null;
 
 // Set of <li> nodes highlighted as group members
 const groupHighlightNodes = new Set();
@@ -716,7 +726,7 @@ function getOutlinerChildren(obj) {
  * @param {{ onSelect: Function, onToggleVisibility: Function }} callbacks
  * @returns {HTMLDivElement} the panel element (for guiWrapper hit-testing)
  */
-export function initOutliner({ onSelect, onToggleVisibility: onVis, onToggleSelectable: onSel, onGroupAdd: onGroupAddCb, onGroupRemove: onGroupRemoveCb, onHideOthers: onHideOthersCb, onShowAll: onShowAllCb, onReparent: onReparentCb, onRemove: onRemoveCb, onRemoveGroup: onRemoveGroupCb, onGetGroupSelection: onGetGroupSelectionCb, onGetGroupOriginalParents: onGetGroupOriginalParentsCb, onSortChildren: onSortChildrenCb, onCloneObject: onCloneObjectCb, onAddObject3D: onAddObject3DCb, onAddPrimitive: onAddPrimitiveCb, onPromoteToRoot: onPromoteToRootCb, getDocuments: getDocumentsCb, getDocumentFolders: getDocumentFoldersCb, getAttachments: getAttachmentsCb, onOpenDocument: onOpenDocumentCb, onNewDocument: onNewDocumentCb, onNewDocumentFolder: onNewDocumentFolderCb, onImportDocumentJson: onImportDocumentJsonCb, onRenameDocument: onRenameDocumentCb, onDeleteDocument: onDeleteDocumentCb, onRenameDocumentFolder: onRenameDocumentFolderCb, onDeleteDocumentFolder: onDeleteDocumentFolderCb, onMoveDocument: onMoveDocumentCb, onMoveDocumentFolder: onMoveDocumentFolderCb, onOpenAttachment: onOpenAttachmentCb, canOpenAttachment: canOpenAttachmentCb, getArrangements: getArrangementsCb, getActiveArrangementId: getActiveArrangementIdCb, isArrangementDirty: isArrangementDirtyCb, onApplyArrangement: onApplyArrangementCb, getSequences: getSequencesCb, getActiveSequenceId: getActiveSequenceIdCb, getCurrentStepIndex: getCurrentStepIndexCb, isPlaybackDetached: isPlaybackDetachedCb, onSelectSequence: onSelectSequenceCb, onGoToAssembled: onGoToAssembledCb, onGoToStep: onGoToStepCb }) {
+export function initOutliner({ onSelect, onToggleVisibility: onVis, onToggleSelectable: onSel, onGroupAdd: onGroupAddCb, onGroupRemove: onGroupRemoveCb, onHideOthers: onHideOthersCb, onShowAll: onShowAllCb, onReparent: onReparentCb, onRemove: onRemoveCb, onRemoveGroup: onRemoveGroupCb, onGetGroupSelection: onGetGroupSelectionCb, onGetGroupOriginalParents: onGetGroupOriginalParentsCb, onSortChildren: onSortChildrenCb, onCloneObject: onCloneObjectCb, onAddObject3D: onAddObject3DCb, onAddPrimitive: onAddPrimitiveCb, onPromoteToRoot: onPromoteToRootCb, getDocuments: getDocumentsCb, getDocumentFolders: getDocumentFoldersCb, getAttachments: getAttachmentsCb, onOpenDocument: onOpenDocumentCb, onNewDocument: onNewDocumentCb, onNewDocumentFolder: onNewDocumentFolderCb, onImportDocumentJson: onImportDocumentJsonCb, onRenameDocument: onRenameDocumentCb, onDeleteDocument: onDeleteDocumentCb, onDeleteDocuments: onDeleteDocumentsCb, onRenameDocumentFolder: onRenameDocumentFolderCb, onDeleteDocumentFolder: onDeleteDocumentFolderCb, onMoveDocument: onMoveDocumentCb, onMoveDocuments: onMoveDocumentsCb, onMoveDocumentFolder: onMoveDocumentFolderCb, onOpenAttachment: onOpenAttachmentCb, canOpenAttachment: canOpenAttachmentCb, getArrangements: getArrangementsCb, getActiveArrangementId: getActiveArrangementIdCb, isArrangementDirty: isArrangementDirtyCb, onApplyArrangement: onApplyArrangementCb, getSequences: getSequencesCb, getActiveSequenceId: getActiveSequenceIdCb, getCurrentStepIndex: getCurrentStepIndexCb, isPlaybackDetached: isPlaybackDetachedCb, onSelectSequence: onSelectSequenceCb, onGoToAssembled: onGoToAssembledCb, onGoToStep: onGoToStepCb }) {
     onSelectObject = onSelect;
     onToggleVisibility = onVis;
     onToggleSelectable = onSel || null;
@@ -743,9 +753,11 @@ export function initOutliner({ onSelect, onToggleVisibility: onVis, onToggleSele
     onImportDocumentJson = onImportDocumentJsonCb || null;
     onRenameDocument = onRenameDocumentCb || null;
     onDeleteDocument = onDeleteDocumentCb || null;
+    onDeleteDocuments = onDeleteDocumentsCb || null;
     onRenameDocumentFolder = onRenameDocumentFolderCb || null;
     onDeleteDocumentFolder = onDeleteDocumentFolderCb || null;
     onMoveDocument = onMoveDocumentCb || null;
+    onMoveDocuments = onMoveDocumentsCb || null;
     onMoveDocumentFolder = onMoveDocumentFolderCb || null;
     onOpenAttachment = onOpenAttachmentCb || null;
     canOpenAttachment = canOpenAttachmentCb || null;
@@ -1172,7 +1184,98 @@ function selectOutlinerAssetByExpandId(id, { scroll = true } = {}) {
 }
 
 function restoreSelectedExpandId({ scroll = false } = {}) {
-    if (selectedExpandId) selectOutlinerAssetByExpandId(selectedExpandId, { scroll });
+    if (selectedExpandId && !selectOutlinerAssetByExpandId(selectedExpandId, { scroll })) {
+        selectedExpandId = null;
+    }
+    applyDocMultiSelectClasses();
+}
+
+function applyDocMultiSelectClasses() {
+    if (!treeEl) return;
+    const liveIds = new Set(
+        Array.from(treeEl.querySelectorAll('[data-doc-kind="doc"]')).map(li => li.dataset.docId)
+    );
+    for (const id of [...selectedDocIds]) {
+        if (!liveIds.has(id)) selectedDocIds.delete(id);
+    }
+    treeEl.querySelectorAll('[data-doc-kind="doc"]').forEach(li => {
+        const on = selectedDocIds.has(li.dataset.docId);
+        const isPrimary = selectedExpandId === `doc:${li.dataset.docId}`;
+        li.classList.toggle('outliner-group-member', on && selectedDocIds.size > 1 && !isPrimary);
+    });
+}
+
+function clearDocMultiSelection() {
+    selectedDocIds.clear();
+    docSelectAnchorId = null;
+    applyDocMultiSelectClasses();
+}
+
+function siblingDocItems(li) {
+    const parent = li?.parentElement;
+    if (!parent) return [];
+    return Array.from(parent.children).filter(el => el.dataset?.docKind === 'doc');
+}
+
+function handleDocClick(e, li, docId) {
+    if (e.ctrlKey || e.metaKey || e.shiftKey) e.preventDefault();
+    const expandId = `doc:${docId}`;
+    const additive = !!(e.ctrlKey || e.metaKey);
+    const range = !!e.shiftKey && !additive;
+
+    if (range) {
+        const siblings = siblingDocItems(li);
+        const anchorId = docSelectAnchorId
+            && siblings.some(s => s.dataset.docId === docSelectAnchorId)
+            ? docSelectAnchorId
+            : docId;
+        const fromIdx = siblings.findIndex(s => s.dataset.docId === anchorId);
+        const toIdx = siblings.findIndex(s => s.dataset.docId === docId);
+        if (fromIdx >= 0 && toIdx >= 0) {
+            const a = Math.min(fromIdx, toIdx);
+            const b = Math.max(fromIdx, toIdx);
+            selectedDocIds.clear();
+            siblings.slice(a, b + 1).forEach(s => selectedDocIds.add(s.dataset.docId));
+        } else {
+            selectedDocIds.clear();
+            selectedDocIds.add(docId);
+            docSelectAnchorId = docId;
+        }
+        selectOutlinerAssetByExpandId(expandId, { scroll: false });
+        applyDocMultiSelectClasses();
+        return;
+    }
+
+    if (additive) {
+        if (selectedDocIds.has(docId)) {
+            selectedDocIds.delete(docId);
+            if (selectedExpandId === expandId) {
+                const next = [...selectedDocIds][selectedDocIds.size - 1];
+                if (next) selectOutlinerAssetByExpandId(`doc:${next}`, { scroll: false });
+                else {
+                    selectedExpandId = null;
+                    if (activeTreeNode) activeTreeNode.classList.remove('outliner-selected');
+                    activeTreeNode = null;
+                }
+            }
+        } else {
+            if (selectedExpandId && selectedExpandId.startsWith('doc:') && selectedDocIds.size === 0) {
+                const currentId = selectedExpandId.slice(4);
+                if (currentId) selectedDocIds.add(currentId);
+            }
+            selectedDocIds.add(docId);
+            selectOutlinerAssetByExpandId(expandId, { scroll: false });
+        }
+        docSelectAnchorId = docId;
+        applyDocMultiSelectClasses();
+        return;
+    }
+
+    selectedDocIds.clear();
+    selectedDocIds.add(docId);
+    docSelectAnchorId = docId;
+    selectOutlinerAssetByExpandId(expandId, { scroll: false });
+    applyDocMultiSelectClasses();
 }
 
 function navigateSequenceStep(direction, currentId) {
@@ -1418,9 +1521,10 @@ function buildDocumentTreeChildren(docs, folders, parentId, depth, expandedIds) 
             label: listName,
             title: tooltip,
             depth,
-            onClick: () => {
+            onClick: (e) => {
                 if (Date.now() - _lastDragEndTime < 300) return;
-                selectOutlinerAssetByExpandId(expandId, { scroll: false });
+                handleDocClick(e, item, doc.id);
+                if (e.ctrlKey || e.metaKey || e.shiftKey) return;
                 if (onOpenDocument) onOpenDocument(doc.id);
             },
         });
@@ -1484,8 +1588,14 @@ function canDropDocAsset(source, target, pos) {
     return true;
 }
 
-function applyDocAssetDrop(source, target, pos) {
-    if (!canDropDocAsset(source, target, pos)) return;
+function canDropDocAssets(sources, target, pos) {
+    if (!sources?.length || !target) return false;
+    if (sources.some(s => s.kind === target.kind && s.id && s.id === target.id)) return false;
+    return sources.every(s => canDropDocAsset(s, target, pos));
+}
+
+function applyDocAssetsDrop(sources, target, pos) {
+    if (!canDropDocAssets(sources, target, pos)) return;
 
     let destFolderId = null;
     let beforeId;
@@ -1498,24 +1608,28 @@ function applyDocAssetDrop(source, target, pos) {
             destFolderId = target.id;
         } else {
             destFolderId = getDocFolderParentId(target.id);
-            if (source.kind === 'folder') {
+            if (sources.every(s => s.kind === 'folder')) {
                 if (pos === 'before') beforeId = target.id;
                 else afterId = target.id;
             }
         }
     } else {
         destFolderId = getDocParentFolderId(target.id);
-        if (source.kind === 'doc') {
+        if (sources.every(s => s.kind === 'doc')) {
             if (pos === 'before') beforeId = target.id;
             else afterId = target.id;
         }
     }
 
-    if (source.kind === 'folder') {
-        if (onMoveDocumentFolder) onMoveDocumentFolder(source.id, destFolderId, { beforeId, afterId });
-    } else if (onMoveDocument) {
-        onMoveDocument(source.id, destFolderId, { beforeId, afterId });
+    const docIds = sources.filter(s => s.kind === 'doc').map(s => s.id);
+    const folderSources = sources.filter(s => s.kind === 'folder');
+    if (docIds.length) {
+        if (onMoveDocuments) onMoveDocuments(docIds, destFolderId, { beforeId, afterId });
+        else if (onMoveDocument) docIds.forEach(id => onMoveDocument(id, destFolderId, { beforeId, afterId }));
     }
+    folderSources.forEach(folder => {
+        if (onMoveDocumentFolder) onMoveDocumentFolder(folder.id, destFolderId, { beforeId, afterId });
+    });
 }
 
 function revealAssetNode(expandId) {
@@ -1597,7 +1711,15 @@ function showDocAssetCtxMenu(x, y, asset, li) {
             });
         }));
         menu.appendChild(createDocCtxItem('Delete', () => {
-            if (onDeleteDocument) onDeleteDocument(asset.id);
+            const ids = (selectedDocIds.size > 1 && selectedDocIds.has(asset.id))
+                ? [...selectedDocIds]
+                : [asset.id];
+            if (ids.length > 1) {
+                if (onDeleteDocuments) onDeleteDocuments(ids);
+                else if (onDeleteDocument) ids.forEach(id => onDeleteDocument(id));
+            } else if (onDeleteDocument) {
+                onDeleteDocument(asset.id);
+            }
         }, 'outliner-ctx-danger'));
     }
 
@@ -1612,8 +1734,13 @@ function attachDocAssetInteractions(li, asset) {
     const row = li.querySelector(':scope > .outliner-row');
     if (!row) return;
 
-    row.addEventListener('click', () => {
+    row.addEventListener('click', (e) => {
         if (Date.now() - _lastDragEndTime < 300) return;
+        if (asset.kind === 'doc') {
+            handleDocClick(e, li, asset.id);
+            return;
+        }
+        clearDocMultiSelection();
         if (li.dataset.expandId) {
             selectOutlinerAssetByExpandId(li.dataset.expandId, { scroll: false });
         }
@@ -1624,16 +1751,26 @@ function attachDocAssetInteractions(li, asset) {
         row.addEventListener('dragstart', (e) => {
             _draggedObj = null;
             _draggedObjs = null;
-            _draggedDocAsset = { kind: asset.kind, id: asset.id };
+            if (asset.kind === 'doc' && selectedDocIds.has(asset.id) && selectedDocIds.size > 1) {
+                _draggedDocAssets = [...selectedDocIds].map(id => ({ kind: 'doc', id }));
+            } else {
+                _draggedDocAssets = [{ kind: asset.kind, id: asset.id }];
+            }
+            _draggedDocAsset = _draggedDocAssets[0];
             e.dataTransfer.effectAllowed = 'move';
             e.dataTransfer.setData('text/plain', '');
             li.classList.add('outliner-drag-source');
+            _draggedDocAssets.forEach(src => {
+                const srcLi = treeEl.querySelector(`[data-doc-kind="${src.kind}"][data-doc-id="${src.id}"]`);
+                if (srcLi) srcLi.classList.add('outliner-drag-source');
+            });
         });
         row.addEventListener('dragend', () => {
             _lastDragEndTime = Date.now();
-            li.classList.remove('outliner-drag-source');
+            treeEl.querySelectorAll('.outliner-drag-source').forEach(el => el.classList.remove('outliner-drag-source'));
             clearDropIndicators();
             _draggedDocAsset = null;
+            _draggedDocAssets = [];
             _dragOverLi = null;
             _dragOverPos = null;
         });
@@ -1648,7 +1785,8 @@ function attachDocAssetInteractions(li, asset) {
         const pos = target.kind === 'root'
             ? 'into'
             : (y < h * 0.25 ? 'before' : y > h * 0.75 ? 'after' : 'into');
-        if (!canDropDocAsset(_draggedDocAsset, target, pos)) return;
+        const sources = _draggedDocAssets.length ? _draggedDocAssets : (_draggedDocAsset ? [_draggedDocAsset] : []);
+        if (!canDropDocAssets(sources, target, pos)) return;
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
         if (_dragOverLi !== li || _dragOverPos !== pos) {
@@ -1662,18 +1800,21 @@ function attachDocAssetInteractions(li, asset) {
     row.addEventListener('drop', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        const source = _draggedDocAsset;
+        const sources = _draggedDocAssets.length ? _draggedDocAssets : (_draggedDocAsset ? [_draggedDocAsset] : []);
         const target = parseDocAsset(_dragOverLi || li);
         const pos = _dragOverPos || 'into';
         clearDropIndicators();
         _dragOverLi = null;
         _dragOverPos = null;
-        if (source && target) applyDocAssetDrop(source, target, pos);
+        if (sources.length && target) applyDocAssetsDrop(sources, target, pos);
     });
 
     row.addEventListener('contextmenu', (e) => {
         e.preventDefault();
         e.stopPropagation();
+        if (asset.kind === 'doc' && !selectedDocIds.has(asset.id)) {
+            handleDocClick({ ctrlKey: false, metaKey: false, shiftKey: false }, li, asset.id);
+        }
         showDocAssetCtxMenu(e.clientX, e.clientY, asset, li);
     });
 
@@ -1871,7 +2012,7 @@ function createAssetItemNode({ expandId, label, title, muted, extraClass, onClic
     if (onClick) {
         labelEl.addEventListener('click', (e) => {
             e.stopPropagation();
-            onClick();
+            onClick(e);
         });
     }
     row.appendChild(labelEl);
@@ -2001,6 +2142,7 @@ function createTreeNode(obj, depth) {
     // --- Drag & Drop ---
     row.addEventListener('dragstart', (e) => {
         _draggedDocAsset = null;
+        _draggedDocAssets = [];
         _draggedObj = obj;
         // If this node is part of the group selection, drag all group members together
         if (groupHighlightNodes.has(li)) {
