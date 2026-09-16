@@ -263,6 +263,26 @@ export function getDocumentFoldersStore() {
     return documentFoldersStore;
 }
 
+export function getDocOpenMode() {
+    return _getEffectiveOpenMode();
+}
+
+export function setDocOpenMode(mode) {
+    const next = (mode === 'window' || mode === 'full') ? 'window' : 'side';
+    const changed = _docOpenPrefs.mode !== next;
+    _docOpenPrefs.mode = next;
+    localStorage.setItem(DOC_OPEN_MODE_KEY, next);
+    _applyDocLayoutMode();
+    if (changed) _syncOpenModeGui();
+    return next;
+}
+
+function _syncOpenModeGui() {
+    if (!_guiRef) return;
+    const controller = _guiRef.controllers.find(c => c.property === 'mode');
+    controller?.updateDisplay?.();
+}
+
 export function clearDocumentsStore() {
     documentsStore.length = 0;
     documentFoldersStore.length = 0;
@@ -580,10 +600,7 @@ export function refreshDocumentsGui() {
 
     _guiRef.add(_docOpenPrefs, 'mode', _DOC_OPEN_MODE_OPTS)
         .name('Open as')
-        .onChange(mode => {
-            localStorage.setItem(DOC_OPEN_MODE_KEY, mode);
-            _applyDocLayoutMode();
-        });
+        .onChange(mode => setDocOpenMode(mode));
 
     _guiRef.add({ fn: () => _newDocument(null) }, 'fn').name('+ New document');
     _guiRef.add({ fn: () => _promptNewFolder(null) }, 'fn').name('+ New folder');
