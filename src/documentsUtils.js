@@ -421,6 +421,31 @@ export function createDocument(folderId = null) {
     return _newDocument(folderId);
 }
 
+export function renameDocument(id, name) {
+    const doc = documentsStore.find(d => d.id === id);
+    if (!doc) return false;
+    const trimmed = String(name || '').trim();
+    if (!trimmed || trimmed === doc.title) return false;
+    doc.title = trimmed;
+    if (_currentDocId === id && _overlayEl) {
+        const titleInput = _overlayEl.querySelector('.doc-title-input');
+        if (titleInput) titleInput.value = trimmed;
+    }
+    refreshDocumentsGui();
+    return true;
+}
+
+export function deleteDocument(id) {
+    const doc = documentsStore.find(d => d.id === id);
+    if (!doc) return false;
+    const title = doc.title || 'this document';
+    if (!confirm(`Delete "${title}"?`)) return false;
+    documentsStore = documentsStore.filter(d => d.id !== id);
+    if (_currentDocId === id) _closeOverlay();
+    refreshDocumentsGui();
+    return true;
+}
+
 /** Returns true when the doc overlay should suppress 3D model interaction.
  *  Side-by-side and floating window never block; clicks outside the overlay reach the scene. */
 export function isDocOverlayBlockingInput() {
@@ -1614,12 +1639,7 @@ async function _exportCurrentDocPdf() {
 
 function _deleteCurrentDocument() {
     if (!_currentDocId) return;
-    const doc = documentsStore.find(d => d.id === _currentDocId);
-    const title = doc ? doc.title : 'this document';
-    if (!confirm(`Delete "${title}"?`)) return;
-    documentsStore = documentsStore.filter(d => d.id !== _currentDocId);
-    _closeOverlay();
-    refreshDocumentsGui();
+    deleteDocument(_currentDocId);
 }
 
 // ── JSON export / import ──────────────────────────────────────────────────────

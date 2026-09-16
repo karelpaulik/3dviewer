@@ -35,6 +35,10 @@ let getDocumentFolders = null;
 let getAttachments = null;
 /** @type {((id: string) => void)|null} */
 let onOpenDocument = null;
+/** @type {((id: string, name: string) => boolean)|null} */
+let onRenameDocument = null;
+/** @type {((id: string) => boolean)|null} */
+let onDeleteDocument = null;
 /** @type {((folderId?: string|null) => object|null)|null} */
 let onNewDocument = null;
 /** @type {((parentId?: string|null) => object|null)|null} */
@@ -712,7 +716,7 @@ function getOutlinerChildren(obj) {
  * @param {{ onSelect: Function, onToggleVisibility: Function }} callbacks
  * @returns {HTMLDivElement} the panel element (for guiWrapper hit-testing)
  */
-export function initOutliner({ onSelect, onToggleVisibility: onVis, onToggleSelectable: onSel, onGroupAdd: onGroupAddCb, onGroupRemove: onGroupRemoveCb, onHideOthers: onHideOthersCb, onShowAll: onShowAllCb, onReparent: onReparentCb, onRemove: onRemoveCb, onRemoveGroup: onRemoveGroupCb, onGetGroupSelection: onGetGroupSelectionCb, onGetGroupOriginalParents: onGetGroupOriginalParentsCb, onSortChildren: onSortChildrenCb, onCloneObject: onCloneObjectCb, onAddObject3D: onAddObject3DCb, onAddPrimitive: onAddPrimitiveCb, onPromoteToRoot: onPromoteToRootCb, getDocuments: getDocumentsCb, getDocumentFolders: getDocumentFoldersCb, getAttachments: getAttachmentsCb, onOpenDocument: onOpenDocumentCb, onNewDocument: onNewDocumentCb, onNewDocumentFolder: onNewDocumentFolderCb, onImportDocumentJson: onImportDocumentJsonCb, onRenameDocumentFolder: onRenameDocumentFolderCb, onDeleteDocumentFolder: onDeleteDocumentFolderCb, onMoveDocument: onMoveDocumentCb, onMoveDocumentFolder: onMoveDocumentFolderCb, onOpenAttachment: onOpenAttachmentCb, canOpenAttachment: canOpenAttachmentCb, getArrangements: getArrangementsCb, getActiveArrangementId: getActiveArrangementIdCb, isArrangementDirty: isArrangementDirtyCb, onApplyArrangement: onApplyArrangementCb, getSequences: getSequencesCb, getActiveSequenceId: getActiveSequenceIdCb, getCurrentStepIndex: getCurrentStepIndexCb, isPlaybackDetached: isPlaybackDetachedCb, onSelectSequence: onSelectSequenceCb, onGoToAssembled: onGoToAssembledCb, onGoToStep: onGoToStepCb }) {
+export function initOutliner({ onSelect, onToggleVisibility: onVis, onToggleSelectable: onSel, onGroupAdd: onGroupAddCb, onGroupRemove: onGroupRemoveCb, onHideOthers: onHideOthersCb, onShowAll: onShowAllCb, onReparent: onReparentCb, onRemove: onRemoveCb, onRemoveGroup: onRemoveGroupCb, onGetGroupSelection: onGetGroupSelectionCb, onGetGroupOriginalParents: onGetGroupOriginalParentsCb, onSortChildren: onSortChildrenCb, onCloneObject: onCloneObjectCb, onAddObject3D: onAddObject3DCb, onAddPrimitive: onAddPrimitiveCb, onPromoteToRoot: onPromoteToRootCb, getDocuments: getDocumentsCb, getDocumentFolders: getDocumentFoldersCb, getAttachments: getAttachmentsCb, onOpenDocument: onOpenDocumentCb, onNewDocument: onNewDocumentCb, onNewDocumentFolder: onNewDocumentFolderCb, onImportDocumentJson: onImportDocumentJsonCb, onRenameDocument: onRenameDocumentCb, onDeleteDocument: onDeleteDocumentCb, onRenameDocumentFolder: onRenameDocumentFolderCb, onDeleteDocumentFolder: onDeleteDocumentFolderCb, onMoveDocument: onMoveDocumentCb, onMoveDocumentFolder: onMoveDocumentFolderCb, onOpenAttachment: onOpenAttachmentCb, canOpenAttachment: canOpenAttachmentCb, getArrangements: getArrangementsCb, getActiveArrangementId: getActiveArrangementIdCb, isArrangementDirty: isArrangementDirtyCb, onApplyArrangement: onApplyArrangementCb, getSequences: getSequencesCb, getActiveSequenceId: getActiveSequenceIdCb, getCurrentStepIndex: getCurrentStepIndexCb, isPlaybackDetached: isPlaybackDetachedCb, onSelectSequence: onSelectSequenceCb, onGoToAssembled: onGoToAssembledCb, onGoToStep: onGoToStepCb }) {
     onSelectObject = onSelect;
     onToggleVisibility = onVis;
     onToggleSelectable = onSel || null;
@@ -737,6 +741,8 @@ export function initOutliner({ onSelect, onToggleVisibility: onVis, onToggleSele
     onNewDocument = onNewDocumentCb || null;
     onNewDocumentFolder = onNewDocumentFolderCb || null;
     onImportDocumentJson = onImportDocumentJsonCb || null;
+    onRenameDocument = onRenameDocumentCb || null;
+    onDeleteDocument = onDeleteDocumentCb || null;
     onRenameDocumentFolder = onRenameDocumentFolderCb || null;
     onDeleteDocumentFolder = onDeleteDocumentFolderCb || null;
     onMoveDocument = onMoveDocumentCb || null;
@@ -1581,6 +1587,14 @@ function showDocAssetCtxMenu(x, y, asset, li) {
             selectOutlinerAssetByExpandId(`doc:${asset.id}`, { scroll: false });
             if (onOpenDocument) onOpenDocument(asset.id);
         }));
+        menu.appendChild(createDocCtxItem('Rename', () => {
+            startAssetInlineRename(li, asset.name || 'New document', (name) => {
+                if (onRenameDocument) onRenameDocument(asset.id, name);
+            });
+        }));
+        menu.appendChild(createDocCtxItem('Delete', () => {
+            if (onDeleteDocument) onDeleteDocument(asset.id);
+        }, 'outliner-ctx-danger'));
     }
 
     positionFixedMenu(menu, x, y);
