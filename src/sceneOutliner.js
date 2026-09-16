@@ -1409,10 +1409,14 @@ function buildDocumentTreeChildren(docs, folders, parentId, depth, expandedIds) 
 
     for (const doc of childDocs) {
         const expandId = `doc:${doc.id}`;
+        const listName = doc.fileName || doc.title || '(no title)';
+        const tooltip = (doc.title && doc.title !== listName)
+            ? `${listName} — ${doc.title}`
+            : listName;
         const item = createAssetItemNode({
             expandId,
-            label: doc.title || '(no title)',
-            title: doc.title || '(no title)',
+            label: listName,
+            title: tooltip,
             depth,
             onClick: () => {
                 if (Date.now() - _lastDragEndTime < 300) return;
@@ -1423,7 +1427,7 @@ function buildDocumentTreeChildren(docs, folders, parentId, depth, expandedIds) 
         attachDocAssetInteractions(item, {
             kind: 'doc',
             id: doc.id,
-            name: doc.title || '',
+            name: listName,
         });
         nodes.push(item);
     }
@@ -1588,7 +1592,7 @@ function showDocAssetCtxMenu(x, y, asset, li) {
             if (onOpenDocument) onOpenDocument(asset.id);
         }));
         menu.appendChild(createDocCtxItem('Rename', () => {
-            startAssetInlineRename(li, asset.name || 'New document', (name) => {
+            startAssetInlineRename(li, asset.name || 'new_file', (name) => {
                 if (onRenameDocument) onRenameDocument(asset.id, name);
             });
         }));

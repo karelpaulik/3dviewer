@@ -425,11 +425,11 @@ export function renameDocument(id, name) {
     const doc = documentsStore.find(d => d.id === id);
     if (!doc) return false;
     const trimmed = String(name || '').trim();
-    if (!trimmed || trimmed === doc.title) return false;
-    doc.title = trimmed;
+    if (!trimmed || trimmed === (doc.fileName || '')) return false;
+    doc.fileName = trimmed;
     if (_currentDocId === id && _overlayEl) {
-        const titleInput = _overlayEl.querySelector('.doc-title-input');
-        if (titleInput) titleInput.value = trimmed;
+        const fileNameInput = _overlayEl.querySelector('.doc-filename-input');
+        if (fileNameInput) fileNameInput.value = trimmed;
     }
     refreshDocumentsGui();
     return true;
@@ -438,7 +438,7 @@ export function renameDocument(id, name) {
 export function deleteDocument(id) {
     const doc = documentsStore.find(d => d.id === id);
     if (!doc) return false;
-    const title = doc.title || 'this document';
+    const title = _docListLabel(doc) || 'this document';
     if (!confirm(`Delete "${title}"?`)) return false;
     documentsStore = documentsStore.filter(d => d.id !== id);
     if (_currentDocId === id) _closeOverlay();
@@ -555,8 +555,12 @@ export function refreshDocumentsGui() {
     notifyOutlinerProjectContentsChanged();
 }
 
+function _docListLabel(doc) {
+    return doc.fileName || doc.title || '(no title)';
+}
+
 function _docButtonLabel(doc) {
-    let docLabel = doc.title || '(no title)';
+    let docLabel = _docListLabel(doc);
     if (_showLastEditDate && doc.lastEditAt) {
         const le = new Date(doc.lastEditAt);
         const lts = `${le.getDate().toString().padStart(2, '0')}.${(le.getMonth() + 1).toString().padStart(2, '0')}. ${le.getHours().toString().padStart(2, '0')}:${le.getMinutes().toString().padStart(2, '0')}`;
@@ -627,6 +631,7 @@ function _newDocument(folderId) {
         id: _newDocEntityId(),
         title: 'New document',
         description: '',
+        fileName: 'new_file',
         content: '<p></p>',
         createdAt: new Date().toISOString(),
         font: _DEFAULT_FONT,
