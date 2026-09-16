@@ -1702,7 +1702,18 @@ function showDocAssetCtxMenu(x, y, asset, li) {
         menu.appendChild(createDocCtxItem('New document', () => {
             if (!onNewDocument) return;
             const doc = onNewDocument(parentId);
-            if (doc?.id) revealAssetNode(`doc:${doc.id}`);
+            if (!doc?.id) return;
+            const expandId = `doc:${doc.id}`;
+            const newLi = revealAssetNode(expandId);
+            if (!newLi) return;
+            selectedDocIds.clear();
+            selectedDocIds.add(doc.id);
+            docSelectAnchorId = doc.id;
+            selectOutlinerAssetByExpandId(expandId, { scroll: true });
+            applyDocMultiSelectClasses();
+            startAssetInlineRename(newLi, doc.fileName || 'new_file', (name) => {
+                if (onRenameDocument) onRenameDocument(doc.id, name);
+            });
         }));
         menu.appendChild(createDocCtxItem('New folder', () => {
             if (!onNewDocumentFolder) return;
