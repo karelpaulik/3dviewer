@@ -731,7 +731,7 @@ function isUiOverlayElement(el) {
     if (!el) return false;
     if (guiWrapper.contains(el)) return true;
     return !!el.closest?.(
-        '.lil-gui, .ctx-menu, .outliner-ctx-menu, .doc-overlay, .file-preview-window, #file-preview-toolbar, .img-editor-window, #img-editor-toolbar'
+        '.lil-gui, .ctx-menu, .outliner-ctx-menu, .doc-overlay, .file-preview-window, #file-preview-toolbar, .img-editor-window, #img-editor-toolbar, dialog'
     );
 }
 
@@ -11385,8 +11385,9 @@ function onClick( event ) {
         return;
     }
 
-    // Pokud je kliknuto na GUI prvek, ignorujeme raycast pro selekci
-    if (isMouseOnGUI(event)) {
+    // GUI / dialog: use the original event target, not elementFromPoint.
+    // Closing a modal in the same click would otherwise hit the 3D object underneath.
+    if (isMouseOnGUI(event) || isUiOverlayElement(event.target)) {
         return;
     }
     // Pokud je kliknuto na kontextové menu, ignorujeme selekci

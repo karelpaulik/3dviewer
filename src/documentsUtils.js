@@ -487,7 +487,7 @@ export function deleteDocuments(ids) {
 /** Returns true when the doc overlay should suppress 3D model interaction.
  *  Side-by-side and floating window never block; clicks outside the overlay reach the scene. */
 export function isDocOverlayBlockingInput() {
-    return false;
+    return !!(_closeConfirmDlg && _closeConfirmDlg.open);
 }
 
 /** True when a document is open in edit mode (TipTap active). */
@@ -1355,6 +1355,7 @@ function _showCloseConfirmDialog() {
                 <button type="button" class="doc-close-dialog-cancel">Cancel</button>
             </div>`;
         dlg.addEventListener('click', e => {
+            e.stopPropagation();
             if (e.target === dlg) dlg.close();
         });
         dlg.querySelector('.doc-close-dialog-save').addEventListener('click', () => {
