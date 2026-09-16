@@ -103,7 +103,7 @@ import {
     getSelectedEntityLength,
     setSelectedEntityLength,
 } from './sectionSketchUtils.js';
-import { initDocumentsGui, importDocumentsFromGltfScene, getDocumentsStore, getDocumentFoldersStore, flushDocumentEdits, isDocOverlayBlockingInput, isDocumentEditorOpen, setDocLabelOptions, formatDocumentListLabel, clearDocumentsStore, openDocumentViewer, createDocument, createDocumentFolder, renameDocument, renameDocumentFolder, deleteDocument, deleteDocuments, deleteDocumentFolder, moveDocument, moveDocuments, moveDocumentFolder, importDocumentJson, getDocOpenMode, setDocOpenMode } from './documentsUtils.js';
+import { initDocumentsGui, importDocumentsFromGltfScene, getDocumentsStore, getDocumentFoldersStore, flushDocumentEdits, isDocOverlayBlockingInput, isDocumentEditorOpen, setDocLabelOptions, getDocLabelOptions, formatDocumentListLabel, clearDocumentsStore, openDocumentViewer, createDocument, createDocumentFolder, renameDocument, renameDocumentFolder, deleteDocument, deleteDocuments, deleteDocumentFolder, moveDocument, moveDocuments, moveDocumentFolder, importDocumentJson, getDocOpenMode, setDocOpenMode } from './documentsUtils.js';
 import { isImageEditorOpen } from './imageEditorUtils.js';
 import {
     initUndoManager,
@@ -2220,6 +2220,8 @@ outlinerPanelEl = initOutliner({
     onImportDocumentJson: (folderId) => importDocumentJson(folderId),
     getDocOpenMode,
     onSetDocOpenMode: setDocOpenMode,
+    getDocLabelOptions,
+    onSetDocLabelOptions: setDocLabelOptions,
     onRenameDocument: renameDocument,
     onDeleteDocument: deleteDocument,
     onDeleteDocuments: deleteDocuments,
@@ -3239,11 +3241,6 @@ function addMainGui() {
                     applyToolbarPreferences();
                 } }, 'fn').name('Set to default');
                 toolbarPrefFolder.close();
-            const docNameFolder = preferencesFolder.addFolder('Document name');
-                const _docLabelOpts = { showLastEditDate: false, showImportDate: false };
-                docNameFolder.add(_docLabelOpts, 'showLastEditDate').name('Show last edit date').onChange(v => setDocLabelOptions({ showLastEditDate: v }));
-                docNameFolder.add(_docLabelOpts, 'showImportDate').name('Show import date').onChange(v => setDocLabelOptions({ showImportDate: v }));
-                docNameFolder.close();
             const glbImportFolder = preferencesFolder.addFolder('GLB import');
                 glbImportFolder.add(glbImportDefaults, 'keepDuplicateNames').name('Keep duplicate names')
                     .onChange(_saveGlbImportDefaults)

@@ -255,6 +255,13 @@ export function setDocLabelOptions({ showLastEditDate, showImportDate }) {
     refreshDocumentsGui();
 }
 
+export function getDocLabelOptions() {
+    return {
+        showLastEditDate: _showLastEditDate,
+        showImportDate: _showImportDate,
+    };
+}
+
 /** List label used by Docs GUI and the outliner (includes optional last-edit / import dates). */
 export function formatDocumentListLabel(doc) {
     return _docButtonLabel(doc);

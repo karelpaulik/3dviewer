@@ -59,6 +59,10 @@ let onImportDocumentJson = null;
 let getDocOpenMode = null;
 /** @type {((mode: 'side'|'window') => void)|null} */
 let onSetDocOpenMode = null;
+/** @type {(() => { showLastEditDate: boolean, showImportDate: boolean })|null} */
+let getDocLabelOptions = null;
+/** @type {((opts: { showLastEditDate?: boolean, showImportDate?: boolean }) => void)|null} */
+let onSetDocLabelOptions = null;
 /** @type {((id: string, name: string) => boolean)|null} */
 let onRenameDocumentFolder = null;
 /** @type {((id: string) => boolean)|null} */
@@ -742,7 +746,7 @@ function getOutlinerChildren(obj) {
  * @param {{ onSelect: Function, onToggleVisibility: Function }} callbacks
  * @returns {HTMLDivElement} the panel element (for guiWrapper hit-testing)
  */
-export function initOutliner({ onSelect, onToggleVisibility: onVis, onToggleSelectable: onSel, onGroupAdd: onGroupAddCb, onGroupRemove: onGroupRemoveCb, onHideOthers: onHideOthersCb, onShowAll: onShowAllCb, onReparent: onReparentCb, onRemove: onRemoveCb, onRemoveGroup: onRemoveGroupCb, onGetGroupSelection: onGetGroupSelectionCb, onGetGroupOriginalParents: onGetGroupOriginalParentsCb, onSortChildren: onSortChildrenCb, onCloneObject: onCloneObjectCb, onAddObject3D: onAddObject3DCb, onAddPrimitive: onAddPrimitiveCb, onPromoteToRoot: onPromoteToRootCb, getDocuments: getDocumentsCb, getDocumentLabel: getDocumentLabelCb, getDocumentFolders: getDocumentFoldersCb, getAttachments: getAttachmentsCb, onOpenDocument: onOpenDocumentCb, onNewDocument: onNewDocumentCb, onNewDocumentFolder: onNewDocumentFolderCb, onImportDocumentJson: onImportDocumentJsonCb, getDocOpenMode: getDocOpenModeCb, onSetDocOpenMode: onSetDocOpenModeCb, onRenameDocument: onRenameDocumentCb, onDeleteDocument: onDeleteDocumentCb, onDeleteDocuments: onDeleteDocumentsCb, onRenameDocumentFolder: onRenameDocumentFolderCb, onDeleteDocumentFolder: onDeleteDocumentFolderCb, onMoveDocument: onMoveDocumentCb, onMoveDocuments: onMoveDocumentsCb, onMoveDocumentFolder: onMoveDocumentFolderCb, onOpenAttachment: onOpenAttachmentCb, canOpenAttachment: canOpenAttachmentCb, getArrangements: getArrangementsCb, getActiveArrangementId: getActiveArrangementIdCb, isArrangementDirty: isArrangementDirtyCb, onApplyArrangement: onApplyArrangementCb, getSequences: getSequencesCb, getActiveSequenceId: getActiveSequenceIdCb, getCurrentStepIndex: getCurrentStepIndexCb, isPlaybackDetached: isPlaybackDetachedCb, onSelectSequence: onSelectSequenceCb, onGoToAssembled: onGoToAssembledCb, onGoToStep: onGoToStepCb, fileOps: fileOpsCb }) {
+export function initOutliner({ onSelect, onToggleVisibility: onVis, onToggleSelectable: onSel, onGroupAdd: onGroupAddCb, onGroupRemove: onGroupRemoveCb, onHideOthers: onHideOthersCb, onShowAll: onShowAllCb, onReparent: onReparentCb, onRemove: onRemoveCb, onRemoveGroup: onRemoveGroupCb, onGetGroupSelection: onGetGroupSelectionCb, onGetGroupOriginalParents: onGetGroupOriginalParentsCb, onSortChildren: onSortChildrenCb, onCloneObject: onCloneObjectCb, onAddObject3D: onAddObject3DCb, onAddPrimitive: onAddPrimitiveCb, onPromoteToRoot: onPromoteToRootCb, getDocuments: getDocumentsCb, getDocumentLabel: getDocumentLabelCb, getDocumentFolders: getDocumentFoldersCb, getAttachments: getAttachmentsCb, onOpenDocument: onOpenDocumentCb, onNewDocument: onNewDocumentCb, onNewDocumentFolder: onNewDocumentFolderCb, onImportDocumentJson: onImportDocumentJsonCb, getDocOpenMode: getDocOpenModeCb, onSetDocOpenMode: onSetDocOpenModeCb, getDocLabelOptions: getDocLabelOptionsCb, onSetDocLabelOptions: onSetDocLabelOptionsCb, onRenameDocument: onRenameDocumentCb, onDeleteDocument: onDeleteDocumentCb, onDeleteDocuments: onDeleteDocumentsCb, onRenameDocumentFolder: onRenameDocumentFolderCb, onDeleteDocumentFolder: onDeleteDocumentFolderCb, onMoveDocument: onMoveDocumentCb, onMoveDocuments: onMoveDocumentsCb, onMoveDocumentFolder: onMoveDocumentFolderCb, onOpenAttachment: onOpenAttachmentCb, canOpenAttachment: canOpenAttachmentCb, getArrangements: getArrangementsCb, getActiveArrangementId: getActiveArrangementIdCb, isArrangementDirty: isArrangementDirtyCb, onApplyArrangement: onApplyArrangementCb, getSequences: getSequencesCb, getActiveSequenceId: getActiveSequenceIdCb, getCurrentStepIndex: getCurrentStepIndexCb, isPlaybackDetached: isPlaybackDetachedCb, onSelectSequence: onSelectSequenceCb, onGoToAssembled: onGoToAssembledCb, onGoToStep: onGoToStepCb, fileOps: fileOpsCb }) {
     onSelectObject = onSelect;
     onToggleVisibility = onVis;
     onToggleSelectable = onSel || null;
@@ -770,6 +774,8 @@ export function initOutliner({ onSelect, onToggleVisibility: onVis, onToggleSele
     onImportDocumentJson = onImportDocumentJsonCb || null;
     getDocOpenMode = getDocOpenModeCb || null;
     onSetDocOpenMode = onSetDocOpenModeCb || null;
+    getDocLabelOptions = getDocLabelOptionsCb || null;
+    onSetDocLabelOptions = onSetDocLabelOptionsCb || null;
     onRenameDocument = onRenameDocumentCb || null;
     onDeleteDocument = onDeleteDocumentCb || null;
     onDeleteDocuments = onDeleteDocumentsCb || null;
@@ -1778,6 +1784,25 @@ function showDocAssetCtxMenu(x, y, asset, li) {
             menu.appendChild(createDocCtxItem(
                 `${current === 'window' ? '✓ ' : ''}Open as: Window`,
                 () => { if (onSetDocOpenMode) onSetDocOpenMode('window'); }
+            ));
+            const labelOpts = getDocLabelOptions
+                ? getDocLabelOptions()
+                : { showLastEditDate: false, showImportDate: false };
+            menu.appendChild(createDocCtxItem(
+                `${labelOpts.showLastEditDate ? '✓ ' : ''}Show last edit date`,
+                () => {
+                    if (onSetDocLabelOptions) {
+                        onSetDocLabelOptions({ showLastEditDate: !labelOpts.showLastEditDate });
+                    }
+                }
+            ));
+            menu.appendChild(createDocCtxItem(
+                `${labelOpts.showImportDate ? '✓ ' : ''}Show import date`,
+                () => {
+                    if (onSetDocLabelOptions) {
+                        onSetDocLabelOptions({ showImportDate: !labelOpts.showImportDate });
+                    }
+                }
             ));
         }
     }
