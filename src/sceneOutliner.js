@@ -1017,6 +1017,7 @@ export function setShowAuxiliaryObjects(value) {
 export function highlightObject(object, options = {}) {
     const scroll = options.scroll !== false;
     selectedExpandId = null;
+    if (object) clearDocMultiSelection();
     if (activeTreeNode) {
         activeTreeNode.classList.remove('outliner-selected');
     }
@@ -1111,6 +1112,36 @@ export function updateSelectableIcon(object) {
         lockBtn.textContent = pickable ? '👆' : '🛑';
         lockBtn.title = pickable ? 'Lock selection (viewport)' : 'Unlock selection (viewport)';
     }
+}
+
+function parseDocumentExpandId(expandId) {
+    if (typeof expandId !== 'string' || !expandId.startsWith('doc:') || expandId.startsWith('doc-folder:')) return null;
+    return expandId.slice(4) || null;
+}
+
+function parseSelectedDocumentIds() {
+    const ids = [];
+    const seen = new Set();
+    const add = (id) => {
+        if (!id || seen.has(id)) return;
+        seen.add(id);
+        ids.push(id);
+    };
+    selectedDocIds.forEach(add);
+    if (ids.length === 0) add(parseDocumentExpandId(selectedExpandId));
+    return ids;
+}
+
+/**
+ * Delete documents selected in the outliner (multi-select or primary document row).
+ * @returns {boolean} true if a document deletion was handled
+ */
+export function deleteSelectedOutlinerDocuments() {
+    if (!onDeleteDocuments) return false;
+    const ids = parseSelectedDocumentIds();
+    if (ids.length === 0) return false;
+    onDeleteDocuments(ids);
+    return true;
 }
 
 /**
@@ -1259,8 +1290,8 @@ function handleDocClick(e, li, docId) {
                 }
             }
         } else {
-            if (selectedExpandId && selectedExpandId.startsWith('doc:') && selectedDocIds.size === 0) {
-                const currentId = selectedExpandId.slice(4);
+            if (selectedDocIds.size === 0) {
+                const currentId = parseDocumentExpandId(selectedExpandId);
                 if (currentId) selectedDocIds.add(currentId);
             }
             selectedDocIds.add(docId);
