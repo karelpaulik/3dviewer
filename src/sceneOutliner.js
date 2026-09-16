@@ -33,8 +33,14 @@ let getDocuments = null;
 let getDocumentLabel = null;
 /** @type {(() => Array<{id: string, name?: string, parentId?: string|null}>)|null} */
 let getDocumentFolders = null;
-/** @type {(() => Array<{id: string, name?: string, mimeType?: string}>)|null} */
+/** @type {(() => Array<{id: string, name?: string, mimeType?: string, folderId?: string|null, comment?: string}>)|null} */
 let getAttachments = null;
+/** @type {((att: object) => void)|null} */
+let onOpenAttachment = null;
+/** @type {((mimeType: string) => boolean)|null} */
+let canOpenAttachment = null;
+/** @type {object} */
+let fileOps = {};
 /** @type {((id: string) => void)|null} */
 let onOpenDocument = null;
 /** @type {((id: string, name: string) => boolean)|null} */
@@ -63,10 +69,6 @@ let onMoveDocument = null;
 let onMoveDocuments = null;
 /** @type {((id: string, parentId: string|null, opts?: object) => boolean)|null} */
 let onMoveDocumentFolder = null;
-/** @type {((att: object) => void)|null} */
-let onOpenAttachment = null;
-/** @type {((mimeType: string) => boolean)|null} */
-let canOpenAttachment = null;
 /** @type {(() => Array<{id: number, name?: string, camera?: object|null}>)|null} */
 let getArrangements = null;
 /** @type {(() => number|null)|null} */
@@ -620,6 +622,10 @@ let _draggedObjs = null; // all group-selected objects when dragging with multi-
 let _draggedDocAsset = null;
 /** @type {Array<{ kind: 'doc'|'folder', id: string }>} */
 let _draggedDocAssets = [];
+/** @type {{ kind: 'file'|'folder', id: string }|null} */
+let _draggedFileAsset = null;
+/** @type {Array<{ kind: 'file'|'folder', id: string }>} */
+let _draggedFileAssets = [];
 let _dragOverLi = null;
 let _dragOverPos = null; // 'before' | 'into' | 'after'
 let _lastDragEndTime = 0; // Timestamp of last dragend – blocks spurious post-drag clicks
@@ -637,6 +643,10 @@ let selectedExpandId = null;
 const selectedDocIds = new Set();
 /** @type {string|null} shift-click range anchor (document id) */
 let docSelectAnchorId = null;
+/** @type {Set<string>} multi-selected file ids */
+const selectedFileIds = new Set();
+/** @type {string|null} shift-click range anchor (file id) */
+let fileSelectAnchorId = null;
 
 // Set of <li> nodes highlighted as group members
 const groupHighlightNodes = new Set();
@@ -732,7 +742,7 @@ function getOutlinerChildren(obj) {
  * @param {{ onSelect: Function, onToggleVisibility: Function }} callbacks
  * @returns {HTMLDivElement} the panel element (for guiWrapper hit-testing)
  */
-export function initOutliner({ onSelect, onToggleVisibility: onVis, onToggleSelectable: onSel, onGroupAdd: onGroupAddCb, onGroupRemove: onGroupRemoveCb, onHideOthers: onHideOthersCb, onShowAll: onShowAllCb, onReparent: onReparentCb, onRemove: onRemoveCb, onRemoveGroup: onRemoveGroupCb, onGetGroupSelection: onGetGroupSelectionCb, onGetGroupOriginalParents: onGetGroupOriginalParentsCb, onSortChildren: onSortChildrenCb, onCloneObject: onCloneObjectCb, onAddObject3D: onAddObject3DCb, onAddPrimitive: onAddPrimitiveCb, onPromoteToRoot: onPromoteToRootCb, getDocuments: getDocumentsCb, getDocumentLabel: getDocumentLabelCb, getDocumentFolders: getDocumentFoldersCb, getAttachments: getAttachmentsCb, onOpenDocument: onOpenDocumentCb, onNewDocument: onNewDocumentCb, onNewDocumentFolder: onNewDocumentFolderCb, onImportDocumentJson: onImportDocumentJsonCb, getDocOpenMode: getDocOpenModeCb, onSetDocOpenMode: onSetDocOpenModeCb, onRenameDocument: onRenameDocumentCb, onDeleteDocument: onDeleteDocumentCb, onDeleteDocuments: onDeleteDocumentsCb, onRenameDocumentFolder: onRenameDocumentFolderCb, onDeleteDocumentFolder: onDeleteDocumentFolderCb, onMoveDocument: onMoveDocumentCb, onMoveDocuments: onMoveDocumentsCb, onMoveDocumentFolder: onMoveDocumentFolderCb, onOpenAttachment: onOpenAttachmentCb, canOpenAttachment: canOpenAttachmentCb, getArrangements: getArrangementsCb, getActiveArrangementId: getActiveArrangementIdCb, isArrangementDirty: isArrangementDirtyCb, onApplyArrangement: onApplyArrangementCb, getSequences: getSequencesCb, getActiveSequenceId: getActiveSequenceIdCb, getCurrentStepIndex: getCurrentStepIndexCb, isPlaybackDetached: isPlaybackDetachedCb, onSelectSequence: onSelectSequenceCb, onGoToAssembled: onGoToAssembledCb, onGoToStep: onGoToStepCb }) {
+export function initOutliner({ onSelect, onToggleVisibility: onVis, onToggleSelectable: onSel, onGroupAdd: onGroupAddCb, onGroupRemove: onGroupRemoveCb, onHideOthers: onHideOthersCb, onShowAll: onShowAllCb, onReparent: onReparentCb, onRemove: onRemoveCb, onRemoveGroup: onRemoveGroupCb, onGetGroupSelection: onGetGroupSelectionCb, onGetGroupOriginalParents: onGetGroupOriginalParentsCb, onSortChildren: onSortChildrenCb, onCloneObject: onCloneObjectCb, onAddObject3D: onAddObject3DCb, onAddPrimitive: onAddPrimitiveCb, onPromoteToRoot: onPromoteToRootCb, getDocuments: getDocumentsCb, getDocumentLabel: getDocumentLabelCb, getDocumentFolders: getDocumentFoldersCb, getAttachments: getAttachmentsCb, onOpenDocument: onOpenDocumentCb, onNewDocument: onNewDocumentCb, onNewDocumentFolder: onNewDocumentFolderCb, onImportDocumentJson: onImportDocumentJsonCb, getDocOpenMode: getDocOpenModeCb, onSetDocOpenMode: onSetDocOpenModeCb, onRenameDocument: onRenameDocumentCb, onDeleteDocument: onDeleteDocumentCb, onDeleteDocuments: onDeleteDocumentsCb, onRenameDocumentFolder: onRenameDocumentFolderCb, onDeleteDocumentFolder: onDeleteDocumentFolderCb, onMoveDocument: onMoveDocumentCb, onMoveDocuments: onMoveDocumentsCb, onMoveDocumentFolder: onMoveDocumentFolderCb, onOpenAttachment: onOpenAttachmentCb, canOpenAttachment: canOpenAttachmentCb, getArrangements: getArrangementsCb, getActiveArrangementId: getActiveArrangementIdCb, isArrangementDirty: isArrangementDirtyCb, onApplyArrangement: onApplyArrangementCb, getSequences: getSequencesCb, getActiveSequenceId: getActiveSequenceIdCb, getCurrentStepIndex: getCurrentStepIndexCb, isPlaybackDetached: isPlaybackDetachedCb, onSelectSequence: onSelectSequenceCb, onGoToAssembled: onGoToAssembledCb, onGoToStep: onGoToStepCb, fileOps: fileOpsCb }) {
     onSelectObject = onSelect;
     onToggleVisibility = onVis;
     onToggleSelectable = onSel || null;
@@ -781,6 +791,7 @@ export function initOutliner({ onSelect, onToggleVisibility: onVis, onToggleSele
     onSelectSequence = onSelectSequenceCb || null;
     onGoToAssembled = onGoToAssembledCb || null;
     onGoToStep = onGoToStepCb || null;
+    fileOps = fileOpsCb || {};
 
     // --- Panel container ---
     panelEl = document.createElement('div');
@@ -1026,7 +1037,10 @@ export function setShowAuxiliaryObjects(value) {
 export function highlightObject(object, options = {}) {
     const scroll = options.scroll !== false;
     selectedExpandId = null;
-    if (object) clearDocMultiSelection();
+    if (object) {
+        clearDocMultiSelection();
+        clearFileMultiSelection();
+    }
     if (activeTreeNode) {
         activeTreeNode.classList.remove('outliner-selected');
     }
@@ -1153,6 +1167,36 @@ export function deleteSelectedOutlinerDocuments() {
     return true;
 }
 
+function parseFileExpandId(expandId) {
+    if (typeof expandId !== 'string' || !expandId.startsWith('file:') || expandId.startsWith('file-folder:')) return null;
+    return expandId.slice(5) || null;
+}
+
+function parseSelectedFileIds() {
+    const ids = [];
+    const seen = new Set();
+    const add = (id) => {
+        if (!id || seen.has(id)) return;
+        seen.add(id);
+        ids.push(id);
+    };
+    selectedFileIds.forEach(add);
+    if (ids.length === 0) add(parseFileExpandId(selectedExpandId));
+    return ids;
+}
+
+/**
+ * Delete files selected in the outliner (multi-select or primary file row).
+ * @returns {boolean} true if a file deletion was handled
+ */
+export function deleteSelectedOutlinerFiles() {
+    if (!fileOps.deleteMany) return false;
+    const ids = parseSelectedFileIds();
+    if (ids.length === 0) return false;
+    fileOps.deleteMany(ids);
+    return true;
+}
+
 /**
  * Navigate the outliner selection up or down.
  * Sequence Assembled/step rows stay within the same sequence and are activated.
@@ -1228,6 +1272,7 @@ function restoreSelectedExpandId({ scroll = false } = {}) {
         selectedExpandId = null;
     }
     applyDocMultiSelectClasses();
+    applyFileMultiSelectClasses();
 }
 
 function applyDocMultiSelectClasses() {
@@ -1258,6 +1303,7 @@ function siblingDocItems(li) {
 }
 
 function handleDocClick(e, li, docId) {
+    clearFileMultiSelection();
     if (e.ctrlKey || e.metaKey || e.shiftKey) e.preventDefault();
     const expandId = `doc:${docId}`;
     const additive = !!(e.ctrlKey || e.metaKey);
@@ -1474,32 +1520,13 @@ function appendProjectSection(expandedIds) {
     const docs = getDocuments ? getDocuments() : [];
     const docFolders = getDocumentFolders ? getDocumentFolders() : [];
     const atts = getAttachments ? getAttachments() : [];
-
-    const fileItems = atts.map(att => {
-        const viewable = canOpenAttachment ? canOpenAttachment(att.mimeType) : false;
-        return createAssetItemNode({
-            expandId: `file:${att.id}`,
-            label: att.name || '(unnamed)',
-            title: viewable
-                ? (att.name || '')
-                : 'Cannot preview — open from Files panel',
-            muted: !viewable,
-            onClick: viewable
-                ? () => { if (onOpenAttachment) onOpenAttachment(att); }
-                : null,
-        });
-    });
+    const attFolders = fileOps.getFolders ? fileOps.getFolders() : [];
 
     const docsExpanded = expandedIds ? expandedIds.has('project:documents') : true;
     const filesExpanded = expandedIds ? expandedIds.has('project:files') : true;
 
     treeEl.appendChild(createDocumentsFolderNode(docs, docFolders, docsExpanded, expandedIds));
-    treeEl.appendChild(createAssetFolderNode({
-        expandId: 'project:files',
-        label: `Files (${atts.length})`,
-        children: fileItems,
-        expanded: filesExpanded,
-    }));
+    treeEl.appendChild(createFilesFolderNode(atts, attFolders, filesExpanded, expandedIds));
 
     const arrExpanded = expandedIds ? expandedIds.has('project:arrangements') : true;
     treeEl.appendChild(createArrangementsFolderNode(arrExpanded));
@@ -1807,6 +1834,7 @@ function attachDocAssetInteractions(li, asset) {
             return;
         }
         clearDocMultiSelection();
+        clearFileMultiSelection();
         if (li.dataset.expandId) {
             selectOutlinerAssetByExpandId(li.dataset.expandId, { scroll: false });
         }
@@ -1817,6 +1845,8 @@ function attachDocAssetInteractions(li, asset) {
         row.addEventListener('dragstart', (e) => {
             _draggedObj = null;
             _draggedObjs = null;
+            _draggedFileAsset = null;
+            _draggedFileAssets = [];
             if (asset.kind === 'doc' && selectedDocIds.has(asset.id) && selectedDocIds.size > 1) {
                 _draggedDocAssets = [...selectedDocIds].map(id => ({ kind: 'doc', id }));
             } else {
@@ -1891,6 +1921,497 @@ function attachDocAssetInteractions(li, asset) {
         longPressTimer = setTimeout(() => {
             longPressTimer = null;
             showDocAssetCtxMenu(touch.clientX, touch.clientY, asset, li);
+        }, 500);
+    }, { passive: true });
+    const cancelLongPress = () => {
+        if (longPressTimer) {
+            clearTimeout(longPressTimer);
+            longPressTimer = null;
+        }
+    };
+    row.addEventListener('touchend', cancelLongPress, { passive: true });
+    row.addEventListener('touchcancel', cancelLongPress, { passive: true });
+    row.addEventListener('touchmove', cancelLongPress, { passive: true });
+}
+
+function createFilesFolderNode(atts, folders, expanded, expandedIds) {
+    const children = buildFileTreeChildren(atts, folders, null, 1, expandedIds);
+    const node = createAssetFolderNode({
+        expandId: 'project:files',
+        label: `Files (${atts.length})`,
+        children,
+        expanded,
+    });
+    attachFileAssetInteractions(node, { kind: 'root' });
+    return node;
+}
+
+function buildFileTreeChildren(atts, folders, parentId, depth, expandedIds) {
+    const pid = parentId || null;
+    const childFolders = folders.filter(f => (f.parentId || null) === pid);
+    const childAtts = atts.filter(a => (a.folderId || null) === pid);
+    const nodes = [];
+
+    for (const folder of childFolders) {
+        const expandId = `file-folder:${folder.id}`;
+        const folderExpanded = expandedIds ? expandedIds.has(expandId) : true;
+        const folderNode = createAssetFolderNode({
+            expandId,
+            label: folder.name || '(unnamed folder)',
+            title: folder.name || '(unnamed folder)',
+            children: buildFileTreeChildren(atts, folders, folder.id, depth + 1, expandedIds),
+            expanded: folderExpanded,
+            depth,
+        });
+        attachFileAssetInteractions(folderNode, {
+            kind: 'folder',
+            id: folder.id,
+            name: folder.name || '',
+        });
+        nodes.push(folderNode);
+    }
+
+    for (const att of childAtts) {
+        const viewable = canOpenAttachment ? canOpenAttachment(att.mimeType) : false;
+        const label = `${att.comment ? '💬 ' : ''}${att.name || '(unnamed)'}`;
+        const item = createAssetItemNode({
+            expandId: `file:${att.id}`,
+            label,
+            title: viewable
+                ? (att.name || '')
+                : 'Cannot preview — download from the context menu',
+            muted: !viewable,
+            depth,
+            onClick: (e) => {
+                if (Date.now() - _lastDragEndTime < 300) return;
+                handleFileClick(e, item, att.id);
+                if (e.ctrlKey || e.metaKey || e.shiftKey) return;
+                if (viewable && onOpenAttachment) onOpenAttachment(att);
+            },
+        });
+        attachFileAssetInteractions(item, {
+            kind: 'file',
+            id: att.id,
+            name: att.name || '',
+            mimeType: att.mimeType || '',
+        });
+        nodes.push(item);
+    }
+
+    return nodes;
+}
+
+function parseFileAsset(li) {
+    const kind = li?.dataset?.fileKind;
+    if (!kind) return null;
+    return {
+        kind,
+        id: li.dataset.fileId || null,
+        name: li.dataset.fileName || '',
+        mimeType: li.dataset.fileMime || '',
+    };
+}
+
+function getFileFolderParentId(folderId) {
+    const folders = fileOps.getFolders ? fileOps.getFolders() : [];
+    return folders.find(f => f.id === folderId)?.parentId || null;
+}
+
+function getFileParentFolderId(fileId) {
+    const atts = getAttachments ? getAttachments() : [];
+    return atts.find(a => a.id === fileId)?.folderId || null;
+}
+
+function isFileFolderDescendant(ancestorId, maybeDescendantId) {
+    if (!ancestorId || !maybeDescendantId) return false;
+    const folders = fileOps.getFolders ? fileOps.getFolders() : [];
+    const byId = new Map(folders.map(f => [f.id, f]));
+    const seen = new Set();
+    let id = maybeDescendantId;
+    while (id) {
+        if (id === ancestorId) return true;
+        if (seen.has(id)) break;
+        seen.add(id);
+        id = byId.get(id)?.parentId || null;
+    }
+    return false;
+}
+
+function canDropFileAsset(source, target, pos) {
+    if (!source || !target) return false;
+    if (source.kind === 'root') return false;
+    if (source.kind === target.kind && source.id && source.id === target.id) return false;
+    if (source.kind !== 'folder') return true;
+    let destFolderId = null;
+    if (target.kind === 'root') destFolderId = null;
+    else if (target.kind === 'folder' && pos === 'into') destFolderId = target.id;
+    else if (target.kind === 'folder') destFolderId = getFileFolderParentId(target.id);
+    else destFolderId = getFileParentFolderId(target.id);
+    if (destFolderId === source.id || isFileFolderDescendant(source.id, destFolderId)) return false;
+    return true;
+}
+
+function canDropFileAssets(sources, target, pos) {
+    if (!sources?.length || !target) return false;
+    if (sources.some(s => s.kind === target.kind && s.id && s.id === target.id)) return false;
+    return sources.every(s => canDropFileAsset(s, target, pos));
+}
+
+function applyFileAssetsDrop(sources, target, pos) {
+    if (!canDropFileAssets(sources, target, pos)) return;
+
+    let destFolderId = null;
+    let beforeId;
+    let afterId;
+
+    if (target.kind === 'root') {
+        destFolderId = null;
+    } else if (target.kind === 'folder') {
+        if (pos === 'into') {
+            destFolderId = target.id;
+        } else {
+            destFolderId = getFileFolderParentId(target.id);
+            if (sources.every(s => s.kind === 'folder')) {
+                if (pos === 'before') beforeId = target.id;
+                else afterId = target.id;
+            }
+        }
+    } else {
+        destFolderId = getFileParentFolderId(target.id);
+        if (sources.every(s => s.kind === 'file')) {
+            if (pos === 'before') beforeId = target.id;
+            else afterId = target.id;
+        }
+    }
+
+    const fileIds = sources.filter(s => s.kind === 'file').map(s => s.id);
+    const folderSources = sources.filter(s => s.kind === 'folder');
+    if (fileIds.length) {
+        if (fileOps.moveMany) fileOps.moveMany(fileIds, destFolderId, { beforeId, afterId });
+        else if (fileOps.move) fileIds.forEach(id => fileOps.move(id, destFolderId, { beforeId, afterId }));
+    }
+    folderSources.forEach(folder => {
+        if (fileOps.moveFolder) fileOps.moveFolder(folder.id, destFolderId, { beforeId, afterId });
+    });
+}
+
+function attachmentRenameBase(name) {
+    const lastDot = (name || '').lastIndexOf('.');
+    return lastDot > 0 ? name.slice(0, lastDot) : (name || '');
+}
+
+function attachmentRenameExt(name) {
+    const lastDot = (name || '').lastIndexOf('.');
+    return lastDot > 0 ? name.slice(lastDot) : '';
+}
+
+function applyFileMultiSelectClasses() {
+    if (!treeEl) return;
+    const liveIds = new Set(
+        Array.from(treeEl.querySelectorAll('[data-file-kind="file"]')).map(li => li.dataset.fileId)
+    );
+    for (const id of [...selectedFileIds]) {
+        if (!liveIds.has(id)) selectedFileIds.delete(id);
+    }
+    treeEl.querySelectorAll('[data-file-kind="file"]').forEach(li => {
+        const on = selectedFileIds.has(li.dataset.fileId);
+        const isPrimary = selectedExpandId === `file:${li.dataset.fileId}`;
+        li.classList.toggle('outliner-group-member', on && selectedFileIds.size > 1 && !isPrimary);
+    });
+}
+
+function clearFileMultiSelection() {
+    selectedFileIds.clear();
+    fileSelectAnchorId = null;
+    applyFileMultiSelectClasses();
+}
+
+function siblingFileItems(li) {
+    const parent = li?.parentElement;
+    if (!parent) return [];
+    return Array.from(parent.children).filter(el => el.dataset?.fileKind === 'file');
+}
+
+function handleFileClick(e, li, fileId) {
+    clearDocMultiSelection();
+    if (e.ctrlKey || e.metaKey || e.shiftKey) e.preventDefault();
+    const expandId = `file:${fileId}`;
+    const additive = !!(e.ctrlKey || e.metaKey);
+    const range = !!e.shiftKey && !additive;
+
+    if (range) {
+        const siblings = siblingFileItems(li);
+        const anchorId = fileSelectAnchorId
+            && siblings.some(s => s.dataset.fileId === fileSelectAnchorId)
+            ? fileSelectAnchorId
+            : fileId;
+        const fromIdx = siblings.findIndex(s => s.dataset.fileId === anchorId);
+        const toIdx = siblings.findIndex(s => s.dataset.fileId === fileId);
+        if (fromIdx >= 0 && toIdx >= 0) {
+            const a = Math.min(fromIdx, toIdx);
+            const b = Math.max(fromIdx, toIdx);
+            selectedFileIds.clear();
+            siblings.slice(a, b + 1).forEach(s => selectedFileIds.add(s.dataset.fileId));
+        } else {
+            selectedFileIds.clear();
+            selectedFileIds.add(fileId);
+            fileSelectAnchorId = fileId;
+        }
+        selectOutlinerAssetByExpandId(expandId, { scroll: false });
+        applyFileMultiSelectClasses();
+        return;
+    }
+
+    if (additive) {
+        if (selectedFileIds.has(fileId)) {
+            selectedFileIds.delete(fileId);
+            if (selectedExpandId === expandId) {
+                const next = [...selectedFileIds][selectedFileIds.size - 1];
+                if (next) selectOutlinerAssetByExpandId(`file:${next}`, { scroll: false });
+                else {
+                    selectedExpandId = null;
+                    if (activeTreeNode) activeTreeNode.classList.remove('outliner-selected');
+                    activeTreeNode = null;
+                }
+            }
+        } else {
+            if (selectedFileIds.size === 0) {
+                const currentId = parseFileExpandId(selectedExpandId);
+                if (currentId) selectedFileIds.add(currentId);
+            }
+            selectedFileIds.add(fileId);
+            selectOutlinerAssetByExpandId(expandId, { scroll: false });
+        }
+        fileSelectAnchorId = fileId;
+        applyFileMultiSelectClasses();
+        return;
+    }
+
+    selectedFileIds.clear();
+    selectedFileIds.add(fileId);
+    fileSelectAnchorId = fileId;
+    selectOutlinerAssetByExpandId(expandId, { scroll: false });
+    applyFileMultiSelectClasses();
+}
+
+function showFileAssetCtxMenu(x, y, asset, li) {
+    hideAddPrimitiveMenu();
+    const menu = getOrCreateCtxMenu();
+    menu.innerHTML = '';
+
+    const addSep = () => {
+        const sep = document.createElement('div');
+        sep.className = 'outliner-ctx-sep';
+        menu.appendChild(sep);
+    };
+
+    if (asset.kind === 'root' || asset.kind === 'folder') {
+        const parentId = asset.kind === 'folder' ? asset.id : null;
+        menu.appendChild(createDocCtxItem('Add files…', () => {
+            if (fileOps.addFiles) fileOps.addFiles(parentId);
+        }));
+        menu.appendChild(createDocCtxItem('Paste image…', () => {
+            if (fileOps.pasteImage) fileOps.pasteImage(parentId);
+        }));
+        menu.appendChild(createDocCtxItem('New image…', () => {
+            if (fileOps.newImage) fileOps.newImage(parentId);
+        }));
+        if (fileOps.captureScreen) {
+            menu.appendChild(createDocCtxItem('Screen capture…', () => {
+                fileOps.captureScreen(parentId);
+            }));
+        }
+        menu.appendChild(createDocCtxItem('New folder', () => {
+            if (!fileOps.createFolder) return;
+            const folder = fileOps.createFolder(parentId);
+            if (!folder?.id) return;
+            const newLi = revealAssetNode(`file-folder:${folder.id}`);
+            if (newLi) {
+                startAssetInlineRename(newLi, folder.name || 'New folder', (name) => {
+                    if (fileOps.renameFolder) fileOps.renameFolder(folder.id, name);
+                });
+            }
+        }));
+        addSep();
+        menu.appendChild(createDocCtxItem('Download as ZIP', () => {
+            if (fileOps.downloadZip) fileOps.downloadZip(parentId);
+        }));
+        menu.appendChild(createDocCtxItem('Open all viewable…', () => {
+            if (fileOps.openAllViewable) fileOps.openAllViewable(parentId);
+        }));
+        menu.appendChild(createDocCtxItem('Edit all images…', () => {
+            if (fileOps.editAllImages) fileOps.editAllImages(parentId);
+        }));
+    }
+
+    if (asset.kind === 'folder') {
+        addSep();
+        menu.appendChild(createDocCtxItem('Rename', () => {
+            startAssetInlineRename(li, asset.name, (name) => {
+                if (fileOps.renameFolder) fileOps.renameFolder(asset.id, name);
+            });
+        }));
+        menu.appendChild(createDocCtxItem('Delete folder', () => {
+            if (fileOps.deleteFolder) fileOps.deleteFolder(asset.id);
+        }, 'outliner-ctx-danger'));
+    }
+
+    if (asset.kind === 'file') {
+        const mime = asset.mimeType || '';
+        const viewable = canOpenAttachment ? canOpenAttachment(mime) : false;
+        if (viewable) {
+            menu.appendChild(createDocCtxItem('Open', () => {
+                selectOutlinerAssetByExpandId(`file:${asset.id}`, { scroll: false });
+                const att = getAttachments?.().find(a => a.id === asset.id);
+                if (att && onOpenAttachment) onOpenAttachment(att);
+            }));
+        }
+        if (mime.startsWith('image/')) {
+            menu.appendChild(createDocCtxItem('Edit', () => {
+                if (fileOps.edit) fileOps.edit(asset.id);
+            }));
+            menu.appendChild(createDocCtxItem('Convert to PDF…', () => {
+                if (fileOps.convertImageToPdf) fileOps.convertImageToPdf(asset.id);
+            }));
+        }
+        if (mime === 'application/pdf') {
+            menu.appendChild(createDocCtxItem('Edit PDF…', () => {
+                if (fileOps.editPdf) fileOps.editPdf(asset.id);
+            }));
+            menu.appendChild(createDocCtxItem('Manage PDF pages…', () => {
+                if (fileOps.managePdfPages) fileOps.managePdfPages(asset.id);
+            }));
+            menu.appendChild(createDocCtxItem('Convert to images…', () => {
+                if (fileOps.convertPdfToImages) fileOps.convertPdfToImages(asset.id);
+            }));
+        }
+        menu.appendChild(createDocCtxItem('Download', () => {
+            if (fileOps.download) fileOps.download(asset.id);
+        }));
+        menu.appendChild(createDocCtxItem('Rename', () => {
+            startAssetInlineRename(li, attachmentRenameBase(asset.name), (base) => {
+                if (fileOps.rename) fileOps.rename(asset.id, base + attachmentRenameExt(asset.name));
+            });
+        }));
+        menu.appendChild(createDocCtxItem('Delete', () => {
+            const ids = (selectedFileIds.size > 1 && selectedFileIds.has(asset.id))
+                ? [...selectedFileIds]
+                : [asset.id];
+            if (ids.length > 1) {
+                if (fileOps.deleteMany) fileOps.deleteMany(ids);
+                else if (fileOps.deleteOne) ids.forEach(id => fileOps.deleteOne(id));
+            } else if (fileOps.deleteOne) {
+                fileOps.deleteOne(asset.id);
+            }
+        }, 'outliner-ctx-danger'));
+    }
+
+    positionFixedMenu(menu, x, y);
+}
+
+function attachFileAssetInteractions(li, asset) {
+    li.dataset.fileKind = asset.kind;
+    if (asset.id) li.dataset.fileId = asset.id;
+    if (asset.name) li.dataset.fileName = asset.name;
+    if (asset.mimeType) li.dataset.fileMime = asset.mimeType;
+
+    const row = li.querySelector(':scope > .outliner-row');
+    if (!row) return;
+
+    row.addEventListener('click', (e) => {
+        if (Date.now() - _lastDragEndTime < 300) return;
+        if (asset.kind === 'file') {
+            handleFileClick(e, li, asset.id);
+            return;
+        }
+        clearDocMultiSelection();
+        clearFileMultiSelection();
+        if (li.dataset.expandId) {
+            selectOutlinerAssetByExpandId(li.dataset.expandId, { scroll: false });
+        }
+    });
+
+    if (asset.kind !== 'root') {
+        row.draggable = true;
+        row.addEventListener('dragstart', (e) => {
+            _draggedObj = null;
+            _draggedObjs = null;
+            _draggedDocAsset = null;
+            _draggedDocAssets = [];
+            if (asset.kind === 'file' && selectedFileIds.has(asset.id) && selectedFileIds.size > 1) {
+                _draggedFileAssets = [...selectedFileIds].map(id => ({ kind: 'file', id }));
+            } else {
+                _draggedFileAssets = [{ kind: asset.kind, id: asset.id }];
+            }
+            _draggedFileAsset = _draggedFileAssets[0];
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', '');
+            li.classList.add('outliner-drag-source');
+            _draggedFileAssets.forEach(src => {
+                const srcLi = treeEl.querySelector(`[data-file-kind="${src.kind}"][data-file-id="${src.id}"]`);
+                if (srcLi) srcLi.classList.add('outliner-drag-source');
+            });
+        });
+        row.addEventListener('dragend', () => {
+            _lastDragEndTime = Date.now();
+            treeEl.querySelectorAll('.outliner-drag-source').forEach(el => el.classList.remove('outliner-drag-source'));
+            clearDropIndicators();
+            _draggedFileAsset = null;
+            _draggedFileAssets = [];
+            _dragOverLi = null;
+            _dragOverPos = null;
+        });
+    }
+
+    row.addEventListener('dragover', (e) => {
+        if (!_draggedFileAsset) return;
+        const target = parseFileAsset(li);
+        const rect = row.getBoundingClientRect();
+        const y = e.clientY - rect.top;
+        const h = rect.height;
+        const pos = target.kind === 'root'
+            ? 'into'
+            : (y < h * 0.25 ? 'before' : y > h * 0.75 ? 'after' : 'into');
+        const sources = _draggedFileAssets.length ? _draggedFileAssets : (_draggedFileAsset ? [_draggedFileAsset] : []);
+        if (!canDropFileAssets(sources, target, pos)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        if (_dragOverLi !== li || _dragOverPos !== pos) {
+            clearDropIndicators();
+            _dragOverLi = li;
+            _dragOverPos = pos;
+            li.classList.add('outliner-drop-' + pos);
+        }
+    });
+
+    row.addEventListener('drop', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const sources = _draggedFileAssets.length ? _draggedFileAssets : (_draggedFileAsset ? [_draggedFileAsset] : []);
+        const target = parseFileAsset(_dragOverLi || li);
+        const pos = _dragOverPos || 'into';
+        clearDropIndicators();
+        _dragOverLi = null;
+        _dragOverPos = null;
+        if (sources.length && target) applyFileAssetsDrop(sources, target, pos);
+    });
+
+    row.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (asset.kind === 'file' && !selectedFileIds.has(asset.id)) {
+            handleFileClick({ ctrlKey: false, metaKey: false, shiftKey: false }, li, asset.id);
+        }
+        showFileAssetCtxMenu(e.clientX, e.clientY, asset, li);
+    });
+
+    let longPressTimer = null;
+    row.addEventListener('touchstart', (e) => {
+        if (e.touches.length !== 1) return;
+        const touch = e.touches[0];
+        longPressTimer = setTimeout(() => {
+            longPressTimer = null;
+            showFileAssetCtxMenu(touch.clientX, touch.clientY, asset, li);
         }, 500);
     }, { passive: true });
     const cancelLongPress = () => {
@@ -2209,6 +2730,8 @@ function createTreeNode(obj, depth) {
     row.addEventListener('dragstart', (e) => {
         _draggedDocAsset = null;
         _draggedDocAssets = [];
+        _draggedFileAsset = null;
+        _draggedFileAssets = [];
         _draggedObj = obj;
         // If this node is part of the group selection, drag all group members together
         if (groupHighlightNodes.has(li)) {

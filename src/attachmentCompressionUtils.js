@@ -37,6 +37,7 @@ function attachmentMeta(att) {
         size: att.size,
         addedAt: att.addedAt,
         ...(att.comment !== undefined ? { comment: att.comment } : {}),
+        ...(att.folderId ? { folderId: att.folderId } : {}),
     };
 }
 
@@ -81,6 +82,7 @@ export function normalizeAttachmentFromGltf(att) {
         size: att.size ?? bytes.length,
         addedAt: att.addedAt,
         ...(att.comment !== undefined ? { comment: att.comment } : {}),
+        ...(att.folderId ? { folderId: att.folderId } : {}),
         data: uint8ArrayToBase64(bytes),
     };
 }

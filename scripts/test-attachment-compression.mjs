@@ -113,6 +113,16 @@ if (randomSerialized.encoding === 'gzip') {
 const batch = serializeAttachmentsForExport([compressibleAtt, smallAtt], prefsEnabled);
 assert(batch.length === 2, 'batch export returns all attachments');
 assert(batch[0].encoding === 'gzip', 'batch first item compressed');
-assert(!batch[1].encoding, 'batch second item skipped');
+assert(batch[1].encoding === undefined || !batch[1].encoding, 'batch second item skipped');
+
+const folderAtt = {
+    ...compressibleAtt,
+    id: 'a-folder',
+    folderId: 'folder-1',
+};
+const folderSerialized = serializeAttachmentForGltf(folderAtt, prefsEnabled);
+assert(folderSerialized.folderId === 'folder-1', 'folderId is exported with gzip');
+const folderNormalized = normalizeAttachmentFromGltf(folderSerialized);
+assert(folderNormalized.folderId === 'folder-1', 'folderId survives gzip import');
 
 console.log('test-attachment-compression: all passed');

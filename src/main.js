@@ -40,7 +40,7 @@ import { GUI } from 'lil-gui';
 import ZipLoader from 'zip-loader';
 import { updateCrossSectionLines as updateCrossSectionLinesCore, updateSectionCrossLines as updateSectionCrossLinesCore } from './crossSectionUtils.js';
 import { exportToHTML, exportToHTMLDraco, exportToHTMLObfuscated, exportToHTMLObfuscatedDraco } from './htmlExport.js';
-import { initOutliner, toggleOutliner, rebuildTree, highlightObject as outlinerHighlight, updateVisibilityIcon, updateSelectableIcon, updateObjectLabel, isOutlinerOpen, navigateOutliner, deleteSelectedOutlinerDocuments, highlightGroupObjects, clearGroupHighlights, setNavigationPosition, setOnTreeRebuild, setShowAuxiliaryObjects, isOutlinerAuxiliaryObject, notifyOutlinerAuxiliaryChildrenChanged, refreshArrangementsFolder, refreshSequencesFolder } from './sceneOutliner.js';
+import { initOutliner, toggleOutliner, rebuildTree, highlightObject as outlinerHighlight, updateVisibilityIcon, updateSelectableIcon, updateObjectLabel, isOutlinerOpen, navigateOutliner, deleteSelectedOutlinerDocuments, deleteSelectedOutlinerFiles, highlightGroupObjects, clearGroupHighlights, setNavigationPosition, setOnTreeRebuild, setShowAuxiliaryObjects, isOutlinerAuxiliaryObject, notifyOutlinerAuxiliaryChildrenChanged, refreshArrangementsFolder, refreshSequencesFolder } from './sceneOutliner.js';
 import { positionContextMenu } from './uiMenuUtils.js';
 import { computeModelStats, computeSurfaceAreaAndVolume, formatGeometryMeasure, MODEL_UNIT_OPTIONS, formatMass, computeRolledUpMassForRoots, formatInertia, unitLengthToCm, computePrincipalInertia, computeRadiusOfGyrationCm } from './modelInfoUtils.js';
 import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, updateMeasurement3dOrientations, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements, isRadiusActive, setRadiusActive, addRadiusPoint, updateRadiusPreview, clearRadiusMeasurements, isSelectDimActive, setSelectDimActive, refreshLabelEditListeners, hasSelectedDimension, deselectSelectedDimension, deleteSelectedDimension, resetSelectedMeasurementLabel, getSelectedMeasurementLabelStyle, getSelectedMeasurementLabelDim, setSelectedMeasurementLabelDim, setSelectedMeasurementOrientationMode, setSelectedMeasurementTextColor, setSelectedMeasurementBgColor, setSelectedMeasurementFontSize, initSelectDimension, updateSelectDimensionCamera, reconstructMeasurements, stripMeasurementVisuals, setMeasurementsVisible, setMeasurementDepthTest, removeMeasurementsForOwner, isCadDimActive, setCadDimActive, getCadDimStep, getCadDimAxis, getMeasurePendingCount, getAngleStep, getRadiusStep, addCadDimPoint, updateCadDimPreview, updateCadDimHoverPreview, cycleCadDimAxis, placeCadDim, clearCadDimMeasurements, removeCadDimMeasurementsForOwner, getSelectedCadDim, setCadDimLabelMode, setCadDimDragMode, selectDimTouchStart, selectDimTouchMove, selectDimTouchEnd, registerLabelForSelection, getSelectedCadDim3d, getSelectedAnnotation, getSelectedAnnotation3d, getSelectedDistance, getSelectedAngle, getSelectedRadius, getCadDimMeasurements, deleteCadDimByRef, convertCadDim3dTo2d, getFlatDimDefaults, applyDefaultsToAllFlatDim, getDistanceLabelDefaults, getAngleLabelDefaults, getRadiusLabelDefaults, getDistanceMarkerDefaults, getAngleMarkerDefaults, getRadiusMarkerDefaults, applyDefaultsToAllDistanceMeasurements, applyDefaultsToAllAngleMeasurements, applyDefaultsToAllRadiusMeasurements, setDistanceMarkerColor, setAngleMarkerColor, setRadiusMarkerColor, getMeasurementMarkerSettings, setMeasurementMarkerFixedSize, setMeasurementMarkerFixedScreenPx, setMeasurementMarkerWorldSize, getDefaultMeasurementLabelDim, setDefaultMeasurementLabelDim, getMeasurement3dDefaults, setDimMarkerFixedSize, setDimMarkerFixedScreenPx, setDimMarkerWorldSize, setDimMarkerColor, getDimMarkerSettings, setMeasureOnSessionComplete, setAngleOnSessionComplete, setRadiusOnSessionComplete, setCadDimOnSessionComplete } from './measurementUtils.js';
@@ -131,7 +131,7 @@ import {
     createApplyArrangementCommand,
     createArrangementsCatalogCommand,
 } from './undoCommands.js';
-import { initAttachmentsGui, importAttachmentsFromGltfScene, getAttachmentsStore, addImageAttachmentFromBlob, clearAttachmentsStore, openAttachment, canOpenAttachmentInBrowser } from './attachmentsUtils.js';
+import { initAttachmentsGui, importAttachmentsFromGltfScene, getAttachmentsStore, getAttachmentFoldersStore, addImageAttachmentFromBlob, clearAttachmentsStore, openAttachment, canOpenAttachmentInBrowser, createAttachmentFolder, renameAttachmentFolder, deleteAttachmentFolder, moveAttachment, moveAttachments, moveAttachmentFolder, renameAttachment, deleteAttachment, deleteAttachments, addAttachmentsToFolder, pasteImageToFolder, newImageInFolder, captureScreenToFolder, downloadAttachmentsZip, openViewableAttachments, editImageAttachments, downloadAttachmentById, editAttachmentById, editPdfAttachmentById, managePdfPagesById, convertImageToPdfById, convertPdfToImagesById } from './attachmentsUtils.js';
 import { serializeAttachmentsForExport } from './attachmentCompressionUtils.js';
 import { initLocalFileAccess, openLocalGlbFile, saveLocalGlbFile, saveLocalGlbFileAs, clearCurrentLocalFileHandle, waitForExternalFileSignal, wasOpenedWithExternalFile } from './localFileAccess.js';
 import {
@@ -2230,6 +2230,31 @@ outlinerPanelEl = initOutliner({
     onMoveDocumentFolder: moveDocumentFolder,
     onOpenAttachment: openAttachment,
     canOpenAttachment: canOpenAttachmentInBrowser,
+    fileOps: {
+        getFolders: getAttachmentFoldersStore,
+        createFolder: (parentId) => createAttachmentFolder({ parentId }),
+        renameFolder: renameAttachmentFolder,
+        deleteFolder: deleteAttachmentFolder,
+        move: moveAttachment,
+        moveMany: moveAttachments,
+        moveFolder: moveAttachmentFolder,
+        rename: renameAttachment,
+        deleteOne: deleteAttachment,
+        deleteMany: deleteAttachments,
+        addFiles: addAttachmentsToFolder,
+        pasteImage: pasteImageToFolder,
+        newImage: newImageInFolder,
+        captureScreen: captureScreenToFolder,
+        downloadZip: downloadAttachmentsZip,
+        openAllViewable: openViewableAttachments,
+        editAllImages: editImageAttachments,
+        download: downloadAttachmentById,
+        edit: editAttachmentById,
+        editPdf: editPdfAttachmentById,
+        managePdfPages: managePdfPagesById,
+        convertImageToPdf: convertImageToPdfById,
+        convertPdfToImages: convertPdfToImagesById,
+    },
     getArrangements: () => {
         ensureInitialArrangement();
         return getAssemblyArrangements();
@@ -2634,6 +2659,10 @@ function init() {
                 }
                 if (event.key === 'Backspace') break;
                 if (deleteSelectedOutlinerDocuments()) {
+                    event.preventDefault();
+                    break;
+                }
+                if (deleteSelectedOutlinerFiles()) {
                     event.preventDefault();
                     break;
                 }
@@ -13656,6 +13685,7 @@ function buildAllModelsExportGroup(finalName) {
         getAttachmentsStore(),
         attachmentCompressionDefaults
     );
+    group.userData.attachmentFolders = getAttachmentFoldersStore().map(f => ({ ...f }));
     embedAppSettingsToUserData(group.userData);
     embedGlbAssemblyIndexes(group.userData);
 

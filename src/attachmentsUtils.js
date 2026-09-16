@@ -19,7 +19,8 @@ import { openPdfPageManager } from './pdfPageManagerUtils.js';
 import { normalizeAttachmentFromGltf } from './attachmentCompressionUtils.js';
 import { notifyOutlinerProjectContentsChanged } from './sceneOutliner.js';
 
-let attachmentsStore = []; // [{ id, name, mimeType, data (base64 string), size, addedAt }]
+let attachmentsStore = []; // [{ id, name, mimeType, data (base64 string), size, addedAt, folderId?, comment? }]
+let attachmentFoldersStore = []; // [{ id, name, parentId: null | string }]
 let _guiRef = null;
 let _pdfConverting = false;
 let _imageConverting = false;
@@ -28,6 +29,8 @@ let _pdfPageManaging = false;
 /** @type {{ sourceAtt: object, originalBytes: Uint8Array, numPages: number, scale: number, pageSizes: Map<number, { widthPt: number, heightPt: number }>, editedPages: Map<number, { base64: string, mimeType: string, size: number }> } | null} */
 let _pdfEditSession = null;
 let _saveScreenCaptureFn = null;
+/** Folder that the next created attachment should land in (e.g. screen capture from outliner). */
+let _pendingCreateFolderId = null;
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
@@ -35,27 +38,371 @@ export function getAttachmentsStore() {
     return attachmentsStore;
 }
 
+export function getAttachmentFoldersStore() {
+    return attachmentFoldersStore;
+}
+
 export function clearAttachmentsStore() {
     attachmentsStore.length = 0;
+    attachmentFoldersStore.length = 0;
     refreshAttachmentsGui();
+}
+
+function _newAttachmentId() {
+    return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+}
+
+function _folderById(id) {
+    if (!id) return null;
+    return attachmentFoldersStore.find(f => f.id === id) || null;
+}
+
+function _normalizeFolderId(folderId) {
+    if (!folderId) return null;
+    return _folderById(folderId) ? folderId : null;
+}
+
+function _collectDescendantFolderIds(folderId) {
+    const ids = new Set();
+    const walk = (parentId) => {
+        for (const folder of attachmentFoldersStore) {
+            if ((folder.parentId || null) === parentId) {
+                ids.add(folder.id);
+                walk(folder.id);
+            }
+        }
+    };
+    walk(folderId);
+    return ids;
+}
+
+function _isFolderDescendant(ancestorId, maybeDescendantId) {
+    if (!ancestorId || !maybeDescendantId) return false;
+    let id = maybeDescendantId;
+    const seen = new Set();
+    while (id) {
+        if (id === ancestorId) return true;
+        if (seen.has(id)) break;
+        seen.add(id);
+        id = _folderById(id)?.parentId || null;
+    }
+    return false;
+}
+
+function _breakFolderCycles() {
+    const ids = new Set(attachmentFoldersStore.map(f => f.id));
+    for (const folder of attachmentFoldersStore) {
+        if (folder.parentId && !ids.has(folder.parentId)) folder.parentId = null;
+        const seen = new Set();
+        let id = folder.parentId;
+        while (id) {
+            if (id === folder.id || seen.has(id)) {
+                folder.parentId = null;
+                break;
+            }
+            seen.add(id);
+            id = _folderById(id)?.parentId || null;
+        }
+    }
+}
+
+function _repositionStoreItem(store, item, beforeId, afterId) {
+    const from = store.indexOf(item);
+    if (from >= 0) store.splice(from, 1);
+    let insertAt = store.length;
+    if (beforeId) {
+        const i = store.findIndex(x => x.id === beforeId);
+        if (i >= 0) insertAt = i;
+    } else if (afterId) {
+        const i = store.findIndex(x => x.id === afterId);
+        if (i >= 0) insertAt = i + 1;
+    }
+    store.splice(insertAt, 0, item);
+}
+
+function _countFolderContents(folderId) {
+    const folderIds = _collectDescendantFolderIds(folderId);
+    folderIds.add(folderId);
+    const files = attachmentsStore.filter(a => folderIds.has(a.folderId)).length;
+    return { files, folders: folderIds.size - 1 };
+}
+
+function _attachmentsInScope(folderId) {
+    if (!folderId) return attachmentsStore.slice();
+    const ids = _collectDescendantFolderIds(folderId);
+    ids.add(folderId);
+    return attachmentsStore.filter(a => ids.has(a.folderId));
+}
+
+function _resolvedCreateFolderId(folderId) {
+    if (folderId === undefined) return _normalizeFolderId(_pendingCreateFolderId);
+    return _normalizeFolderId(folderId);
+}
+
+function _pushAttachment(fields) {
+    const att = {
+        id: fields.id || _newAttachmentId(),
+        name: fields.name,
+        mimeType: fields.mimeType,
+        data: fields.data,
+        size: fields.size,
+        addedAt: fields.addedAt || new Date().toISOString(),
+        folderId: _resolvedCreateFolderId(fields.folderId),
+    };
+    if (fields.comment !== undefined) att.comment = fields.comment;
+    attachmentsStore.push(att);
+    return att;
+}
+
+export function createAttachmentFolder({ parentId = null, name } = {}) {
+    const folder = {
+        id: _newAttachmentId(),
+        name: (name && String(name).trim()) || 'New folder',
+        parentId: _normalizeFolderId(parentId),
+    };
+    attachmentFoldersStore.push(folder);
+    refreshAttachmentsGui();
+    return folder;
+}
+
+export function renameAttachmentFolder(id, name) {
+    const folder = _folderById(id);
+    if (!folder) return false;
+    const trimmed = String(name || '').trim();
+    if (!trimmed || trimmed === folder.name) return false;
+    folder.name = trimmed;
+    refreshAttachmentsGui();
+    return true;
+}
+
+export function deleteAttachmentFolder(id) {
+    const folder = _folderById(id);
+    if (!folder) return false;
+    const { files, folders } = _countFolderContents(id);
+    const msg = (files || folders)
+        ? `Delete folder "${folder.name}" and everything inside?\nThis will permanently delete ${files} file(s) and ${folders} subfolder(s).`
+        : `Delete folder "${folder.name}"?`;
+    if (!confirm(msg)) return false;
+    const ids = _collectDescendantFolderIds(id);
+    ids.add(id);
+    for (let i = attachmentsStore.length - 1; i >= 0; i--) {
+        if (ids.has(attachmentsStore[i].folderId)) attachmentsStore.splice(i, 1);
+    }
+    for (let i = attachmentFoldersStore.length - 1; i >= 0; i--) {
+        if (ids.has(attachmentFoldersStore[i].id)) attachmentFoldersStore.splice(i, 1);
+    }
+    refreshAttachmentsGui();
+    return true;
+}
+
+export function moveAttachment(id, folderId, { beforeId, afterId } = {}) {
+    return moveAttachments([id], folderId, { beforeId, afterId });
+}
+
+export function moveAttachments(ids, folderId, { beforeId, afterId } = {}) {
+    const unique = [];
+    const seen = new Set();
+    for (const id of ids || []) {
+        if (!id || seen.has(id)) continue;
+        const att = attachmentsStore.find(a => a.id === id);
+        if (!att) continue;
+        seen.add(id);
+        unique.push(att);
+    }
+    if (unique.length === 0) return false;
+    const target = _normalizeFolderId(folderId);
+    const movingIds = new Set(unique.map(a => a.id));
+    const placeBefore = beforeId && !movingIds.has(beforeId) ? beforeId : null;
+    const placeAfter = afterId && !movingIds.has(afterId) ? afterId : null;
+    const allSame = unique.every(a => (a.folderId || null) === target);
+    if (allSame && !placeBefore && !placeAfter) return true;
+
+    unique.forEach(att => { att.folderId = target; });
+    unique.forEach(att => {
+        const i = attachmentsStore.indexOf(att);
+        if (i >= 0) attachmentsStore.splice(i, 1);
+    });
+    let insertAt = attachmentsStore.length;
+    if (placeBefore) {
+        const i = attachmentsStore.findIndex(a => a.id === placeBefore);
+        if (i >= 0) insertAt = i;
+    } else if (placeAfter) {
+        const i = attachmentsStore.findIndex(a => a.id === placeAfter);
+        if (i >= 0) insertAt = i + 1;
+    }
+    attachmentsStore.splice(insertAt, 0, ...unique);
+    refreshAttachmentsGui();
+    return true;
+}
+
+export function moveAttachmentFolder(id, parentId, { beforeId, afterId } = {}) {
+    const folder = _folderById(id);
+    if (!folder) return false;
+    const target = _normalizeFolderId(parentId);
+    if (target === id || _isFolderDescendant(id, target)) return false;
+    const sameParent = (folder.parentId || null) === target;
+    if (sameParent && !beforeId && !afterId) return true;
+    folder.parentId = target;
+    _repositionStoreItem(attachmentFoldersStore, folder, beforeId, afterId);
+    refreshAttachmentsGui();
+    return true;
+}
+
+export function renameAttachment(id, name) {
+    const att = attachmentsStore.find(a => a.id === id);
+    if (!att) return false;
+    const trimmed = String(name || '').trim();
+    if (!trimmed) return false;
+    const lastDot = att.name.lastIndexOf('.');
+    const oldExt = lastDot > 0 ? att.name.slice(lastDot) : '';
+    let next = trimmed;
+    if (oldExt && next.lastIndexOf('.') < 0) next += oldExt;
+    if (next === att.name) return false;
+    if (attachmentsStore.some(a => a.id !== id && a.name === next)) {
+        next = _uniqueAttachmentName(next);
+    }
+    att.name = next;
+    refreshAttachmentsGui();
+    return true;
+}
+
+export function deleteAttachment(id) {
+    return deleteAttachments([id]);
+}
+
+export function deleteAttachments(ids) {
+    const unique = [...new Set(ids || [])].filter(id => attachmentsStore.some(a => a.id === id));
+    if (unique.length === 0) return false;
+    if (unique.length === 1) {
+        const att = attachmentsStore.find(a => a.id === unique[0]);
+        if (!window.confirm(`Remove attachment "${att?.name}"?`)) return false;
+    } else if (!window.confirm(`Remove ${unique.length} attachments?`)) {
+        return false;
+    }
+    const remove = new Set(unique);
+    for (let i = attachmentsStore.length - 1; i >= 0; i--) {
+        if (remove.has(attachmentsStore[i].id)) attachmentsStore.splice(i, 1);
+    }
+    refreshAttachmentsGui();
+    return true;
+}
+
+export function addAttachmentsToFolder(folderId = null) {
+    _addAttachments(folderId);
+}
+
+export function pasteImageToFolder(folderId = null) {
+    return _pasteImageFromClipboard(folderId);
+}
+
+export function newImageInFolder(folderId = null) {
+    _newImage(folderId);
+}
+
+export async function captureScreenToFolder(folderId = null) {
+    _pendingCreateFolderId = folderId || null;
+    try {
+        await _saveScreenCaptureToFiles();
+    } finally {
+        _pendingCreateFolderId = null;
+    }
+}
+
+export function downloadAttachmentsZip(folderId = null) {
+    return _downloadAllAsZip(folderId);
+}
+
+export function openViewableAttachments(folderId = null) {
+    const viewable = _attachmentsInScope(folderId).filter(a => _canOpenInBrowser(a.mimeType));
+    if (viewable.length === 0) return;
+    viewable.forEach(a => _openAttachment(a));
+    if (viewable.length > 1) {
+        setTimeout(() => {
+            if (window.confirm('Arrange windows as tile?')) {
+                autoArrangeFilePreviews();
+            }
+        }, 150);
+    }
+}
+
+export function editImageAttachments(folderId = null) {
+    const images = _attachmentsInScope(folderId).filter(a => a.mimeType && a.mimeType.startsWith('image/'));
+    if (images.length === 0) return;
+    images.forEach(a => _editAttachment(a));
+    if (images.length > 1) {
+        setTimeout(() => {
+            if (window.confirm('Arrange windows as tile?')) {
+                autoArrangeImageEditors();
+            }
+        }, 150);
+    }
+}
+
+export function downloadAttachmentById(id) {
+    const att = attachmentsStore.find(a => a.id === id);
+    if (att) _downloadAttachment(att);
+}
+
+export function editAttachmentById(id) {
+    const att = attachmentsStore.find(a => a.id === id);
+    if (att) _editAttachment(att);
+}
+
+export function editPdfAttachmentById(id) {
+    const att = attachmentsStore.find(a => a.id === id);
+    if (att) _editPdf(att);
+}
+
+export function managePdfPagesById(id) {
+    const att = attachmentsStore.find(a => a.id === id);
+    if (att) _managePdfPages(att);
+}
+
+export function convertImageToPdfById(id) {
+    const att = attachmentsStore.find(a => a.id === id);
+    if (att) _convertImageToPdf(att);
+}
+
+export function convertPdfToImagesById(id) {
+    const att = attachmentsStore.find(a => a.id === id);
+    if (att) _convertPdfToImages(att);
 }
 
 /** Extracts attachments embedded in a loaded GLB scene and adds them to the store. */
 export function importAttachmentsFromGltfScene(gltfScene) {
     let attachments = null;
+    let folders = null;
     gltfScene.traverse(node => {
         if (Array.isArray(node.userData.attachments) && node.userData.attachments.length > 0) {
             if (!attachments) attachments = node.userData.attachments;
             // Remove from node so it is not re-exported with stale data on next save
             delete node.userData.attachments;
         }
-    });
-    if (!attachments) return;
-    attachments.forEach(att => {
-        if (!attachmentsStore.find(a => a.id === att.id)) {
-            attachmentsStore.push(normalizeAttachmentFromGltf(att));
+        if (Array.isArray(node.userData.attachmentFolders) && node.userData.attachmentFolders.length > 0) {
+            if (!folders) folders = node.userData.attachmentFolders;
+            delete node.userData.attachmentFolders;
         }
     });
+    if (folders) {
+        folders.forEach(folder => {
+            if (!folder?.id || attachmentFoldersStore.find(f => f.id === folder.id)) return;
+            attachmentFoldersStore.push({
+                id: folder.id,
+                name: folder.name || 'Folder',
+                parentId: folder.parentId || null,
+            });
+        });
+        _breakFolderCycles();
+    }
+    if (!attachments && !folders) return;
+    if (attachments) {
+        attachments.forEach(att => {
+            if (!attachmentsStore.find(a => a.id === att.id)) {
+                const norm = normalizeAttachmentFromGltf(att);
+                attachmentsStore.push({ ...norm, folderId: _normalizeFolderId(norm.folderId) });
+            }
+        });
+    }
     refreshAttachmentsGui();
 }
 
@@ -67,37 +414,111 @@ export function initAttachmentsGui(gui, saveScreenCaptureFn) {
 }
 
 /** Add an image attachment from a Blob (e.g. screen capture). */
-export async function addImageAttachmentFromBlob(blob, suggestedName) {
+export async function addImageAttachmentFromBlob(blob, suggestedName, folderId) {
     const name = _uniqueAttachmentName(suggestedName);
     const mimeType = blob.type || 'image/png';
     const data = await _blobToBase64(blob);
-    attachmentsStore.push({
-        id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    _pushAttachment({
         name,
         mimeType,
         data,
         size: blob.size,
-        addedAt: new Date().toISOString(),
+        folderId,
     });
     refreshAttachmentsGui();
     return name;
 }
 
 /** Add a PDF attachment from raw bytes (e.g. document export). */
-export function addPdfAttachmentFromBytes(pdfBytes, suggestedName) {
+export function addPdfAttachmentFromBytes(pdfBytes, suggestedName, folderId) {
     const pdfName = _uniqueAttachmentName(
         suggestedName.endsWith('.pdf') ? suggestedName : `${suggestedName}.pdf`
     );
-    attachmentsStore.push({
-        id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    _pushAttachment({
         name: pdfName,
         mimeType: 'application/pdf',
         data: _uint8ArrayToBase64(pdfBytes),
         size: pdfBytes.length,
-        addedAt: new Date().toISOString(),
+        folderId,
     });
     refreshAttachmentsGui();
     return pdfName;
+}
+
+function _collectOpenGuiIds(gui, attIds, folderIds) {
+    for (const f of gui.folders) {
+        if (f._attachmentId && f._closed === false) attIds.add(f._attachmentId);
+        if (f._fileFolderId && f._closed === false) folderIds.add(f._fileFolderId);
+        _collectOpenGuiIds(f, attIds, folderIds);
+    }
+}
+
+function _promptNewFolder(parentId) {
+    const name = prompt('Folder name:', 'New folder');
+    if (name === null) return;
+    createAttachmentFolder({ parentId, name });
+}
+
+function _promptRenameFolder(id) {
+    const folder = _folderById(id);
+    if (!folder) return;
+    const name = prompt('Rename folder:', folder.name);
+    if (name === null) return;
+    renameAttachmentFolder(id, name);
+}
+
+function _addAttachmentActions(guiFolder, att, siblingIndex, siblingCount) {
+    const canReorder = siblingCount > 1;
+    if (canReorder && siblingIndex > 0) {
+        guiFolder.add({ fn: () => _nudgeAttachment(att.id, -1) }, 'fn').name('↑  Move up');
+    }
+    if (canReorder && siblingIndex < siblingCount - 1) {
+        guiFolder.add({ fn: () => _nudgeAttachment(att.id, 1) }, 'fn').name('↓  Move down');
+    }
+    if (_canOpenInBrowser(att.mimeType)) {
+        guiFolder.add({ fn: () => _openAttachment(att) }, 'fn').name('↗  Open');
+    }
+    if (att.mimeType && att.mimeType.startsWith('image/')) {
+        guiFolder.add({ fn: () => _editAttachment(att) }, 'fn').name('✏  Edit');
+        guiFolder.add({ fn: () => _convertImageToPdf(att) }, 'fn').name('📕 Convert to PDF…');
+    }
+    if (att.mimeType === 'application/pdf') {
+        guiFolder.add({ fn: () => _editPdf(att) }, 'fn').name('✏  Edit PDF…');
+        guiFolder.add({ fn: () => _managePdfPages(att) }, 'fn').name('📄  Manage PDF pages…');
+        guiFolder.add({ fn: () => _convertPdfToImages(att) }, 'fn').name('🖼 Convert to images…');
+    }
+    guiFolder.add({ fn: () => _downloadAttachment(att) }, 'fn').name('⬇  Download');
+    guiFolder.add({ fn: () => deleteAttachment(att.id) }, 'fn').name('✕  Delete');
+}
+
+function _populateFileFolderGui(guiFolder, parentId, openAttIds, openUserFolderIds) {
+    const pid = parentId || null;
+    const childFolders = attachmentFoldersStore.filter(f => (f.parentId || null) === pid);
+    const childAtts = attachmentsStore.filter(a => (a.folderId || null) === pid);
+
+    childFolders.forEach(folder => {
+        const sub = guiFolder.addFolder(folder.name || '(unnamed folder)');
+        sub.add({ fn: () => _addAttachments(folder.id) }, 'fn').name('+ Add files…');
+        sub.add({ fn: () => _pasteImageFromClipboard(folder.id) }, 'fn').name('📋 Paste image…');
+        sub.add({ fn: () => _newImage(folder.id) }, 'fn').name('🖼 New image…');
+        sub.add({ fn: () => _promptNewFolder(folder.id) }, 'fn').name('+ New folder');
+        sub.add({ fn: () => _promptRenameFolder(folder.id) }, 'fn').name('Rename folder');
+        sub.add({ fn: () => deleteAttachmentFolder(folder.id) }, 'fn').name('✕ Delete folder');
+        _populateFileFolderGui(sub, folder.id, openAttIds, openUserFolderIds);
+        sub._fileFolderId = folder.id;
+        if (openUserFolderIds.has(folder.id)) sub.open();
+        else sub.close();
+    });
+
+    childAtts.forEach((att, index) => {
+        const sizeStr = _formatSize(att.size);
+        const prefix = att.comment ? '💬 ' : '';
+        const folder = guiFolder.addFolder(`${prefix}${att.name}  (${sizeStr})`);
+        _addAttachmentActions(folder, att, index, childAtts.length);
+        folder._attachmentId = att.id;
+        if (openAttIds.has(att.id)) folder.open();
+        else folder.close();
+    });
 }
 
 /** Rebuild the attachment list in the lil-gui panel. */
@@ -107,93 +528,37 @@ export function refreshAttachmentsGui() {
         return;
     }
 
-    const openFolderIds = new Set(
-        [..._guiRef.folders]
-            .filter(f => f._attachmentId && f._closed === false)
-            .map(f => f._attachmentId)
-            .filter(id => attachmentsStore.some(a => a.id === id))
-    );
+    const openAttIds = new Set();
+    const openUserFolderIds = new Set();
+    _collectOpenGuiIds(_guiRef, openAttIds, openUserFolderIds);
 
     // Remove all existing controllers and child folders
     [..._guiRef.controllers].forEach(c => c.destroy());
     [..._guiRef.folders].forEach(f => f.destroy());
 
-    // "Add files" button
-    _guiRef.add({ fn: _addAttachments }, 'fn').name('+ Add files…');
-    // "Paste image from clipboard" button
-    _guiRef.add({ fn: _pasteImageFromClipboard }, 'fn').name('📋 Paste image…');
-    // "New blank image" button
-    _guiRef.add({ fn: _newImage }, 'fn').name('🖼 New image…');
+    _guiRef.add({ fn: () => _addAttachments(null) }, 'fn').name('+ Add files…');
+    _guiRef.add({ fn: () => _pasteImageFromClipboard(null) }, 'fn').name('📋 Paste image…');
+    _guiRef.add({ fn: () => _newImage(null) }, 'fn').name('🖼 New image…');
     if (_saveScreenCaptureFn) {
         _guiRef.add({ fn: _saveScreenCaptureToFiles }, 'fn').name('📸 Screen capture…');
     }
+    _guiRef.add({ fn: () => _promptNewFolder(null) }, 'fn').name('+ New folder');
 
-    // "Download all as ZIP" button — only shown when there is at least one attachment
     if (attachmentsStore.length > 0) {
-        _guiRef.add({ fn: _downloadAllAsZip }, 'fn').name('⬇  Download all as ZIP');
+        _guiRef.add({ fn: () => _downloadAllAsZip(null) }, 'fn').name('⬇  Download all as ZIP');
     }
 
-    // "Open all viewable" button
     const viewableAtts = attachmentsStore.filter(a => _canOpenInBrowser(a.mimeType));
     if (viewableAtts.length > 0) {
-        _guiRef.add({ fn: () => {
-            viewableAtts.forEach(a => _openAttachment(a));
-            if (viewableAtts.length > 1) {
-                setTimeout(() => {
-                    if (window.confirm('Arrange windows as tile?')) {
-                        autoArrangeFilePreviews();
-                    }
-                }, 150);
-            }
-        } }, 'fn').name('↗  Open all viewable…');
+        _guiRef.add({ fn: () => openViewableAttachments(null) }, 'fn').name('↗  Open all viewable…');
     }
 
-    // "Edit all images" button — only shown when there is at least one image attachment
     const imageAtts = attachmentsStore.filter(a => a.mimeType && a.mimeType.startsWith('image/'));
     if (imageAtts.length > 0) {
-        _guiRef.add({ fn: () => {
-            imageAtts.forEach(a => _editAttachment(a));
-            if (imageAtts.length > 1) {
-                // Small delay so the browser paints the windows before the dialog blocks rendering
-                setTimeout(() => {
-                    if (window.confirm('Arrange windows as tile?')) {
-                        autoArrangeImageEditors();
-                    }
-                }, 150);
-            }
-        } }, 'fn').name('✏  Edit all images…');
+        _guiRef.add({ fn: () => editImageAttachments(null) }, 'fn').name('✏  Edit all images…');
     }
 
-    // One folder per attachment with download + delete buttons inside
-    const canReorder = attachmentsStore.length > 1;
-    attachmentsStore.forEach((att, index) => {
-        const sizeStr = _formatSize(att.size);
-        const prefix = att.comment ? '💬 ' : '';
-        const folder = _guiRef.addFolder(`${prefix}${att.name}  (${sizeStr})`);
-        if (canReorder && index > 0) {
-            folder.add({ fn: () => _moveAttachment(att.id, -1) }, 'fn').name('↑  Move up');
-        }
-        if (canReorder && index < attachmentsStore.length - 1) {
-            folder.add({ fn: () => _moveAttachment(att.id, 1) }, 'fn').name('↓  Move down');
-        }
-        if (_canOpenInBrowser(att.mimeType)) {
-            folder.add({ fn: () => _openAttachment(att) }, 'fn').name('↗  Open');
-        }
-        if (att.mimeType && att.mimeType.startsWith('image/')) {
-            folder.add({ fn: () => _editAttachment(att) }, 'fn').name('✏  Edit');
-            folder.add({ fn: () => _convertImageToPdf(att) }, 'fn').name('📕 Convert to PDF…');
-        }
-        if (att.mimeType === 'application/pdf') {
-            folder.add({ fn: () => _editPdf(att) }, 'fn').name('✏  Edit PDF…');
-            folder.add({ fn: () => _managePdfPages(att) }, 'fn').name('📄  Manage PDF pages…');
-            folder.add({ fn: () => _convertPdfToImages(att) }, 'fn').name('🖼 Convert to images…');
-        }
-        folder.add({ fn: () => _downloadAttachment(att) }, 'fn').name('⬇  Download');
-        folder.add({ fn: () => _deleteAttachment(att.id) }, 'fn').name('✕  Delete');
-        folder._attachmentId = att.id;
-        if (openFolderIds.has(att.id)) folder.open();
-        else folder.close();
-    });
+    _populateFileFolderGui(_guiRef, null, openAttIds, openUserFolderIds);
     notifyOutlinerProjectContentsChanged();
 }
 
@@ -210,26 +575,31 @@ async function _saveScreenCaptureToFiles() {
     }
 }
 
-function _addAttachments() {
+function _removeAttachmentsByName(name) {
+    for (let i = attachmentsStore.length - 1; i >= 0; i--) {
+        if (attachmentsStore[i].name === name) attachmentsStore.splice(i, 1);
+    }
+}
+
+function _addAttachments(folderId = null) {
     const input = document.createElement('input');
     input.type = 'file';
     input.multiple = true;
     input.onchange = async (e) => {
         const files = Array.from(e.target.files);
+        const targetFolder = _normalizeFolderId(folderId);
         for (const file of files) {
-            // Skip if a file with the same name already exists
             if (attachmentsStore.find(a => a.name === file.name)) {
                 if (!window.confirm(`Attachment "${file.name}" already exists. Replace it?`)) continue;
-                attachmentsStore = attachmentsStore.filter(a => a.name !== file.name);
+                _removeAttachmentsByName(file.name);
             }
             const data = await _fileToBase64(file);
-            attachmentsStore.push({
-                id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+            _pushAttachment({
                 name: file.name,
                 mimeType: file.type || 'application/octet-stream',
                 data,
                 size: file.size,
-                addedAt: new Date().toISOString(),
+                folderId: targetFolder,
             });
         }
         refreshAttachmentsGui();
@@ -237,19 +607,77 @@ function _addAttachments() {
     input.click();
 }
 
-async function _downloadAllAsZip() {
+function _safeZipSegment(name) {
+    const cleaned = String(name || 'folder').replace(/[\\/:*?"<>|]/g, '_').replace(/^\.+/, '').trim();
+    return cleaned || 'folder';
+}
+
+function _folderPathSegments(folderId, stopAtId) {
+    const parts = [];
+    let id = folderId;
+    const seen = new Set();
+    while (id) {
+        if (seen.has(id)) break;
+        seen.add(id);
+        const folder = _folderById(id);
+        if (!folder) break;
+        parts.unshift(_safeZipSegment(folder.name));
+        if (stopAtId && id === stopAtId) break;
+        id = folder.parentId || null;
+    }
+    return parts;
+}
+
+function _uniqueZipPath(used, path) {
+    if (!used.has(path)) {
+        used.add(path);
+        return path;
+    }
+    const slash = path.lastIndexOf('/');
+    const dot = path.lastIndexOf('.');
+    const hasExt = dot > slash;
+    const base = hasExt ? path.slice(0, dot) : path;
+    const ext = hasExt ? path.slice(dot) : '';
+    let n = 2;
+    let next;
+    do {
+        next = `${base}-${n}${ext}`;
+        n++;
+    } while (used.has(next));
+    used.add(next);
+    return next;
+}
+
+async function _downloadAllAsZip(folderId = null) {
+    const rootId = _normalizeFolderId(folderId);
+    const atts = _attachmentsInScope(rootId);
+    if (atts.length === 0 && !rootId) return;
+
     const zip = new JSZip();
-    attachmentsStore.forEach(att => {
+    const used = new Set();
+
+    const folderIds = rootId
+        ? [..._collectDescendantFolderIds(rootId), rootId]
+        : attachmentFoldersStore.map(f => f.id);
+    folderIds.forEach(id => {
+        const segments = _folderPathSegments(id, rootId);
+        if (segments.length) zip.folder(segments.join('/'));
+    });
+
+    atts.forEach(att => {
         const binary = atob(att.data);
         const bytes = new Uint8Array(binary.length);
         for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-        zip.file(att.name, bytes);
+        const dir = _folderPathSegments(att.folderId, rootId);
+        const path = _uniqueZipPath(used, [...dir, _safeZipSegment(att.name)].join('/'));
+        zip.file(path, bytes);
     });
+
     const blob = await zip.generateAsync({ type: 'blob' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'attachments.zip';
+    a.download = rootId ? `${_safeZipSegment(_folderById(rootId)?.name)}.zip` : 'attachments.zip';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -344,7 +772,7 @@ async function _runOcrOnPreviewAttachment(att, ocrBtn) {
     }
 }
 
-function _newImage() {
+function _newImage(folderId = null) {
     const input = window.prompt('New image size (width × height):', '800x600');
     if (!input) return;
     const match = input.match(/^(\d+)\s*[xX×,]\s*(\d+)$/);
@@ -362,6 +790,7 @@ function _newImage() {
     const dataUrl = canvas.toDataURL('image/png');
     const base64 = dataUrl.replace(/^data:image\/png;base64,/, '');
     const size = Math.round(base64.length * 0.75);
+    const targetFolder = _normalizeFolderId(folderId);
 
     const att = {
         id: null,
@@ -370,6 +799,7 @@ function _newImage() {
         data: base64,
         size,
         addedAt: new Date().toISOString(),
+        folderId: targetFolder,
     };
 
     openImageEditor(
@@ -383,30 +813,29 @@ function _newImage() {
                 storeEntry.size     = newSize;
                 storeEntry.mimeType = newMime;
             } else {
-                attachmentsStore.push({
-                    id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+                const created = _pushAttachment({
                     name: target.name,
                     mimeType: newMime,
                     data: newBase64,
                     size: newSize,
                     addedAt: target.addedAt || new Date().toISOString(),
+                    folderId: target.folderId ?? targetFolder,
                 });
+                target.id = created.id;
             }
             refreshAttachmentsGui();
         },
         // onSaveNew
         (newBase64, newSize, newName, newMime) => {
-            const newAtt = {
-                id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+            const created = _pushAttachment({
                 name: newName,
                 mimeType: newMime,
                 data: newBase64,
                 size: newSize,
-                addedAt: new Date().toISOString(),
-            };
-            attachmentsStore.push(newAtt);
+                folderId: att.folderId ?? targetFolder,
+            });
             refreshAttachmentsGui();
-            return newAtt;
+            return created;
         }
     );
 }
@@ -426,17 +855,15 @@ function _editAttachment(att) {
         },
         // onSaveNew
         (newBase64, newSize, newName, newMime) => {
-            const newAtt = {
-                id:      Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+            const created = _pushAttachment({
                 name:    newName,
                 mimeType: newMime,
                 data:    newBase64,
                 size:    newSize,
-                addedAt: new Date().toISOString(),
-            };
-            attachmentsStore.push(newAtt);
+                folderId: att.folderId,
+            });
             refreshAttachmentsGui();
-            return newAtt;
+            return created;
         }
     );
 }
@@ -519,15 +946,13 @@ function _makePdfPageEditCallbacks(session, pageNum) {
             _offerPdfExport(session);
         },
         onSaveNew(newBase64, newSize, newName, newMime) {
-            const newAtt = {
-                id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+            const newAtt = _pushAttachment({
                 name: newName,
                 mimeType: newMime,
                 data: newBase64,
                 size: newSize,
-                addedAt: new Date().toISOString(),
-            };
-            attachmentsStore.push(newAtt);
+                folderId: session.sourceAtt?.folderId,
+            });
             refreshAttachmentsGui();
             session.editedPages.set(pageNum, {
                 base64: newBase64,
@@ -573,13 +998,12 @@ function _commitPdfAttachment(att, pdfBytes, mode) {
     } else {
         const baseName = _pdfBaseName(att.name);
         const newName = _uniqueAttachmentName(`${baseName}-pages-edited.pdf`);
-        attachmentsStore.push({
-            id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+        _pushAttachment({
             name: newName,
             mimeType: 'application/pdf',
             data: base64,
             size: pdfBytes.length,
-            addedAt: new Date().toISOString(),
+            folderId: att.folderId,
         });
         alert(`Saved as "${newName}".`);
     }
@@ -622,13 +1046,12 @@ async function _exportPdfWithEdits(session, mode) {
         } else {
             const baseName = _pdfBaseName(session.sourceAtt.name);
             const newName = _uniqueAttachmentName(`${baseName}-edited.pdf`);
-            attachmentsStore.push({
-                id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+            _pushAttachment({
                 name: newName,
                 mimeType: 'application/pdf',
                 data: _uint8ArrayToBase64(pdfBytes),
                 size: pdfBytes.length,
-                addedAt: new Date().toISOString(),
+                folderId: session.sourceAtt.folderId,
             });
             alert(`Saved as "${newName}".`);
             refreshAttachmentsGui();
@@ -918,13 +1341,12 @@ async function _convertImageToPdf(att) {
 
         const pdfBytes = await pdfDoc.save();
         const pdfName = _uniqueAttachmentName(`${_pdfBaseName(att.name)}.pdf`);
-        attachmentsStore.push({
-            id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+        _pushAttachment({
             name: pdfName,
             mimeType: 'application/pdf',
             data: _uint8ArrayToBase64(pdfBytes),
             size: pdfBytes.length,
-            addedAt: new Date().toISOString(),
+            folderId: att.folderId,
         });
         alert(`Added "${pdfName}".`);
         refreshAttachmentsGui();
@@ -968,13 +1390,12 @@ async function _convertPdfToImages(att, options) {
             const imageName = _uniqueAttachmentName(proposedName);
 
             const data = await _blobToBase64(blob);
-            attachmentsStore.push({
-                id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+            _pushAttachment({
                 name: imageName,
                 mimeType,
                 data,
                 size: blob.size,
-                addedAt: new Date().toISOString(),
+                folderId: att.folderId,
             });
             added++;
         }
@@ -1007,22 +1428,17 @@ function _downloadAttachment(att) {
     URL.revokeObjectURL(url);
 }
 
-function _deleteAttachment(id) {
+function _nudgeAttachment(id, delta) {
     const att = attachmentsStore.find(a => a.id === id);
     if (!att) return;
-    if (!window.confirm(`Remove attachment "${att.name}"?`)) return;
-    attachmentsStore = attachmentsStore.filter(a => a.id !== id);
-    refreshAttachmentsGui();
-}
-
-function _moveAttachment(id, delta) {
-    if (attachmentsStore.length < 2) return;
-    const index = attachmentsStore.findIndex(a => a.id === id);
-    if (index < 0) return;
+    const siblings = attachmentsStore.filter(a => (a.folderId || null) === (att.folderId || null));
+    if (siblings.length < 2) return;
+    const index = siblings.indexOf(att);
     const target = index + delta;
-    if (target < 0 || target >= attachmentsStore.length) return;
-    [attachmentsStore[index], attachmentsStore[target]] = [attachmentsStore[target], attachmentsStore[index]];
-    refreshAttachmentsGui();
+    if (target < 0 || target >= siblings.length) return;
+    const other = siblings[target];
+    if (delta < 0) moveAttachment(id, att.folderId, { beforeId: other.id });
+    else moveAttachment(id, att.folderId, { afterId: other.id });
 }
 
 function _fileToBase64(file) {
@@ -1039,7 +1455,7 @@ function _fileToBase64(file) {
     });
 }
 
-async function _pasteImageFromClipboard() {
+async function _pasteImageFromClipboard(folderId = null) {
     let items;
     try {
         items = await navigator.clipboard.read();
@@ -1049,6 +1465,7 @@ async function _pasteImageFromClipboard() {
     }
 
     let found = false;
+    const targetFolder = _normalizeFolderId(folderId);
     for (const item of items) {
         const imageType = item.types.find(t => t.startsWith('image/'));
         if (!imageType) continue;
@@ -1060,17 +1477,16 @@ async function _pasteImageFromClipboard() {
 
         if (attachmentsStore.find(a => a.name === name)) {
             if (!window.confirm(`Attachment "${name}" already exists. Replace it?`)) continue;
-            attachmentsStore = attachmentsStore.filter(a => a.name !== name);
+            _removeAttachmentsByName(name);
         }
 
         const data = await _blobToBase64(blob);
-        attachmentsStore.push({
-            id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+        _pushAttachment({
             name,
             mimeType: imageType,
             data,
             size: blob.size,
-            addedAt: new Date().toISOString(),
+            folderId: targetFolder,
         });
     }
 
