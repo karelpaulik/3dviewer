@@ -1708,7 +1708,7 @@ ${buildTocScrollSpyScript('#docContentInner', 'docToc')}
     URL.revokeObjectURL(url);
 }
 
-function _importDocJson() {
+function _importDocJson(folderId) {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '.json,application/json';
@@ -1731,7 +1731,7 @@ function _importDocJson() {
                     id: _newDocEntityId(),
                     originalId: doc.id,
                     importedAt: new Date().toISOString(),
-                    folderId: null,
+                    folderId: _normalizeFolderId(folderId),
                 };
                 documentsStore.push(importedDoc);
                 refreshDocumentsGui();
@@ -1742,6 +1742,10 @@ function _importDocJson() {
         reader.readAsText(file);
     };
     input.click();
+}
+
+export function importDocumentJson(folderId = null) {
+    _importDocJson(folderId);
 }
 
 // ── Toolbar state ─────────────────────────────────────────────────────────────
