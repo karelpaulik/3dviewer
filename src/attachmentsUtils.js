@@ -258,9 +258,6 @@ export function renameAttachment(id, name) {
     let next = trimmed;
     if (oldExt && next.lastIndexOf('.') < 0) next += oldExt;
     if (next === att.name) return false;
-    if (attachmentsStore.some(a => a.id !== id && a.name === next)) {
-        next = _uniqueAttachmentName(next);
-    }
     att.name = next;
     refreshAttachmentsGui();
     return true;
@@ -415,25 +412,22 @@ export function initAttachmentsGui(gui, saveScreenCaptureFn) {
 
 /** Add an image attachment from a Blob (e.g. screen capture). */
 export async function addImageAttachmentFromBlob(blob, suggestedName, folderId) {
-    const name = _uniqueAttachmentName(suggestedName);
     const mimeType = blob.type || 'image/png';
     const data = await _blobToBase64(blob);
     _pushAttachment({
-        name,
+        name: suggestedName,
         mimeType,
         data,
         size: blob.size,
         folderId,
     });
     refreshAttachmentsGui();
-    return name;
+    return suggestedName;
 }
 
 /** Add a PDF attachment from raw bytes (e.g. document export). */
 export function addPdfAttachmentFromBytes(pdfBytes, suggestedName, folderId) {
-    const pdfName = _uniqueAttachmentName(
-        suggestedName.endsWith('.pdf') ? suggestedName : `${suggestedName}.pdf`
-    );
+    const pdfName = suggestedName.endsWith('.pdf') ? suggestedName : `${suggestedName}.pdf`;
     _pushAttachment({
         name: pdfName,
         mimeType: 'application/pdf',
@@ -575,12 +569,6 @@ async function _saveScreenCaptureToFiles() {
     }
 }
 
-function _removeAttachmentsByName(name) {
-    for (let i = attachmentsStore.length - 1; i >= 0; i--) {
-        if (attachmentsStore[i].name === name) attachmentsStore.splice(i, 1);
-    }
-}
-
 function _addAttachments(folderId = null) {
     const input = document.createElement('input');
     input.type = 'file';
@@ -589,10 +577,6 @@ function _addAttachments(folderId = null) {
         const files = Array.from(e.target.files);
         const targetFolder = _normalizeFolderId(folderId);
         for (const file of files) {
-            if (attachmentsStore.find(a => a.name === file.name)) {
-                if (!window.confirm(`Attachment "${file.name}" already exists. Replace it?`)) continue;
-                _removeAttachmentsByName(file.name);
-            }
             const data = await _fileToBase64(file);
             _pushAttachment({
                 name: file.name,
@@ -997,7 +981,7 @@ function _commitPdfAttachment(att, pdfBytes, mode) {
         alert('PDF updated.');
     } else {
         const baseName = _pdfBaseName(att.name);
-        const newName = _uniqueAttachmentName(`${baseName}-pages-edited.pdf`);
+        const newName = `${baseName}-pages-edited.pdf`;
         _pushAttachment({
             name: newName,
             mimeType: 'application/pdf',
@@ -1045,7 +1029,7 @@ async function _exportPdfWithEdits(session, mode) {
             _commitPdfAttachment(session.sourceAtt, pdfBytes, 'overwrite');
         } else {
             const baseName = _pdfBaseName(session.sourceAtt.name);
-            const newName = _uniqueAttachmentName(`${baseName}-edited.pdf`);
+            const newName = `${baseName}-edited.pdf`;
             _pushAttachment({
                 name: newName,
                 mimeType: 'application/pdf',
@@ -1079,7 +1063,6 @@ async function _managePdfPages(att) {
         uint8ArrayToBase64: _uint8ArrayToBase64,
         parsePageSelection: _parsePageSelection,
         pdfBaseName: _pdfBaseName,
-        uniqueAttachmentName: _uniqueAttachmentName,
         getImageAttachments: () => attachmentsStore.filter(a => a.mimeType && a.mimeType.startsWith('image/')),
         getPdfAttachments: () => attachmentsStore.filter(
             a => a.mimeType === 'application/pdf' && a.id !== att.id
@@ -1200,16 +1183,6 @@ async function _editPdf(att) {
 function _pdfBaseName(name) {
     const lastDot = name.lastIndexOf('.');
     return lastDot >= 0 ? name.slice(0, lastDot) : name;
-}
-
-function _uniqueAttachmentName(proposedName) {
-    if (!attachmentsStore.some(a => a.name === proposedName)) return proposedName;
-    const lastDot = proposedName.lastIndexOf('.');
-    const base = lastDot >= 0 ? proposedName.slice(0, lastDot) : proposedName;
-    const ext = lastDot >= 0 ? proposedName.slice(lastDot) : '';
-    let n = 2;
-    while (attachmentsStore.some(a => a.name === `${base}-${n}${ext}`)) n++;
-    return `${base}-${n}${ext}`;
 }
 
 const PDF_RENDER_SCALE_MIN = 1;
@@ -1340,7 +1313,7 @@ async function _convertImageToPdf(att) {
         page.drawImage(image, { x: 0, y: 0, width, height });
 
         const pdfBytes = await pdfDoc.save();
-        const pdfName = _uniqueAttachmentName(`${_pdfBaseName(att.name)}.pdf`);
+        const pdfName = `${_pdfBaseName(att.name)}.pdf`;
         _pushAttachment({
             name: pdfName,
             mimeType: 'application/pdf',
@@ -1384,10 +1357,9 @@ async function _convertPdfToImages(att, options) {
 
             const blob = await _canvasToBlob(canvas, mimeType, jpegQuality);
 
-            const proposedName = numPages === 1
+            const imageName = numPages === 1
                 ? `${baseName}.${ext}`
                 : `${baseName}-page-${pageNum}.${ext}`;
-            const imageName = _uniqueAttachmentName(proposedName);
 
             const data = await _blobToBase64(blob);
             _pushAttachment({
@@ -1474,11 +1446,6 @@ async function _pasteImageFromClipboard(folderId = null) {
         const ext = imageType.split('/')[1] || 'png';
         const ts = new Date().toISOString().slice(0, 19).replace('T', '_').replace(/:/g, '-');
         const name = `clipboard-${ts}.${ext}`;
-
-        if (attachmentsStore.find(a => a.name === name)) {
-            if (!window.confirm(`Attachment "${name}" already exists. Replace it?`)) continue;
-            _removeAttachmentsByName(name);
-        }
 
         const data = await _blobToBase64(blob);
         _pushAttachment({

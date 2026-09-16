@@ -18,7 +18,6 @@ let _session = null;
  * @param {(bytes: Uint8Array) => string} helpers.uint8ArrayToBase64
  * @param {(input: string, numPages: number) => number[] | null} helpers.parsePageSelection
  * @param {(name: string) => string} helpers.pdfBaseName
- * @param {(name: string) => string} helpers.uniqueAttachmentName
  * @param {() => object[]} helpers.getImageAttachments
  * @param {() => object[]} helpers.getPdfAttachments
  * @param {(att: object, pdfBytes: Uint8Array, mode: 'overwrite' | 'new') => void} helpers.commitPdfAttachment
