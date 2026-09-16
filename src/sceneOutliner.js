@@ -1779,11 +1779,13 @@ function showDocAssetCtxMenu(x, y, asset, li) {
             const current = getDocOpenMode ? getDocOpenMode() : 'side';
             menu.appendChild(createDocCtxItem(
                 `${current === 'side' ? '✓ ' : ''}Open as: Side-by-side`,
-                () => { if (onSetDocOpenMode) onSetDocOpenMode('side'); }
+                () => { if (onSetDocOpenMode) onSetDocOpenMode('side'); },
+                'outliner-ctx-pref'
             ));
             menu.appendChild(createDocCtxItem(
                 `${current === 'window' ? '✓ ' : ''}Open as: Window`,
-                () => { if (onSetDocOpenMode) onSetDocOpenMode('window'); }
+                () => { if (onSetDocOpenMode) onSetDocOpenMode('window'); },
+                'outliner-ctx-pref'
             ));
             const labelOpts = getDocLabelOptions
                 ? getDocLabelOptions()
@@ -1794,7 +1796,8 @@ function showDocAssetCtxMenu(x, y, asset, li) {
                     if (onSetDocLabelOptions) {
                         onSetDocLabelOptions({ showLastEditDate: !labelOpts.showLastEditDate });
                     }
-                }
+                },
+                'outliner-ctx-pref'
             ));
             menu.appendChild(createDocCtxItem(
                 `${labelOpts.showImportDate ? '✓ ' : ''}Show import date`,
@@ -1802,7 +1805,8 @@ function showDocAssetCtxMenu(x, y, asset, li) {
                     if (onSetDocLabelOptions) {
                         onSetDocLabelOptions({ showImportDate: !labelOpts.showImportDate });
                     }
-                }
+                },
+                'outliner-ctx-pref'
             ));
         }
     }
@@ -2298,7 +2302,8 @@ function showFileAssetCtxMenu(x, y, asset, li) {
             const showSize = getShowOutlinerFileSize();
             menu.appendChild(createDocCtxItem(
                 `${showSize ? '✓ ' : ''}Show file size`,
-                () => setShowOutlinerFileSize(!showSize)
+                () => setShowOutlinerFileSize(!showSize),
+                'outliner-ctx-pref'
             ));
         }
     }

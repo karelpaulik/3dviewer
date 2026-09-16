@@ -2176,6 +2176,15 @@ a, button, input, select {
     background: #5a2020;
     color: #ff9090;
 }
+.outliner-ctx-item.outliner-ctx-pref {
+    color: #6c9;
+    padding-left: 22px;
+    font-size: 11px;
+}
+.outliner-ctx-item.outliner-ctx-pref:hover {
+    background: #2a3830;
+    color: #9e9;
+}
 .outliner-ctx-sep {
     height: 1px;
     background: #383838;
