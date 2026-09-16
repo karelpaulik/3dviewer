@@ -2269,6 +2269,9 @@ function showFileAssetCtxMenu(x, y, asset, li) {
         menu.appendChild(createDocCtxItem('Add files…', () => {
             if (fileOps.addFiles) fileOps.addFiles(parentId);
         }));
+        menu.appendChild(createDocCtxItem('Add folder…', () => {
+            if (fileOps.addFolder) fileOps.addFolder(parentId);
+        }));
         menu.appendChild(createDocCtxItem('Paste image…', () => {
             if (fileOps.pasteImage) fileOps.pasteImage(parentId);
         }));

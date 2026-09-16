@@ -154,13 +154,18 @@ function _pushAttachment(fields) {
     return att;
 }
 
-export function createAttachmentFolder({ parentId = null, name } = {}) {
+function _createAttachmentFolderRecord({ parentId = null, name } = {}) {
     const folder = {
         id: _newAttachmentId(),
         name: (name && String(name).trim()) || 'New folder',
         parentId: _normalizeFolderId(parentId),
     };
     attachmentFoldersStore.push(folder);
+    return folder;
+}
+
+export function createAttachmentFolder({ parentId = null, name } = {}) {
+    const folder = _createAttachmentFolderRecord({ parentId, name });
     refreshAttachmentsGui();
     return folder;
 }
@@ -286,6 +291,10 @@ export function deleteAttachments(ids) {
 
 export function addAttachmentsToFolder(folderId = null) {
     _addAttachments(folderId);
+}
+
+export function addFolderToFolder(folderId = null) {
+    _addFolderTree(folderId);
 }
 
 export function pasteImageToFolder(folderId = null) {
@@ -493,6 +502,7 @@ function _populateFileFolderGui(guiFolder, parentId, openAttIds, openUserFolderI
     childFolders.forEach(folder => {
         const sub = guiFolder.addFolder(folder.name || '(unnamed folder)');
         sub.add({ fn: () => _addAttachments(folder.id) }, 'fn').name('+ Add files…');
+        sub.add({ fn: () => _addFolderTree(folder.id) }, 'fn').name('+ Add folder…');
         sub.add({ fn: () => _pasteImageFromClipboard(folder.id) }, 'fn').name('📋 Paste image…');
         sub.add({ fn: () => _newImage(folder.id) }, 'fn').name('🖼 New image…');
         sub.add({ fn: () => _promptNewFolder(folder.id) }, 'fn').name('+ New folder');
@@ -531,6 +541,7 @@ export function refreshAttachmentsGui() {
     [..._guiRef.folders].forEach(f => f.destroy());
 
     _guiRef.add({ fn: () => _addAttachments(null) }, 'fn').name('+ Add files…');
+    _guiRef.add({ fn: () => _addFolderTree(null) }, 'fn').name('+ Add folder…');
     _guiRef.add({ fn: () => _pasteImageFromClipboard(null) }, 'fn').name('📋 Paste image…');
     _guiRef.add({ fn: () => _newImage(null) }, 'fn').name('🖼 New image…');
     if (_saveScreenCaptureFn) {
@@ -580,6 +591,57 @@ function _addAttachments(folderId = null) {
             const data = await _fileToBase64(file);
             _pushAttachment({
                 name: file.name,
+                mimeType: file.type || 'application/octet-stream',
+                data,
+                size: file.size,
+                folderId: targetFolder,
+            });
+        }
+        refreshAttachmentsGui();
+    };
+    input.click();
+}
+
+function _ensureFolderPath(segments, rootParentId, pathToFolderId) {
+    let parentId = rootParentId;
+    let pathKey = '';
+    for (const raw of segments) {
+        const segment = String(raw || '').trim();
+        if (!segment || segment === '.' || segment === '..') continue;
+        pathKey = pathKey ? `${pathKey}/${segment}` : segment;
+        let id = pathToFolderId.get(pathKey);
+        if (!id) {
+            const folder = _createAttachmentFolderRecord({ parentId, name: segment });
+            id = folder.id;
+            pathToFolderId.set(pathKey, id);
+        }
+        parentId = id;
+    }
+    return parentId;
+}
+
+function _addFolderTree(folderId = null) {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.multiple = true;
+    input.webkitdirectory = true;
+    input.setAttribute('webkitdirectory', '');
+    input.setAttribute('directory', '');
+    input.onchange = async (e) => {
+        const files = Array.from(e.target.files || []);
+        if (!files.length) return;
+        const rootParent = _normalizeFolderId(folderId);
+        const pathToFolderId = new Map();
+        for (const file of files) {
+            const rel = String(file.webkitRelativePath || file.name || '').replace(/\\/g, '/');
+            const parts = rel.split('/').filter(Boolean);
+            const fileName = parts.pop() || file.name;
+            const targetFolder = parts.length
+                ? _ensureFolderPath(parts, rootParent, pathToFolderId)
+                : rootParent;
+            const data = await _fileToBase64(file);
+            _pushAttachment({
+                name: fileName,
                 mimeType: file.type || 'application/octet-stream',
                 data,
                 size: file.size,

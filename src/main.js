@@ -131,7 +131,7 @@ import {
     createApplyArrangementCommand,
     createArrangementsCatalogCommand,
 } from './undoCommands.js';
-import { initAttachmentsGui, importAttachmentsFromGltfScene, getAttachmentsStore, getAttachmentFoldersStore, addImageAttachmentFromBlob, clearAttachmentsStore, openAttachment, canOpenAttachmentInBrowser, createAttachmentFolder, renameAttachmentFolder, deleteAttachmentFolder, moveAttachment, moveAttachments, moveAttachmentFolder, renameAttachment, deleteAttachment, deleteAttachments, addAttachmentsToFolder, pasteImageToFolder, newImageInFolder, captureScreenToFolder, downloadAttachmentsZip, openViewableAttachments, editImageAttachments, downloadAttachmentById, editAttachmentById, editPdfAttachmentById, managePdfPagesById, convertImageToPdfById, convertPdfToImagesById } from './attachmentsUtils.js';
+import { initAttachmentsGui, importAttachmentsFromGltfScene, getAttachmentsStore, getAttachmentFoldersStore, addImageAttachmentFromBlob, clearAttachmentsStore, openAttachment, canOpenAttachmentInBrowser, createAttachmentFolder, renameAttachmentFolder, deleteAttachmentFolder, moveAttachment, moveAttachments, moveAttachmentFolder, renameAttachment, deleteAttachment, deleteAttachments, addAttachmentsToFolder, addFolderToFolder, pasteImageToFolder, newImageInFolder, captureScreenToFolder, downloadAttachmentsZip, openViewableAttachments, editImageAttachments, downloadAttachmentById, editAttachmentById, editPdfAttachmentById, managePdfPagesById, convertImageToPdfById, convertPdfToImagesById } from './attachmentsUtils.js';
 import { serializeAttachmentsForExport } from './attachmentCompressionUtils.js';
 import { initLocalFileAccess, openLocalGlbFile, saveLocalGlbFile, saveLocalGlbFileAs, clearCurrentLocalFileHandle, waitForExternalFileSignal, wasOpenedWithExternalFile } from './localFileAccess.js';
 import {
@@ -2244,6 +2244,7 @@ outlinerPanelEl = initOutliner({
         deleteOne: deleteAttachment,
         deleteMany: deleteAttachments,
         addFiles: addAttachmentsToFolder,
+        addFolder: addFolderToFolder,
         pasteImage: pasteImageToFolder,
         newImage: newImageInFolder,
         captureScreen: captureScreenToFolder,
