@@ -1973,13 +1973,15 @@ function buildFileTreeChildren(atts, folders, parentId, depth, expandedIds) {
 
     for (const att of childAtts) {
         const viewable = canOpenAttachment ? canOpenAttachment(att.mimeType) : false;
-        const label = `${att.comment ? '💬 ' : ''}${att.name || '(unnamed)'}`;
+        const name = att.name || '(unnamed)';
+        const sizeStr = formatOutlinerFileSize(att.size);
+        const label = `${att.comment ? '💬 ' : ''}${name}${sizeStr ? `  (${sizeStr})` : ''}`;
         const item = createAssetItemNode({
             expandId: `file:${att.id}`,
             label,
             title: viewable
-                ? (att.name || '')
-                : 'Cannot preview — download from the context menu',
+                ? label
+                : `${label} — Cannot preview; download from the context menu`,
             muted: !viewable,
             depth,
             onClick: (e) => {
@@ -2103,6 +2105,13 @@ function attachmentRenameBase(name) {
 function attachmentRenameExt(name) {
     const lastDot = (name || '').lastIndexOf('.');
     return lastDot > 0 ? name.slice(lastDot) : '';
+}
+
+function formatOutlinerFileSize(bytes) {
+    if (bytes == null || !Number.isFinite(bytes)) return '';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function applyFileMultiSelectClasses() {
