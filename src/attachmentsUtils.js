@@ -620,7 +620,39 @@ function _ensureFolderPath(segments, rootParentId, pathToFolderId) {
     return parentId;
 }
 
-function _addFolderTree(folderId = null) {
+async function* _directoryChildHandles(dirHandle) {
+    if (typeof dirHandle.values === 'function') {
+        yield* dirHandle.values();
+        return;
+    }
+    for await (const [, handle] of dirHandle.entries()) yield handle;
+}
+
+async function _importDirectoryHandle(dirHandle, parentId) {
+    const folder = _createAttachmentFolderRecord({
+        parentId,
+        name: dirHandle.name || 'folder',
+    });
+    for await (const handle of _directoryChildHandles(dirHandle)) {
+        if (handle.kind === 'directory') {
+            await _importDirectoryHandle(handle, folder.id);
+            continue;
+        }
+        if (handle.kind !== 'file' || typeof handle.getFile !== 'function') continue;
+        const file = await handle.getFile();
+        const data = await _fileToBase64(file);
+        _pushAttachment({
+            name: file.name || handle.name,
+            mimeType: file.type || 'application/octet-stream',
+            data,
+            size: file.size,
+            folderId: folder.id,
+        });
+    }
+    return folder;
+}
+
+function _addFolderTreeViaInput(rootParent) {
     const input = document.createElement('input');
     input.type = 'file';
     input.multiple = true;
@@ -630,7 +662,6 @@ function _addFolderTree(folderId = null) {
     input.onchange = async (e) => {
         const files = Array.from(e.target.files || []);
         if (!files.length) return;
-        const rootParent = _normalizeFolderId(folderId);
         const pathToFolderId = new Map();
         for (const file of files) {
             const rel = String(file.webkitRelativePath || file.name || '').replace(/\\/g, '/');
@@ -651,6 +682,23 @@ function _addFolderTree(folderId = null) {
         refreshAttachmentsGui();
     };
     input.click();
+}
+
+async function _addFolderTree(folderId = null) {
+    const rootParent = _normalizeFolderId(folderId);
+    if (typeof window.showDirectoryPicker === 'function') {
+        try {
+            const dirHandle = await window.showDirectoryPicker();
+            await _importDirectoryHandle(dirHandle, rootParent);
+            refreshAttachmentsGui();
+        } catch (err) {
+            if (err?.name === 'AbortError') return;
+            console.error(err);
+            alert('Could not add folder: ' + (err.message || err));
+        }
+        return;
+    }
+    _addFolderTreeViaInput(rootParent);
 }
 
 function _safeZipSegment(name) {
