@@ -2443,6 +2443,78 @@ a, button, input, select {
     font-weight: 600;
 }
 
+/* Top-level project containers: Documents, Files, Arrangements, Sequences */
+.outliner-project-folder > .outliner-row {
+    background: #252525;
+    border-left: 3px solid #c8a96e;
+}
+.outliner-project-folder > .outliner-row:hover {
+    background: #2e2e2e;
+}
+.outliner-project-folder > .outliner-row .outliner-arrow {
+    color: #c8a96e;
+}
+.outliner-project-folder > .outliner-row .outliner-label {
+    color: #d4b87a;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+}
+.outliner-project-folder > .outliner-row .outliner-label::before {
+    display: inline-block;
+    margin-right: 5px;
+    font-size: 11px;
+    line-height: 1;
+    vertical-align: -1px;
+}
+.outliner-project-folder[data-expand-id="project:documents"] > .outliner-row .outliner-label::before {
+    content: '📄';
+}
+.outliner-project-folder[data-expand-id="project:files"] > .outliner-row .outliner-label::before {
+    content: '📎';
+}
+.outliner-project-folder[data-expand-id="project:arrangements"] > .outliner-row .outliner-label::before {
+    content: '📐';
+}
+.outliner-project-folder[data-expand-id="project:sequences"] > .outliner-row .outliner-label::before {
+    content: '🎬';
+}
+.outliner-project-folder > .outliner-row .outliner-label:hover,
+.outliner-project-folder.outliner-selected > .outliner-row .outliner-label {
+    color: #ead6a6;
+}
+
+/* User folders in Documents / Files — distinct from document/file rows */
+.outliner-user-folder > .outliner-row {
+    background: rgba(200, 169, 110, 0.08);
+}
+.outliner-user-folder > .outliner-row:hover {
+    background: rgba(200, 169, 110, 0.16);
+}
+.outliner-user-folder > .outliner-row .outliner-arrow {
+    color: #c8a96e;
+}
+.outliner-user-folder > .outliner-row .outliner-label {
+    color: #c8a96e;
+    font-weight: 600;
+}
+.outliner-user-folder > .outliner-row .outliner-label::before {
+    content: '📁';
+    display: inline-block;
+    margin-right: 5px;
+    font-size: 11px;
+    line-height: 1;
+    vertical-align: -1px;
+}
+.outliner-user-folder.outliner-expanded > .outliner-row .outliner-label::before {
+    content: '📂';
+}
+.outliner-user-folder > .outliner-row .outliner-label:hover {
+    color: #e0c98a;
+}
+.outliner-user-folder.outliner-selected > .outliner-row .outliner-label {
+    color: #e8d4a0;
+}
+
 .outliner-asset-muted > .outliner-row .outliner-label {
     color: #666;
     cursor: default;

@@ -1553,6 +1553,7 @@ function createDocumentsFolderNode(docs, folders, expanded, expandedIds) {
         label: `Documents (${docs.length})`,
         children,
         expanded,
+        extraClass: 'outliner-project-folder',
     });
     attachDocAssetInteractions(node, { kind: 'root' });
     return node;
@@ -1574,6 +1575,7 @@ function buildDocumentTreeChildren(docs, folders, parentId, depth, expandedIds) 
             children: buildDocumentTreeChildren(docs, folders, folder.id, depth + 1, expandedIds),
             expanded: folderExpanded,
             depth,
+            extraClass: 'outliner-user-folder',
         });
         attachDocAssetInteractions(folderNode, {
             kind: 'folder',
@@ -1970,6 +1972,7 @@ function createFilesFolderNode(atts, folders, expanded, expandedIds) {
         label: `Files (${atts.length})`,
         children,
         expanded,
+        extraClass: 'outliner-project-folder',
     });
     attachFileAssetInteractions(node, { kind: 'root' });
     return node;
@@ -1991,6 +1994,7 @@ function buildFileTreeChildren(atts, folders, parentId, depth, expandedIds) {
             children: buildFileTreeChildren(atts, folders, folder.id, depth + 1, expandedIds),
             expanded: folderExpanded,
             depth,
+            extraClass: 'outliner-user-folder',
         });
         attachFileAssetInteractions(folderNode, {
             kind: 'folder',
@@ -2521,6 +2525,7 @@ function createArrangementsFolderNode(expanded) {
         label: `Arrangements (${arrangements.length})`,
         children: items,
         expanded,
+        extraClass: 'outliner-project-folder',
     });
 }
 
@@ -2588,6 +2593,7 @@ function createSequencesFolderNode(expanded, expandedIds) {
         label: `Sequences (${sequences.length})`,
         children: wfFolders,
         expanded,
+        extraClass: 'outliner-project-folder',
     });
 }
 
