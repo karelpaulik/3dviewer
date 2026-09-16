@@ -3518,6 +3518,9 @@ a, button, input, select {
 .ocr-progress-status {
     font-size: 13px;
     color: #333;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 .ocr-progress-bar-wrap {
     height: 8px;

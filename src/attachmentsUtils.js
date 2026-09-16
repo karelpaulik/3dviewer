@@ -26,6 +26,7 @@ let _pdfConverting = false;
 let _imageConverting = false;
 let _pdfEditing = false;
 let _pdfPageManaging = false;
+let _fileOpBusy = false;
 /** @type {{ sourceAtt: object, originalBytes: Uint8Array, numPages: number, scale: number, pageSizes: Map<number, { widthPt: number, heightPt: number }>, editedPages: Map<number, { base64: string, mimeType: string, size: number }> } | null} */
 let _pdfEditSession = null;
 let _saveScreenCaptureFn = null;
@@ -620,6 +621,67 @@ function _ensureFolderPath(segments, rootParentId, pathToFolderId) {
     return parentId;
 }
 
+function _fileOpInProgress() {
+    if (_fileOpBusy) {
+        alert('Another file operation is in progress. Please wait.');
+        return true;
+    }
+    return false;
+}
+
+function _openFileOpProgress(title) {
+    document.querySelectorAll('.file-op-progress-backdrop').forEach(el => el.remove());
+
+    const backdrop = document.createElement('div');
+    backdrop.className = 'ocr-progress-backdrop file-op-progress-backdrop';
+
+    const panel = document.createElement('div');
+    panel.className = 'ocr-progress-panel';
+    panel.innerHTML = `
+        <div class="ocr-progress-title"></div>
+        <div class="ocr-progress-status"></div>
+        <div class="ocr-progress-bar-wrap"><div class="ocr-progress-bar"></div></div>
+        <button type="button" class="ocr-progress-cancel img-dialog-btn">Cancel</button>`;
+
+    backdrop.appendChild(panel);
+    document.body.appendChild(backdrop);
+
+    const titleEl = panel.querySelector('.ocr-progress-title');
+    const statusEl = panel.querySelector('.ocr-progress-status');
+    const barEl = panel.querySelector('.ocr-progress-bar');
+    titleEl.textContent = title;
+
+    const state = { cancelled: false };
+    panel.querySelector('.ocr-progress-cancel').addEventListener('click', () => {
+        state.cancelled = true;
+        statusEl.textContent = 'Cancelling…';
+    });
+
+    return {
+        get cancelled() { return state.cancelled; },
+        set({ status, progress } = {}) {
+            if (status) statusEl.textContent = status;
+            if (typeof progress === 'number') {
+                const pct = Math.max(0, Math.min(100, Math.round(progress * 100)));
+                barEl.style.width = `${pct}%`;
+            }
+        },
+        close() { backdrop.remove(); },
+    };
+}
+
+function _removeFolderTreeSilent(folderId) {
+    if (!folderId || !_folderById(folderId)) return;
+    const ids = _collectDescendantFolderIds(folderId);
+    ids.add(folderId);
+    for (let i = attachmentsStore.length - 1; i >= 0; i--) {
+        if (ids.has(attachmentsStore[i].folderId)) attachmentsStore.splice(i, 1);
+    }
+    for (let i = attachmentFoldersStore.length - 1; i >= 0; i--) {
+        if (ids.has(attachmentFoldersStore[i].id)) attachmentFoldersStore.splice(i, 1);
+    }
+}
+
 async function* _directoryChildHandles(dirHandle) {
     if (typeof dirHandle.values === 'function') {
         yield* dirHandle.values();
@@ -628,28 +690,69 @@ async function* _directoryChildHandles(dirHandle) {
     for await (const [, handle] of dirHandle.entries()) yield handle;
 }
 
-async function _importDirectoryHandle(dirHandle, parentId) {
-    const folder = _createAttachmentFolderRecord({
-        parentId,
-        name: dirHandle.name || 'folder',
-    });
-    for await (const handle of _directoryChildHandles(dirHandle)) {
-        if (handle.kind === 'directory') {
-            await _importDirectoryHandle(handle, folder.id);
-            continue;
+async function _collectDirectoryTree(dirHandle) {
+    const folders = [];
+    const files = [];
+    const walk = async (handle, parentPath, name) => {
+        const path = parentPath ? `${parentPath}/${name}` : name;
+        folders.push({ path, name, parentPath });
+        for await (const child of _directoryChildHandles(handle)) {
+            if (child.kind === 'directory') {
+                await walk(child, path, child.name || 'folder');
+            } else if (child.kind === 'file' && typeof child.getFile === 'function') {
+                files.push({ handle: child, name: child.name, parentPath: path });
+            }
         }
-        if (handle.kind !== 'file' || typeof handle.getFile !== 'function') continue;
-        const file = await handle.getFile();
+    };
+    await walk(dirHandle, '', dirHandle.name || 'folder');
+    return { folders, files };
+}
+
+async function _importCollectedTree(tree, rootParent, progress) {
+    const pathToFolderId = new Map();
+    let importedRootId = null;
+    for (const folder of tree.folders) {
+        if (progress.cancelled) return importedRootId;
+        const parentId = folder.parentPath ? (pathToFolderId.get(folder.parentPath) || rootParent) : rootParent;
+        const created = _createAttachmentFolderRecord({ parentId, name: folder.name });
+        pathToFolderId.set(folder.path, created.id);
+        if (!importedRootId) importedRootId = created.id;
+    }
+
+    const n = tree.files.length;
+    if (n === 0) {
+        progress.set({ status: 'Created empty folder', progress: 1 });
+        return importedRootId;
+    }
+
+    for (let i = 0; i < n; i++) {
+        if (progress.cancelled) return importedRootId;
+        const item = tree.files[i];
+        progress.set({
+            status: `Adding ${item.name} (${i + 1} of ${n})`,
+            progress: i / n,
+        });
+        const file = await item.handle.getFile();
         const data = await _fileToBase64(file);
         _pushAttachment({
-            name: file.name || handle.name,
+            name: file.name || item.name,
             mimeType: file.type || 'application/octet-stream',
             data,
             size: file.size,
-            folderId: folder.id,
+            folderId: pathToFolderId.get(item.parentPath) || rootParent,
         });
     }
-    return folder;
+    progress.set({ status: 'Done', progress: 1 });
+    return importedRootId;
+}
+
+function _finishFolderImport(progress, importedRootId) {
+    if (progress.cancelled) {
+        if (importedRootId) _removeFolderTreeSilent(importedRootId);
+    } else {
+        refreshAttachmentsGui();
+    }
+    progress.close();
 }
 
 function _addFolderTreeViaInput(rootParent) {
@@ -662,43 +765,90 @@ function _addFolderTreeViaInput(rootParent) {
     input.onchange = async (e) => {
         const files = Array.from(e.target.files || []);
         if (!files.length) return;
+        if (_fileOpInProgress()) return;
+        _fileOpBusy = true;
+        const progress = _openFileOpProgress('Adding folder');
         const pathToFolderId = new Map();
-        for (const file of files) {
-            const rel = String(file.webkitRelativePath || file.name || '').replace(/\\/g, '/');
-            const parts = rel.split('/').filter(Boolean);
-            const fileName = parts.pop() || file.name;
-            const targetFolder = parts.length
-                ? _ensureFolderPath(parts, rootParent, pathToFolderId)
-                : rootParent;
-            const data = await _fileToBase64(file);
-            _pushAttachment({
-                name: fileName,
-                mimeType: file.type || 'application/octet-stream',
-                data,
-                size: file.size,
-                folderId: targetFolder,
-            });
+        let importedRootId = null;
+        try {
+            const n = files.length;
+            for (let i = 0; i < n; i++) {
+                if (progress.cancelled) break;
+                const file = files[i];
+                progress.set({
+                    status: `Adding ${file.name} (${i + 1} of ${n})`,
+                    progress: i / n,
+                });
+                const rel = String(file.webkitRelativePath || file.name || '').replace(/\\/g, '/');
+                const parts = rel.split('/').filter(Boolean);
+                const fileName = parts.pop() || file.name;
+                const targetFolder = parts.length
+                    ? _ensureFolderPath(parts, rootParent, pathToFolderId)
+                    : rootParent;
+                if (!importedRootId && pathToFolderId.size) {
+                    importedRootId = pathToFolderId.values().next().value;
+                }
+                const data = await _fileToBase64(file);
+                _pushAttachment({
+                    name: fileName,
+                    mimeType: file.type || 'application/octet-stream',
+                    data,
+                    size: file.size,
+                    folderId: targetFolder,
+                });
+            }
+            if (!progress.cancelled) progress.set({ status: 'Done', progress: 1 });
+            await _finishFolderImport(progress, importedRootId);
+        } catch (err) {
+            progress.close();
+            if (importedRootId) _removeFolderTreeSilent(importedRootId);
+            refreshAttachmentsGui();
+            console.error(err);
+            alert('Could not add folder: ' + (err.message || err));
+        } finally {
+            _fileOpBusy = false;
         }
-        refreshAttachmentsGui();
     };
     input.click();
 }
 
 async function _addFolderTree(folderId = null) {
+    if (_fileOpInProgress()) return;
     const rootParent = _normalizeFolderId(folderId);
-    if (typeof window.showDirectoryPicker === 'function') {
-        try {
-            const dirHandle = await window.showDirectoryPicker();
-            await _importDirectoryHandle(dirHandle, rootParent);
-            refreshAttachmentsGui();
-        } catch (err) {
-            if (err?.name === 'AbortError') return;
-            console.error(err);
-            alert('Could not add folder: ' + (err.message || err));
-        }
+    if (typeof window.showDirectoryPicker !== 'function') {
+        _addFolderTreeViaInput(rootParent);
         return;
     }
-    _addFolderTreeViaInput(rootParent);
+
+    let dirHandle;
+    try {
+        dirHandle = await window.showDirectoryPicker();
+    } catch (err) {
+        if (err?.name === 'AbortError') return;
+        console.error(err);
+        alert('Could not add folder: ' + (err.message || err));
+        return;
+    }
+
+    _fileOpBusy = true;
+    const progress = _openFileOpProgress('Adding folder');
+    let importedRootId = null;
+    try {
+        progress.set({ status: 'Scanning folder…', progress: 0 });
+        const tree = await _collectDirectoryTree(dirHandle);
+        if (!progress.cancelled) {
+            importedRootId = await _importCollectedTree(tree, rootParent, progress);
+        }
+        await _finishFolderImport(progress, importedRootId);
+    } catch (err) {
+        progress.close();
+        if (importedRootId) _removeFolderTreeSilent(importedRootId);
+        refreshAttachmentsGui();
+        console.error(err);
+        alert('Could not add folder: ' + (err.message || err));
+    } finally {
+        _fileOpBusy = false;
+    }
 }
 
 function _safeZipSegment(name) {
@@ -743,39 +893,72 @@ function _uniqueZipPath(used, path) {
 }
 
 async function _downloadAllAsZip(folderId = null) {
+    if (_fileOpInProgress()) return;
     const rootId = _normalizeFolderId(folderId);
     const atts = _attachmentsInScope(rootId);
     if (atts.length === 0 && !rootId) return;
 
-    const zip = new JSZip();
-    const used = new Set();
+    _fileOpBusy = true;
+    const progress = _openFileOpProgress('Creating ZIP');
+    try {
+        const zip = new JSZip();
+        const used = new Set();
 
-    const folderIds = rootId
-        ? [..._collectDescendantFolderIds(rootId), rootId]
-        : attachmentFoldersStore.map(f => f.id);
-    folderIds.forEach(id => {
-        const segments = _folderPathSegments(id, rootId);
-        if (segments.length) zip.folder(segments.join('/'));
-    });
+        const folderIds = rootId
+            ? [..._collectDescendantFolderIds(rootId), rootId]
+            : attachmentFoldersStore.map(f => f.id);
+        folderIds.forEach(id => {
+            const segments = _folderPathSegments(id, rootId);
+            if (segments.length) zip.folder(segments.join('/'));
+        });
 
-    atts.forEach(att => {
-        const binary = atob(att.data);
-        const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-        const dir = _folderPathSegments(att.folderId, rootId);
-        const path = _uniqueZipPath(used, [...dir, _safeZipSegment(att.name)].join('/'));
-        zip.file(path, bytes);
-    });
+        const n = atts.length;
+        const addWeight = n > 0 ? 0.55 : 0;
+        for (let i = 0; i < n; i++) {
+            if (progress.cancelled) return;
+            const att = atts[i];
+            progress.set({
+                status: `Adding ${att.name} (${i + 1} of ${n})`,
+                progress: addWeight * (i / n),
+            });
+            const bytes = _attToUint8Array(att);
+            const dir = _folderPathSegments(att.folderId, rootId);
+            const path = _uniqueZipPath(used, [...dir, _safeZipSegment(att.name)].join('/'));
+            zip.file(path, bytes);
+            await new Promise(r => setTimeout(r, 0));
+        }
+        if (progress.cancelled) return;
 
-    const blob = await zip.generateAsync({ type: 'blob' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = rootId ? `${_safeZipSegment(_folderById(rootId)?.name)}.zip` : 'attachments.zip';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+        progress.set({
+            status: n ? 'Compressing…' : 'Creating ZIP…',
+            progress: addWeight,
+        });
+        const blob = await zip.generateAsync({ type: 'blob' }, (meta) => {
+            if (progress.cancelled) return;
+            const pct = addWeight + (1 - addWeight) * ((meta.percent || 0) / 100);
+            progress.set({
+                status: meta.currentFile ? `Compressing ${meta.currentFile}` : 'Compressing…',
+                progress: pct,
+            });
+        });
+        if (progress.cancelled) return;
+
+        progress.set({ status: 'Done', progress: 1 });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = rootId ? `${_safeZipSegment(_folderById(rootId)?.name)}.zip` : 'attachments.zip';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    } catch (err) {
+        console.error(err);
+        alert('Could not create ZIP: ' + (err.message || err));
+    } finally {
+        progress.close();
+        _fileOpBusy = false;
+    }
 }
 
 function _canOpenInBrowser(mimeType) {
