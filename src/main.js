@@ -103,7 +103,7 @@ import {
     getSelectedEntityLength,
     setSelectedEntityLength,
 } from './sectionSketchUtils.js';
-import { initDocumentsGui, importDocumentsFromGltfScene, getDocumentsStore, flushDocumentEdits, isDocOverlayBlockingInput, isDocumentEditorOpen, setDocLabelOptions, clearDocumentsStore, openDocumentViewer } from './documentsUtils.js';
+import { initDocumentsGui, importDocumentsFromGltfScene, getDocumentsStore, getDocumentFoldersStore, flushDocumentEdits, isDocOverlayBlockingInput, isDocumentEditorOpen, setDocLabelOptions, clearDocumentsStore, openDocumentViewer, createDocument, createDocumentFolder, renameDocumentFolder, deleteDocumentFolder, moveDocument, moveDocumentFolder } from './documentsUtils.js';
 import { isImageEditorOpen } from './imageEditorUtils.js';
 import {
     initUndoManager,
@@ -1806,6 +1806,7 @@ if (import.meta.env.DEV) {
     window.assemblyState = assemblyState;
     window.getAnnotations = getAnnotations;
     window.getDocumentsStore = getDocumentsStore;
+    window.getDocumentFoldersStore = getDocumentFoldersStore;
     window.USER_NAME_STORAGE_KEY = USER_NAME_STORAGE_KEY;
     window.getUserName = getUserName;
     window.setUserName = setUserName;
@@ -2210,8 +2211,15 @@ outlinerPanelEl = initOutliner({
         addParametricPrimitive(type, parentObj);
     },
     getDocuments: getDocumentsStore,
+    getDocumentFolders: getDocumentFoldersStore,
     getAttachments: getAttachmentsStore,
     onOpenDocument: openDocumentViewer,
+    onNewDocument: (folderId) => createDocument(folderId),
+    onNewDocumentFolder: (parentId) => createDocumentFolder({ parentId }),
+    onRenameDocumentFolder: renameDocumentFolder,
+    onDeleteDocumentFolder: deleteDocumentFolder,
+    onMoveDocument: moveDocument,
+    onMoveDocumentFolder: moveDocumentFolder,
     onOpenAttachment: openAttachment,
     canOpenAttachment: canOpenAttachmentInBrowser,
     getArrangements: () => {
@@ -13587,6 +13595,7 @@ function applyImportedAssemblyPlayback(playback, originalIdToSequence) {
 function hasGlbExportContent() {
     return loadedModels.length > 0
         || getDocumentsStore().length > 0
+        || getDocumentFoldersStore().length > 0
         || getAttachmentsStore().length > 0;
 }
 
@@ -13629,6 +13638,7 @@ function buildAllModelsExportGroup(finalName) {
 
     group.userData._appExportRoot = true;
     group.userData.documents = getDocumentsStore().map(d => ({ ...d }));
+    group.userData.documentFolders = getDocumentFoldersStore().map(f => ({ ...f }));
     group.userData.attachments = serializeAttachmentsForExport(
         getAttachmentsStore(),
         attachmentCompressionDefaults

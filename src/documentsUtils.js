@@ -224,7 +224,8 @@ let _sidePanelHeightPct = (() => {
     return Number.isFinite(stored) && stored > 0 ? stored : _DOC_PANEL_HEIGHT_DEFAULT;
 })();
 
-let documentsStore = [];   // [{ id, title, fileName?, content, createdAt, font }]
+let documentsStore = [];   // [{ id, title, fileName?, content, createdAt, font, folderId? }]
+let documentFoldersStore = []; // [{ id, name, parentId: null | string }]
 let _guiRef = null;        // lil-gui folder reference (set by initDocumentsGui)
 let _editor = null;        // TipTap editor instance
 let _overlayEl = null;     // editor overlay DOM element
@@ -258,9 +259,166 @@ export function getDocumentsStore() {
     return documentsStore;
 }
 
+export function getDocumentFoldersStore() {
+    return documentFoldersStore;
+}
+
 export function clearDocumentsStore() {
     documentsStore.length = 0;
+    documentFoldersStore.length = 0;
     refreshDocumentsGui();
+}
+
+function _newDocEntityId() {
+    return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+}
+
+function _folderById(id) {
+    if (!id) return null;
+    return documentFoldersStore.find(f => f.id === id) || null;
+}
+
+function _normalizeFolderId(folderId) {
+    if (!folderId) return null;
+    return _folderById(folderId) ? folderId : null;
+}
+
+function _collectDescendantFolderIds(folderId) {
+    const ids = new Set();
+    const walk = (parentId) => {
+        for (const folder of documentFoldersStore) {
+            if ((folder.parentId || null) === parentId) {
+                ids.add(folder.id);
+                walk(folder.id);
+            }
+        }
+    };
+    walk(folderId);
+    return ids;
+}
+
+function _isFolderDescendant(ancestorId, maybeDescendantId) {
+    if (!ancestorId || !maybeDescendantId) return false;
+    let id = maybeDescendantId;
+    const seen = new Set();
+    while (id) {
+        if (id === ancestorId) return true;
+        if (seen.has(id)) break;
+        seen.add(id);
+        id = _folderById(id)?.parentId || null;
+    }
+    return false;
+}
+
+function _breakFolderCycles() {
+    const ids = new Set(documentFoldersStore.map(f => f.id));
+    for (const folder of documentFoldersStore) {
+        if (folder.parentId && !ids.has(folder.parentId)) folder.parentId = null;
+        const seen = new Set();
+        let id = folder.parentId;
+        while (id) {
+            if (id === folder.id || seen.has(id)) {
+                folder.parentId = null;
+                break;
+            }
+            seen.add(id);
+            id = _folderById(id)?.parentId || null;
+        }
+    }
+}
+
+function _repositionStoreItem(store, item, beforeId, afterId) {
+    const from = store.indexOf(item);
+    if (from >= 0) store.splice(from, 1);
+    let insertAt = store.length;
+    if (beforeId) {
+        const i = store.findIndex(x => x.id === beforeId);
+        if (i >= 0) insertAt = i;
+    } else if (afterId) {
+        const i = store.findIndex(x => x.id === afterId);
+        if (i >= 0) insertAt = i + 1;
+    }
+    store.splice(insertAt, 0, item);
+}
+
+function _countFolderContents(folderId) {
+    const folderIds = _collectDescendantFolderIds(folderId);
+    folderIds.add(folderId);
+    const docs = documentsStore.filter(d => folderIds.has(d.folderId)).length;
+    return { docs, folders: folderIds.size - 1 };
+}
+
+export function createDocumentFolder({ parentId = null, name } = {}) {
+    const folder = {
+        id: _newDocEntityId(),
+        name: (name && String(name).trim()) || 'New folder',
+        parentId: _normalizeFolderId(parentId),
+    };
+    documentFoldersStore.push(folder);
+    refreshDocumentsGui();
+    return folder;
+}
+
+export function renameDocumentFolder(id, name) {
+    const folder = _folderById(id);
+    if (!folder) return false;
+    const trimmed = String(name || '').trim();
+    if (!trimmed || trimmed === folder.name) return false;
+    folder.name = trimmed;
+    refreshDocumentsGui();
+    return true;
+}
+
+export function deleteDocumentFolder(id) {
+    const folder = _folderById(id);
+    if (!folder) return false;
+    const { docs, folders } = _countFolderContents(id);
+    const msg = (docs || folders)
+        ? `Delete folder "${folder.name}" and everything inside?\nThis will permanently delete ${docs} document(s) and ${folders} subfolder(s).`
+        : `Delete folder "${folder.name}"?`;
+    if (!confirm(msg)) return false;
+    const ids = _collectDescendantFolderIds(id);
+    ids.add(id);
+    for (let i = documentsStore.length - 1; i >= 0; i--) {
+        if (ids.has(documentsStore[i].folderId)) documentsStore.splice(i, 1);
+    }
+    for (let i = documentFoldersStore.length - 1; i >= 0; i--) {
+        if (ids.has(documentFoldersStore[i].id)) documentFoldersStore.splice(i, 1);
+    }
+    if (_currentDocId && !documentsStore.find(d => d.id === _currentDocId)) {
+        _closeOverlay();
+    }
+    refreshDocumentsGui();
+    return true;
+}
+
+export function moveDocument(id, folderId, { beforeId, afterId } = {}) {
+    const doc = documentsStore.find(d => d.id === id);
+    if (!doc) return false;
+    const target = _normalizeFolderId(folderId);
+    const sameParent = (doc.folderId || null) === target;
+    if (sameParent && !beforeId && !afterId) return true;
+    doc.folderId = target;
+    _repositionStoreItem(documentsStore, doc, beforeId, afterId);
+    refreshDocumentsGui();
+    return true;
+}
+
+export function moveDocumentFolder(id, parentId, { beforeId, afterId } = {}) {
+    const folder = _folderById(id);
+    if (!folder) return false;
+    const target = _normalizeFolderId(parentId);
+    if (target === id || _isFolderDescendant(id, target)) return false;
+    const sameParent = (folder.parentId || null) === target;
+    if (sameParent && !beforeId && !afterId) return true;
+    folder.parentId = target;
+    _repositionStoreItem(documentFoldersStore, folder, beforeId, afterId);
+    refreshDocumentsGui();
+    return true;
+}
+
+export function createDocument(folderId = null) {
+    return _newDocument(folderId);
 }
 
 /** Returns true when the doc overlay should suppress 3D model interaction.
@@ -303,19 +461,37 @@ export function importDocumentsFromGltfScene(gltfScene) {
     // so documents may be on gltfScene itself or on a child node.
     // Traverse to find ALL nodes that carry userData.documents and collect them.
     let docs = null;
+    let folders = null;
     gltfScene.traverse(node => {
         if (Array.isArray(node.userData.documents) && node.userData.documents.length > 0) {
             if (!docs) docs = node.userData.documents;
             // Remove from the node so it is not re-exported with stale image data
             delete node.userData.documents;
         }
-    });
-    if (!docs) return;
-    docs.forEach(doc => {
-        if (!documentsStore.find(d => d.id === doc.id)) {
-            documentsStore.push(doc);
+        if (Array.isArray(node.userData.documentFolders) && node.userData.documentFolders.length > 0) {
+            if (!folders) folders = node.userData.documentFolders;
+            delete node.userData.documentFolders;
         }
     });
+    if (folders) {
+        folders.forEach(folder => {
+            if (!folder?.id || documentFoldersStore.find(f => f.id === folder.id)) return;
+            documentFoldersStore.push({
+                id: folder.id,
+                name: folder.name || 'Folder',
+                parentId: folder.parentId || null,
+            });
+        });
+        _breakFolderCycles();
+    }
+    if (!docs && !folders) return;
+    if (docs) {
+        docs.forEach(doc => {
+            if (!documentsStore.find(d => d.id === doc.id)) {
+                documentsStore.push({ ...doc, folderId: _normalizeFolderId(doc.folderId) });
+            }
+        });
+    }
     refreshDocumentsGui();
 }
 
@@ -336,7 +512,6 @@ export function refreshDocumentsGui() {
     const controllers = [..._guiRef.controllers];
     controllers.forEach(c => c.destroy());
 
-    // Destroy and re-add children folders (per-document) — none in this design
     const folders = [..._guiRef.folders];
     folders.forEach(f => f.destroy());
 
@@ -347,26 +522,61 @@ export function refreshDocumentsGui() {
             _applyDocLayoutMode();
         });
 
-    // "New document" button
-    _guiRef.add({ fn: _newDocument }, 'fn').name('+ New document');
+    _guiRef.add({ fn: () => _newDocument(null) }, 'fn').name('+ New document');
+    _guiRef.add({ fn: () => _promptNewFolder(null) }, 'fn').name('+ New folder');
     _guiRef.add({ fn: _importDocJson }, 'fn').name('⬆ Import JSON');
 
-    // One button per document
-    documentsStore.forEach(doc => {
-        let docLabel = doc.title || '(no title)';
-        if (_showLastEditDate && doc.lastEditAt) {
-            const le = new Date(doc.lastEditAt);
-            const lts = `${le.getDate().toString().padStart(2, '0')}.${(le.getMonth() + 1).toString().padStart(2, '0')}. ${le.getHours().toString().padStart(2, '0')}:${le.getMinutes().toString().padStart(2, '0')}`;
-            docLabel += ` (le. ${lts})`;
-        }
-        if (_showImportDate && doc.importedAt) {
-            const d = new Date(doc.importedAt);
-            const ts = `${d.getDate().toString().padStart(2, '0')}.${(d.getMonth() + 1).toString().padStart(2, '0')}. ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
-            docLabel += ` (imp. ${ts})`;
-        }
-        _guiRef.add({ fn: () => openDocumentViewer(doc.id) }, 'fn').name(docLabel);
-    });
+    _populateDocFolderGui(_guiRef, null);
     notifyOutlinerProjectContentsChanged();
+}
+
+function _docButtonLabel(doc) {
+    let docLabel = doc.title || '(no title)';
+    if (_showLastEditDate && doc.lastEditAt) {
+        const le = new Date(doc.lastEditAt);
+        const lts = `${le.getDate().toString().padStart(2, '0')}.${(le.getMonth() + 1).toString().padStart(2, '0')}. ${le.getHours().toString().padStart(2, '0')}:${le.getMinutes().toString().padStart(2, '0')}`;
+        docLabel += ` (le. ${lts})`;
+    }
+    if (_showImportDate && doc.importedAt) {
+        const d = new Date(doc.importedAt);
+        const ts = `${d.getDate().toString().padStart(2, '0')}.${(d.getMonth() + 1).toString().padStart(2, '0')}. ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+        docLabel += ` (imp. ${ts})`;
+    }
+    return docLabel;
+}
+
+function _promptNewFolder(parentId) {
+    const name = prompt('Folder name:', 'New folder');
+    if (name === null) return;
+    createDocumentFolder({ parentId, name });
+}
+
+function _promptRenameFolder(id) {
+    const folder = _folderById(id);
+    if (!folder) return;
+    const name = prompt('Rename folder:', folder.name);
+    if (name === null) return;
+    renameDocumentFolder(id, name);
+}
+
+function _populateDocFolderGui(guiFolder, parentId) {
+    const pid = parentId || null;
+    const childFolders = documentFoldersStore.filter(f => (f.parentId || null) === pid);
+    const childDocs = documentsStore.filter(d => (d.folderId || null) === pid);
+
+    childFolders.forEach(folder => {
+        const sub = guiFolder.addFolder(folder.name || '(unnamed folder)');
+        sub.add({ fn: () => _newDocument(folder.id) }, 'fn').name('+ New document');
+        sub.add({ fn: () => _promptNewFolder(folder.id) }, 'fn').name('+ New folder');
+        sub.add({ fn: () => _promptRenameFolder(folder.id) }, 'fn').name('Rename folder');
+        sub.add({ fn: () => deleteDocumentFolder(folder.id) }, 'fn').name('✕ Delete folder');
+        _populateDocFolderGui(sub, folder.id);
+        sub.close();
+    });
+
+    childDocs.forEach(doc => {
+        guiFolder.add({ fn: () => openDocumentViewer(doc.id) }, 'fn').name(_docButtonLabel(doc));
+    });
 }
 
 export function openDocumentViewer(id) {
@@ -387,9 +597,9 @@ export function openDocumentEditor(id) {
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
-function _newDocument() {
+function _newDocument(folderId) {
     const doc = {
-        id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+        id: _newDocEntityId(),
         title: 'New document',
         description: '',
         content: '<p></p>',
@@ -399,10 +609,12 @@ function _newDocument() {
         paraSpacing: _DEFAULT_PARA_SPACING,
         docWidth: _DEFAULT_DOC_WIDTH,
         tableBorder: _DEFAULT_TABLE_BORDER,
+        folderId: _normalizeFolderId(folderId),
     };
     documentsStore.push(doc);
     refreshDocumentsGui();
     openDocumentEditor(doc.id);
+    return doc;
 }
 
 function _showOverlay(doc, editMode) {
@@ -1430,7 +1642,7 @@ function _exportCurrentDocJson() {
     if (_isEditMode && _editor) _saveCurrentDocument();
     const doc = documentsStore.find(d => d.id === _currentDocId);
     if (!doc) return;
-    const { fileName, ...docForExport } = doc;
+    const { fileName, folderId, ...docForExport } = doc;
     const json = JSON.stringify(docForExport, null, 2);
     const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -1516,9 +1728,10 @@ function _importDocJson() {
                     ...doc,
                     title: doc.title?.trim() || titleFromFile || 'Untitled',
                     fileName: titleFromFile || doc.fileName?.trim() || undefined,
-                    id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+                    id: _newDocEntityId(),
                     originalId: doc.id,
                     importedAt: new Date().toISOString(),
+                    folderId: null,
                 };
                 documentsStore.push(importedDoc);
                 refreshDocumentsGui();

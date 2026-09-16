@@ -27,12 +27,26 @@ let onCloneObject = null;
 let onAddObject3D = null;
 let onAddPrimitive = null;
 let onPromoteToRoot = null;
-/** @type {(() => Array<{id: string, title?: string}>)|null} */
+/** @type {(() => Array<{id: string, title?: string, folderId?: string|null}>)|null} */
 let getDocuments = null;
+/** @type {(() => Array<{id: string, name?: string, parentId?: string|null}>)|null} */
+let getDocumentFolders = null;
 /** @type {(() => Array<{id: string, name?: string, mimeType?: string}>)|null} */
 let getAttachments = null;
 /** @type {((id: string) => void)|null} */
 let onOpenDocument = null;
+/** @type {((folderId?: string|null) => object|null)|null} */
+let onNewDocument = null;
+/** @type {((parentId?: string|null) => object|null)|null} */
+let onNewDocumentFolder = null;
+/** @type {((id: string, name: string) => boolean)|null} */
+let onRenameDocumentFolder = null;
+/** @type {((id: string) => boolean)|null} */
+let onDeleteDocumentFolder = null;
+/** @type {((id: string, folderId: string|null, opts?: object) => boolean)|null} */
+let onMoveDocument = null;
+/** @type {((id: string, parentId: string|null, opts?: object) => boolean)|null} */
+let onMoveDocumentFolder = null;
 /** @type {((att: object) => void)|null} */
 let onOpenAttachment = null;
 /** @type {((mimeType: string) => boolean)|null} */
@@ -551,9 +565,43 @@ function startInlineRename(li, obj) {
     input.addEventListener('blur', commit);
 }
 
+function startAssetInlineRename(li, original, onCommit) {
+    const labelEl = li.querySelector(':scope > .outliner-row > .outliner-label');
+    if (!labelEl) return;
+    const originalName = original || '';
+    const input = document.createElement('input');
+    input.className = 'outliner-inline-rename';
+    input.value = originalName;
+    input.style.width = Math.max(labelEl.offsetWidth, 80) + 'px';
+    labelEl.replaceWith(input);
+    input.focus();
+    input.select();
+
+    let done = false;
+    function finish(commitChange) {
+        if (done) return;
+        done = true;
+        const newName = input.value.trim() || originalName;
+        if (input.parentNode) input.replaceWith(labelEl);
+        if (commitChange && newName && newName !== originalName) {
+            onCommit(newName);
+        } else {
+            labelEl.textContent = originalName;
+        }
+    }
+
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.stopPropagation(); finish(true); }
+        if (e.key === 'Escape') { e.stopPropagation(); finish(false); }
+    });
+    input.addEventListener('blur', () => finish(true));
+}
+
 // Drag & Drop state
 let _draggedObj = null;
 let _draggedObjs = null; // all group-selected objects when dragging with multi-select
+/** @type {{ kind: 'doc'|'folder', id: string }|null} */
+let _draggedDocAsset = null;
 let _dragOverLi = null;
 let _dragOverPos = null; // 'before' | 'into' | 'after'
 let _lastDragEndTime = 0; // Timestamp of last dragend – blocks spurious post-drag clicks
@@ -662,7 +710,7 @@ function getOutlinerChildren(obj) {
  * @param {{ onSelect: Function, onToggleVisibility: Function }} callbacks
  * @returns {HTMLDivElement} the panel element (for guiWrapper hit-testing)
  */
-export function initOutliner({ onSelect, onToggleVisibility: onVis, onToggleSelectable: onSel, onGroupAdd: onGroupAddCb, onGroupRemove: onGroupRemoveCb, onHideOthers: onHideOthersCb, onShowAll: onShowAllCb, onReparent: onReparentCb, onRemove: onRemoveCb, onRemoveGroup: onRemoveGroupCb, onGetGroupSelection: onGetGroupSelectionCb, onGetGroupOriginalParents: onGetGroupOriginalParentsCb, onSortChildren: onSortChildrenCb, onCloneObject: onCloneObjectCb, onAddObject3D: onAddObject3DCb, onAddPrimitive: onAddPrimitiveCb, onPromoteToRoot: onPromoteToRootCb, getDocuments: getDocumentsCb, getAttachments: getAttachmentsCb, onOpenDocument: onOpenDocumentCb, onOpenAttachment: onOpenAttachmentCb, canOpenAttachment: canOpenAttachmentCb, getArrangements: getArrangementsCb, getActiveArrangementId: getActiveArrangementIdCb, isArrangementDirty: isArrangementDirtyCb, onApplyArrangement: onApplyArrangementCb, getSequences: getSequencesCb, getActiveSequenceId: getActiveSequenceIdCb, getCurrentStepIndex: getCurrentStepIndexCb, isPlaybackDetached: isPlaybackDetachedCb, onSelectSequence: onSelectSequenceCb, onGoToAssembled: onGoToAssembledCb, onGoToStep: onGoToStepCb }) {
+export function initOutliner({ onSelect, onToggleVisibility: onVis, onToggleSelectable: onSel, onGroupAdd: onGroupAddCb, onGroupRemove: onGroupRemoveCb, onHideOthers: onHideOthersCb, onShowAll: onShowAllCb, onReparent: onReparentCb, onRemove: onRemoveCb, onRemoveGroup: onRemoveGroupCb, onGetGroupSelection: onGetGroupSelectionCb, onGetGroupOriginalParents: onGetGroupOriginalParentsCb, onSortChildren: onSortChildrenCb, onCloneObject: onCloneObjectCb, onAddObject3D: onAddObject3DCb, onAddPrimitive: onAddPrimitiveCb, onPromoteToRoot: onPromoteToRootCb, getDocuments: getDocumentsCb, getDocumentFolders: getDocumentFoldersCb, getAttachments: getAttachmentsCb, onOpenDocument: onOpenDocumentCb, onNewDocument: onNewDocumentCb, onNewDocumentFolder: onNewDocumentFolderCb, onRenameDocumentFolder: onRenameDocumentFolderCb, onDeleteDocumentFolder: onDeleteDocumentFolderCb, onMoveDocument: onMoveDocumentCb, onMoveDocumentFolder: onMoveDocumentFolderCb, onOpenAttachment: onOpenAttachmentCb, canOpenAttachment: canOpenAttachmentCb, getArrangements: getArrangementsCb, getActiveArrangementId: getActiveArrangementIdCb, isArrangementDirty: isArrangementDirtyCb, onApplyArrangement: onApplyArrangementCb, getSequences: getSequencesCb, getActiveSequenceId: getActiveSequenceIdCb, getCurrentStepIndex: getCurrentStepIndexCb, isPlaybackDetached: isPlaybackDetachedCb, onSelectSequence: onSelectSequenceCb, onGoToAssembled: onGoToAssembledCb, onGoToStep: onGoToStepCb }) {
     onSelectObject = onSelect;
     onToggleVisibility = onVis;
     onToggleSelectable = onSel || null;
@@ -681,8 +729,15 @@ export function initOutliner({ onSelect, onToggleVisibility: onVis, onToggleSele
     onAddPrimitive = onAddPrimitiveCb || null;
     onPromoteToRoot = onPromoteToRootCb || null;
     getDocuments = getDocumentsCb || null;
+    getDocumentFolders = getDocumentFoldersCb || null;
     getAttachments = getAttachmentsCb || null;
     onOpenDocument = onOpenDocumentCb || null;
+    onNewDocument = onNewDocumentCb || null;
+    onNewDocumentFolder = onNewDocumentFolderCb || null;
+    onRenameDocumentFolder = onRenameDocumentFolderCb || null;
+    onDeleteDocumentFolder = onDeleteDocumentFolderCb || null;
+    onMoveDocument = onMoveDocumentCb || null;
+    onMoveDocumentFolder = onMoveDocumentFolderCb || null;
     onOpenAttachment = onOpenAttachmentCb || null;
     canOpenAttachment = canOpenAttachmentCb || null;
     getArrangements = getArrangementsCb || null;
@@ -1265,14 +1320,9 @@ function clearDropIndicators() {
 
 function appendProjectSection(expandedIds) {
     const docs = getDocuments ? getDocuments() : [];
+    const docFolders = getDocumentFolders ? getDocumentFolders() : [];
     const atts = getAttachments ? getAttachments() : [];
 
-    const docItems = docs.map(doc => createAssetItemNode({
-        expandId: `doc:${doc.id}`,
-        label: doc.title || '(no title)',
-        title: doc.title || '(no title)',
-        onClick: () => { if (onOpenDocument) onOpenDocument(doc.id); },
-    }));
     const fileItems = atts.map(att => {
         const viewable = canOpenAttachment ? canOpenAttachment(att.mimeType) : false;
         return createAssetItemNode({
@@ -1291,12 +1341,7 @@ function appendProjectSection(expandedIds) {
     const docsExpanded = expandedIds ? expandedIds.has('project:documents') : true;
     const filesExpanded = expandedIds ? expandedIds.has('project:files') : true;
 
-    treeEl.appendChild(createAssetFolderNode({
-        expandId: 'project:documents',
-        label: `Documents (${docs.length})`,
-        children: docItems,
-        expanded: docsExpanded,
-    }));
+    treeEl.appendChild(createDocumentsFolderNode(docs, docFolders, docsExpanded, expandedIds));
     treeEl.appendChild(createAssetFolderNode({
         expandId: 'project:files',
         label: `Files (${atts.length})`,
@@ -1314,6 +1359,318 @@ function appendProjectSection(expandedIds) {
     sep.className = 'outliner-project-section';
     sep.setAttribute('aria-hidden', 'true');
     treeEl.appendChild(sep);
+}
+
+function createDocumentsFolderNode(docs, folders, expanded, expandedIds) {
+    const children = buildDocumentTreeChildren(docs, folders, null, 1, expandedIds);
+    const node = createAssetFolderNode({
+        expandId: 'project:documents',
+        label: `Documents (${docs.length})`,
+        children,
+        expanded,
+    });
+    attachDocAssetInteractions(node, { kind: 'root' });
+    return node;
+}
+
+function buildDocumentTreeChildren(docs, folders, parentId, depth, expandedIds) {
+    const pid = parentId || null;
+    const childFolders = folders.filter(f => (f.parentId || null) === pid);
+    const childDocs = docs.filter(d => (d.folderId || null) === pid);
+    const nodes = [];
+
+    for (const folder of childFolders) {
+        const expandId = `doc-folder:${folder.id}`;
+        const folderExpanded = expandedIds ? expandedIds.has(expandId) : true;
+        const folderNode = createAssetFolderNode({
+            expandId,
+            label: folder.name || '(unnamed folder)',
+            title: folder.name || '(unnamed folder)',
+            children: buildDocumentTreeChildren(docs, folders, folder.id, depth + 1, expandedIds),
+            expanded: folderExpanded,
+            depth,
+        });
+        attachDocAssetInteractions(folderNode, {
+            kind: 'folder',
+            id: folder.id,
+            name: folder.name || '',
+        });
+        nodes.push(folderNode);
+    }
+
+    for (const doc of childDocs) {
+        const expandId = `doc:${doc.id}`;
+        const item = createAssetItemNode({
+            expandId,
+            label: doc.title || '(no title)',
+            title: doc.title || '(no title)',
+            depth,
+            onClick: () => {
+                if (Date.now() - _lastDragEndTime < 300) return;
+                selectOutlinerAssetByExpandId(expandId, { scroll: false });
+                if (onOpenDocument) onOpenDocument(doc.id);
+            },
+        });
+        attachDocAssetInteractions(item, {
+            kind: 'doc',
+            id: doc.id,
+            name: doc.title || '',
+        });
+        nodes.push(item);
+    }
+
+    return nodes;
+}
+
+function parseDocAsset(li) {
+    const kind = li?.dataset?.docKind;
+    if (!kind) return null;
+    return {
+        kind,
+        id: li.dataset.docId || null,
+        name: li.dataset.docName || '',
+    };
+}
+
+function getDocFolderParentId(folderId) {
+    const folders = getDocumentFolders ? getDocumentFolders() : [];
+    return folders.find(f => f.id === folderId)?.parentId || null;
+}
+
+function getDocParentFolderId(docId) {
+    const docs = getDocuments ? getDocuments() : [];
+    return docs.find(d => d.id === docId)?.folderId || null;
+}
+
+function isDocFolderDescendant(ancestorId, maybeDescendantId) {
+    if (!ancestorId || !maybeDescendantId) return false;
+    const folders = getDocumentFolders ? getDocumentFolders() : [];
+    const byId = new Map(folders.map(f => [f.id, f]));
+    const seen = new Set();
+    let id = maybeDescendantId;
+    while (id) {
+        if (id === ancestorId) return true;
+        if (seen.has(id)) break;
+        seen.add(id);
+        id = byId.get(id)?.parentId || null;
+    }
+    return false;
+}
+
+function canDropDocAsset(source, target, pos) {
+    if (!source || !target) return false;
+    if (source.kind === 'root') return false;
+    if (source.kind === target.kind && source.id && source.id === target.id) return false;
+    if (source.kind !== 'folder') return true;
+    let destFolderId = null;
+    if (target.kind === 'root') destFolderId = null;
+    else if (target.kind === 'folder' && pos === 'into') destFolderId = target.id;
+    else if (target.kind === 'folder') destFolderId = getDocFolderParentId(target.id);
+    else destFolderId = getDocParentFolderId(target.id);
+    if (destFolderId === source.id || isDocFolderDescendant(source.id, destFolderId)) return false;
+    return true;
+}
+
+function applyDocAssetDrop(source, target, pos) {
+    if (!canDropDocAsset(source, target, pos)) return;
+
+    let destFolderId = null;
+    let beforeId;
+    let afterId;
+
+    if (target.kind === 'root') {
+        destFolderId = null;
+    } else if (target.kind === 'folder') {
+        if (pos === 'into') {
+            destFolderId = target.id;
+        } else {
+            destFolderId = getDocFolderParentId(target.id);
+            if (source.kind === 'folder') {
+                if (pos === 'before') beforeId = target.id;
+                else afterId = target.id;
+            }
+        }
+    } else {
+        destFolderId = getDocParentFolderId(target.id);
+        if (source.kind === 'doc') {
+            if (pos === 'before') beforeId = target.id;
+            else afterId = target.id;
+        }
+    }
+
+    if (source.kind === 'folder') {
+        if (onMoveDocumentFolder) onMoveDocumentFolder(source.id, destFolderId, { beforeId, afterId });
+    } else if (onMoveDocument) {
+        onMoveDocument(source.id, destFolderId, { beforeId, afterId });
+    }
+}
+
+function revealAssetNode(expandId) {
+    if (!treeEl || !expandId) return null;
+    const escaped = (window.CSS && CSS.escape) ? CSS.escape(expandId) : expandId.replace(/"/g, '\\"');
+    const li = treeEl.querySelector(`[data-expand-id="${escaped}"]`);
+    if (!li) return null;
+    const ancestors = [];
+    let node = li.parentElement;
+    while (node && node !== treeEl) {
+        if (node.classList.contains('outliner-asset-folder')) ancestors.push(node);
+        node = node.parentElement;
+    }
+    for (let i = ancestors.length - 1; i >= 0; i--) {
+        const childList = ancestors[i].querySelector(':scope > .outliner-children');
+        if (childList && childList.style.display === 'none') toggleAssetExpand(ancestors[i]);
+    }
+    return li;
+}
+
+function createDocCtxItem(label, onClick, extraClass) {
+    const item = document.createElement('div');
+    item.className = extraClass ? `outliner-ctx-item ${extraClass}` : 'outliner-ctx-item';
+    item.textContent = label;
+    item.addEventListener('click', () => {
+        hideCtxMenu();
+        onClick();
+    });
+    return item;
+}
+
+function showDocAssetCtxMenu(x, y, asset, li) {
+    hideAddPrimitiveMenu();
+    const menu = getOrCreateCtxMenu();
+    menu.innerHTML = '';
+
+    if (asset.kind === 'root' || asset.kind === 'folder') {
+        const parentId = asset.kind === 'folder' ? asset.id : null;
+        menu.appendChild(createDocCtxItem('New document', () => {
+            if (!onNewDocument) return;
+            const doc = onNewDocument(parentId);
+            if (doc?.id) revealAssetNode(`doc:${doc.id}`);
+        }));
+        menu.appendChild(createDocCtxItem('New folder', () => {
+            if (!onNewDocumentFolder) return;
+            const folder = onNewDocumentFolder(parentId);
+            if (!folder?.id) return;
+            const newLi = revealAssetNode(`doc-folder:${folder.id}`);
+            if (newLi) {
+                startAssetInlineRename(newLi, folder.name || 'New folder', (name) => {
+                    if (onRenameDocumentFolder) onRenameDocumentFolder(folder.id, name);
+                });
+            }
+        }));
+    }
+
+    if (asset.kind === 'folder') {
+        menu.appendChild(createDocCtxItem('Rename', () => {
+            startAssetInlineRename(li, asset.name, (name) => {
+                if (onRenameDocumentFolder) onRenameDocumentFolder(asset.id, name);
+            });
+        }));
+        menu.appendChild(createDocCtxItem('Delete folder', () => {
+            if (onDeleteDocumentFolder) onDeleteDocumentFolder(asset.id);
+        }, 'outliner-ctx-danger'));
+    }
+
+    if (asset.kind === 'doc') {
+        menu.appendChild(createDocCtxItem('Open', () => {
+            selectOutlinerAssetByExpandId(`doc:${asset.id}`, { scroll: false });
+            if (onOpenDocument) onOpenDocument(asset.id);
+        }));
+    }
+
+    positionFixedMenu(menu, x, y);
+}
+
+function attachDocAssetInteractions(li, asset) {
+    li.dataset.docKind = asset.kind;
+    if (asset.id) li.dataset.docId = asset.id;
+    if (asset.name) li.dataset.docName = asset.name;
+
+    const row = li.querySelector(':scope > .outliner-row');
+    if (!row) return;
+
+    row.addEventListener('click', () => {
+        if (Date.now() - _lastDragEndTime < 300) return;
+        if (li.dataset.expandId) {
+            selectOutlinerAssetByExpandId(li.dataset.expandId, { scroll: false });
+        }
+    });
+
+    if (asset.kind !== 'root') {
+        row.draggable = true;
+        row.addEventListener('dragstart', (e) => {
+            _draggedObj = null;
+            _draggedObjs = null;
+            _draggedDocAsset = { kind: asset.kind, id: asset.id };
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', '');
+            li.classList.add('outliner-drag-source');
+        });
+        row.addEventListener('dragend', () => {
+            _lastDragEndTime = Date.now();
+            li.classList.remove('outliner-drag-source');
+            clearDropIndicators();
+            _draggedDocAsset = null;
+            _dragOverLi = null;
+            _dragOverPos = null;
+        });
+    }
+
+    row.addEventListener('dragover', (e) => {
+        if (!_draggedDocAsset) return;
+        const target = parseDocAsset(li);
+        const rect = row.getBoundingClientRect();
+        const y = e.clientY - rect.top;
+        const h = rect.height;
+        const pos = target.kind === 'root'
+            ? 'into'
+            : (y < h * 0.25 ? 'before' : y > h * 0.75 ? 'after' : 'into');
+        if (!canDropDocAsset(_draggedDocAsset, target, pos)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        if (_dragOverLi !== li || _dragOverPos !== pos) {
+            clearDropIndicators();
+            _dragOverLi = li;
+            _dragOverPos = pos;
+            li.classList.add('outliner-drop-' + pos);
+        }
+    });
+
+    row.addEventListener('drop', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const source = _draggedDocAsset;
+        const target = parseDocAsset(_dragOverLi || li);
+        const pos = _dragOverPos || 'into';
+        clearDropIndicators();
+        _dragOverLi = null;
+        _dragOverPos = null;
+        if (source && target) applyDocAssetDrop(source, target, pos);
+    });
+
+    row.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        showDocAssetCtxMenu(e.clientX, e.clientY, asset, li);
+    });
+
+    let longPressTimer = null;
+    row.addEventListener('touchstart', (e) => {
+        if (e.touches.length !== 1) return;
+        const touch = e.touches[0];
+        longPressTimer = setTimeout(() => {
+            longPressTimer = null;
+            showDocAssetCtxMenu(touch.clientX, touch.clientY, asset, li);
+        }, 500);
+    }, { passive: true });
+    const cancelLongPress = () => {
+        if (longPressTimer) {
+            clearTimeout(longPressTimer);
+            longPressTimer = null;
+        }
+    };
+    row.addEventListener('touchend', cancelLongPress, { passive: true });
+    row.addEventListener('touchcancel', cancelLongPress, { passive: true });
+    row.addEventListener('touchmove', cancelLongPress, { passive: true });
 }
 
 function createArrangementsFolderNode(expanded) {
@@ -1619,6 +1976,7 @@ function createTreeNode(obj, depth) {
 
     // --- Drag & Drop ---
     row.addEventListener('dragstart', (e) => {
+        _draggedDocAsset = null;
         _draggedObj = obj;
         // If this node is part of the group selection, drag all group members together
         if (groupHighlightNodes.has(li)) {
