@@ -619,17 +619,23 @@ function _docListLabel(doc) {
     return doc.fileName || doc.title || '(no title)';
 }
 
+function _formatDocDate(iso) {
+    const d = new Date(iso);
+    const day = d.getDate().toString().padStart(2, '0');
+    const month = (d.getMonth() + 1).toString().padStart(2, '0');
+    const year = d.getFullYear();
+    const hours = d.getHours().toString().padStart(2, '0');
+    const minutes = d.getMinutes().toString().padStart(2, '0');
+    return `${day}.${month}.${year} ${hours}:${minutes}`;
+}
+
 function _docButtonLabel(doc) {
     let docLabel = _docListLabel(doc);
     if (_showLastEditDate && doc.lastEditAt) {
-        const le = new Date(doc.lastEditAt);
-        const lts = `${le.getDate().toString().padStart(2, '0')}.${(le.getMonth() + 1).toString().padStart(2, '0')}. ${le.getHours().toString().padStart(2, '0')}:${le.getMinutes().toString().padStart(2, '0')}`;
-        docLabel += ` (le. ${lts})`;
+        docLabel += ` (le. ${_formatDocDate(doc.lastEditAt)})`;
     }
     if (_showImportDate && doc.importedAt) {
-        const d = new Date(doc.importedAt);
-        const ts = `${d.getDate().toString().padStart(2, '0')}.${(d.getMonth() + 1).toString().padStart(2, '0')}. ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
-        docLabel += ` (imp. ${ts})`;
+        docLabel += ` (imp. ${_formatDocDate(doc.importedAt)})`;
     }
     return docLabel;
 }
