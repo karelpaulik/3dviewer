@@ -234,7 +234,7 @@ let _isEditMode = false;   // true = editor mode, false = read-only mode
 let _bgOpacity = 1.0;      // editor content background opacity (0 = transparent, 1 = opaque)
 let _nav3d = false;        // true = pointer-events off on overlay → 3D navigation active
 let _tocScrollHandler = null; // scroll spy handler for TOC
-let _showLastEditDate = true;  // show (le. ...) in document button label
+let _showLastEditDate = false;  // show (le. ...) in document button label
 let _showImportDate = false;    // show (imp. ...) in document button label
 let _pdfExporting = false;
 let _btnExportPdf = null;
@@ -253,6 +253,11 @@ export function setDocLabelOptions({ showLastEditDate, showImportDate }) {
     if (showLastEditDate !== undefined) _showLastEditDate = showLastEditDate;
     if (showImportDate !== undefined) _showImportDate = showImportDate;
     refreshDocumentsGui();
+}
+
+/** List label used by Docs GUI and the outliner (includes optional last-edit / import dates). */
+export function formatDocumentListLabel(doc) {
+    return _docButtonLabel(doc);
 }
 
 export function getDocumentsStore() {

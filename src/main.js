@@ -103,7 +103,7 @@ import {
     getSelectedEntityLength,
     setSelectedEntityLength,
 } from './sectionSketchUtils.js';
-import { initDocumentsGui, importDocumentsFromGltfScene, getDocumentsStore, getDocumentFoldersStore, flushDocumentEdits, isDocOverlayBlockingInput, isDocumentEditorOpen, setDocLabelOptions, clearDocumentsStore, openDocumentViewer, createDocument, createDocumentFolder, renameDocument, renameDocumentFolder, deleteDocument, deleteDocuments, deleteDocumentFolder, moveDocument, moveDocuments, moveDocumentFolder, importDocumentJson, getDocOpenMode, setDocOpenMode } from './documentsUtils.js';
+import { initDocumentsGui, importDocumentsFromGltfScene, getDocumentsStore, getDocumentFoldersStore, flushDocumentEdits, isDocOverlayBlockingInput, isDocumentEditorOpen, setDocLabelOptions, formatDocumentListLabel, clearDocumentsStore, openDocumentViewer, createDocument, createDocumentFolder, renameDocument, renameDocumentFolder, deleteDocument, deleteDocuments, deleteDocumentFolder, moveDocument, moveDocuments, moveDocumentFolder, importDocumentJson, getDocOpenMode, setDocOpenMode } from './documentsUtils.js';
 import { isImageEditorOpen } from './imageEditorUtils.js';
 import {
     initUndoManager,
@@ -2211,6 +2211,7 @@ outlinerPanelEl = initOutliner({
         addParametricPrimitive(type, parentObj);
     },
     getDocuments: getDocumentsStore,
+    getDocumentLabel: formatDocumentListLabel,
     getDocumentFolders: getDocumentFoldersStore,
     getAttachments: getAttachmentsStore,
     onOpenDocument: openDocumentViewer,
@@ -3210,7 +3211,7 @@ function addMainGui() {
                 } }, 'fn').name('Set to default');
                 toolbarPrefFolder.close();
             const docNameFolder = preferencesFolder.addFolder('Document name');
-                const _docLabelOpts = { showLastEditDate: true, showImportDate: false };
+                const _docLabelOpts = { showLastEditDate: false, showImportDate: false };
                 docNameFolder.add(_docLabelOpts, 'showLastEditDate').name('Show last edit date').onChange(v => setDocLabelOptions({ showLastEditDate: v }));
                 docNameFolder.add(_docLabelOpts, 'showImportDate').name('Show import date').onChange(v => setDocLabelOptions({ showImportDate: v }));
                 docNameFolder.close();
