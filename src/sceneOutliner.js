@@ -1207,9 +1207,10 @@ export function deleteSelectedOutlinerFiles() {
  * Navigate the outliner selection up or down.
  * Sequence Assembled/step rows stay within the same sequence and are activated.
  * Arrangement rows stay within Arrangements and are applied.
+ * Document rows stay within Documents (visible docs, including nested folders) and are opened.
  * Scene-graph nodes return the Object3D to select.
  * @param {'up'|'down'} direction
- * @returns {{ kind: 'sequence' } | { kind: 'arrangement' } | { kind: 'object', object: import('three').Object3D } | null}
+ * @returns {{ kind: 'sequence' } | { kind: 'arrangement' } | { kind: 'document' } | { kind: 'object', object: import('three').Object3D } | null}
  */
 export function navigateOutliner(direction) {
     if (!treeEl) return null;
@@ -1222,6 +1223,10 @@ export function navigateOutliner(direction) {
     if (parseArrangementExpandId(currentId) != null) {
         navigateArrangement(direction, currentId);
         return { kind: 'arrangement' };
+    }
+    if (parseDocumentExpandId(currentId)) {
+        navigateDocument(direction, currentId);
+        return { kind: 'document' };
     }
 
     const allNodes = Array.from(treeEl.querySelectorAll('.outliner-node:not(.outliner-asset)'));
@@ -1441,6 +1446,39 @@ function navigateArrangement(direction, currentId) {
     if (!arrangement) return;
     selectedExpandId = targetId;
     if (onApplyArrangement) onApplyArrangement(arrangement);
+}
+
+function visibleDocumentItems() {
+    const folder = treeEl.querySelector(':scope > [data-expand-id="project:documents"]');
+    if (!folder) return [];
+    return Array.from(folder.querySelectorAll('[data-doc-kind="doc"]')).filter(li => isNodeVisible(li));
+}
+
+function navigateDocument(direction, currentId) {
+    const items = visibleDocumentItems();
+    if (items.length === 0) return;
+
+    let idx = items.findIndex(li => li.dataset.expandId === currentId);
+    if (idx < 0) idx = 0;
+    if (direction === 'up') {
+        idx = idx <= 0 ? 0 : idx - 1;
+    } else {
+        idx = idx >= items.length - 1 ? items.length - 1 : idx + 1;
+    }
+
+    const targetLi = items[idx];
+    const docId = targetLi?.dataset?.docId;
+    if (!docId) return;
+
+    const expandId = `doc:${docId}`;
+    const changed = expandId !== currentId;
+    clearFileMultiSelection();
+    selectedDocIds.clear();
+    selectedDocIds.add(docId);
+    docSelectAnchorId = docId;
+    selectOutlinerAssetByExpandId(expandId, { scroll: true });
+    applyDocMultiSelectClasses();
+    if (changed && onOpenDocument) onOpenDocument(docId);
 }
 
 /**
