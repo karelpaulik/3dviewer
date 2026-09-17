@@ -2920,6 +2920,7 @@ function init() {
         const owner = annotation.ownerObject || scene;
         const def = getAnnotation3dDefaults();
         const rotMap = { camera: def.rotationCamera, XY: def.rotationXY, XZ: def.rotationXZ, YZ: def.rotationYZ };
+        const srcRec = annotation._userDataRec || {};
         const rec = {
             type: 'note3d',
             text: annotation.text,
@@ -2932,6 +2933,10 @@ function init() {
             textColor: def.textColor,
             bgColor: def.bgColor,
         };
+        if (Number.isFinite(srcRec.boxWidth) && Number.isFinite(srcRec.boxHeight)) {
+            rec.boxWidth = srcRec.boxWidth;
+            rec.boxHeight = srcRec.boxHeight;
+        }
         if (!owner.userData.annotations3d) owner.userData.annotations3d = [];
         owner.userData.annotations3d.push(rec);
         deleteAnnotationByRef(annotation, null);
@@ -2942,12 +2947,17 @@ function init() {
     });
     setConvertTo2dFn((annotation, renderFn) => {
         const owner = annotation.ownerObject || scene;
+        const srcRec = annotation._userDataRec || {};
         const rec = {
             type: 'note',
             text: annotation.text,
             anchors: annotation.leaderLines.map(ll => ({ x: ll.anchorLocal.x, y: ll.anchorLocal.y, z: ll.anchorLocal.z })),
             labelPos: { x: annotation.labelLocal.x, y: annotation.labelLocal.y, z: annotation.labelLocal.z },
         };
+        if (Number.isFinite(srcRec.boxWidth) && Number.isFinite(srcRec.boxHeight)) {
+            rec.boxWidth = srcRec.boxWidth;
+            rec.boxHeight = srcRec.boxHeight;
+        }
         if (!owner.userData.annotations) owner.userData.annotations = [];
         owner.userData.annotations.push(rec);
         deleteAnnotation3dByRef(annotation, null);

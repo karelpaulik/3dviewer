@@ -62,6 +62,82 @@ const _flatAnnDefaults = {
 
 export function getFlatAnnDefaults() { return _flatAnnDefaults; }
 
+export const ANNOTATION_BOX_MIN_WIDTH = 48;
+export const ANNOTATION_BOX_MIN_HEIGHT = 24;
+export const ANNOTATION_CONTENT_CLASS = 'annotation-label-content';
+export const ANNOTATION_RESIZE_HANDLE_CLASS = 'annotation-resize-handle';
+
+function _annotationContentEl(el) {
+    if (!el) return null;
+    let content = el.querySelector(':scope > .' + ANNOTATION_CONTENT_CLASS);
+    if (!content) {
+        content = document.createElement('div');
+        content.className = ANNOTATION_CONTENT_CLASS;
+        const handle = el.querySelector(':scope > .' + ANNOTATION_RESIZE_HANDLE_CLASS);
+        el.insertBefore(content, handle);
+    }
+    return content;
+}
+
+export function setAnnotationLabelHtml(el, html) {
+    if (!el) return;
+    _annotationContentEl(el).innerHTML = html ?? '';
+}
+
+export function applyAnnotationBoxSize(el, width, height) {
+    if (!el) return;
+    const w = Number(width);
+    const h = Number(height);
+    if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) {
+        clearAnnotationBoxSize(el);
+        return;
+    }
+    el.style.boxSizing = 'border-box';
+    el.style.width = Math.max(ANNOTATION_BOX_MIN_WIDTH, w) + 'px';
+    el.style.height = Math.max(ANNOTATION_BOX_MIN_HEIGHT, h) + 'px';
+    el.style.whiteSpace = 'normal';
+    el.style.overflow = 'auto';
+}
+
+export function clearAnnotationBoxSize(el) {
+    if (!el) return;
+    el.style.width = '';
+    el.style.height = '';
+    el.style.overflow = '';
+    el.style.whiteSpace = 'nowrap';
+}
+
+export function annotationHasCustomBoxSize(annotation) {
+    const rec = annotation && annotation._userDataRec;
+    return !!(rec && Number.isFinite(rec.boxWidth) && Number.isFinite(rec.boxHeight));
+}
+
+export function applyAnnotationBoxSizeFromRec(annotation) {
+    const el = annotation && annotation.label && annotation.label.element;
+    if (!el || !annotationHasCustomBoxSize(annotation)) return;
+    applyAnnotationBoxSize(el, annotation._userDataRec.boxWidth, annotation._userDataRec.boxHeight);
+}
+
+export function syncAnnotationBoxSize(annotation) {
+    const el = annotation && annotation.label && annotation.label.element;
+    const rec = annotation && annotation._userDataRec;
+    if (!el || !rec) return;
+    const w = el.offsetWidth;
+    const h = el.offsetHeight;
+    rec.boxWidth = w;
+    rec.boxHeight = h;
+}
+
+export function resetAnnotationBoxSize(annotation, renderFn) {
+    const el = annotation && annotation.label && annotation.label.element;
+    clearAnnotationBoxSize(el);
+    if (annotation && annotation._userDataRec) {
+        delete annotation._userDataRec.boxWidth;
+        delete annotation._userDataRec.boxHeight;
+    }
+    if (renderFn) renderFn();
+}
+
 export function applyDefaultsToAllFlatAnnotations(renderFn) {
     for (const ann of _annotations) {
         const el = ann.label && ann.label.element;
@@ -89,8 +165,8 @@ function _createMarker(position) {
 function _createLabel(text, position) {
     const div = document.createElement('div');
     div.className = 'annotation-label';
-    div.innerHTML = text;
-    div.style.cssText = `color:${_flatAnnDefaults.textColor};background:${_flatAnnDefaults.bgColor};padding:3px 8px;border-radius:4px;font-size:${_flatAnnDefaults.fontSize}px;line-height:1.4;pointer-events:none;cursor:default;user-select:none;white-space:nowrap;`;
+    div.style.cssText = `position:relative;color:${_flatAnnDefaults.textColor};background:${_flatAnnDefaults.bgColor};padding:3px 8px;border-radius:4px;font-size:${_flatAnnDefaults.fontSize}px;line-height:1.4;pointer-events:none;cursor:default;user-select:none;white-space:nowrap;`;
+    setAnnotationLabelHtml(div, text);
     const label = new CSS2DObject(div);
     label.position.copy(position);
     label.userData._isAnnotation = true;
@@ -378,6 +454,11 @@ export function showAnnotationContextMenu(annotation, x, y, renderFn, menuBounds
         if (annotation.label) annotation.label.element.style.fontSize = size + 'px';
         if (renderFn) renderFn();
     }));
+    if (annotationHasCustomBoxSize(annotation)) {
+        menu.appendChild(createCtxMenuItem('Reset box size', () => {
+            resetAnnotationBoxSize(annotation, renderFn);
+        }, { onClose: closeMenu }));
+    }
 
     menu.appendChild(createCtxMenuSeparator());
     menu.appendChild(createCtxMenuItem('✏ Edit text', () => {
@@ -527,7 +608,7 @@ async function _editAnnotation(annotation, renderFn) {
     if (newText === null) return; // cancelled
 
     annotation.text = newText;
-    annotation.label.element.innerHTML = newText;
+    setAnnotationLabelHtml(annotation.label.element, newText);
 
     // Update userData
     if (annotation._userDataRec) annotation._userDataRec.text = newText;
@@ -945,6 +1026,7 @@ function _reconstructAnnotation(owner, rec, renderFn) {
     });
 
     const annotation = { label, leaderLines, labelLocal: labelLocal.clone(), text: rec.text, ownerObject: owner, _userDataRec: rec };
+    applyAnnotationBoxSizeFromRec(annotation);
     _annotations.push(annotation);
 
     // Attach dblclick + contextmenu handlers

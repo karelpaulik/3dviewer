@@ -1,7 +1,7 @@
 // annotation3dUtils.js – CSS3D annotation system (labels rendered as 3D-oriented DOM elements)
 import * as THREE from 'three';
 import { CSS3DObject } from 'three/addons/renderers/CSS3DRenderer.js';
-import { showAnnotationTextDialog } from './annotationUtils.js';
+import { showAnnotationTextDialog, setAnnotationLabelHtml, applyAnnotationBoxSizeFromRec, annotationHasCustomBoxSize, resetAnnotationBoxSize } from './annotationUtils.js';
 import { positionContextMenu, createToolContextMenu, createCtxMenuSeparator, createCtxMenuItem, createCtxMenuColorRow, attachCtxMenuOutsideClose } from './uiMenuUtils.js';
 
 // --- Private state ---
@@ -127,8 +127,8 @@ function _createMarker(position) {
 function _createLabel3d(text, position) {
     const div = document.createElement('div');
     div.className = 'annotation-label annotation-label-3d';
-    div.innerHTML = text;
-    div.style.cssText = 'color:#fff;background:rgba(40,80,160,0.88);padding:3px 8px;border-radius:4px;font-size:11px;line-height:1.4;pointer-events:none;cursor:default;user-select:none;white-space:nowrap;';
+    div.style.cssText = 'position:relative;color:#fff;background:rgba(40,80,160,0.88);padding:3px 8px;border-radius:4px;font-size:11px;line-height:1.4;pointer-events:none;cursor:default;user-select:none;white-space:nowrap;';
+    setAnnotationLabelHtml(div, text);
     const label = new CSS3DObject(div);
     // CSS3DObject constructor forcefully sets pointerEvents='auto' — override it back to none.
     // _setLabelPointerEvents() will re-enable 'auto' for specific labels when label edit is active.
@@ -297,7 +297,7 @@ async function _editAnnotation(annotation, renderFn) {
     _dialogOpen = false;
     if (newText === null) return;
     annotation.text = newText;
-    annotation.label.element.innerHTML = newText;
+    setAnnotationLabelHtml(annotation.label.element, newText);
     if (annotation._userDataRec) annotation._userDataRec.text = newText;
     if (renderFn) renderFn();
 }
@@ -437,6 +437,11 @@ export function showAnnotation3dContextMenu(annotation, x, y, renderFn, menuBoun
             if (renderFn) renderFn();
         });
     }, { onClose: closeMenu }));
+    if (annotationHasCustomBoxSize(annotation)) {
+        menu.appendChild(createCtxMenuItem('Reset box size', () => {
+            resetAnnotationBoxSize(annotation, renderFn);
+        }, { onClose: closeMenu }));
+    }
     menu.appendChild(createCtxMenuItem((annotation.mirrored ? '☑' : '☐') + ' Mirror text', () => {
         annotation.mirrored = !annotation.mirrored;
         if (annotation._userDataRec) annotation._userDataRec.mirrored = annotation.mirrored;
@@ -931,6 +936,7 @@ function _reconstructAnnotation3d(owner, rec, renderFn) {
     if (_currentCamera) _applyOrientation(annotation, _currentCamera);
     _applyScale(annotation);
     _applyColors(annotation);
+    applyAnnotationBoxSizeFromRec(annotation);
     _attachHandlers(annotation, renderFn);
     return annotation;
 }

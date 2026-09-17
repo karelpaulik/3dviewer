@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 import { CSS3DObject } from 'three/addons/renderers/CSS3DRenderer.js';
-import { getAnnotations, updateAnnotationLeaderLine, syncAnnotationLabelPos, deleteAnnotationByRef, getAnnMarkerSettings, redefineAnnotationAnchor } from './annotationUtils.js';
+import { getAnnotations, updateAnnotationLeaderLine, syncAnnotationLabelPos, deleteAnnotationByRef, getAnnMarkerSettings, redefineAnnotationAnchor, applyAnnotationBoxSize, syncAnnotationBoxSize, ANNOTATION_RESIZE_HANDLE_CLASS } from './annotationUtils.js';
 import { getAnnotations3d, updateAnnotation3dLeaderLine, syncAnnotation3dLabelPos, deleteAnnotation3dByRef, getAnn3dMarkerColor, redefineAnnotation3dAnchor } from './annotation3dUtils.js';
 import { getCadDim3dMeasurements, deleteCadDim3dByRef, rebuildCadDim3dVisuals, syncCadDim3dLabelPos, updateCadDim3dLeaderLine, redefineCadDim3dEndpoint, setCadDim3dRedefineHighlight } from './cadDim3dUtils.js';
 
@@ -112,8 +112,12 @@ let _selectDimActive = false;
 let _selectedDim = null; // reference to the selected measurement object (from _measurements, _angleMeasurements or _radiusMeasurements)
 let _selectedDimType = null; // 'distance' | 'angle' | 'radius'
 let _isDraggingLabel = false;
+let _isResizingLabel = false;
 let _dragStartMouse = new THREE.Vector2();
 let _dragStartPos = new THREE.Vector3();
+let _resizeStartMouse = new THREE.Vector2();
+let _resizeStartWidth = 0;
+let _resizeStartHeight = 0;
 let _currentCamera = null;
 let _renderFn = null;
 let _orbitControls = null;
@@ -1698,10 +1702,33 @@ export function getRadiusMarkers() {
 
 // ===================== Select Dimension Mode =====================
 
+function _isAnnotationResizeHandle(target) {
+    return !!(target && target.closest && target.closest('.' + ANNOTATION_RESIZE_HANDLE_CLASS));
+}
+
+function _removeAnnotationResizeHandle(el) {
+    if (!el) return;
+    el.querySelectorAll('.' + ANNOTATION_RESIZE_HANDLE_CLASS).forEach((h) => h.remove());
+}
+
+function _attachAnnotationResizeHandle(el) {
+    if (!el) return;
+    _removeAnnotationResizeHandle(el);
+    const handle = document.createElement('div');
+    handle.className = ANNOTATION_RESIZE_HANDLE_CLASS;
+    handle.title = 'Resize';
+    handle.addEventListener('dblclick', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+    });
+    el.appendChild(handle);
+}
+
 function _deselectDim() {
     cancelRedefinePoint();
     if (_selectedDim && _selectedDim.label) {
         _selectedDim.label.element.style.border = 'none';
+        _removeAnnotationResizeHandle(_selectedDim.label.element);
     }
     _selectedDim = null;
     _selectedDimType = null;
@@ -1712,6 +1739,9 @@ function _selectDim(meas, type) {
     _selectedDim = meas;
     _selectedDimType = type;
     meas.label.element.style.border = SELECTED_BORDER;
+    if (type === 'annotation' || type === 'annotation3d') {
+        _attachAnnotationResizeHandle(meas.label.element);
+    }
 }
 
 function _setLabelPointerEvents(enabled) {
@@ -1782,6 +1812,19 @@ function _onLabelMouseDown(e) {
     if (!found) return;
 
     _selectDim(found, foundType);
+
+    if ((e.button == null || e.button === 0)
+        && (foundType === 'annotation' || foundType === 'annotation3d')
+        && _isAnnotationResizeHandle(e.target)) {
+        if (e.preventDefault) e.preventDefault();
+        _isResizingLabel = true;
+        _resizeStartMouse.set(e.clientX, e.clientY);
+        _resizeStartWidth = found.label.element.offsetWidth;
+        _resizeStartHeight = found.label.element.offsetHeight;
+        if (_orbitControls) _orbitControls.enabled = false;
+        if (_renderFn) _renderFn();
+        return;
+    }
 
     if (foundType === 'cadDim') {
         if (found.dragMode === 1) {
@@ -1917,6 +1960,22 @@ function _removeLabelInteractionListeners(el) {
 }
 
 function _onDocumentMouseMove(e) {
+    if (_isResizingLabel && _selectedDim && (_selectedDimType === 'annotation' || _selectedDimType === 'annotation3d')) {
+        const el = _selectedDim.label.element;
+        let widthDelta = e.clientX - _resizeStartMouse.x;
+        let heightDelta = e.clientY - _resizeStartMouse.y;
+        if (_selectedDimType === 'annotation3d') {
+            const rect = el.getBoundingClientRect();
+            const sx = rect.width / Math.max(el.offsetWidth, 1);
+            const sy = rect.height / Math.max(el.offsetHeight, 1);
+            if (sx > 1e-6) widthDelta = widthDelta / sx;
+            if (sy > 1e-6) heightDelta = heightDelta / sy;
+        }
+        applyAnnotationBoxSize(el, _resizeStartWidth + widthDelta, _resizeStartHeight + heightDelta);
+        if (_renderFn) _renderFn();
+        return;
+    }
+
     if (!_isDraggingLabel || !_selectedDim || !_currentCamera) return;
 
     // --- CSS3D CAD dimension: dragMode 0 = rebuild whole dim ---
@@ -2113,6 +2172,15 @@ function _removeLeaderLine(meas) {
 }
 
 function _onDocumentMouseUp(e) {
+    if (_isResizingLabel) {
+        _isResizingLabel = false;
+        if (_orbitControls) _orbitControls.enabled = true;
+        if (_selectedDim && (_selectedDimType === 'annotation' || _selectedDimType === 'annotation3d')) {
+            syncAnnotationBoxSize(_selectedDim);
+        }
+        if (_renderFn) _renderFn();
+        return;
+    }
     if (_isDraggingLabel) {
         _isDraggingLabel = false;
         if (_orbitControls) _orbitControls.enabled = true;
@@ -2821,6 +2889,7 @@ export function setSelectDimActive(val) {
     if (!val) {
         _deselectDim();
         _isDraggingLabel = false;
+        _isResizingLabel = false;
     }
     if (val) {
         document.addEventListener('mousemove', _onDocumentMouseMove);
@@ -2866,19 +2935,19 @@ export function selectDimTouchStart(clientX, clientY) {
     const labelEl = el.closest('.measurement-label') || el.closest('.annotation-label');
     if (!labelEl) return false;
     // Synthesise a mousedown-like event on that element
-    const synth = { clientX, clientY, currentTarget: labelEl, stopPropagation: () => {} };
+    const synth = { clientX, clientY, currentTarget: labelEl, target: el, stopPropagation: () => {}, preventDefault: () => {} };
     _onLabelMouseDown(synth);
     return true; // consumed
 }
 
 export function selectDimTouchMove(clientX, clientY) {
-    if (!_isDraggingLabel) return false;
+    if (!_isDraggingLabel && !_isResizingLabel) return false;
     _onDocumentMouseMove({ clientX, clientY });
     return true;
 }
 
 export function selectDimTouchEnd() {
-    if (!_isDraggingLabel) return;
+    if (!_isDraggingLabel && !_isResizingLabel) return;
     _onDocumentMouseUp({});
 }
 

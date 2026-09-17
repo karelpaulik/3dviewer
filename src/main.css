@@ -1862,6 +1862,31 @@ a, button, input, select {
     cursor: nwse-resize;
 }
 
+.annotation-label-content {
+    word-break: break-word;
+}
+
+.annotation-resize-handle {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: 10px;
+    height: 10px;
+    cursor: nwse-resize;
+    pointer-events: auto;
+    touch-action: none;
+    z-index: 1;
+    background: #ffdd00;
+    border-radius: 1px 0 3px 0;
+    box-shadow: -1px -1px 0 rgba(0, 0, 0, 0.25);
+}
+
+/* Beat #css3d-root * { pointer-events: none } so the 3D label handle is hoverable/draggable. */
+#css3d-root .annotation-resize-handle {
+    pointer-events: auto;
+    cursor: nwse-resize;
+}
+
 #selected-overlay.selected-overlay-collapsed .selected-overlay-resize {
     display: none;
 }
