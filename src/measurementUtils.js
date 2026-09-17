@@ -2444,18 +2444,22 @@ export function cancelRedefinePoint() {
 
 /**
  * @param {{ camera: THREE.Camera, clientX: number, clientY: number, canvasRect: DOMRect }} opts
- * @returns {boolean} true if a marker was selected
+ * @returns {{ key: 'p1'|'p2', marker: THREE.Mesh } | null}
  */
-export function pickRedefineMarkerAtScreen(opts) {
-    if (!_redefineSession || _redefineSession.phase !== 'selectMarker') return false;
-    if (!_canRedefineSelected() || !opts?.camera || !opts.canvasRect) return false;
+function _hitTestRedefineMarker(opts) {
+    if (!_redefineSession || !_canRedefineSelected() || !opts?.camera || !opts.canvasRect) return null;
+    const keys = _redefineSession.phase === 'selectMarker'
+        ? ['p1', 'p2']
+        : (_redefineSession.pointKey ? [_redefineSession.pointKey] : []);
+    if (keys.length === 0) return null;
 
     const { camera, clientX, clientY, canvasRect } = opts;
     const world = new THREE.Vector3();
     let bestKey = null;
+    let bestMarker = null;
     let bestDist = REDEFINE_PICK_PX;
 
-    for (const key of ['p1', 'p2']) {
+    for (const key of keys) {
         const mk = _getEndpointMarker(_selectedDim, _selectedDimType, key);
         if (!mk) continue;
         mk.getWorldPosition(world);
@@ -2467,11 +2471,31 @@ export function pickRedefineMarkerAtScreen(opts) {
         if (d <= bestDist) {
             bestDist = d;
             bestKey = key;
+            bestMarker = mk;
         }
     }
-    if (!bestKey) return false;
+    return bestKey ? { key: bestKey, marker: bestMarker } : null;
+}
 
-    _redefineSession = { phase: 'pickNewPoint', pointKey: bestKey };
+/**
+ * Screen-space hit-test for redefine endpoint markers. Does not change session phase.
+ * @param {{ camera: THREE.Camera, clientX: number, clientY: number, canvasRect: DOMRect }} opts
+ * @returns {THREE.Mesh | null}
+ */
+export function hitTestRedefineMarkerAtScreen(opts) {
+    return _hitTestRedefineMarker(opts)?.marker ?? null;
+}
+
+/**
+ * @param {{ camera: THREE.Camera, clientX: number, clientY: number, canvasRect: DOMRect }} opts
+ * @returns {boolean} true if a marker was selected
+ */
+export function pickRedefineMarkerAtScreen(opts) {
+    if (!_redefineSession || _redefineSession.phase !== 'selectMarker') return false;
+    const hit = _hitTestRedefineMarker(opts);
+    if (!hit) return false;
+
+    _redefineSession = { phase: 'pickNewPoint', pointKey: hit.key };
     _applyRedefineEndpointColors();
     if (_renderFn) _renderFn();
     return true;
