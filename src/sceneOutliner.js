@@ -2077,10 +2077,12 @@ function buildFileTreeChildren(atts, folders, parentId, depth, expandedIds) {
     for (const folder of childFolders) {
         const expandId = `file-folder:${folder.id}`;
         const folderExpanded = expandedIds ? expandedIds.has(expandId) : true;
+        const name = folder.name || '(unnamed folder)';
+        const label = formatOutlinerFileFolderLabel(name, atts, folders, folder.id);
         const folderNode = createAssetFolderNode({
             expandId,
-            label: folder.name || '(unnamed folder)',
-            title: folder.name || '(unnamed folder)',
+            label,
+            title: label,
             children: buildFileTreeChildren(atts, folders, folder.id, depth + 1, expandedIds),
             expanded: folderExpanded,
             depth,
@@ -2235,6 +2237,32 @@ function formatOutlinerFileSize(bytes) {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function collectFileFolderIdsInScope(folders, folderId) {
+    const ids = new Set();
+    const walk = (parentId) => {
+        ids.add(parentId);
+        for (const folder of folders) {
+            if ((folder.parentId || null) === parentId) walk(folder.id);
+        }
+    };
+    walk(folderId);
+    return ids;
+}
+
+function formatOutlinerFileFolderLabel(name, atts, folders, folderId) {
+    if (!getShowOutlinerFileSize()) return name;
+    const ids = collectFileFolderIdsInScope(folders, folderId);
+    let count = 0;
+    let bytes = 0;
+    for (const att of atts) {
+        if (ids.has(att.folderId)) {
+            count += 1;
+            bytes += Number(att.size) || 0;
+        }
+    }
+    return `${name} (${count}, ${formatOutlinerFileSize(bytes)})`;
 }
 
 const SHOW_OUTLINER_FILE_SIZE_KEY = 'outlinerShowFileSize';
