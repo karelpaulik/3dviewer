@@ -2609,6 +2609,12 @@ function init() {
         event.preventDefault();
         event.returnValue = '';
     } );
+    // Capture pointerdown so RMB start pos is recorded even when a tool label
+    // calls preventDefault/stopPropagation (which suppresses mousedown).
+    window.addEventListener('pointerdown', function (event) {
+        mouseDownPos.x = event.clientX;
+        mouseDownPos.y = event.clientY;
+    }, true);
     window.addEventListener( 'mousedown', onMouseDown, false );
     window.addEventListener( 'mouseup', onMouseUp, false );
     window.addEventListener( 'click', onClick, false );
@@ -17412,6 +17418,10 @@ function assemblyMoveStepDown() {
         if (isDocOverlayBlockingInput()) return;
         event.preventDefault();
 
+        // RMB + drag pans the scene – skip click actions (tool menu, CAD axis cycle)
+        const contextMenuPos = new THREE.Vector2(event.clientX, event.clientY);
+        if (mouseDownPos.distanceTo(contextMenuPos) > 3) return;
+
         // In CAD dim phase 2 – cycle axis instead of showing context menu
         if (viewProp.cadDimMode && isCadDimActive() && getCadDimStep() === 2) {
             const newAxis = cycleCadDimAxis(mouse, currentCamera);
@@ -17428,49 +17438,7 @@ function assemblyMoveStepDown() {
             return;
         }
 
-        // CAD dim (CSS3D) selected – show cadDim3d label menu
-        if (isSelectDimActive() && getSelectedCadDim3d()) {
-            refreshCadDim3dMenu();
-            showAt(menuCadDim3d, event.clientX, event.clientY);
-            return;
-        }
-
-        // CAD dim selected – show cadDim label menu
-        if (isSelectDimActive() && getSelectedCadDim()) {
-            refreshCadDimMenu();
-            showAt(menuCadDim, event.clientX, event.clientY);
-            return;
-        }
-
-        // Annotation (3D) selected – show annotation menu
-        if (isSelectDimActive() && getSelectedAnnotation3d()) {
-            hideAll();
-            showAnnotation3dContextMenu(getSelectedAnnotation3d(), event.clientX, event.clientY, render, getMenuBounds());
-            return;
-        }
-
-        // Annotation (flat) selected – show annotation menu
-        if (isSelectDimActive() && getSelectedAnnotation()) {
-            hideAll();
-            showAnnotationContextMenu(getSelectedAnnotation(), event.clientX, event.clientY, render, getMenuBounds());
-            return;
-        }
-
-        // Distance / angle / radius measurement selected
-        if (isSelectDimActive() && (getSelectedDistance() || getSelectedAngle() || getSelectedRadius())) {
-            refreshMeasurementMenu();
-            showAt(menuMeasurement, event.clientX, event.clientY);
-            return;
-        }
-
-        // Kontrola, zda se myš od pravého kliknutí příliš pohybovala
-        const contextMenuPos = new THREE.Vector2(event.clientX, event.clientY);
-        const dragDistance = mouseDownPos.distanceTo(contextMenuPos);
-        
-        // Zobrazit kontextové menu pouze pokud se myš neposunula více než 3 pixely
-        if (dragDistance <= 3) {
         triggerContextMenu(event.clientX, event.clientY);
-        }
     }, false);
 
     // --- Touch long-press handler (500 ms) ---
