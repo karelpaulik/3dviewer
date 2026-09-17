@@ -322,7 +322,7 @@ export function downloadAttachmentsZip(folderId = null) {
 export function openViewableAttachments(folderId = null) {
     const viewable = _attachmentsInScope(folderId).filter(a => _canOpenInBrowser(a.mimeType));
     if (viewable.length === 0) return;
-    viewable.forEach(a => _openAttachment(a));
+    viewable.forEach(a => _openAttachment(a, { forceNew: true }));
     if (viewable.length > 1) {
         setTimeout(() => {
             if (window.confirm('Arrange windows as tile?')) {
@@ -994,8 +994,8 @@ const _previewHandlers = {
     onAfterRender: () => _updateConvertBtnState(_pdfConverting || _imageConverting),
 };
 
-function _openAttachment(att) {
-    openFilePreview(att, _previewHandlers);
+function _openAttachment(att, options) {
+    openFilePreview(att, _previewHandlers, options);
 }
 
 function _attachmentToOcrCanvas(att) {

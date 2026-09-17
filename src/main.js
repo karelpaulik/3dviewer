@@ -132,6 +132,7 @@ import {
     createArrangementsCatalogCommand,
 } from './undoCommands.js';
 import { initAttachmentsGui, importAttachmentsFromGltfScene, getAttachmentsStore, getAttachmentFoldersStore, addImageAttachmentFromBlob, clearAttachmentsStore, openAttachment, canOpenAttachmentInBrowser, createAttachmentFolder, renameAttachmentFolder, deleteAttachmentFolder, moveAttachment, moveAttachments, moveAttachmentFolder, renameAttachment, deleteAttachment, deleteAttachments, addAttachmentsToFolder, addFolderToFolder, pasteImageToFolder, newImageInFolder, captureScreenToFolder, downloadAttachmentsZip, openViewableAttachments, editImageAttachments, downloadAttachmentById, editAttachmentById, editPdfAttachmentById, managePdfPagesById, convertImageToPdfById, convertPdfToImagesById } from './attachmentsUtils.js';
+import { getFileOpenMode, setFileOpenMode } from './filePreviewUtils.js';
 import { serializeAttachmentsForExport } from './attachmentCompressionUtils.js';
 import { openFileOpProgress, yieldToUi } from './fileOpProgressUtils.js';
 import { initLocalFileAccess, openLocalGlbFile, saveLocalGlbFile, saveLocalGlbFileAs, clearCurrentLocalFileHandle, waitForExternalFileSignal, wasOpenedWithExternalFile } from './localFileAccess.js';
@@ -2233,6 +2234,8 @@ outlinerPanelEl = initOutliner({
     onMoveDocumentFolder: moveDocumentFolder,
     onOpenAttachment: openAttachment,
     canOpenAttachment: canOpenAttachmentInBrowser,
+    getFileOpenMode,
+    onSetFileOpenMode: setFileOpenMode,
     fileOps: {
         getFolders: getAttachmentFoldersStore,
         createFolder: (parentId) => createAttachmentFolder({ parentId }),

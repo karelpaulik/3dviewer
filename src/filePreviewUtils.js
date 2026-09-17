@@ -6,6 +6,7 @@ import { buildWysiwygEditor } from './annotationUtils.js';
 import { raiseOverlaySurface, unregisterOverlaySurface } from './overlayStackUtils.js';
 
 const _MOBILE_BREAKPOINT = 768;
+const FILE_OPEN_MODE_KEY = 'fileOpenMode';
 
 let _instances = [];
 let _activeInst = null;
@@ -13,6 +14,31 @@ let _toolbarEl = null;
 let _nextWinPos = 0;
 let _globalHandlers = null;
 let _keyHandlerAttached = false;
+
+function _readFileOpenMode() {
+    try {
+        return localStorage.getItem(FILE_OPEN_MODE_KEY) === 'one' ? 'one' : 'many';
+    } catch (_) {
+        return 'many';
+    }
+}
+
+let _fileOpenMode = _readFileOpenMode();
+
+/** @returns {'many'|'one'} */
+export function getFileOpenMode() {
+    return _fileOpenMode;
+}
+
+/** @param {'many'|'one'} mode */
+export function setFileOpenMode(mode) {
+    const next = mode === 'one' ? 'one' : 'many';
+    _fileOpenMode = next;
+    try {
+        localStorage.setItem(FILE_OPEN_MODE_KEY, next);
+    } catch (_) { /* ignore */ }
+    return next;
+}
 
 function _createInstance(att) {
     return {
@@ -30,8 +56,9 @@ function _createInstance(att) {
 /**
  * @param {object} att – attachment { id, name, mimeType, data, comment? }
  * @param {object} handlers – callbacks from attachmentsUtils
+ * @param {{ forceNew?: boolean }} [options] – forceNew opens another window even in single-window mode
  */
-export function openFilePreview(att, handlers) {
+export function openFilePreview(att, handlers, { forceNew = false } = {}) {
     _globalHandlers = handlers;
 
     const existing = _instances.find(i =>
@@ -39,6 +66,16 @@ export function openFilePreview(att, handlers) {
     );
     if (existing) {
         _focusInstance(existing);
+        if (!forceNew && _fileOpenMode === 'one') _closeOtherInstances(existing);
+        return;
+    }
+
+    if (!forceNew && _fileOpenMode === 'one' && _instances.length > 0) {
+        const target = (_activeInst && _instances.includes(_activeInst))
+            ? _activeInst
+            : _instances[_instances.length - 1];
+        _replaceInstanceAttachment(target, att);
+        _closeOtherInstances(target);
         return;
     }
 
@@ -51,6 +88,21 @@ export function openFilePreview(att, handlers) {
     if (window.innerWidth <= _MOBILE_BREAKPOINT) {
         requestAnimationFrame(() => _toggleMaximize(inst));
     }
+}
+
+function _replaceInstanceAttachment(inst, att) {
+    _saveComment(inst);
+    _saveName(inst);
+    inst.att = att;
+    _updateTitleFields(inst);
+    _renderPreview(inst);
+    _focusInstance(inst);
+}
+
+function _closeOtherInstances(keep) {
+    [..._instances].forEach(inst => {
+        if (inst !== keep) _close(inst);
+    });
 }
 
 export function closeFilePreviewForAttachment(att) {
@@ -177,7 +229,6 @@ function _buildInstanceUI(inst) {
 
 function _wireInstanceEvents(inst) {
     const win = inst.winEl;
-    const att = inst.att;
 
     win.addEventListener('mousedown', () => _focusInstance(inst), true);
 
@@ -185,16 +236,18 @@ function _wireInstanceEvents(inst) {
     win.querySelector('.fp-maximize-btn').addEventListener('click', () => _toggleMaximize(inst));
 
     win.querySelector('.fp-ocr-btn').addEventListener('click', () => {
-        _globalHandlers?.onOcr?.(att, win.querySelector('.fp-ocr-btn'));
+        _globalHandlers?.onOcr?.(inst.att, win.querySelector('.fp-ocr-btn'));
     });
     win.querySelector('.fp-edit-btn').addEventListener('click', () => {
+        const att = inst.att;
         if (att.mimeType === 'application/pdf') _globalHandlers?.onEditPdf?.(att);
         else _globalHandlers?.onEdit?.(att);
     });
     win.querySelector('.fp-pages-btn').addEventListener('click', () => {
-        _globalHandlers?.onManagePages?.(att);
+        _globalHandlers?.onManagePages?.(inst.att);
     });
     win.querySelector('.fp-convert-btn').addEventListener('click', () => {
+        const att = inst.att;
         if (att.mimeType === 'application/pdf') _globalHandlers?.onConvertPdf?.(att);
         else if (att.mimeType?.startsWith('image/')) _globalHandlers?.onConvertImage?.(att);
     });
