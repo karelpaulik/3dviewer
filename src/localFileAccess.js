@@ -10,7 +10,6 @@ import {
     SHARE_TARGET_QUERY_PARAM,
     SHARE_TARGET_QUERY_VALUE,
 } from './shareTargetConstants.js';
-import { openFileOpProgress } from './fileOpProgressUtils.js';
 
 const GLB_PICKER_TYPES = [{
     description: 'GLB Model',
@@ -60,7 +59,7 @@ const shareTargetSettledPromise = new Promise(resolve => {
  *   loadStlFile?: (file: File) => void | Promise<void>,
  *   loadStpFile?: (file: File) => void | Promise<void>,
  *   updateFileUi?: (fileName: string) => void,
- *   buildGlbBuffer?: (opts: { draco?: boolean, finalName?: string, recordHistory?: boolean, progress?: object }) => Promise<{ buffer: ArrayBuffer | Uint8Array, suggestedName: string } | null>,
+ *   buildGlbBuffer?: (opts: { draco?: boolean, finalName?: string, recordHistory?: boolean }) => Promise<{ buffer: ArrayBuffer, suggestedName: string } | null>,
  *   recordSaveHistoryIfEnabled?: () => Promise<boolean>,
  *   fallbackImportGlb?: () => void,
  * }} */
@@ -283,32 +282,10 @@ export async function waitForExternalFileSignal(timeoutMs = 150) {
     ]);
 }
 
-function toUint8Array(buffer) {
-    return buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
-}
-
-async function writeArrayBufferToHandle(handle, buffer, onProgress) {
-    const bytes = toUint8Array(buffer);
+async function writeArrayBufferToHandle(handle, buffer) {
     const writable = await handle.createWritable();
-    const chunkSize = 8 * 1024 * 1024;
-    try {
-        if (!onProgress || bytes.byteLength <= chunkSize) {
-            await writable.write(bytes);
-            onProgress?.(1);
-        } else {
-            let offset = 0;
-            while (offset < bytes.byteLength) {
-                const end = Math.min(offset + chunkSize, bytes.byteLength);
-                await writable.write(bytes.subarray(offset, end));
-                offset = end;
-                onProgress?.(offset / bytes.byteLength);
-            }
-        }
-        await writable.close();
-    } catch (err) {
-        try { await writable.abort(); } catch { /* ignore */ }
-        throw err;
-    }
+    await writable.write(buffer);
+    await writable.close();
 }
 
 function ensureGlbExtension(name) {
@@ -414,29 +391,13 @@ export async function saveLocalGlbFile() {
         return;
     }
 
-    const historyOk = await _callbacks.recordSaveHistoryIfEnabled?.();
-    if (historyOk === false) return;
-
     const finalName = ensureGlbExtension(currentFileName || undefined);
-    const progress = openFileOpProgress('Saving GLB');
 
     try {
-        const built = await _callbacks.buildGlbBuffer({
-            draco: true,
-            finalName,
-            recordHistory: false,
-            progress,
-        });
+        const built = await _callbacks.buildGlbBuffer({ draco: true, finalName, recordHistory: true });
         if (!built) return;
 
-        progress.set({ status: 'Writing file…', progress: 0.88 });
-        await writeArrayBufferToHandle(currentFileHandle, built.buffer, (t) => {
-            progress.set({
-                status: 'Writing file…',
-                progress: 0.88 + 0.12 * t,
-            });
-        });
-        progress.set({ status: 'Done', progress: 1 });
+        await writeArrayBufferToHandle(currentFileHandle, built.buffer);
         currentFileName = built.suggestedName;
         _callbacks.updateFileUi?.(built.suggestedName);
         console.log(`[Save] Saved to "${built.suggestedName}".`);
@@ -444,8 +405,6 @@ export async function saveLocalGlbFile() {
         if (err?.name === 'AbortError') return;
         console.error('[Save] Failed to save local file:', err);
         alert('Could not save file: ' + (err.message || err));
-    } finally {
-        progress.close();
     }
 }
 
@@ -476,25 +435,12 @@ export async function saveLocalGlbFileAs() {
     }
 
     const finalName = ensureGlbExtension(handle.name || defaultName);
-    const progress = openFileOpProgress('Saving GLB');
 
     try {
-        const built = await _callbacks.buildGlbBuffer({
-            draco: true,
-            finalName,
-            recordHistory: false,
-            progress,
-        });
+        const built = await _callbacks.buildGlbBuffer({ draco: true, finalName, recordHistory: false });
         if (!built) return;
 
-        progress.set({ status: 'Writing file…', progress: 0.88 });
-        await writeArrayBufferToHandle(handle, built.buffer, (t) => {
-            progress.set({
-                status: 'Writing file…',
-                progress: 0.88 + 0.12 * t,
-            });
-        });
-        progress.set({ status: 'Done', progress: 1 });
+        await writeArrayBufferToHandle(handle, built.buffer);
         currentFileHandle = handle;
         currentFileName = built.suggestedName;
         _callbacks.updateFileUi?.(built.suggestedName);
@@ -502,7 +448,5 @@ export async function saveLocalGlbFileAs() {
     } catch (err) {
         console.error('[Save As] Failed to save local file:', err);
         alert('Could not save file: ' + (err.message || err));
-    } finally {
-        progress.close();
     }
 }

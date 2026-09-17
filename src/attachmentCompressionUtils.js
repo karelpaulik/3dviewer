@@ -100,7 +100,9 @@ function estimateStoredBytes(att) {
     return att.size ?? Math.round(att.data.length * 0.75);
 }
 
-function logAttachmentExportStats(store, serialized) {
+export function serializeAttachmentsForExport(store, prefs) {
+    const serialized = store.map(att => serializeAttachmentForGltf(att, prefs));
+
     const fileCount = store.length;
     const totalOriginal = store.reduce((sum, att) => sum + (att.size ?? 0), 0);
     const totalStored = serialized.reduce((sum, att) => sum + estimateStoredBytes(att), 0);
@@ -115,26 +117,6 @@ function logAttachmentExportStats(store, serialized) {
             ` (${compressedCount} gzip, saved ${saved}%)`
         );
     }
-}
 
-export function serializeAttachmentsForExport(store, prefs) {
-    const serialized = store.map(att => serializeAttachmentForGltf(att, prefs));
-    logAttachmentExportStats(store, serialized);
-    return serialized;
-}
-
-/**
- * Same as serializeAttachmentsForExport, but yields between items so a progress UI can paint.
- * @param {(info: { index: number, count: number, name: string }) => void} [onProgress]
- */
-export async function serializeAttachmentsForExportAsync(store, prefs, onProgress) {
-    const serialized = [];
-    const n = store.length;
-    for (let i = 0; i < n; i++) {
-        onProgress?.({ index: i, count: n, name: store[i].name });
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        serialized.push(serializeAttachmentForGltf(store[i], prefs));
-    }
-    logAttachmentExportStats(store, serialized);
     return serialized;
 }

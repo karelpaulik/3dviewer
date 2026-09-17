@@ -132,8 +132,7 @@ import {
     createArrangementsCatalogCommand,
 } from './undoCommands.js';
 import { initAttachmentsGui, importAttachmentsFromGltfScene, getAttachmentsStore, getAttachmentFoldersStore, addImageAttachmentFromBlob, clearAttachmentsStore, openAttachment, canOpenAttachmentInBrowser, createAttachmentFolder, renameAttachmentFolder, deleteAttachmentFolder, moveAttachment, moveAttachments, moveAttachmentFolder, renameAttachment, deleteAttachment, deleteAttachments, addAttachmentsToFolder, addFolderToFolder, pasteImageToFolder, newImageInFolder, captureScreenToFolder, downloadAttachmentsZip, openViewableAttachments, editImageAttachments, downloadAttachmentById, editAttachmentById, editPdfAttachmentById, managePdfPagesById, convertImageToPdfById, convertPdfToImagesById } from './attachmentsUtils.js';
-import { serializeAttachmentsForExportAsync } from './attachmentCompressionUtils.js';
-import { openFileOpProgress, yieldToUi, createAbortError } from './fileOpProgressUtils.js';
+import { serializeAttachmentsForExport } from './attachmentCompressionUtils.js';
 import { initLocalFileAccess, openLocalGlbFile, saveLocalGlbFile, saveLocalGlbFileAs, clearCurrentLocalFileHandle, waitForExternalFileSignal, wasOpenedWithExternalFile } from './localFileAccess.js';
 import {
     USER_NAME_STORAGE_KEY,
@@ -3354,8 +3353,9 @@ function addMainGui() {
         hasLoadedContent: () => hasGlbExportContent(),
         clearScene: () => clearSceneFully(),
         loadGlbFile: async (file) => {
+            const url = URL.createObjectURL(file);
             try {
-                await loadGlbModel(file, file.name, 0.001, true, {
+                await loadGlbModel(url, file.name, 0.001, true, {
                     loadFileHistory: true,
                     restoreAssemblyPlayback: true,
                 });
@@ -3365,6 +3365,8 @@ function addMainGui() {
                     clearCurrentLocalFileHandle();
                 }
                 throw err;
+            } finally {
+                URL.revokeObjectURL(url);
             }
         },
         loadStlFile: async (file) => {
@@ -9051,136 +9053,6 @@ function confirmGlbDuplicateNameRename() {
     );
 }
 
-function isGlbFileSource(model) {
-    return typeof File !== 'undefined' && model instanceof File;
-}
-
-function glbResourcePath(model) {
-    if (typeof model !== 'string') return '';
-    const hash = model.indexOf('#');
-    const query = model.indexOf('?');
-    let url = model;
-    if (hash >= 0) url = url.slice(0, hash);
-    if (query >= 0) url = url.slice(0, query);
-    const i = url.lastIndexOf('/');
-    return i >= 0 ? url.slice(0, i + 1) : '';
-}
-
-function readFileArrayBuffer(file, progress, start, end) {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        const unsub = progress?.onAbort?.(() => reader.abort());
-        reader.onprogress = (e) => {
-            if (progress?.cancelled) {
-                reader.abort();
-                return;
-            }
-            if (e.lengthComputable && e.total > 0) {
-                const t = e.loaded / e.total;
-                progress.set({
-                    status: `Reading file… ${Math.round(t * 100)}%`,
-                    progress: start + t * (end - start),
-                    indeterminate: false,
-                });
-            }
-        };
-        reader.onload = () => {
-            unsub?.();
-            if (progress?.cancelled) {
-                reject(createAbortError('GLB load cancelled.'));
-                return;
-            }
-            progress?.set({ status: 'Reading file…', progress: end, indeterminate: false });
-            resolve(reader.result);
-        };
-        reader.onerror = () => {
-            unsub?.();
-            reject(reader.error || new Error('Failed to read file.'));
-        };
-        reader.onabort = () => {
-            unsub?.();
-            reject(createAbortError('GLB load cancelled.'));
-        };
-        reader.readAsArrayBuffer(file);
-    });
-}
-
-async function fetchUrlArrayBuffer(url, progress, start, end) {
-    const controller = new AbortController();
-    const unsub = progress?.onAbort?.(() => controller.abort());
-    try {
-        const res = await fetch(url, { signal: controller.signal });
-        if (!res.ok) throw new Error(`Failed to load GLB (${res.status})`);
-        const total = Number(res.headers.get('content-length')) || 0;
-        if (!res.body) {
-            const buf = await res.arrayBuffer();
-            progress?.set({ progress: end, status: 'Downloading…', indeterminate: false });
-            return buf;
-        }
-        const reader = res.body.getReader();
-        const chunks = [];
-        let loaded = 0;
-        while (true) {
-            if (progress?.cancelled) {
-                await reader.cancel();
-                throw createAbortError('GLB load cancelled.');
-            }
-            const { done, value } = await reader.read();
-            if (done) break;
-            chunks.push(value);
-            loaded += value.byteLength;
-            if (total > 0) {
-                progress?.set({
-                    status: `Downloading… ${Math.round((loaded / total) * 100)}%`,
-                    progress: start + Math.min(1, loaded / total) * (end - start),
-                    indeterminate: false,
-                });
-            } else {
-                progress?.set({
-                    status: 'Downloading…',
-                    indeterminate: true,
-                });
-            }
-        }
-        const out = new Uint8Array(loaded);
-        let offset = 0;
-        for (const c of chunks) {
-            out.set(c, offset);
-            offset += c.byteLength;
-        }
-        progress?.set({ progress: end, indeterminate: false });
-        return out.buffer;
-    } catch (err) {
-        if (err?.name === 'AbortError' || progress?.cancelled) {
-            throw createAbortError('GLB load cancelled.');
-        }
-        throw err;
-    } finally {
-        unsub?.();
-    }
-}
-
-async function readGlbArrayBuffer(model, progress) {
-    if (isGlbFileSource(model)) {
-        return readFileArrayBuffer(model, progress, 0.02, 0.32);
-    }
-    if (typeof model === 'string' && model.startsWith('blob:')) {
-        progress?.set({ status: 'Reading file…', progress: 0.12, indeterminate: false });
-        const res = await fetch(model);
-        if (!res.ok) throw new Error(`Failed to load GLB (${res.status})`);
-        const buf = await res.arrayBuffer();
-        progress?.set({ status: 'Reading file…', progress: 0.32 });
-        return buf;
-    }
-    return fetchUrlArrayBuffer(model, progress, 0.02, 0.32);
-}
-
-function parseGlbBuffer(loader, buffer, path) {
-    return new Promise((resolve, reject) => {
-        loader.parse(buffer, path, resolve, reject);
-    });
-}
-
 function loadGlbModel(model, name, scale, colored, options = {}) {
     const {
         loadFileHistory = false,
@@ -9189,39 +9061,20 @@ function loadGlbModel(model, name, scale, colored, options = {}) {
         skipDuplicateNameWarning = false,
     } = options;
     if (loadFileHistory) syncFileHistoryToggleUi();
-    if (!skipDuplicateNameWarning && !confirmGlbDuplicateNameRename()) {
-        return Promise.reject(createAbortError('GLB load cancelled.'));
-    }
-
-    const resolvedName = name || (isGlbFileSource(model) ? model.name : fileNameWithoutExtension(model));
-    const progress = openFileOpProgress('Opening GLB', { cancellable: true });
-
-    return (async () => {
-        try {
-            progress.set({ status: 'Reading file…', progress: 0.02 });
-            await yieldToUi();
-            if (progress.cancelled) throw createAbortError('GLB load cancelled.');
-
-            const buffer = await readGlbArrayBuffer(model, progress);
-            if (progress.cancelled) throw createAbortError('GLB load cancelled.');
-
-            progress.set({ status: 'Parsing model…', progress: 0.36, indeterminate: true });
-            await yieldToUi();
-            if (progress.cancelled) throw createAbortError('GLB load cancelled.');
-
-            const loader = new GLTFLoader();
-            if (glbImportDefaults.keepDuplicateNames) preserveOriginalGltfNames(loader);
-            const dracoLoader = new DRACOLoader();
-            dracoLoader.setDecoderPath('/draco/');
-            loader.setDRACOLoader(dracoLoader);
-
-            const gltf = await parseGlbBuffer(loader, buffer, glbResourcePath(model));
-            if (progress.cancelled) throw createAbortError('GLB load cancelled.');
-
-            progress.set({ status: 'Building scene…', progress: 0.82, indeterminate: false });
-            await yieldToUi();
-            if (progress.cancelled) throw createAbortError('GLB load cancelled.');
-
+    return new Promise((resolve, reject) => {
+        if (!skipDuplicateNameWarning && !confirmGlbDuplicateNameRename()) {
+            const err = new Error('GLB load cancelled.');
+            err.name = 'AbortError';
+            reject(err);
+            return;
+        }
+        const loader = new GLTFLoader();
+        if (glbImportDefaults.keepDuplicateNames) preserveOriginalGltfNames(loader);
+        const dracoLoader = new DRACOLoader();
+        dracoLoader.setDecoderPath('/draco/');
+        loader.setDRACOLoader(dracoLoader);
+        //loader.load('/models/1012053_l.glb', function (gltf) {
+        loader.load(model, function (gltf) {
             // Oprava extrémních scale hodnot způsobených exportem (např. 0.001 nebo 0.01 z CAD → Blender → GLB)
             // Povolený rozsah: [0.1, 10] — vše mimo se považuje za artefakt exportu a resetuje se na 1
             gltf.scene.traverse(function (child) {
@@ -9252,7 +9105,7 @@ function loadGlbModel(model, name, scale, colored, options = {}) {
                 const extractedModels = [...wrapperChild.children];
 
                 // Import app-level data (traverses gltf.scene, finds data in userData)
-                importAssemblyFromGltfScene(gltf.scene, resolvedName, {
+                importAssemblyFromGltfScene(gltf.scene, name || fileNameWithoutExtension(model), {
                     restorePlayback: restoreAssemblyPlayback,
                 });
                 importArrangementsFromGltfScene(gltf.scene);
@@ -9271,7 +9124,7 @@ function loadGlbModel(model, name, scale, colored, options = {}) {
                     stripFileHistoryFromGltfScene(gltf.scene);
                 }
 
-                const fallbackName = resolvedName;
+                const fallbackName = name || fileNameWithoutExtension(model);
                 for (const mdl of extractedModels) {
                     // Preserve the original model name; fall back to file name only when absent
                     if (!mdl.userData.fileName) mdl.userData.fileName = fallbackName;
@@ -9312,12 +9165,11 @@ function loadGlbModel(model, name, scale, colored, options = {}) {
 
                 rebuildTree(loadedModels);
                 render();
-                progress.set({ status: 'Done', progress: 1 });
-                return extractedModels[0] || gltf.scene;
+                resolve(extractedModels[0] || gltf.scene);
             } else {
                 // ---- Standard loading path (external GLB or legacy file) ----
                 scene.add(gltf.scene);
-                gltf.scene.userData.fileName = resolvedName;
+                gltf.scene.userData.fileName = name || fileNameWithoutExtension(model);
                 const mergedCog = isCoGRoot(gltf.scene) && cogRoot && cogRoot !== gltf.scene;
                 if (mergedCog) {
                     adoptLoadedCoGRoot(gltf.scene);
@@ -9351,7 +9203,7 @@ function loadGlbModel(model, name, scale, colored, options = {}) {
                 }
                 
                 // Import assembly sequence stored in userData (if any)
-                importAssemblyFromGltfScene(gltf.scene, resolvedName, {
+                importAssemblyFromGltfScene(gltf.scene, name || fileNameWithoutExtension(model), {
                     restorePlayback: restoreAssemblyPlayback,
                 });
 
@@ -9389,16 +9241,12 @@ function loadGlbModel(model, name, scale, colored, options = {}) {
                 
                 rebuildTree(loadedModels);
                 refreshEdgeOverlaysAfterSceneChange();
-                progress.set({ status: 'Done', progress: 1 });
-                return gltf.scene;
+                resolve(gltf.scene);
             }
-        } catch (err) {
-            if (progress.cancelled) throw createAbortError('GLB load cancelled.');
-            throw err;
-        } finally {
-            progress.close();
-        }
-    })();
+        }, undefined, function (error) {
+            reject(error); // Doporučuji přidat i error handling
+        });
+    });
 }				
 
 function fileNameWithoutExtension(path) {
@@ -12684,11 +12532,14 @@ function importGlbFile(options = {}) {
         const file = input.files[0];
         if (!file) return;
         // Keep current file handle so Save still targets the Opened document.
-        loadGlbModel(file, file.name, 0.001, true, { importSettings, restoreAssemblyPlayback }).then(() => {
+        const url = URL.createObjectURL(file);
+        loadGlbModel(url, file.name, 0.001, true, { importSettings, restoreAssemblyPlayback }).then(() => {
+            URL.revokeObjectURL(url);
             if (!fileNameInput.value) fileNameInput.value = file.name.replace(/\.[^.]+$/, '');
             fitView();
             console.log(`[Import] GLB "${file.name}" loaded successfully.`);
         }).catch(err => {
+            URL.revokeObjectURL(url);
             if (err?.name === 'AbortError') return;
             console.error(`[Import] Failed to load "${file.name}":`, err);
         });
@@ -13794,10 +13645,25 @@ function getDefaultGlbExportName() {
     return (baseName.replace(/\.glb$/i, '') + '.glb');
 }
 
-async function buildAllModelsExportGroup(finalName, progress) {
-    progress?.set({ status: 'Preparing scene…', progress: 0.06 });
-    await yieldToUi();
+function showDracoOverlay() {
+    let overlay = document.getElementById('dracoOverlay');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'dracoOverlay';
+        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:99999;color:#fff;font-size:22px;font-family:sans-serif;';
+        overlay.textContent = 'Draco compressing… please wait';
+        document.body.appendChild(overlay);
+    }
+    overlay.style.display = 'flex';
+    return overlay;
+}
 
+function hideDracoOverlay() {
+    const overlay = document.getElementById('dracoOverlay');
+    if (overlay) overlay.style.display = 'none';
+}
+
+function buildAllModelsExportGroup(finalName) {
     writeGlbAssemblyUserData();
     flushDocumentEdits();
 
@@ -13813,27 +13679,10 @@ async function buildAllModelsExportGroup(finalName, progress) {
     group.userData._appExportRoot = true;
     group.userData.documents = getDocumentsStore().map(d => ({ ...d }));
     group.userData.documentFolders = getDocumentFoldersStore().map(f => ({ ...f }));
-
-    const attachments = getAttachmentsStore();
-    if (attachments.length === 0) {
-        group.userData.attachments = [];
-        progress?.set({ progress: 0.22 });
-    } else {
-        group.userData.attachments = await serializeAttachmentsForExportAsync(
-            attachments,
-            attachmentCompressionDefaults,
-            ({ index, count }) => {
-                progress?.set({
-                    status: count === 1
-                        ? 'Compressing attachments…'
-                        : `Compressing attachments (${index + 1}/${count})…`,
-                    progress: 0.10 + 0.12 * (index / count),
-                });
-            }
-        );
-        progress?.set({ progress: 0.22 });
-    }
-
+    group.userData.attachments = serializeAttachmentsForExport(
+        getAttachmentsStore(),
+        attachmentCompressionDefaults
+    );
     group.userData.attachmentFolders = getAttachmentFoldersStore().map(f => ({ ...f }));
     embedAppSettingsToUserData(group.userData);
     embedGlbAssemblyIndexes(group.userData);
@@ -13895,7 +13744,7 @@ async function compressGlbWithDraco(result) {
     return io.writeBinary(gltfDoc);
 }
 
-async function buildAllModelsGlbArrayBuffer({ draco = false, finalName = null, recordHistory = false, progress = null } = {}) {
+async function buildAllModelsGlbArrayBuffer({ draco = false, finalName = null, recordHistory = false } = {}) {
     if (!hasGlbExportContent()) {
         console.warn('Žádný obsah k exportu.');
         return null;
@@ -13903,36 +13752,20 @@ async function buildAllModelsGlbArrayBuffer({ draco = false, finalName = null, r
 
     const resolvedName = (finalName || getDefaultGlbExportName()).replace(/\.glb$/i, '') + '.glb';
 
-    if (recordHistory) {
-        const ok = await recordSaveHistoryIfEnabled();
-        if (!ok) return null;
-    }
-
-    const ownProgress = !progress;
-    const p = progress || openFileOpProgress(draco ? 'Saving GLB' : 'Exporting GLB');
+    if (draco) showDracoOverlay();
 
     try {
-        p.set({ status: 'Preparing scene…', progress: 0.04 });
-        await yieldToUi();
+        if (recordHistory) {
+            const ok = await recordSaveHistoryIfEnabled();
+            if (!ok) return null;
+        }
 
-        const group = await buildAllModelsExportGroup(resolvedName, p);
+        const group = buildAllModelsExportGroup(resolvedName);
         if (!group) return null;
-
-        p.set({
-            status: 'Exporting GLB…',
-            progress: 0.28,
-            indeterminate: true,
-        });
-        await yieldToUi();
         let result = await parseExportGroupToArrayBuffer(group);
 
         if (draco) {
-            p.set({
-                status: 'Draco compressing…',
-                progress: 0.55,
-                indeterminate: true,
-            });
-            await yieldToUi();
+            await new Promise(resolve => setTimeout(resolve, 50));
             try {
                 result = await compressGlbWithDraco(result);
             } catch (err) {
@@ -13941,14 +13774,9 @@ async function buildAllModelsGlbArrayBuffer({ draco = false, finalName = null, r
             }
         }
 
-        p.set({
-            status: 'Finishing…',
-            progress: ownProgress ? 1 : 0.88,
-            indeterminate: false,
-        });
         return { buffer: result, suggestedName: resolvedName };
     } finally {
-        if (ownProgress) p.close();
+        if (draco) hideDracoOverlay();
     }
 }
 
@@ -13987,6 +13815,7 @@ async function exportAllModelsDraco() {
         saveArrayBuffer(built.buffer, built.suggestedName);
         console.log('Export all (Draco): hotovo.');
     } catch (error) {
+        hideDracoOverlay();
         console.error('Chyba při exportu:', error);
     }
 }
