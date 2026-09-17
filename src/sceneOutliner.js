@@ -959,8 +959,8 @@ export function refreshArrangementsFolder() {
     const existing = treeEl.querySelector(':scope > [data-expand-id="project:arrangements"]');
     const childList = existing?.querySelector(':scope > .outliner-children');
     const expanded = existing
-        ? (childList ? existing.classList.contains('outliner-expanded') : true)
-        : true;
+        ? (childList ? existing.classList.contains('outliner-expanded') : false)
+        : false;
     const node = createArrangementsFolderNode(expanded);
     if (existing) {
         existing.replaceWith(node);
@@ -983,8 +983,8 @@ export function refreshSequencesFolder() {
     const existing = treeEl.querySelector(':scope > [data-expand-id="project:sequences"]');
     const childList = existing?.querySelector(':scope > .outliner-children');
     const expanded = existing
-        ? (childList ? existing.classList.contains('outliner-expanded') : true)
-        : true;
+        ? (childList ? existing.classList.contains('outliner-expanded') : false)
+        : false;
     const expandedIds = collectExpandedUUIDs();
     const node = createSequencesFolderNode(expanded, expandedIds);
     if (existing) {
@@ -1614,16 +1614,16 @@ function appendProjectSection(expandedIds) {
     const atts = getAttachments ? getAttachments() : [];
     const attFolders = fileOps.getFolders ? fileOps.getFolders() : [];
 
-    const docsExpanded = expandedIds ? expandedIds.has('project:documents') : true;
-    const filesExpanded = expandedIds ? expandedIds.has('project:files') : true;
+    const docsExpanded = expandedIds ? expandedIds.has('project:documents') : false;
+    const filesExpanded = expandedIds ? expandedIds.has('project:files') : false;
 
     treeEl.appendChild(createDocumentsFolderNode(docs, docFolders, docsExpanded, expandedIds));
     treeEl.appendChild(createFilesFolderNode(atts, attFolders, filesExpanded, expandedIds));
 
-    const arrExpanded = expandedIds ? expandedIds.has('project:arrangements') : true;
+    const arrExpanded = expandedIds ? expandedIds.has('project:arrangements') : false;
     treeEl.appendChild(createArrangementsFolderNode(arrExpanded));
 
-    const wfExpanded = expandedIds ? expandedIds.has('project:sequences') : true;
+    const wfExpanded = expandedIds ? expandedIds.has('project:sequences') : false;
     treeEl.appendChild(createSequencesFolderNode(wfExpanded, expandedIds));
 
     const sep = document.createElement('li');
