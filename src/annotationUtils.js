@@ -140,14 +140,62 @@ export function resetAnnotationBoxSize(annotation, renderFn) {
 
 export function applyDefaultsToAllFlatAnnotations(renderFn) {
     for (const ann of _annotations) {
+        ann._textColor = _flatAnnDefaults.textColor;
+        ann._bgColor = _flatAnnDefaults.bgColor;
+        ann._fontSize = _flatAnnDefaults.fontSize;
         const el = ann.label && ann.label.element;
         if (el) {
             el.style.color = _flatAnnDefaults.textColor;
             el.style.background = _flatAnnDefaults.bgColor;
             el.style.fontSize = _flatAnnDefaults.fontSize + 'px';
         }
+        if (ann._userDataRec) {
+            ann._userDataRec.textColor = _flatAnnDefaults.textColor;
+            ann._userDataRec.bgColor = _flatAnnDefaults.bgColor;
+            ann._userDataRec.fontSize = _flatAnnDefaults.fontSize;
+        }
     }
     if (renderFn) renderFn();
+}
+
+const FLAT_FONT_MIN = 6;
+const FLAT_FONT_MAX = 32;
+const FONT_TO_LABEL_SCALE = 2.2;
+
+export function flatFontSizeToLabelScale(fontSize) {
+    const px = Number(fontSize);
+    return (Number.isFinite(px) ? px : _flatAnnDefaults.fontSize) / FONT_TO_LABEL_SCALE;
+}
+
+export function labelScaleToFlatFontSize(labelScale) {
+    const ls = Number(labelScale);
+    const scale = Number.isFinite(ls) && ls > 0 ? ls : 5;
+    return Math.max(FLAT_FONT_MIN, Math.min(FLAT_FONT_MAX, Math.round(scale * FONT_TO_LABEL_SCALE)));
+}
+
+export function applyFlatAnnotationStyle(annotation) {
+    const el = annotation && annotation.label && annotation.label.element;
+    if (!el) return;
+    const rec = annotation._userDataRec || {};
+    const textColor = annotation._textColor || rec.textColor || _flatAnnDefaults.textColor;
+    const bgColor = annotation._bgColor || rec.bgColor || _flatAnnDefaults.bgColor;
+    const fontSize = annotation._fontSize != null
+        ? annotation._fontSize
+        : (Number.isFinite(rec.fontSize) ? rec.fontSize : _flatAnnDefaults.fontSize);
+    annotation._textColor = textColor;
+    annotation._bgColor = bgColor;
+    annotation._fontSize = fontSize;
+    el.style.color = textColor;
+    el.style.background = bgColor;
+    el.style.fontSize = fontSize + 'px';
+}
+
+export function syncFlatAnnotationStyle(annotation) {
+    const rec = annotation && annotation._userDataRec;
+    if (!rec) return;
+    if (annotation._textColor) rec.textColor = annotation._textColor;
+    if (annotation._bgColor) rec.bgColor = annotation._bgColor;
+    if (annotation._fontSize != null) rec.fontSize = annotation._fontSize;
 }
 
 // --- Helpers ---
@@ -442,16 +490,19 @@ export function showAnnotationContextMenu(annotation, x, y, renderFn, menuBounds
     menu.appendChild(createCtxMenuColorRow('Text color', annotation._textColor || _flatAnnDefaults.textColor, (color) => {
         annotation._textColor = color;
         if (annotation.label) annotation.label.element.style.color = color;
+        syncFlatAnnotationStyle(annotation);
         if (renderFn) renderFn();
     }));
     menu.appendChild(createCtxMenuColorRow('Background', annotation._bgColor || _flatAnnDefaults.bgColor, (color) => {
         annotation._bgColor = color;
         if (annotation.label) annotation.label.element.style.background = color;
+        syncFlatAnnotationStyle(annotation);
         if (renderFn) renderFn();
     }));
     menu.appendChild(createCtxMenuSizeRow('Size', annotation._fontSize != null ? annotation._fontSize : _flatAnnDefaults.fontSize, (size) => {
         annotation._fontSize = size;
         if (annotation.label) annotation.label.element.style.fontSize = size + 'px';
+        syncFlatAnnotationStyle(annotation);
         if (renderFn) renderFn();
     }));
     if (annotationHasCustomBoxSize(annotation)) {
@@ -1026,6 +1077,7 @@ function _reconstructAnnotation(owner, rec, renderFn) {
     });
 
     const annotation = { label, leaderLines, labelLocal: labelLocal.clone(), text: rec.text, ownerObject: owner, _userDataRec: rec };
+    applyFlatAnnotationStyle(annotation);
     applyAnnotationBoxSizeFromRec(annotation);
     _annotations.push(annotation);
 

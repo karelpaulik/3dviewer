@@ -46,7 +46,7 @@ import { computeModelStats, computeSurfaceAreaAndVolume, formatGeometryMeasure, 
 import { initMeasurement, isMeasureActive, setMeasureActive, addMeasurePoint, clearMeasurements, getMeasurementCount, updateMeasurePreview, updateMarkerScales, updateMeasurement3dOrientations, isAngleActive, setAngleActive, addAnglePoint, updateAnglePreview, clearAngleMeasurements, isRadiusActive, setRadiusActive, addRadiusPoint, updateRadiusPreview, clearRadiusMeasurements, isSelectDimActive, setSelectDimActive, refreshLabelEditListeners, hasSelectedDimension, deselectSelectedDimension, deleteSelectedDimension, resetSelectedMeasurementLabel, getSelectedMeasurementLabelStyle, getSelectedMeasurementLabelDim, setSelectedMeasurementLabelDim, setSelectedMeasurementOrientationMode, setSelectedMeasurementTextColor, setSelectedMeasurementBgColor, setSelectedMeasurementFontSize, initSelectDimension, updateSelectDimensionCamera, reconstructMeasurements, stripMeasurementVisuals, setMeasurementsVisible, setMeasurementDepthTest, removeMeasurementsForOwner, isCadDimActive, setCadDimActive, getCadDimStep, getCadDimAxis, getMeasurePendingCount, getAngleStep, getRadiusStep, addCadDimPoint, updateCadDimPreview, updateCadDimHoverPreview, cycleCadDimAxis, placeCadDim, clearCadDimMeasurements, removeCadDimMeasurementsForOwner, getSelectedCadDim, setCadDimLabelMode, setCadDimDragMode, selectDimTouchStart, selectDimTouchMove, selectDimTouchEnd, registerLabelForSelection, getSelectedCadDim3d, getSelectedAnnotation, getSelectedAnnotation3d, getSelectedDistance, getSelectedAngle, getSelectedRadius, getCadDimMeasurements, deleteCadDimByRef, convertCadDim3dTo2d, getFlatDimDefaults, applyDefaultsToAllFlatDim, getDistanceLabelDefaults, getAngleLabelDefaults, getRadiusLabelDefaults, getDistanceMarkerDefaults, getAngleMarkerDefaults, getRadiusMarkerDefaults, applyDefaultsToAllDistanceMeasurements, applyDefaultsToAllAngleMeasurements, applyDefaultsToAllRadiusMeasurements, setDistanceMarkerColor, setAngleMarkerColor, setRadiusMarkerColor, getMeasurementMarkerSettings, setMeasurementMarkerFixedSize, setMeasurementMarkerFixedScreenPx, setMeasurementMarkerWorldSize, getDefaultMeasurementLabelDim, setDefaultMeasurementLabelDim, getMeasurement3dDefaults, setDimMarkerFixedSize, setDimMarkerFixedScreenPx, setDimMarkerWorldSize, setDimMarkerColor, getDimMarkerSettings, setMeasureOnSessionComplete, setAngleOnSessionComplete, setRadiusOnSessionComplete, setCadDimOnSessionComplete, beginRedefinePoint, isRedefinePointActive, getRedefinePointPhase, pickRedefineMarkerAtScreen, hitTestRedefineMarkerAtScreen, commitRedefinePoint, cancelRedefinePoint, updateRedefinePointPreview, boostRedefineAnnotationMarkers } from './measurementUtils.js';
 import { detectCircleCenterFromHit, clearCircleDetectionCache } from './circleDetectionUtils.js';
 import { removeEdgeOverlays, updateMeshEdgeOverlays, stripEdgeOverlays, syncEdgeOverlayClipping } from './edgeDisplayUtils.js';
-import { initAnnotations, isAnnotationActive, setAnnotationActive, addAnnotationPoint, getAnnotationPendingPoint, updateAnnotationPreview, updateAnnotationMarkerScales, setAnnotationsVisible, clearAnnotations, stripAnnotationVisuals, reconstructAnnotations, setAnnotationDepthTest, removeAnnotationsForOwner, getAnnotations, isAddLeaderLineActive, cancelAddLeaderLine, commitAddLeaderLine, deleteAnnotationByRef, setConvertTo3dFn, reconstructAnnotationFromRec, getFlatAnnDefaults, applyDefaultsToAllFlatAnnotations, setAnnMarkerFixedSize, setAnnMarkerFixedScreenPx, setAnnMarkerWorldSize, setAnnMarkerColor, getAnnMarkerSettings, setAnnotationOnSessionComplete, isAnnotationDialogOpen, showAnnotationContextMenu, setOnRedefinePointFn } from './annotationUtils.js';
+import { initAnnotations, isAnnotationActive, setAnnotationActive, addAnnotationPoint, getAnnotationPendingPoint, updateAnnotationPreview, updateAnnotationMarkerScales, setAnnotationsVisible, clearAnnotations, stripAnnotationVisuals, reconstructAnnotations, setAnnotationDepthTest, removeAnnotationsForOwner, getAnnotations, isAddLeaderLineActive, cancelAddLeaderLine, commitAddLeaderLine, deleteAnnotationByRef, setConvertTo3dFn, reconstructAnnotationFromRec, getFlatAnnDefaults, applyDefaultsToAllFlatAnnotations, setAnnMarkerFixedSize, setAnnMarkerFixedScreenPx, setAnnMarkerWorldSize, setAnnMarkerColor, getAnnMarkerSettings, setAnnotationOnSessionComplete, isAnnotationDialogOpen, showAnnotationContextMenu, setOnRedefinePointFn, flatFontSizeToLabelScale, labelScaleToFlatFontSize } from './annotationUtils.js';
 import { initAnnotations3d, isAnnotation3dActive, setAnnotation3dActive, addAnnotation3dPoint, getAnnotation3dPendingPoint, updateAnnotation3dPreview, updateAnnotation3dMarkerScales, updateAnnotation3dOrientations, setAnnotations3dVisible, clearAnnotations3d, stripAnnotation3dVisuals, reconstructAnnotations3d, setAnnotation3dDepthTest, removeAnnotations3dForOwner, isAddLeaderLine3dActive, cancelAddLeaderLine3d, commitAddLeaderLine3d, getAnnotation3dDefaults, deleteAnnotation3dByRef, setConvertTo2dFn, reconstructAnnotation3dFromRec, applyDefaultsToAllAnnotations3d, setAnn3dMarkerFixedSize, setAnn3dMarkerFixedScreenPx, setAnn3dMarkerWorldSize, setAnn3dMarkerColor, setAnnotation3dOnSessionComplete, isAnnotation3dDialogOpen, showAnnotation3dContextMenu, setOnRedefinePoint3dFn } from './annotation3dUtils.js';
 import { initCadDim3d, isCadDim3dActive, getCadDim3dStep, getCadDim3dAxis, setCadDim3dActive, addCadDim3dPoint, updateCadDim3dPreview, updateCadDim3dHoverPreview, cycleCadDim3dAxis, placeCadDim3d, clearCadDim3dMeasurements, removeCadDim3dMeasurementsForOwner, setCadDim3dVisible, setCadDim3dDepthTest, updateCadDim3dOrientations, updateCadDim3dMarkerScales, reconstructCadDim3d, stripCadDim3dVisuals, setCadDim3dLabelMode, setCadDim3dDragMode, setCadDim3dOrientationMode, setCadDim3dRotate, setCadDim3dLabelScaleDialog, setCadDim3dMirrored, setCadDim3dTextColor, setCadDim3dBgColor, getCadDim3dDefaults, convertCadDimTo3d, applyDefaultsToAllCadDim3d, setCadDimMarkerFixedSize, setCadDimMarkerFixedScreenPx, setCadDimMarkerWorldSize, setCadDimMarkerColor, setCadDim3dOnSessionComplete } from './cadDim3dUtils.js';
 import { initToolHintOverlay, updateToolHintOverlay, hintButton } from './toolHintUtils.js';
@@ -2921,6 +2921,10 @@ function init() {
         const def = getAnnotation3dDefaults();
         const rotMap = { camera: def.rotationCamera, XY: def.rotationXY, XZ: def.rotationXZ, YZ: def.rotationYZ };
         const srcRec = annotation._userDataRec || {};
+        const flatDef = getFlatAnnDefaults();
+        const fontSize = annotation._fontSize != null
+            ? annotation._fontSize
+            : (Number.isFinite(srcRec.fontSize) ? srcRec.fontSize : flatDef.fontSize);
         const rec = {
             type: 'note3d',
             text: annotation.text,
@@ -2928,10 +2932,10 @@ function init() {
             labelPos: { x: annotation.labelLocal.x, y: annotation.labelLocal.y, z: annotation.labelLocal.z },
             orientationMode: def.orientationMode,
             rotationAngle: rotMap[def.orientationMode] ?? 0,
-            labelScale: def.labelScale,
+            labelScale: flatFontSizeToLabelScale(fontSize),
             mirrored: false,
-            textColor: def.textColor,
-            bgColor: def.bgColor,
+            textColor: annotation._textColor || srcRec.textColor || def.textColor,
+            bgColor: annotation._bgColor || srcRec.bgColor || def.bgColor,
         };
         if (Number.isFinite(srcRec.boxWidth) && Number.isFinite(srcRec.boxHeight)) {
             rec.boxWidth = srcRec.boxWidth;
@@ -2953,6 +2957,9 @@ function init() {
             text: annotation.text,
             anchors: annotation.leaderLines.map(ll => ({ x: ll.anchorLocal.x, y: ll.anchorLocal.y, z: ll.anchorLocal.z })),
             labelPos: { x: annotation.labelLocal.x, y: annotation.labelLocal.y, z: annotation.labelLocal.z },
+            textColor: annotation.textColor || srcRec.textColor,
+            bgColor: annotation.bgColor || srcRec.bgColor,
+            fontSize: labelScaleToFlatFontSize(annotation.labelScale ?? srcRec.labelScale),
         };
         if (Number.isFinite(srcRec.boxWidth) && Number.isFinite(srcRec.boxHeight)) {
             rec.boxWidth = srcRec.boxWidth;
