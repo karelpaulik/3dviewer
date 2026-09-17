@@ -133,6 +133,7 @@ import {
 } from './undoCommands.js';
 import { initAttachmentsGui, importAttachmentsFromGltfScene, getAttachmentsStore, getAttachmentFoldersStore, addImageAttachmentFromBlob, clearAttachmentsStore, openAttachment, canOpenAttachmentInBrowser, createAttachmentFolder, renameAttachmentFolder, deleteAttachmentFolder, moveAttachment, moveAttachments, moveAttachmentFolder, renameAttachment, deleteAttachment, deleteAttachments, addAttachmentsToFolder, addFolderToFolder, pasteImageToFolder, newImageInFolder, captureScreenToFolder, downloadAttachmentsZip, openViewableAttachments, editImageAttachments, downloadAttachmentById, editAttachmentById, editPdfAttachmentById, managePdfPagesById, convertImageToPdfById, convertPdfToImagesById } from './attachmentsUtils.js';
 import { serializeAttachmentsForExport } from './attachmentCompressionUtils.js';
+import { openFileOpProgress, yieldToUi } from './fileOpProgressUtils.js';
 import { initLocalFileAccess, openLocalGlbFile, saveLocalGlbFile, saveLocalGlbFileAs, clearCurrentLocalFileHandle, waitForExternalFileSignal, wasOpenedWithExternalFile } from './localFileAccess.js';
 import {
     USER_NAME_STORAGE_KEY,
@@ -9073,8 +9074,16 @@ function loadGlbModel(model, name, scale, colored, options = {}) {
         const dracoLoader = new DRACOLoader();
         dracoLoader.setDecoderPath('/draco/');
         loader.setDRACOLoader(dracoLoader);
+
+        const progress = openFileOpProgress('Opening GLB', { delayMs: 300 });
+        progress.set({ status: 'Loading file…', progress: 0.02 });
+
+        const closeProgress = () => progress.close();
+
         //loader.load('/models/1012053_l.glb', function (gltf) {
         loader.load(model, function (gltf) {
+            try {
+            progress.set({ status: 'Building scene…', progress: 0.85, indeterminate: false });
             // Oprava extrémních scale hodnot způsobených exportem (např. 0.001 nebo 0.01 z CAD → Blender → GLB)
             // Povolený rozsah: [0.1, 10] — vše mimo se považuje za artefakt exportu a resetuje se na 1
             gltf.scene.traverse(function (child) {
@@ -9165,6 +9174,7 @@ function loadGlbModel(model, name, scale, colored, options = {}) {
 
                 rebuildTree(loadedModels);
                 render();
+                progress.set({ status: 'Done', progress: 1 });
                 resolve(extractedModels[0] || gltf.scene);
             } else {
                 // ---- Standard loading path (external GLB or legacy file) ----
@@ -9241,10 +9251,32 @@ function loadGlbModel(model, name, scale, colored, options = {}) {
                 
                 rebuildTree(loadedModels);
                 refreshEdgeOverlaysAfterSceneChange();
+                progress.set({ status: 'Done', progress: 1 });
                 resolve(gltf.scene);
             }
-        }, undefined, function (error) {
-            reject(error); // Doporučuji přidat i error handling
+            } catch (err) {
+                reject(err);
+            } finally {
+                closeProgress();
+            }
+        }, function (event) {
+            if (!event.lengthComputable || !event.total) {
+                progress.set({ status: 'Loading file…', indeterminate: true });
+                return;
+            }
+            const t = Math.min(1, event.loaded / event.total);
+            if (t < 1) {
+                progress.set({
+                    status: 'Loading file…',
+                    progress: 0.05 + t * 0.65,
+                    indeterminate: false,
+                });
+            } else {
+                progress.set({ status: 'Parsing model…', progress: 0.7, indeterminate: true });
+            }
+        }, function (error) {
+            closeProgress();
+            reject(error);
         });
     });
 }				
@@ -13645,22 +13677,19 @@ function getDefaultGlbExportName() {
     return (baseName.replace(/\.glb$/i, '') + '.glb');
 }
 
-function showDracoOverlay() {
-    let overlay = document.getElementById('dracoOverlay');
-    if (!overlay) {
-        overlay = document.createElement('div');
-        overlay.id = 'dracoOverlay';
-        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:99999;color:#fff;font-size:22px;font-family:sans-serif;';
-        overlay.textContent = 'Draco compressing… please wait';
-        document.body.appendChild(overlay);
+let _exportProgress = null;
+
+function showDracoOverlay(status = 'Draco compressing…') {
+    if (!_exportProgress) {
+        _exportProgress = openFileOpProgress('Exporting GLB');
     }
-    overlay.style.display = 'flex';
-    return overlay;
+    _exportProgress.set({ status, progress: 0.55, indeterminate: true });
+    return _exportProgress;
 }
 
 function hideDracoOverlay() {
-    const overlay = document.getElementById('dracoOverlay');
-    if (overlay) overlay.style.display = 'none';
+    _exportProgress?.close();
+    _exportProgress = null;
 }
 
 function buildAllModelsExportGroup(finalName) {
@@ -13744,7 +13773,7 @@ async function compressGlbWithDraco(result) {
     return io.writeBinary(gltfDoc);
 }
 
-async function buildAllModelsGlbArrayBuffer({ draco = false, finalName = null, recordHistory = false } = {}) {
+async function buildAllModelsGlbArrayBuffer({ draco = false, finalName = null, recordHistory = false, progress = null } = {}) {
     if (!hasGlbExportContent()) {
         console.warn('Žádný obsah k exportu.');
         return null;
@@ -13752,20 +13781,28 @@ async function buildAllModelsGlbArrayBuffer({ draco = false, finalName = null, r
 
     const resolvedName = (finalName || getDefaultGlbExportName()).replace(/\.glb$/i, '') + '.glb';
 
-    if (draco) showDracoOverlay();
+    if (recordHistory) {
+        const ok = await recordSaveHistoryIfEnabled();
+        if (!ok) return null;
+    }
+
+    const ownProgress = !progress;
+    const p = progress || openFileOpProgress(draco ? 'Saving GLB' : 'Exporting GLB');
 
     try {
-        if (recordHistory) {
-            const ok = await recordSaveHistoryIfEnabled();
-            if (!ok) return null;
-        }
+        p.set({ status: 'Preparing scene…', progress: 0.08, indeterminate: false });
+        await yieldToUi();
 
         const group = buildAllModelsExportGroup(resolvedName);
         if (!group) return null;
+
+        p.set({ status: 'Exporting GLB…', progress: 0.28, indeterminate: true });
+        await yieldToUi();
         let result = await parseExportGroupToArrayBuffer(group);
 
         if (draco) {
-            await new Promise(resolve => setTimeout(resolve, 50));
+            p.set({ status: 'Draco compressing…', progress: 0.55, indeterminate: true });
+            await yieldToUi();
             try {
                 result = await compressGlbWithDraco(result);
             } catch (err) {
@@ -13774,9 +13811,14 @@ async function buildAllModelsGlbArrayBuffer({ draco = false, finalName = null, r
             }
         }
 
+        p.set({
+            status: 'Finishing…',
+            progress: ownProgress ? 1 : 0.88,
+            indeterminate: false,
+        });
         return { buffer: result, suggestedName: resolvedName };
     } finally {
-        if (draco) hideDracoOverlay();
+        if (ownProgress) p.close();
     }
 }
 
@@ -13815,7 +13857,6 @@ async function exportAllModelsDraco() {
         saveArrayBuffer(built.buffer, built.suggestedName);
         console.log('Export all (Draco): hotovo.');
     } catch (error) {
-        hideDracoOverlay();
         console.error('Chyba při exportu:', error);
     }
 }
@@ -13936,15 +13977,7 @@ async function exportSelectedObjectDraco() {
         if (input === null) return;
         const finalName = (input.trim() || defaultName.replace(/\.glb$/i, '')).replace(/\.glb$/i, '') + '.glb';
 
-        let overlay = document.getElementById('dracoOverlay');
-        if (!overlay) {
-            overlay = document.createElement('div');
-            overlay.id = 'dracoOverlay';
-            overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:99999;color:#fff;font-size:22px;font-family:sans-serif;';
-            overlay.textContent = 'Draco compressing… please wait';
-            document.body.appendChild(overlay);
-        }
-        overlay.style.display = 'flex';
+        showDracoOverlay('Exporting GLB…');
 
         writeGlbAssemblyUserData();
         flushDocumentEdits();
@@ -13984,6 +14017,7 @@ async function exportSelectedObjectDraco() {
         exporter.parse(groupDraco, function(result) {
             setTimeout(async () => {
                 try {
+                    showDracoOverlay('Draco compressing…');
                     const { WebIO } = await import('@gltf-transform/core');
                     const { KHRDracoMeshCompression } = await import('@gltf-transform/extensions');
                     const { draco } = await import('@gltf-transform/functions');
@@ -14022,11 +14056,11 @@ async function exportSelectedObjectDraco() {
                     saveArrayBuffer(result, finalName);
                     console.warn('Uloženo bez Draco komprese (fallback).');
                 } finally {
-                    overlay.style.display = 'none';
+                    hideDracoOverlay();
                 }
             }, 50);
         }, function(error) {
-            overlay.style.display = 'none';
+            hideDracoOverlay();
             console.error('Chyba při exportu:', error);
         }, { binary: true, onlyVisible: false });
         return;
@@ -14042,15 +14076,7 @@ async function exportSelectedObjectDraco() {
     const finalName = (input.trim() || defaultName.replace(/\.glb$/i, '')).replace(/\.glb$/i, '') + '.glb';
 
     // Zobrazíme overlay
-    let overlay = document.getElementById('dracoOverlay');
-    if (!overlay) {
-        overlay = document.createElement('div');
-        overlay.id = 'dracoOverlay';
-        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:99999;color:#fff;font-size:22px;font-family:sans-serif;';
-        overlay.textContent = 'Draco compressing… please wait';
-        document.body.appendChild(overlay);
-    }
-    overlay.style.display = 'flex';
+    showDracoOverlay('Exporting GLB…');
 
     writeGlbAssemblyUserData();
     flushDocumentEdits();
@@ -14090,6 +14116,7 @@ async function exportSelectedObjectDraco() {
     exporter.parse(groupDraco, function(result) {
         setTimeout(async () => {
             try {
+                showDracoOverlay('Draco compressing…');
                 const { WebIO } = await import('@gltf-transform/core');
                 const { KHRDracoMeshCompression } = await import('@gltf-transform/extensions');
                 const { draco } = await import('@gltf-transform/functions');
@@ -14128,11 +14155,11 @@ async function exportSelectedObjectDraco() {
                 saveArrayBuffer(result, finalName);
                 console.warn('Uloženo bez Draco komprese (fallback).');
             } finally {
-                overlay.style.display = 'none';
+                hideDracoOverlay();
             }
         }, 50);
     }, function(error) {
-        overlay.style.display = 'none';
+        hideDracoOverlay();
         console.error('Chyba při exportu:', error);
     }, { binary: true, onlyVisible: false });
 }
