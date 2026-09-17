@@ -2056,9 +2056,10 @@ function attachDocAssetInteractions(li, asset) {
 
 function createFilesFolderNode(atts, folders, expanded, expandedIds) {
     const children = buildFileTreeChildren(atts, folders, null, 1, expandedIds);
+    const totalBytes = atts.reduce((sum, att) => sum + (Number(att.size) || 0), 0);
     const node = createAssetFolderNode({
         expandId: 'project:files',
-        label: `Files (${atts.length})`,
+        label: `Files (${atts.length}, ${formatOutlinerFileSize(totalBytes)})`,
         children,
         expanded,
         extraClass: 'outliner-project-folder',
