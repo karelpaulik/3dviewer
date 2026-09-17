@@ -2,8 +2,8 @@
 import * as THREE from 'three';
 import { CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 import { CSS3DObject } from 'three/addons/renderers/CSS3DRenderer.js';
-import { getAnnotations, updateAnnotationLeaderLine, syncAnnotationLabelPos, deleteAnnotationByRef } from './annotationUtils.js';
-import { getAnnotations3d, updateAnnotation3dLeaderLine, syncAnnotation3dLabelPos, deleteAnnotation3dByRef } from './annotation3dUtils.js';
+import { getAnnotations, updateAnnotationLeaderLine, syncAnnotationLabelPos, deleteAnnotationByRef, getAnnMarkerSettings, redefineAnnotationAnchor } from './annotationUtils.js';
+import { getAnnotations3d, updateAnnotation3dLeaderLine, syncAnnotation3dLabelPos, deleteAnnotation3dByRef, getAnn3dMarkerColor, redefineAnnotation3dAnchor } from './annotation3dUtils.js';
 import { getCadDim3dMeasurements, deleteCadDim3dByRef, rebuildCadDim3dVisuals, syncCadDim3dLabelPos, updateCadDim3dLeaderLine, redefineCadDim3dEndpoint, setCadDim3dRedefineHighlight } from './cadDim3dUtils.js';
 
 // --- Private state ---
@@ -86,6 +86,7 @@ function _applyAngleMarkerColors() {
     }
     if (_angleLine1?.material) _angleLine1.material.color.set(color);
     if (_anglePreviewLine?.material) _anglePreviewLine.material.color.set(color);
+    _applyRedefineEndpointColors();
 }
 
 function _applyRadiusMarkerColors() {
@@ -103,6 +104,7 @@ function _applyRadiusMarkerColors() {
     }
     if (_radiusPreviewLine?.material) _radiusPreviewLine.material.color.set(color);
     if (_radiusEdgePreview?.material) _radiusEdgePreview.material.color.set(color);
+    _applyRedefineEndpointColors();
 }
 
 // --- Select dimension state ---
@@ -1124,6 +1126,23 @@ function _createAngleLine(p1, p2) {
     line.renderOrder = _depthTestEnabled ? 0 : 999;
     line.userData._isMeasurement = true;
     return line;
+}
+
+function _createAngleMidLine(mid1, mid2) {
+    const geoMid = new THREE.BufferGeometry().setFromPoints([mid1, mid2]);
+    const matMid = new THREE.LineDashedMaterial({
+        color: _angleMarkerDefaults.markerColor,
+        dashSize: 3,
+        gapSize: 2,
+        depthTest: _depthTestEnabled,
+        transparent: true,
+        opacity: 0.5,
+    });
+    const midLine = new THREE.Line(geoMid, matMid);
+    midLine.computeLineDistances();
+    midLine.renderOrder = _depthTestEnabled ? 0 : 999;
+    midLine.userData._isMeasurement = true;
+    return midLine;
 }
 
 function _createAngleLabel(text, position, style) {
@@ -2242,14 +2261,35 @@ export function deselectSelectedDimension() {
 }
 
 function _canRedefineSelected() {
-    return _selectedDim
-        && (_selectedDimType === 'distance' || _selectedDimType === 'cadDim' || _selectedDimType === 'cadDim3d');
+    if (!_selectedDim) return false;
+    if (_selectedDimType === 'distance' || _selectedDimType === 'cadDim' || _selectedDimType === 'cadDim3d'
+        || _selectedDimType === 'angle' || _selectedDimType === 'radius') {
+        return true;
+    }
+    if (_selectedDimType === 'annotation' || _selectedDimType === 'annotation3d') {
+        return (_selectedDim.leaderLines?.length || 0) > 0;
+    }
+    return false;
+}
+
+function _redefineKeysForSelected() {
+    const type = _selectedDimType;
+    const meas = _selectedDim;
+    if (!meas) return [];
+    if (type === 'distance' || type === 'cadDim' || type === 'cadDim3d') return ['p1', 'p2'];
+    if (type === 'angle') return [0, 1, 2, 3];
+    if (type === 'radius') return [0, 1, 2];
+    if (type === 'annotation' || type === 'annotation3d') {
+        const n = meas.leaderLines?.length || 0;
+        return Array.from({ length: n }, (_, i) => i);
+    }
+    return [];
 }
 
 function _redefineHighlightKeys() {
     if (!_redefineSession) return [];
-    if (_redefineSession.phase === 'selectMarker') return ['p1', 'p2'];
-    if (_redefineSession.phase === 'pickNewPoint' && _redefineSession.pointKey) {
+    if (_redefineSession.phase === 'selectMarker') return _redefineKeysForSelected();
+    if (_redefineSession.phase === 'pickNewPoint' && _redefineSession.pointKey != null) {
         return [_redefineSession.pointKey];
     }
     return [];
@@ -2258,7 +2298,10 @@ function _redefineHighlightKeys() {
 function _getEndpointMarker(meas, type, key) {
     if (!meas) return null;
     if (type === 'distance') return key === 'p1' ? meas.marker1 : meas.marker2;
-    return key === 'p1' ? meas.markerP1 : meas.markerP2;
+    if (type === 'cadDim' || type === 'cadDim3d') return key === 'p1' ? meas.markerP1 : meas.markerP2;
+    if (type === 'angle' || type === 'radius') return meas.markers?.[key] ?? null;
+    if (type === 'annotation' || type === 'annotation3d') return meas.leaderLines?.[key]?.marker ?? null;
+    return null;
 }
 
 function _restoreEndpointColors(meas, type) {
@@ -2270,6 +2313,26 @@ function _restoreEndpointColors(meas, type) {
     } else if (type === 'cadDim') {
         if (meas.markerP1?.material) meas.markerP1.material.color.set(_dimMarkerColor);
         if (meas.markerP2?.material) meas.markerP2.material.color.set(_dimMarkerColor);
+    } else if (type === 'angle') {
+        const color = _angleMarkerDefaults.markerColor;
+        for (const mk of meas.markers || []) {
+            if (mk?.material) mk.material.color.set(color);
+        }
+    } else if (type === 'radius') {
+        const color = _radiusMarkerDefaults.markerColor;
+        for (const mk of meas.markers || []) {
+            if (mk?.material) mk.material.color.set(color);
+        }
+    } else if (type === 'annotation') {
+        const color = getAnnMarkerSettings().markerColor;
+        for (const ll of meas.leaderLines || []) {
+            if (ll.marker?.material) ll.marker.material.color.set(color);
+        }
+    } else if (type === 'annotation3d') {
+        const color = getAnn3dMarkerColor();
+        for (const ll of meas.leaderLines || []) {
+            if (ll.marker?.material) ll.marker.material.color.set(color);
+        }
     }
 }
 
@@ -2294,6 +2357,17 @@ function _applyRedefineEndpointColors() {
 
 function _boostRedefineMarkerScales() {
     if (!_redefineSession || !_selectedDim || _selectedDimType === 'cadDim3d') return;
+    if (_selectedDimType === 'annotation' || _selectedDimType === 'annotation3d') return;
+    for (const key of _redefineHighlightKeys()) {
+        const mk = _getEndpointMarker(_selectedDim, _selectedDimType, key);
+        if (mk) mk.scale.multiplyScalar(REDEFINE_MARKER_SCALE);
+    }
+}
+
+/** Call after annotation marker scale updates so redefine grips stay enlarged. */
+export function boostRedefineAnnotationMarkers() {
+    if (!_redefineSession || !_selectedDim) return;
+    if (_selectedDimType !== 'annotation' && _selectedDimType !== 'annotation3d') return;
     for (const key of _redefineHighlightKeys()) {
         const mk = _getEndpointMarker(_selectedDim, _selectedDimType, key);
         if (mk) mk.scale.multiplyScalar(REDEFINE_MARKER_SCALE);
@@ -2412,6 +2486,107 @@ function _commitCadDimRedefine(meas, pointKey, worldPoint) {
     return true;
 }
 
+function _replaceOwnerLine(owner, oldLine, newLine) {
+    if (oldLine) {
+        owner.remove(oldLine);
+        oldLine.geometry.dispose();
+        oldLine.material.dispose();
+    }
+    owner.add(newLine);
+    return newLine;
+}
+
+function _commitAngleRedefine(meas, index, worldPoint) {
+    const owner = meas.ownerObject || _scene;
+    owner.updateWorldMatrix(true, false);
+    const local = owner.worldToLocal(worldPoint.clone());
+    const pts = meas.points.map(p => p.clone());
+    pts[index].copy(local);
+    if (pts[0].distanceTo(pts[1]) < 1e-6 || pts[2].distanceTo(pts[3]) < 1e-6) return false;
+
+    const rec = _findMeasurementUserDataRec(meas, 'angle');
+    const oldDefault = _defaultMeasurementLabelPos(meas, 'angle');
+    const labelOffset = meas.label && oldDefault
+        ? meas.label.position.clone().sub(oldDefault)
+        : new THREE.Vector3();
+
+    meas.points[index].copy(local);
+    if (meas.markers?.[index]) meas.markers[index].position.copy(local);
+
+    meas.line1 = _replaceOwnerLine(owner, meas.line1, _createAngleLine(meas.points[0], meas.points[1]));
+    meas.line2 = _replaceOwnerLine(owner, meas.line2, _createAngleLine(meas.points[2], meas.points[3]));
+    const mid1 = new THREE.Vector3().addVectors(meas.points[0], meas.points[1]).multiplyScalar(0.5);
+    const mid2 = new THREE.Vector3().addVectors(meas.points[2], meas.points[3]).multiplyScalar(0.5);
+    meas.midLine = _replaceOwnerLine(owner, meas.midLine, _createAngleMidLine(mid1, mid2));
+
+    const newDefault = _defaultMeasurementLabelPos(meas, 'angle');
+    if (meas.label && newDefault) {
+        meas.label.position.copy(newDefault).add(labelOffset);
+        meas.label.element.innerHTML = _buildAngleLabelTextFromMeas(meas);
+        if (meas.labelDim === '3d' && _currentCamera) {
+            _applyMeasurement3dOrientation(meas, _currentCamera);
+        }
+    }
+    if (meas._labelAnchor && newDefault) {
+        meas._labelAnchor.copy(newDefault);
+        _updateLeaderLine(meas, meas.label.position);
+    }
+    if (rec) {
+        rec.points = meas.points.map(pt => ({ x: pt.x, y: pt.y, z: pt.z }));
+        if (meas.label) {
+            const lp = meas.label.position;
+            rec.labelPos = { x: lp.x, y: lp.y, z: lp.z };
+        }
+    }
+    return true;
+}
+
+function _commitRadiusRedefine(meas, index, worldPoint) {
+    const owner = meas.ownerObject || _scene;
+    owner.updateWorldMatrix(true, false);
+    const local = owner.worldToLocal(worldPoint.clone());
+    const pts = meas.points.map(p => p.clone());
+    pts[index].copy(local);
+    const p0w = owner.localToWorld(pts[0].clone());
+    const p1w = owner.localToWorld(pts[1].clone());
+    const p2w = owner.localToWorld(pts[2].clone());
+    if (_circumradius3D(p0w, p1w, p2w) === null) return false;
+
+    const rec = _findMeasurementUserDataRec(meas, 'radius');
+    const oldDefault = _defaultMeasurementLabelPos(meas, 'radius');
+    const labelOffset = meas.label && oldDefault
+        ? meas.label.position.clone().sub(oldDefault)
+        : new THREE.Vector3();
+
+    meas.points[index].copy(local);
+    if (meas.markers?.[index]) meas.markers[index].position.copy(local);
+
+    meas.edges[0] = _replaceOwnerLine(owner, meas.edges[0], _createRadiusLine(meas.points[0], meas.points[1], false));
+    meas.edges[1] = _replaceOwnerLine(owner, meas.edges[1], _createRadiusLine(meas.points[1], meas.points[2], false));
+    meas.edges[2] = _replaceOwnerLine(owner, meas.edges[2], _createRadiusLine(meas.points[2], meas.points[0], false));
+
+    const newDefault = _defaultMeasurementLabelPos(meas, 'radius');
+    if (meas.label && newDefault) {
+        meas.label.position.copy(newDefault).add(labelOffset);
+        meas.label.element.innerHTML = _buildRadiusLabelTextFromMeas(meas);
+        if (meas.labelDim === '3d' && _currentCamera) {
+            _applyMeasurement3dOrientation(meas, _currentCamera);
+        }
+    }
+    if (meas._labelAnchor && newDefault) {
+        meas._labelAnchor.copy(newDefault);
+        _updateLeaderLine(meas, meas.label.position);
+    }
+    if (rec) {
+        rec.points = meas.points.map(pt => ({ x: pt.x, y: pt.y, z: pt.z }));
+        if (meas.label) {
+            const lp = meas.label.position;
+            rec.labelPos = { x: lp.x, y: lp.y, z: lp.z };
+        }
+    }
+    return true;
+}
+
 export function beginRedefinePoint() {
     if (!_canRedefineSelected()) return false;
     _hideRedefinePreview();
@@ -2449,8 +2624,8 @@ export function cancelRedefinePoint() {
 function _hitTestRedefineMarker(opts) {
     if (!_redefineSession || !_canRedefineSelected() || !opts?.camera || !opts.canvasRect) return null;
     const keys = _redefineSession.phase === 'selectMarker'
-        ? ['p1', 'p2']
-        : (_redefineSession.pointKey ? [_redefineSession.pointKey] : []);
+        ? _redefineKeysForSelected()
+        : (_redefineSession.pointKey != null ? [_redefineSession.pointKey] : []);
     if (keys.length === 0) return null;
 
     const { camera, clientX, clientY, canvasRect } = opts;
@@ -2474,7 +2649,7 @@ function _hitTestRedefineMarker(opts) {
             bestMarker = mk;
         }
     }
-    return bestKey ? { key: bestKey, marker: bestMarker } : null;
+    return bestKey != null ? { key: bestKey, marker: bestMarker } : null;
 }
 
 /**
@@ -2502,7 +2677,7 @@ export function pickRedefineMarkerAtScreen(opts) {
 }
 
 export function commitRedefinePoint(worldPoint, renderFn) {
-    if (!_redefineSession || _redefineSession.phase !== 'pickNewPoint' || !_redefineSession.pointKey) {
+    if (!_redefineSession || _redefineSession.phase !== 'pickNewPoint' || _redefineSession.pointKey == null) {
         return false;
     }
     if (!_canRedefineSelected() || !worldPoint) return false;
@@ -2518,6 +2693,14 @@ export function commitRedefinePoint(worldPoint, renderFn) {
     } else if (type === 'cadDim3d') {
         ok = redefineCadDim3dEndpoint(meas, pointKey, worldPoint);
         if (ok) registerLabelForSelection(meas);
+    } else if (type === 'angle') {
+        ok = _commitAngleRedefine(meas, pointKey, worldPoint);
+    } else if (type === 'radius') {
+        ok = _commitRadiusRedefine(meas, pointKey, worldPoint);
+    } else if (type === 'annotation') {
+        ok = redefineAnnotationAnchor(meas, pointKey, worldPoint);
+    } else if (type === 'annotation3d') {
+        ok = redefineAnnotation3dAnchor(meas, pointKey, worldPoint);
     }
     if (!ok) return false;
 
@@ -2532,14 +2715,22 @@ export function commitRedefinePoint(worldPoint, renderFn) {
     return true;
 }
 
+function _redefinePreviewBaseColor() {
+    const type = _selectedDimType;
+    if (type === 'distance') return _distanceMarkerDefaults.markerColor;
+    if (type === 'angle') return _angleMarkerDefaults.markerColor;
+    if (type === 'radius') return _radiusMarkerDefaults.markerColor;
+    if (type === 'annotation') return getAnnMarkerSettings().markerColor;
+    if (type === 'annotation3d') return getAnn3dMarkerColor();
+    return _dimMarkerColor;
+}
+
 export function updateRedefinePointPreview(point) {
     if (!_redefineSession || _redefineSession.phase !== 'pickNewPoint' || !_scene || !point) {
         _hideRedefinePreview();
         return;
     }
-    const baseColor = _selectedDimType === 'distance'
-        ? _distanceMarkerDefaults.markerColor
-        : _dimMarkerColor;
+    const baseColor = _redefinePreviewBaseColor();
     if (!_redefinePreviewMarker) {
         const geo = new THREE.SphereGeometry(MARKER_RADIUS, 12, 12);
         const mat = new THREE.MeshBasicMaterial({

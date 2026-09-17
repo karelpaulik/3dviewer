@@ -23,6 +23,7 @@ export function isAnnotation3dDialogOpen() {
 let _pendingAddLeaderAnnotation = null;  // Annotation waiting for add-leader-line click
 let _currentCamera = null;               // Updated each frame via updateAnnotation3dOrientations()
 let _convertTo2dFn = null;               // set from main.js to avoid circular dep
+let _onRedefinePointFn = null;
 let _onSessionComplete = null;
 
 export function setAnnotation3dOnSessionComplete(fn) { _onSessionComplete = fn; }
@@ -40,6 +41,7 @@ export function setAnn3dMarkerFixedSize(v)     { _dimMarkerFixedSize = v; }
 export function setAnn3dMarkerFixedScreenPx(v) { _dimMarkerFixedScreenPx = v; }
 export function setAnn3dMarkerWorldSize(v)     { _dimMarkerWorldSize = v; }
 export function setAnn3dMarkerColor(v)         { _ann3dMarkerColor = v; _applyAnn3dMarkerColor(); }
+export function getAnn3dMarkerColor()          { return _ann3dMarkerColor; }
 
 function _applyAnn3dMarkerColor() {
     for (const a of _annotations3d) {
@@ -380,6 +382,12 @@ export function showAnnotation3dContextMenu(annotation, x, y, renderFn, menuBoun
         if (_renderFn) _renderFn();
     }, { onClose: closeMenu }));
 
+    if (annotation.leaderLines.length > 0 && _onRedefinePointFn) {
+        menu.appendChild(createCtxMenuItem('Redefine point…', () => {
+            _onRedefinePointFn();
+        }, { onClose: closeMenu }));
+    }
+
     if (annotation.leaderLines.length > 1) {
         menu.appendChild(createCtxMenuSeparator());
         annotation.leaderLines.forEach((ll, idx) => {
@@ -489,6 +497,38 @@ export function deleteAnnotation3dByRef(annotation, renderFn) {
 
 export function setConvertTo2dFn(fn) {
     _convertTo2dFn = fn;
+}
+
+export function setOnRedefinePoint3dFn(fn) {
+    _onRedefinePointFn = fn;
+}
+
+/**
+ * Move one CSS3D annotation leader-line anchor. Owner stays unchanged.
+ * @param {Object} annotation
+ * @param {number} index
+ * @param {THREE.Vector3} worldPoint
+ * @returns {boolean}
+ */
+export function redefineAnnotation3dAnchor(annotation, index, worldPoint) {
+    if (!annotation?.leaderLines?.[index] || !worldPoint) return false;
+    const owner = annotation.ownerObject || _scene;
+    owner.updateWorldMatrix(true, false);
+    const local = owner.worldToLocal(worldPoint.clone());
+    const ll = annotation.leaderLines[index];
+    ll.anchorLocal.copy(local);
+    if (ll.marker) ll.marker.position.copy(local);
+    const labelPos = annotation.label.position;
+    owner.remove(ll.line);
+    ll.line.geometry.dispose();
+    ll.line.material.dispose();
+    ll.line = _createLeaderLine(ll.anchorLocal, labelPos);
+    owner.add(ll.line);
+    if (annotation._userDataRec) {
+        if (!Array.isArray(annotation._userDataRec.anchors)) annotation._userDataRec.anchors = [];
+        annotation._userDataRec.anchors[index] = { x: local.x, y: local.y, z: local.z };
+    }
+    return true;
 }
 
 export function reconstructAnnotation3dFromRec(owner, rec, renderFn) {

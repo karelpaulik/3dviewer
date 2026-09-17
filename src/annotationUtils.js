@@ -21,6 +21,7 @@ export function isAnnotationDialogOpen() {
 }
 let _pendingAddLeaderAnnotation = null; // Annotation waiting for a new leader-line anchor click
 let _convertTo3dFn = null;  // set from main.js to avoid circular dep
+let _onRedefinePointFn = null;
 let _onSessionComplete = null;
 
 export function setAnnotationOnSessionComplete(fn) { _onSessionComplete = fn; }
@@ -330,6 +331,12 @@ export function showAnnotationContextMenu(annotation, x, y, renderFn, menuBounds
         _pendingAddLeaderAnnotation = annotation;
         if (_renderFn) _renderFn();
     }, { onClose: closeMenu }));
+
+    if (annotation.leaderLines.length > 0 && _onRedefinePointFn) {
+        menu.appendChild(createCtxMenuItem('Redefine point…', () => {
+            _onRedefinePointFn();
+        }, { onClose: closeMenu }));
+    }
 
     if (annotation.leaderLines.length > 1) {
         menu.appendChild(createCtxMenuSeparator());
@@ -863,6 +870,45 @@ export function deleteAnnotationByRef(annotation, renderFn) {
 
 export function setConvertTo3dFn(fn) {
     _convertTo3dFn = fn;
+}
+
+export function setOnRedefinePointFn(fn) {
+    _onRedefinePointFn = fn;
+}
+
+/**
+ * Move one leader-line anchor to a new world-space surface point. Owner stays unchanged.
+ * @param {Object} annotation
+ * @param {number} index
+ * @param {THREE.Vector3} worldPoint
+ * @returns {boolean}
+ */
+export function redefineAnnotationAnchor(annotation, index, worldPoint) {
+    if (!annotation?.leaderLines?.[index] || !worldPoint) return false;
+    const owner = annotation.ownerObject || _scene;
+    owner.updateWorldMatrix(true, false);
+    const local = owner.worldToLocal(worldPoint.clone());
+    const ll = annotation.leaderLines[index];
+    ll.anchorLocal.copy(local);
+    if (ll.marker) ll.marker.position.copy(local);
+    const labelPos = annotation.label.position;
+    owner.remove(ll.line);
+    ll.line.geometry.dispose();
+    ll.line.material.dispose();
+    ll.line = _createLeaderLine(ll.anchorLocal, labelPos);
+    owner.add(ll.line);
+    if (annotation._userDataRec) {
+        if (!Array.isArray(annotation._userDataRec.anchors)) {
+            annotation._userDataRec.anchors = annotation._userDataRec.anchor
+                ? [annotation._userDataRec.anchor]
+                : [];
+        }
+        annotation._userDataRec.anchors[index] = { x: local.x, y: local.y, z: local.z };
+        if (annotation._userDataRec.anchor && index === 0) {
+            annotation._userDataRec.anchor = { x: local.x, y: local.y, z: local.z };
+        }
+    }
+    return true;
 }
 
 export function reconstructAnnotationFromRec(owner, rec, renderFn) {
