@@ -59,6 +59,42 @@ export function setCadDimMarkerFixedSize(v)     { _dimMarkerFixedSize = v; }
 export function setCadDimMarkerFixedScreenPx(v) { _dimMarkerFixedScreenPx = v; }
 export function setCadDimMarkerWorldSize(v)     { _dimMarkerWorldSize = v; }
 export function setCadDimMarkerColor(v)         { _dimMarkerColor = v; _applyCadDimMarkerColor(); }
+
+const REDEFINE_HIGHLIGHT_COLOR = '#ffdd00';
+const REDEFINE_MARKER_SCALE = 2.5;
+
+/** @type {{ meas: object, phase: string, pointKey: 'p1'|'p2'|null } | null} */
+let _redefineHighlight3d = null;
+
+export function setCadDim3dRedefineHighlight(info) {
+    _redefineHighlight3d = info || null;
+    if (!_redefineHighlight3d) {
+        _applyCadDimMarkerColor();
+        return;
+    }
+    _applyCadDim3dRedefineHighlight();
+}
+
+function _cadDim3dRedefineKeys() {
+    if (!_redefineHighlight3d) return [];
+    if (_redefineHighlight3d.phase === 'selectMarker') return ['p1', 'p2'];
+    if (_redefineHighlight3d.phase === 'pickNewPoint' && _redefineHighlight3d.pointKey) {
+        return [_redefineHighlight3d.pointKey];
+    }
+    return [];
+}
+
+function _applyCadDim3dRedefineHighlight() {
+    const meas = _redefineHighlight3d?.meas;
+    if (!meas) return;
+    if (meas.markerP1?.material) meas.markerP1.material.color.set(_dimMarkerColor);
+    if (meas.markerP2?.material) meas.markerP2.material.color.set(_dimMarkerColor);
+    for (const key of _cadDim3dRedefineKeys()) {
+        const mk = key === 'p1' ? meas.markerP1 : meas.markerP2;
+        if (mk?.material) mk.material.color.set(REDEFINE_HIGHLIGHT_COLOR);
+    }
+}
+
 function _applyCadDimMarkerColor() {
     for (const m of _cadDim3dMeasurements) {
         for (const mk of [m.markerP1, m.markerP2, m.markerFoot1, m.markerFoot2]) {
@@ -68,6 +104,7 @@ function _applyCadDimMarkerColor() {
             if (ln) ln.material.color.set(_dimMarkerColor);
         }
     }
+    _applyCadDim3dRedefineHighlight();
 }
 
 // --- Defaults (editable via tools panel) ---
@@ -587,6 +624,54 @@ export function syncCadDim3dLabelPos(meas) {
     rec.labelPos = { x: lp.x, y: lp.y, z: lp.z };
 }
 
+/**
+ * Move CAD 3D endpoint p1 or p2 to a new world-space surface point and rebuild the dimension.
+ * @param {object} meas
+ * @param {'p1'|'p2'} pointKey
+ * @param {THREE.Vector3} worldPoint
+ * @returns {boolean} false if degenerate (coincident endpoints)
+ */
+export function redefineCadDim3dEndpoint(meas, pointKey, worldPoint) {
+    if (!meas || (pointKey !== 'p1' && pointKey !== 'p2') || !worldPoint) return false;
+    const owner = meas.ownerObject || _scene;
+    if (!owner) return false;
+    owner.updateWorldMatrix(true, false);
+
+    const other = pointKey === 'p1' ? meas.p2 : meas.p1;
+    const otherWorld = owner.localToWorld(other.clone());
+    if (otherWorld.distanceTo(worldPoint) < 1e-6) return false;
+
+    const rec = _findUserDataRec3d(meas);
+    const local = owner.worldToLocal(worldPoint.clone());
+    if (pointKey === 'p1') {
+        meas.p1.copy(local);
+        if (meas.markerP1) meas.markerP1.position.copy(local);
+    } else {
+        meas.p2.copy(local);
+        if (meas.markerP2) meas.markerP2.position.copy(local);
+    }
+
+    const p1World = owner.localToWorld(meas.p1.clone());
+    const p2World = owner.localToWorld(meas.p2.clone());
+    const offsetPoint = owner.localToWorld(meas.foot1.clone());
+    rebuildCadDim3dVisuals(meas, p1World, p2World, offsetPoint, true);
+    if (meas.label?.element) {
+        meas.label.element.innerHTML = _cadDimGetLabelText3d(meas);
+    }
+    if (rec) {
+        rec.p1 = { x: meas.p1.x, y: meas.p1.y, z: meas.p1.z };
+        rec.p2 = { x: meas.p2.x, y: meas.p2.y, z: meas.p2.z };
+        rec.foot1 = { x: meas.foot1.x, y: meas.foot1.y, z: meas.foot1.z };
+        rec.foot2 = { x: meas.foot2.x, y: meas.foot2.y, z: meas.foot2.z };
+        rec.value = meas.value;
+        if (meas.label) {
+            const lp = meas.label.position;
+            rec.labelPos = { x: lp.x, y: lp.y, z: lp.z };
+        }
+    }
+    return true;
+}
+
 /** Change the label display mode of a CSS3D CAD dimension and update its HTML. */
 export function setCadDim3dLabelMode(meas, mode, renderFn) {
     if (!meas) return;
@@ -1007,6 +1092,15 @@ export function updateCadDim3dMarkerScales(camera) {
         } else {
             marker.scale.setScalar(scale);
         }
+    }
+
+    const meas = _redefineHighlight3d?.meas;
+    if (meas) {
+        for (const key of _cadDim3dRedefineKeys()) {
+            const mk = key === 'p1' ? meas.markerP1 : meas.markerP2;
+            if (mk) mk.scale.multiplyScalar(REDEFINE_MARKER_SCALE);
+        }
+        _applyCadDim3dRedefineHighlight();
     }
 }
 

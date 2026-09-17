@@ -4,7 +4,7 @@ import { CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 import { CSS3DObject } from 'three/addons/renderers/CSS3DRenderer.js';
 import { getAnnotations, updateAnnotationLeaderLine, syncAnnotationLabelPos, deleteAnnotationByRef } from './annotationUtils.js';
 import { getAnnotations3d, updateAnnotation3dLeaderLine, syncAnnotation3dLabelPos, deleteAnnotation3dByRef } from './annotation3dUtils.js';
-import { getCadDim3dMeasurements, deleteCadDim3dByRef, rebuildCadDim3dVisuals, syncCadDim3dLabelPos, updateCadDim3dLeaderLine } from './cadDim3dUtils.js';
+import { getCadDim3dMeasurements, deleteCadDim3dByRef, rebuildCadDim3dVisuals, syncCadDim3dLabelPos, updateCadDim3dLeaderLine, redefineCadDim3dEndpoint, setCadDim3dRedefineHighlight } from './cadDim3dUtils.js';
 
 // --- Private state ---
 let _scene = null;
@@ -68,6 +68,7 @@ function _applyDistanceMarkerColors() {
     if (_pendingMarker?.material) _pendingMarker.material.color.set(color);
     if (_previewMarker?.material) _previewMarker.material.color.set(_lighterColorHex(color));
     if (_previewLine?.material) _previewLine.material.color.set(color);
+    _applyRedefineEndpointColors();
 }
 
 function _applyAngleMarkerColors() {
@@ -115,6 +116,13 @@ let _currentCamera = null;
 let _renderFn = null;
 let _orbitControls = null;
 const SELECTED_BORDER = '2px solid #ffdd00';
+const REDEFINE_HIGHLIGHT_COLOR = '#ffdd00';
+const REDEFINE_MARKER_SCALE = 2.5;
+const REDEFINE_PICK_PX = 18;
+
+/** @type {{ phase: 'selectMarker'|'pickNewPoint', pointKey: 'p1'|'p2'|null } | null} */
+let _redefineSession = null;
+let _redefinePreviewMarker = null;
 
 let _depthTestEnabled = true; // true = skryté za modelem (výchozí), false = vždy viditelné přes model
 
@@ -158,6 +166,7 @@ function _applyDimMarkerColor() {
             if (ln) ln.material.color.set(_dimMarkerColor);
         }
     }
+    _applyRedefineEndpointColors();
 }
 
 // --- Flat dimension defaults ---
@@ -1058,8 +1067,12 @@ export function updateMarkerScales(camera) {
     if (_cadP2FootMarker1) cadMarkers.push(_cadP2FootMarker1);
     if (_cadP2FootMarker2) cadMarkers.push(_cadP2FootMarker2);
 
+    if (_redefinePreviewMarker) measMarkers.push(_redefinePreviewMarker);
+
     _scaleMarkerList(measMarkers, camera, _measurementMarkerSettings);
     _scaleMarkerList(cadMarkers, camera, _dimMarkerSettings);
+    _boostRedefineMarkerScales();
+    _applyRedefineEndpointColors();
 }
 
 function _scaleMarkerList(markers, camera, settings) {
@@ -1667,6 +1680,7 @@ export function getRadiusMarkers() {
 // ===================== Select Dimension Mode =====================
 
 function _deselectDim() {
+    cancelRedefinePoint();
     if (_selectedDim && _selectedDim.label) {
         _selectedDim.label.element.style.border = 'none';
     }
@@ -2004,11 +2018,6 @@ function _rebuildCadDimVisuals(meas, p1World, p2World, offsetPoint) {
         if (obj.geometry) obj.geometry.dispose();
         if (obj.material) obj.material.dispose();
     }
-    // During a drag, keep the label DOM element alive to avoid cancelling touch gestures
-    if (!_isDraggingLabel && meas.label) {
-        owner.remove(meas.label);
-        if (meas.label.element) meas.label.element.remove();
-    }
 
     // Rebuild
     const markerFoot1 = _cadMakeMarker(f1, _dimMarkerColor, false);
@@ -2025,6 +2034,9 @@ function _rebuildCadDimVisuals(meas, p1World, p2World, offsetPoint) {
     // During an active drag: update the label in-place so the DOM element is NOT removed.
     const label = meas.label;
     label.position.copy(labelPos);
+    if (label.element) {
+        label.element.innerHTML = _cadDimGetLabelText(meas, meas.labelMode);
+    }
 
     owner.add(markerFoot1); owner.add(markerFoot2);
     owner.add(extLine1);    owner.add(extLine2);
@@ -2129,10 +2141,12 @@ function _onDocumentMouseUp(e) {
 
 function _onCanvasClick(e) {
     if (!_selectDimActive) return;
+    if (_redefineSession) return;
     // If click is not on a label, deselect
     const el = document.elementFromPoint(e.clientX, e.clientY);
     if (el && (el.closest('.measurement-label') || el.closest('.annotation-label'))) return; // handled by label mousedown
     if (el && el.closest('.ctx-menu')) return; // context menu – keep selection alive
+    if (el && el.closest('#tool-hint-overlay')) return;
     _deselectDim();
     if (_renderFn) _renderFn();
 }
@@ -2227,6 +2241,299 @@ export function deselectSelectedDimension() {
     _deselectDim();
 }
 
+function _canRedefineSelected() {
+    return _selectedDim
+        && (_selectedDimType === 'distance' || _selectedDimType === 'cadDim' || _selectedDimType === 'cadDim3d');
+}
+
+function _redefineHighlightKeys() {
+    if (!_redefineSession) return [];
+    if (_redefineSession.phase === 'selectMarker') return ['p1', 'p2'];
+    if (_redefineSession.phase === 'pickNewPoint' && _redefineSession.pointKey) {
+        return [_redefineSession.pointKey];
+    }
+    return [];
+}
+
+function _getEndpointMarker(meas, type, key) {
+    if (!meas) return null;
+    if (type === 'distance') return key === 'p1' ? meas.marker1 : meas.marker2;
+    return key === 'p1' ? meas.markerP1 : meas.markerP2;
+}
+
+function _restoreEndpointColors(meas, type) {
+    if (!meas) return;
+    if (type === 'distance') {
+        const color = _distanceMarkerDefaults.markerColor;
+        if (meas.marker1?.material) meas.marker1.material.color.set(color);
+        if (meas.marker2?.material) meas.marker2.material.color.set(color);
+    } else if (type === 'cadDim') {
+        if (meas.markerP1?.material) meas.markerP1.material.color.set(_dimMarkerColor);
+        if (meas.markerP2?.material) meas.markerP2.material.color.set(_dimMarkerColor);
+    }
+}
+
+function _applyRedefineEndpointColors() {
+    if (_selectedDimType === 'cadDim3d') {
+        if (_redefineSession && _selectedDim) {
+            setCadDim3dRedefineHighlight({
+                meas: _selectedDim,
+                phase: _redefineSession.phase,
+                pointKey: _redefineSession.pointKey,
+            });
+        }
+        return;
+    }
+    if (!_redefineSession || !_selectedDim) return;
+    _restoreEndpointColors(_selectedDim, _selectedDimType);
+    for (const key of _redefineHighlightKeys()) {
+        const mk = _getEndpointMarker(_selectedDim, _selectedDimType, key);
+        if (mk?.material) mk.material.color.set(REDEFINE_HIGHLIGHT_COLOR);
+    }
+}
+
+function _boostRedefineMarkerScales() {
+    if (!_redefineSession || !_selectedDim || _selectedDimType === 'cadDim3d') return;
+    for (const key of _redefineHighlightKeys()) {
+        const mk = _getEndpointMarker(_selectedDim, _selectedDimType, key);
+        if (mk) mk.scale.multiplyScalar(REDEFINE_MARKER_SCALE);
+    }
+}
+
+function _hideRedefinePreview() {
+    if (_redefinePreviewMarker && _scene) {
+        _scene.remove(_redefinePreviewMarker);
+        _redefinePreviewMarker.geometry.dispose();
+        _redefinePreviewMarker.material.dispose();
+        _redefinePreviewMarker = null;
+    }
+}
+
+function _findCadDimUserDataRec(meas) {
+    const owner = meas?.ownerObject || _scene;
+    if (!owner?.userData?.measurements) return null;
+    return owner.userData.measurements.find(d =>
+        d.type === 'cadDim'
+        && Math.abs(d.p1.x - meas.p1.x) < 1e-6
+        && Math.abs(d.p1.y - meas.p1.y) < 1e-6
+        && Math.abs(d.p1.z - meas.p1.z) < 1e-6) || null;
+}
+
+function _commitDistanceRedefine(meas, pointKey, worldPoint) {
+    const owner = meas.ownerObject || _scene;
+    owner.updateWorldMatrix(true, false);
+    const other = pointKey === 'p1' ? meas.p2 : meas.p1;
+    const otherWorld = owner.localToWorld(other.clone());
+    if (otherWorld.distanceTo(worldPoint) < 1e-6) return false;
+
+    const rec = _findMeasurementUserDataRec(meas, 'distance');
+    const oldMid = new THREE.Vector3().addVectors(meas.p1, meas.p2).multiplyScalar(0.5);
+    const labelOffset = meas.label ? meas.label.position.clone().sub(oldMid) : new THREE.Vector3();
+    const local = owner.worldToLocal(worldPoint.clone());
+
+    if (pointKey === 'p1') {
+        meas.p1.copy(local);
+        if (meas.marker1) meas.marker1.position.copy(local);
+    } else {
+        meas.p2.copy(local);
+        if (meas.marker2) meas.marker2.position.copy(local);
+    }
+
+    const p1w = owner.localToWorld(meas.p1.clone());
+    const p2w = owner.localToWorld(meas.p2.clone());
+    meas.distance = p1w.distanceTo(p2w);
+
+    if (meas.line) {
+        owner.remove(meas.line);
+        meas.line.geometry.dispose();
+        meas.line.material.dispose();
+        meas.line = _createLine(meas.p1, meas.p2);
+        owner.add(meas.line);
+    }
+
+    const newMid = new THREE.Vector3().addVectors(meas.p1, meas.p2).multiplyScalar(0.5);
+    if (meas.label) {
+        meas.label.position.copy(newMid).add(labelOffset);
+        meas.label.element.innerHTML = _buildDistanceLabelTextFromMeas(meas);
+        if (meas.labelDim === '3d' && _currentCamera) {
+            _applyMeasurement3dOrientation(meas, _currentCamera);
+        }
+    }
+    if (meas._labelAnchor) {
+        meas._labelAnchor.copy(newMid);
+        _updateLeaderLine(meas, meas.label.position);
+    }
+
+    if (rec) {
+        rec.p1 = { x: meas.p1.x, y: meas.p1.y, z: meas.p1.z };
+        rec.p2 = { x: meas.p2.x, y: meas.p2.y, z: meas.p2.z };
+        rec.distance = meas.distance;
+        if (meas.label) {
+            const lp = meas.label.position;
+            rec.labelPos = { x: lp.x, y: lp.y, z: lp.z };
+        }
+    }
+    return true;
+}
+
+function _commitCadDimRedefine(meas, pointKey, worldPoint) {
+    const owner = meas.ownerObject || _scene;
+    owner.updateWorldMatrix(true, false);
+    const other = pointKey === 'p1' ? meas.p2 : meas.p1;
+    const otherWorld = owner.localToWorld(other.clone());
+    if (otherWorld.distanceTo(worldPoint) < 1e-6) return false;
+
+    const rec = _findCadDimUserDataRec(meas);
+    const local = owner.worldToLocal(worldPoint.clone());
+    if (pointKey === 'p1') {
+        meas.p1.copy(local);
+        if (meas.markerP1) meas.markerP1.position.copy(local);
+    } else {
+        meas.p2.copy(local);
+        if (meas.markerP2) meas.markerP2.position.copy(local);
+    }
+
+    const p1World = owner.localToWorld(meas.p1.clone());
+    const p2World = owner.localToWorld(meas.p2.clone());
+    const offsetPoint = owner.localToWorld(meas.foot1.clone());
+    _rebuildCadDimVisuals(meas, p1World, p2World, offsetPoint);
+
+    if (rec) {
+        rec.p1 = { x: meas.p1.x, y: meas.p1.y, z: meas.p1.z };
+        rec.p2 = { x: meas.p2.x, y: meas.p2.y, z: meas.p2.z };
+        rec.foot1 = { x: meas.foot1.x, y: meas.foot1.y, z: meas.foot1.z };
+        rec.foot2 = { x: meas.foot2.x, y: meas.foot2.y, z: meas.foot2.z };
+        rec.value = meas.value;
+        if (meas.label) {
+            const lp = meas.label.position;
+            rec.labelPos = { x: lp.x, y: lp.y, z: lp.z };
+        }
+    }
+    return true;
+}
+
+export function beginRedefinePoint() {
+    if (!_canRedefineSelected()) return false;
+    _hideRedefinePreview();
+    _redefineSession = { phase: 'selectMarker', pointKey: null };
+    _applyRedefineEndpointColors();
+    if (_renderFn) _renderFn();
+    return true;
+}
+
+export function isRedefinePointActive() {
+    return _redefineSession !== null;
+}
+
+export function getRedefinePointPhase() {
+    return _redefineSession ? _redefineSession.phase : null;
+}
+
+export function cancelRedefinePoint() {
+    _hideRedefinePreview();
+    if (!_redefineSession) return;
+    const meas = _selectedDim;
+    const type = _selectedDimType;
+    _redefineSession = null;
+    if (type === 'cadDim3d') {
+        setCadDim3dRedefineHighlight(null);
+    } else if (meas) {
+        _restoreEndpointColors(meas, type);
+    }
+}
+
+/**
+ * @param {{ camera: THREE.Camera, clientX: number, clientY: number, canvasRect: DOMRect }} opts
+ * @returns {boolean} true if a marker was selected
+ */
+export function pickRedefineMarkerAtScreen(opts) {
+    if (!_redefineSession || _redefineSession.phase !== 'selectMarker') return false;
+    if (!_canRedefineSelected() || !opts?.camera || !opts.canvasRect) return false;
+
+    const { camera, clientX, clientY, canvasRect } = opts;
+    const world = new THREE.Vector3();
+    let bestKey = null;
+    let bestDist = REDEFINE_PICK_PX;
+
+    for (const key of ['p1', 'p2']) {
+        const mk = _getEndpointMarker(_selectedDim, _selectedDimType, key);
+        if (!mk) continue;
+        mk.getWorldPosition(world);
+        world.project(camera);
+        if (world.z < -1 || world.z > 1) continue;
+        const x = (world.x * 0.5 + 0.5) * canvasRect.width + canvasRect.left;
+        const y = (-world.y * 0.5 + 0.5) * canvasRect.height + canvasRect.top;
+        const d = Math.hypot(clientX - x, clientY - y);
+        if (d <= bestDist) {
+            bestDist = d;
+            bestKey = key;
+        }
+    }
+    if (!bestKey) return false;
+
+    _redefineSession = { phase: 'pickNewPoint', pointKey: bestKey };
+    _applyRedefineEndpointColors();
+    if (_renderFn) _renderFn();
+    return true;
+}
+
+export function commitRedefinePoint(worldPoint, renderFn) {
+    if (!_redefineSession || _redefineSession.phase !== 'pickNewPoint' || !_redefineSession.pointKey) {
+        return false;
+    }
+    if (!_canRedefineSelected() || !worldPoint) return false;
+
+    const meas = _selectedDim;
+    const type = _selectedDimType;
+    const pointKey = _redefineSession.pointKey;
+    let ok = false;
+    if (type === 'distance') {
+        ok = _commitDistanceRedefine(meas, pointKey, worldPoint);
+    } else if (type === 'cadDim') {
+        ok = _commitCadDimRedefine(meas, pointKey, worldPoint);
+    } else if (type === 'cadDim3d') {
+        ok = redefineCadDim3dEndpoint(meas, pointKey, worldPoint);
+        if (ok) registerLabelForSelection(meas);
+    }
+    if (!ok) return false;
+
+    _redefineSession = null;
+    _hideRedefinePreview();
+    if (type === 'cadDim3d') {
+        setCadDim3dRedefineHighlight(null);
+    } else {
+        _restoreEndpointColors(meas, type);
+    }
+    if (renderFn) renderFn();
+    return true;
+}
+
+export function updateRedefinePointPreview(point) {
+    if (!_redefineSession || _redefineSession.phase !== 'pickNewPoint' || !_scene || !point) {
+        _hideRedefinePreview();
+        return;
+    }
+    const baseColor = _selectedDimType === 'distance'
+        ? _distanceMarkerDefaults.markerColor
+        : _dimMarkerColor;
+    if (!_redefinePreviewMarker) {
+        const geo = new THREE.SphereGeometry(MARKER_RADIUS, 12, 12);
+        const mat = new THREE.MeshBasicMaterial({
+            color: _lighterColorHex(baseColor),
+            depthTest: false,
+            transparent: true,
+            opacity: 0.7,
+        });
+        _redefinePreviewMarker = new THREE.Mesh(geo, mat);
+        _redefinePreviewMarker.renderOrder = 999;
+        _redefinePreviewMarker.userData._isMeasurement = true;
+        _scene.add(_redefinePreviewMarker);
+    } else if (_redefinePreviewMarker.material) {
+        _redefinePreviewMarker.material.color.set(_lighterColorHex(baseColor));
+    }
+    _redefinePreviewMarker.position.copy(point);
+}
+
 function _attachLabelMousedownListeners() {
     for (const m of _measurements) {
         if (!m.label?.element) continue;
@@ -2315,6 +2622,7 @@ export function setSelectDimActive(val) {
 
 export function deleteSelectedDimension(renderFn) {
     if (!_selectedDim) return;
+    cancelRedefinePoint();
     _removeSingleMeasurement(_selectedDim, _selectedDimType);
     _selectedDim = null;
     _selectedDimType = null;

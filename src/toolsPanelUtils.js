@@ -246,7 +246,8 @@ export function syncToolsPanelUI(deps) {
     const active = getActiveInteractionMode(deps);
     const assemblyEdit = !!deps.assemblyState?.editMode;
     const ptpSnap = deps.isPtpSnapActive?.() ?? false;
-    const showCircleDetect = CIRCLE_DETECT_MODES.has(active) || ptpSnap;
+    const showCircleDetect = CIRCLE_DETECT_MODES.has(active) || ptpSnap
+        || (deps.isRedefinePointActive?.() && deps.getRedefinePointPhase?.() === 'pickNewPoint');
 
     for (const [key, ctrl] of Object.entries(_modeBtnCtrls)) {
         if (!ctrl?.domElement) continue;
