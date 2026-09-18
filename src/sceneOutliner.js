@@ -2303,6 +2303,20 @@ function clearFileMultiSelection() {
     applyFileMultiSelectClasses();
 }
 
+function selectedFileIdsForAsset(asset) {
+    if (asset?.kind === 'file' && selectedFileIds.size > 1 && selectedFileIds.has(asset.id)) {
+        return [...selectedFileIds];
+    }
+    return asset?.id ? [asset.id] : [];
+}
+
+function selectedFileAttachmentsForAsset(asset) {
+    const ids = selectedFileIdsForAsset(asset);
+    const all = getAttachments?.() || [];
+    const byId = new Map(all.map(a => [a.id, a]));
+    return ids.map(id => byId.get(id)).filter(Boolean);
+}
+
 function siblingFileItems(li) {
     const parent = li?.parentElement;
     if (!parent) return [];
@@ -2460,17 +2474,32 @@ function showFileAssetCtxMenu(x, y, asset, li) {
     if (asset.kind === 'file') {
         const mime = asset.mimeType || '';
         const viewable = canOpenAttachment ? canOpenAttachment(mime) : false;
-        if (viewable) {
-            menu.appendChild(createDocCtxItem('Open', () => {
+        const groupAtts = selectedFileAttachmentsForAsset(asset);
+        const groupIds = groupAtts.map(a => a.id);
+        const isGroup = groupIds.length > 1;
+        const viewableCount = groupAtts.filter(a => canOpenAttachment ? canOpenAttachment(a.mimeType) : false).length;
+        const imageCount = groupAtts.filter(a => (a.mimeType || '').startsWith('image/')).length;
+
+        if (isGroup ? viewableCount > 0 : viewable) {
+            const openLabel = isGroup ? `Open (${viewableCount})` : 'Open';
+            menu.appendChild(createDocCtxItem(openLabel, () => {
+                if (isGroup && fileOps.openMany) {
+                    fileOps.openMany(groupIds);
+                    return;
+                }
                 selectOutlinerAssetByExpandId(`file:${asset.id}`, { scroll: false });
                 const att = getAttachments?.().find(a => a.id === asset.id);
                 if (att && onOpenAttachment) onOpenAttachment(att);
             }));
         }
-        if (mime.startsWith('image/')) {
-            menu.appendChild(createDocCtxItem('Edit', () => {
-                if (fileOps.edit) fileOps.edit(asset.id);
+        if (isGroup ? imageCount > 0 : mime.startsWith('image/')) {
+            const editLabel = isGroup ? `Edit (${imageCount})` : 'Edit';
+            menu.appendChild(createDocCtxItem(editLabel, () => {
+                if (isGroup && fileOps.editMany) fileOps.editMany(groupIds);
+                else if (fileOps.edit) fileOps.edit(asset.id);
             }));
+        }
+        if (mime.startsWith('image/')) {
             menu.appendChild(createDocCtxItem('Convert to PDF…', () => {
                 if (fileOps.convertImageToPdf) fileOps.convertImageToPdf(asset.id);
             }));
@@ -2486,18 +2515,20 @@ function showFileAssetCtxMenu(x, y, asset, li) {
                 if (fileOps.convertPdfToImages) fileOps.convertPdfToImages(asset.id);
             }));
         }
-        menu.appendChild(createDocCtxItem('Download', () => {
-            if (fileOps.download) fileOps.download(asset.id);
-        }));
+        menu.appendChild(createDocCtxItem(
+            isGroup ? `Download (${groupIds.length})` : 'Download',
+            () => {
+                if (isGroup && fileOps.downloadMany) fileOps.downloadMany(groupIds);
+                else if (fileOps.download) fileOps.download(asset.id);
+            }
+        ));
         menu.appendChild(createDocCtxItem('Rename', () => {
             startAssetInlineRename(li, attachmentRenameBase(asset.name), (base) => {
                 if (fileOps.rename) fileOps.rename(asset.id, base + attachmentRenameExt(asset.name));
             });
         }));
         menu.appendChild(createDocCtxItem('Delete', () => {
-            const ids = (selectedFileIds.size > 1 && selectedFileIds.has(asset.id))
-                ? [...selectedFileIds]
-                : [asset.id];
+            const ids = selectedFileIdsForAsset(asset);
             if (ids.length > 1) {
                 if (fileOps.deleteMany) fileOps.deleteMany(ids);
                 else if (fileOps.deleteOne) ids.forEach(id => fileOps.deleteOne(id));

@@ -320,7 +320,21 @@ export function downloadAttachmentsZip(folderId = null) {
 }
 
 export function openViewableAttachments(folderId = null) {
-    const viewable = _attachmentsInScope(folderId).filter(a => _canOpenInBrowser(a.mimeType));
+    _openViewableAttachments(_attachmentsInScope(folderId));
+}
+
+export function editImageAttachments(folderId = null) {
+    _editImageAttachments(_attachmentsInScope(folderId));
+}
+
+function _attachmentsByIds(ids) {
+    const unique = [...new Set(ids || [])];
+    const byId = new Map(attachmentsStore.map(a => [a.id, a]));
+    return unique.map(id => byId.get(id)).filter(Boolean);
+}
+
+function _openViewableAttachments(atts) {
+    const viewable = atts.filter(a => _canOpenInBrowser(a.mimeType));
     if (viewable.length === 0) return;
     viewable.forEach(a => _openAttachment(a, { forceNew: true }));
     if (viewable.length > 1) {
@@ -332,8 +346,8 @@ export function openViewableAttachments(folderId = null) {
     }
 }
 
-export function editImageAttachments(folderId = null) {
-    const images = _attachmentsInScope(folderId).filter(a => a.mimeType && a.mimeType.startsWith('image/'));
+function _editImageAttachments(atts) {
+    const images = atts.filter(a => a.mimeType && a.mimeType.startsWith('image/'));
     if (images.length === 0) return;
     images.forEach(a => _editAttachment(a));
     if (images.length > 1) {
@@ -343,6 +357,24 @@ export function editImageAttachments(folderId = null) {
             }
         }, 150);
     }
+}
+
+export function openViewableAttachmentsByIds(ids) {
+    _openViewableAttachments(_attachmentsByIds(ids));
+}
+
+export function editImageAttachmentsByIds(ids) {
+    _editImageAttachments(_attachmentsByIds(ids));
+}
+
+export function downloadAttachmentsByIds(ids) {
+    const atts = _attachmentsByIds(ids);
+    if (atts.length === 0) return;
+    if (atts.length === 1) {
+        _downloadAttachment(atts[0]);
+        return;
+    }
+    return _downloadSelectedAttachmentsZip(atts);
 }
 
 export function downloadAttachmentById(id) {
@@ -892,11 +924,43 @@ function _uniqueZipPath(used, path) {
     return next;
 }
 
-async function _downloadAllAsZip(folderId = null) {
+function _folderAncestorChain(folderId) {
+    const parts = [];
+    let id = folderId;
+    const seen = new Set();
+    while (id) {
+        if (seen.has(id)) break;
+        seen.add(id);
+        parts.unshift(id);
+        id = _folderById(id)?.parentId || null;
+    }
+    return parts;
+}
+
+function _commonFolderAncestorId(folderIds) {
+    const chains = folderIds.map(id => _folderAncestorChain(id));
+    if (chains.length === 0) return null;
+    let prefixLen = chains[0].length;
+    for (let i = 1; i < chains.length; i++) {
+        const other = chains[i];
+        let n = 0;
+        while (n < prefixLen && n < other.length && chains[0][n] === other[n]) n++;
+        prefixLen = n;
+    }
+    return prefixLen > 0 ? chains[0][prefixLen - 1] : null;
+}
+
+function _zipDirRelativeToAncestor(folderId, ancestorId) {
+    if (!folderId || folderId === ancestorId) return [];
+    const chain = _folderAncestorChain(folderId);
+    const start = ancestorId ? chain.indexOf(ancestorId) : -1;
+    const ids = start >= 0 ? chain.slice(start + 1) : chain;
+    return ids.map(id => _safeZipSegment(_folderById(id)?.name));
+}
+
+async function _zipAttachmentsAndDownload({ atts = [], extraFolderIds = [], dirForFolderId, zipName }) {
     if (_fileOpInProgress()) return;
-    const rootId = _normalizeFolderId(folderId);
-    const atts = _attachmentsInScope(rootId);
-    if (atts.length === 0 && !rootId) return;
+    if (atts.length === 0 && extraFolderIds.length === 0) return;
 
     _fileOpBusy = true;
     const progress = _openFileOpProgress('Creating ZIP');
@@ -904,11 +968,8 @@ async function _downloadAllAsZip(folderId = null) {
         const zip = new JSZip();
         const used = new Set();
 
-        const folderIds = rootId
-            ? [..._collectDescendantFolderIds(rootId), rootId]
-            : attachmentFoldersStore.map(f => f.id);
-        folderIds.forEach(id => {
-            const segments = _folderPathSegments(id, rootId);
+        extraFolderIds.forEach(id => {
+            const segments = dirForFolderId(id);
             if (segments.length) zip.folder(segments.join('/'));
         });
 
@@ -922,7 +983,7 @@ async function _downloadAllAsZip(folderId = null) {
                 progress: addWeight * (i / n),
             });
             const bytes = _attToUint8Array(att);
-            const dir = _folderPathSegments(att.folderId, rootId);
+            const dir = dirForFolderId(att.folderId);
             const path = _uniqueZipPath(used, [...dir, _safeZipSegment(att.name)].join('/'));
             zip.file(path, bytes);
             await new Promise(r => setTimeout(r, 0));
@@ -947,7 +1008,7 @@ async function _downloadAllAsZip(folderId = null) {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = rootId ? `${_safeZipSegment(_folderById(rootId)?.name)}.zip` : 'attachments.zip';
+        a.download = zipName;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -959,6 +1020,32 @@ async function _downloadAllAsZip(folderId = null) {
         progress.close();
         _fileOpBusy = false;
     }
+}
+
+async function _downloadAllAsZip(folderId = null) {
+    const rootId = _normalizeFolderId(folderId);
+    const atts = _attachmentsInScope(rootId);
+    if (atts.length === 0 && !rootId) return;
+    const extraFolderIds = rootId
+        ? [..._collectDescendantFolderIds(rootId), rootId]
+        : attachmentFoldersStore.map(f => f.id);
+    return _zipAttachmentsAndDownload({
+        atts,
+        extraFolderIds,
+        dirForFolderId: (id) => _folderPathSegments(id, rootId),
+        zipName: rootId ? `${_safeZipSegment(_folderById(rootId)?.name)}.zip` : 'attachments.zip',
+    });
+}
+
+async function _downloadSelectedAttachmentsZip(atts) {
+    const folderIds = [...new Set(atts.map(a => a.folderId || null))];
+    const ancestorId = folderIds.includes(null) ? null : _commonFolderAncestorId(folderIds);
+    return _zipAttachmentsAndDownload({
+        atts,
+        extraFolderIds: [],
+        dirForFolderId: (id) => _zipDirRelativeToAncestor(id, ancestorId),
+        zipName: 'files.zip',
+    });
 }
 
 function _canOpenInBrowser(mimeType) {

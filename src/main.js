@@ -131,7 +131,7 @@ import {
     createApplyArrangementCommand,
     createArrangementsCatalogCommand,
 } from './undoCommands.js';
-import { initAttachmentsGui, importAttachmentsFromGltfScene, getAttachmentsStore, getAttachmentFoldersStore, addImageAttachmentFromBlob, clearAttachmentsStore, openAttachment, canOpenAttachmentInBrowser, createAttachmentFolder, renameAttachmentFolder, deleteAttachmentFolder, moveAttachment, moveAttachments, moveAttachmentFolder, renameAttachment, deleteAttachment, deleteAttachments, addAttachmentsToFolder, addFolderToFolder, pasteImageToFolder, newImageInFolder, captureScreenToFolder, downloadAttachmentsZip, openViewableAttachments, editImageAttachments, downloadAttachmentById, editAttachmentById, editPdfAttachmentById, managePdfPagesById, convertImageToPdfById, convertPdfToImagesById } from './attachmentsUtils.js';
+import { initAttachmentsGui, importAttachmentsFromGltfScene, getAttachmentsStore, getAttachmentFoldersStore, addImageAttachmentFromBlob, clearAttachmentsStore, openAttachment, canOpenAttachmentInBrowser, createAttachmentFolder, renameAttachmentFolder, deleteAttachmentFolder, moveAttachment, moveAttachments, moveAttachmentFolder, renameAttachment, deleteAttachment, deleteAttachments, addAttachmentsToFolder, addFolderToFolder, pasteImageToFolder, newImageInFolder, captureScreenToFolder, downloadAttachmentsZip, openViewableAttachments, editImageAttachments, openViewableAttachmentsByIds, editImageAttachmentsByIds, downloadAttachmentsByIds, downloadAttachmentById, editAttachmentById, editPdfAttachmentById, managePdfPagesById, convertImageToPdfById, convertPdfToImagesById } from './attachmentsUtils.js';
 import { getFileOpenMode, setFileOpenMode } from './filePreviewUtils.js';
 import { serializeAttachmentsForExport } from './attachmentCompressionUtils.js';
 import { openFileOpProgress, yieldToUi } from './fileOpProgressUtils.js';
@@ -2266,6 +2266,9 @@ outlinerPanelEl = initOutliner({
         downloadZip: downloadAttachmentsZip,
         openAllViewable: openViewableAttachments,
         editAllImages: editImageAttachments,
+        openMany: openViewableAttachmentsByIds,
+        editMany: editImageAttachmentsByIds,
+        downloadMany: downloadAttachmentsByIds,
         download: downloadAttachmentById,
         edit: editAttachmentById,
         editPdf: editPdfAttachmentById,
