@@ -2,7 +2,7 @@
 import { Editor, Extension, Mark } from '@tiptap/core';
 import { pickImageFromDisk, pickImageFromFiles, showImageInsertDialog } from './imageInsertUtils.js';
 import { addPdfAttachmentFromBytes } from './attachmentsUtils.js';
-import { notifyOutlinerProjectContentsChanged } from './sceneOutliner.js';
+import { notifyOutlinerProjectContentsChanged, selectOutlinerDocument } from './sceneOutliner.js';
 import { raiseOverlaySurface, unregisterOverlaySurface } from './overlayStackUtils.js';
 import { PDFDocument } from 'pdf-lib';
 import html2canvas from 'html2canvas';
@@ -246,6 +246,8 @@ let _docWinSavedBounds = null;
 let _ignoreWinBoundsObserve = false;
 let _winBoundsSaveTimer = null;
 let _closeConfirmDlg = null;
+/** @type {(() => void)|null} */
+let _pendingLeaveAction = null;
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
@@ -682,19 +684,11 @@ function _populateDocFolderGui(guiFolder, parentId) {
 }
 
 export function openDocumentViewer(id) {
-    const doc = documentsStore.find(d => d.id === id);
-    if (!doc) return;
-    _currentDocId = id;
-    _isEditMode = false;
-    _showOverlay(doc, false);
+    _openDocument(id, false);
 }
 
 export function openDocumentEditor(id) {
-    const doc = documentsStore.find(d => d.id === id);
-    if (!doc) return;
-    _currentDocId = id;
-    _isEditMode = true;
-    _showOverlay(doc, true);
+    _openDocument(id, true);
 }
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
@@ -1349,7 +1343,35 @@ function _saveCurrentDocument(updateLastEdit = false) {
     refreshDocumentsGui();
 }
 
+function _isEditingDocument() {
+    return _isEditMode && !!_currentDocId && !!_overlayEl && _overlayEl.style.display !== 'none';
+}
+
+function _openDocument(id, editMode) {
+    const doc = documentsStore.find(d => d.id === id);
+    if (!doc) return;
+    if (_isEditingDocument() && _currentDocId === id) return;
+
+    const apply = () => _applyOpenDocument(id, editMode);
+    if (_isEditingDocument()) {
+        _requestLeaveEditor(apply);
+        selectOutlinerDocument(_currentDocId);
+        return;
+    }
+    apply();
+}
+
+function _applyOpenDocument(id, editMode) {
+    const doc = documentsStore.find(d => d.id === id);
+    if (!doc) return;
+    _currentDocId = id;
+    _isEditMode = editMode;
+    _showOverlay(doc, editMode);
+    selectOutlinerDocument(id);
+}
+
 function _closeOverlay() {
+    _pendingLeaveAction = null;
     if (_closeConfirmDlg?.open) _closeConfirmDlg.close();
     if (_overlayEl && _overlayEl.classList.contains('layout-window') && !_docWinMaximized) {
         _persistWindowBounds();
@@ -1369,12 +1391,32 @@ function _closeOverlay() {
     _isEditMode = false;
 }
 
-function _requestCloseOverlay() {
-    if (_isEditMode && _editor && _currentDocId) {
+function _requestLeaveEditor(afterLeave) {
+    if (_isEditingDocument()) {
+        _pendingLeaveAction = typeof afterLeave === 'function' ? afterLeave : null;
         _showCloseConfirmDialog();
         return;
     }
-    _closeOverlay();
+    afterLeave?.();
+}
+
+function _requestCloseOverlay() {
+    _requestLeaveEditor(() => _closeOverlay());
+}
+
+function _cancelLeave() {
+    _pendingLeaveAction = null;
+    if (_closeConfirmDlg?.open) _closeConfirmDlg.close();
+    if (_currentDocId) selectOutlinerDocument(_currentDocId);
+}
+
+function _confirmLeave(save) {
+    if (save) _saveCurrentDocument(true);
+    const next = _pendingLeaveAction;
+    _pendingLeaveAction = null;
+    if (_closeConfirmDlg?.open) _closeConfirmDlg.close();
+    if (next) next();
+    else _closeOverlay();
 }
 
 function _showCloseConfirmDialog() {
@@ -1391,19 +1433,20 @@ function _showCloseConfirmDialog() {
             </div>`;
         dlg.addEventListener('click', e => {
             e.stopPropagation();
-            if (e.target === dlg) dlg.close();
+            if (e.target === dlg) _cancelLeave();
+        });
+        dlg.addEventListener('cancel', () => {
+            _pendingLeaveAction = null;
+            if (_currentDocId) selectOutlinerDocument(_currentDocId);
         });
         dlg.querySelector('.doc-close-dialog-save').addEventListener('click', () => {
-            _saveCurrentDocument(true);
-            dlg.close();
-            _closeOverlay();
+            _confirmLeave(true);
         });
         dlg.querySelector('.doc-close-dialog-discard').addEventListener('click', () => {
-            dlg.close();
-            _closeOverlay();
+            _confirmLeave(false);
         });
         dlg.querySelector('.doc-close-dialog-cancel').addEventListener('click', () => {
-            dlg.close();
+            _cancelLeave();
         });
         document.body.appendChild(dlg);
         _closeConfirmDlg = dlg;

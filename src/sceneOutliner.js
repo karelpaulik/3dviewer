@@ -1289,6 +1289,18 @@ function selectOutlinerAssetByExpandId(id, { scroll = true } = {}) {
     return true;
 }
 
+/** Select a single document row in the outliner (clears file / multi-doc selection). */
+export function selectOutlinerDocument(docId, { scroll = false } = {}) {
+    if (!treeEl || !docId) return false;
+    clearFileMultiSelection();
+    selectedDocIds.clear();
+    selectedDocIds.add(docId);
+    docSelectAnchorId = docId;
+    const ok = selectOutlinerAssetByExpandId(`doc:${docId}`, { scroll });
+    applyDocMultiSelectClasses();
+    return ok;
+}
+
 function restoreSelectedExpandId({ scroll = false } = {}) {
     if (selectedExpandId && !selectOutlinerAssetByExpandId(selectedExpandId, { scroll })) {
         selectedExpandId = null;
