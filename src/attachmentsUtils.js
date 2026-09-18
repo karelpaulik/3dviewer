@@ -402,6 +402,10 @@ export function convertImageToPdfById(id) {
     if (att) _convertImageToPdf(att);
 }
 
+export function convertImageAttachmentsByIds(ids) {
+    return _convertImagesToPdf(_attachmentsByIds(ids));
+}
+
 export function convertPdfToImagesById(id) {
     const att = attachmentsStore.find(a => a.id === id);
     if (att) _convertPdfToImages(att);
@@ -1668,6 +1672,36 @@ function _decodeImageToPngBase64(base64, mimeType) {
     });
 }
 
+async function _convertOneImageToPdf(att) {
+    let mime = att.mimeType === 'image/jpg' ? 'image/jpeg' : att.mimeType;
+    let base64 = att.data;
+    if (mime !== 'image/jpeg' && mime !== 'image/png') {
+        const converted = await _decodeImageToPngBase64(base64, att.mimeType);
+        base64 = converted.base64;
+        mime = 'image/png';
+    }
+
+    const imgBytes = _attToUint8Array({ data: base64 });
+    const pdfDoc = await PDFDocument.create();
+    const image = mime === 'image/jpeg'
+        ? await pdfDoc.embedJpg(imgBytes)
+        : await pdfDoc.embedPng(imgBytes);
+    const { width, height } = image.scale(1);
+    const page = pdfDoc.addPage([width, height]);
+    page.drawImage(image, { x: 0, y: 0, width, height });
+
+    const pdfBytes = await pdfDoc.save();
+    const pdfName = `${_pdfBaseName(att.name)}.pdf`;
+    _pushAttachment({
+        name: pdfName,
+        mimeType: 'application/pdf',
+        data: _uint8ArrayToBase64(pdfBytes),
+        size: pdfBytes.length,
+        folderId: att.folderId,
+    });
+    return pdfName;
+}
+
 async function _convertImageToPdf(att) {
     if (_isAttachmentBusy()) return;
 
@@ -1675,38 +1709,56 @@ async function _convertImageToPdf(att) {
     _updateConvertBtnState(true);
 
     try {
-        let mime = att.mimeType === 'image/jpg' ? 'image/jpeg' : att.mimeType;
-        let base64 = att.data;
-        if (mime !== 'image/jpeg' && mime !== 'image/png') {
-            const converted = await _decodeImageToPngBase64(base64, att.mimeType);
-            base64 = converted.base64;
-            mime = 'image/png';
-        }
-
-        const imgBytes = _attToUint8Array({ data: base64 });
-        const pdfDoc = await PDFDocument.create();
-        const image = mime === 'image/jpeg'
-            ? await pdfDoc.embedJpg(imgBytes)
-            : await pdfDoc.embedPng(imgBytes);
-        const { width, height } = image.scale(1);
-        const page = pdfDoc.addPage([width, height]);
-        page.drawImage(image, { x: 0, y: 0, width, height });
-
-        const pdfBytes = await pdfDoc.save();
-        const pdfName = `${_pdfBaseName(att.name)}.pdf`;
-        _pushAttachment({
-            name: pdfName,
-            mimeType: 'application/pdf',
-            data: _uint8ArrayToBase64(pdfBytes),
-            size: pdfBytes.length,
-            folderId: att.folderId,
-        });
+        const pdfName = await _convertOneImageToPdf(att);
         alert(`Added "${pdfName}".`);
         refreshAttachmentsGui();
     } catch (err) {
         console.error(err);
         alert('Cannot convert this image to PDF.');
     } finally {
+        _imageConverting = false;
+        _updateConvertBtnState(false);
+    }
+}
+
+async function _convertImagesToPdf(atts) {
+    const images = atts.filter(a => a.mimeType && a.mimeType.startsWith('image/'));
+    if (images.length === 0) return;
+    if (images.length === 1) {
+        return _convertImageToPdf(images[0]);
+    }
+    if (_isAttachmentBusy()) return;
+
+    _imageConverting = true;
+    _updateConvertBtnState(true);
+    const progress = _openFileOpProgress('Converting to PDF');
+    const added = [];
+    const failed = [];
+    try {
+        for (let i = 0; i < images.length; i++) {
+            if (progress.cancelled) break;
+            const att = images[i];
+            progress.set({
+                status: `Converting ${att.name} (${i + 1} of ${images.length})`,
+                progress: i / images.length,
+            });
+            try {
+                added.push(await _convertOneImageToPdf(att));
+            } catch (err) {
+                console.error(err);
+                failed.push(att.name);
+            }
+            await new Promise(r => setTimeout(r, 0));
+        }
+        progress.set({ status: 'Done', progress: 1 });
+        refreshAttachmentsGui();
+        const parts = [];
+        if (added.length) parts.push(`Added ${added.length} PDF(s).`);
+        if (failed.length) parts.push(`Failed: ${failed.join(', ')}.`);
+        if (progress.cancelled && (added.length || failed.length)) parts.push('Cancelled.');
+        if (parts.length) alert(parts.join('\n'));
+    } finally {
+        progress.close();
         _imageConverting = false;
         _updateConvertBtnState(false);
     }

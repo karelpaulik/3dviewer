@@ -2498,10 +2498,10 @@ function showFileAssetCtxMenu(x, y, asset, li) {
                 if (isGroup && fileOps.editMany) fileOps.editMany(groupIds);
                 else if (fileOps.edit) fileOps.edit(asset.id);
             }));
-        }
-        if (mime.startsWith('image/')) {
-            menu.appendChild(createDocCtxItem('Convert to PDF…', () => {
-                if (fileOps.convertImageToPdf) fileOps.convertImageToPdf(asset.id);
+            const convertLabel = isGroup ? `Convert to PDF… (${imageCount})` : 'Convert to PDF…';
+            menu.appendChild(createDocCtxItem(convertLabel, () => {
+                if (isGroup && fileOps.convertImagesToPdf) fileOps.convertImagesToPdf(groupIds);
+                else if (fileOps.convertImageToPdf) fileOps.convertImageToPdf(asset.id);
             }));
         }
         if (mime === 'application/pdf') {
@@ -2527,15 +2527,19 @@ function showFileAssetCtxMenu(x, y, asset, li) {
                 if (fileOps.rename) fileOps.rename(asset.id, base + attachmentRenameExt(asset.name));
             });
         }));
-        menu.appendChild(createDocCtxItem('Delete', () => {
-            const ids = selectedFileIdsForAsset(asset);
-            if (ids.length > 1) {
-                if (fileOps.deleteMany) fileOps.deleteMany(ids);
-                else if (fileOps.deleteOne) ids.forEach(id => fileOps.deleteOne(id));
-            } else if (fileOps.deleteOne) {
-                fileOps.deleteOne(asset.id);
-            }
-        }, 'outliner-ctx-danger'));
+        menu.appendChild(createDocCtxItem(
+            isGroup ? `Delete (${groupIds.length})` : 'Delete',
+            () => {
+                const ids = selectedFileIdsForAsset(asset);
+                if (ids.length > 1) {
+                    if (fileOps.deleteMany) fileOps.deleteMany(ids);
+                    else if (fileOps.deleteOne) ids.forEach(id => fileOps.deleteOne(id));
+                } else if (fileOps.deleteOne) {
+                    fileOps.deleteOne(asset.id);
+                }
+            },
+            'outliner-ctx-danger'
+        ));
     }
 
     positionFixedMenu(menu, x, y);
